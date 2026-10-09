@@ -147,14 +147,15 @@ struct MacServiceRequestTests {
             #expect((screenReader[index + 1]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
         }
 
+        // The field reader reads the app it is named (the paste's own, as `voice-macos` named it at
+        // key-down) and does not say which app is in front.
         let fieldReader = try await replies({ FieldReaderService.register(on: $0, screen: screen) },
-                                            [field, request(3, "frontmostApp"), read] + others.enumerated().map { request($0.offset + 4, $0.element) })
+                                            [field, read] + (others + ["frontmostApp"]).enumerated().map { request($0.offset + 3, $0.element) })
         #expect(fieldReader.count == others.count + 3)
         guard fieldReader.count == others.count + 3 else { return }
         #expect(fieldReader[0]["result"] as? NSDictionary == ["value": shown])
-        #expect(fieldReader[1]["result"] as? NSDictionary == ["pid": 8])
-        for (index, method) in (["readScreen"] + others).enumerated() {
-            #expect((fieldReader[index + 2]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
+        for (index, method) in (["readScreen"] + others + ["frontmostApp"]).enumerated() {
+            #expect((fieldReader[index + 1]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
         }
     }
 
@@ -173,11 +174,5 @@ struct MacServiceRequestTests {
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
-        // With no app in front there is no field to watch.
-        lines.withLock { $0.removeAll() }
-        await channel.handle(line: Data(#"{"id":4,"method":"frontmostApp","params":{}}"#.utf8))
-        let none = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
-        #expect(none.count == 1)
-        #expect(none.first?["result"] is NSNull)
     }
 }

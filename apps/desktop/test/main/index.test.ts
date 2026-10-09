@@ -32,7 +32,8 @@ const app = vi.hoisted(() => ({
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
-  corrections: undefined as { watch(pasted: string): void; stop(): void } | undefined,
+  corrections: undefined as { watch(target: number, pasted: string): void; stop(): void } | undefined,
+  frontmostApp: undefined as (() => Promise<number | null>) | undefined,
   useWords: undefined as ((texts: readonly string[]) => void) | undefined,
   prewarms: 0,
   /** The paste history the controller was given, what went on the clipboard, the history window's
@@ -321,10 +322,11 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; useWords: NonNullable<typeof app.useWords> }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords> }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
+      app.frontmostApp = dependencies.frontmostApp;
       app.useWords = dependencies.useWords;
       app.connectorTools = dependencies.connectorTools;
       app.paste = dependencies.paste;
@@ -453,6 +455,7 @@ afterEach(() => {
   app.paste = null;
   app.copy = null;
   app.corrections = undefined;
+  app.frontmostApp = undefined;
   app.useWords = undefined;
   app.prewarms = 0;
   app.history = null;
@@ -1102,15 +1105,24 @@ describe("main process wiring", () => {
     expect(basename(reader.options.executable)).toBe(executable);
     expect(dirname(reader.options.executable)).toBe(dirname(main.options.executable));
     expect(reader.lifecycle).toEqual(["start"]);
-    // Its two dependencies, as the watch calls them.
-    const watch = app.corrections as unknown as { field: { target: () => Promise<number | null>; value: (target: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null> }; learn: (words: string[]) => void };
-    const key = platform === "darwin" ? "pid" : "window";
-    reader.replies.set("frontmostApp", { [key]: 42 });
-    expect(await watch.field.target()).toBe(42);
-    await watch.field.value(42, { apps: ["org.example.vault"], sites: ["example.com"] });
+    // Its two dependencies, as the watch calls them, on the paste's own target: the app or window the
+    // main helper names at key-down, which the field reader names by the identity both share (the
+    // process on macOS and Linux, where the main helper's window token is its own; the window's handle
+    // on Windows).
+    const watch = app.corrections as unknown as { field: { value: (target: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null> }; learn: (words: string[]) => void };
+    main.replies.set("frontmostApp", { darwin: { pid: 42, name: "Notes" }, win32: { window: 42 }, linux: { window: 42, pid: 4242 } }[platform]);
+    const target = await app.frontmostApp!();
+    expect(target).toBe(42);
+    await watch.field.value(target!, { apps: ["org.example.vault"], sites: ["example.com"] });
     expect(reader.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
-      { [key]: 42, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
+      { ...{ darwin: { pid: 42 }, win32: { window: 42 }, linux: { pid: 4242 } }[platform], maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
     ]);
+    if (platform === "linux") {
+      // A token the main helper did not name last has no process here: nothing is read.
+      expect(await watch.field.value(43, { apps: [], sites: [] })).toBeNull();
+      expect(reader.requests.filter((request) => request.method === "focusedFieldValue")).toHaveLength(1);
+    }
+    expect(reader.requests.some((request) => request.method === "frontmostApp")).toBe(false);
     expect(main.requests.some((request) => request.method === "focusedFieldValue")).toBe(false);
     watch.learn(["Xyvora"]);
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true, lastUsed: 1 }]);

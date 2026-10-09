@@ -12,7 +12,7 @@ type Settle = { resolve: (value: unknown) => void; reject: (error: Error) => voi
 
 /** voice-field-reader: each request waits until the test settles it; `calls` records requests and
  * restarts in order. */
-function reader(platform: NodeJS.Platform = "win32") {
+function reader(platform: NodeJS.Platform = "win32", identity: (target: number) => number | null = (target) => target) {
   const calls: unknown[][] = [];
   const settle: Settle[] = [];
   const helper = {
@@ -22,42 +22,38 @@ function reader(platform: NodeJS.Platform = "win32") {
     },
     restart: () => void calls.push(["restart"]),
   };
-  return { field: new FieldReader(helper as unknown as HelperClient, platform), calls, settle };
+  return { field: new FieldReader(helper as unknown as HelperClient, platform, identity), calls, settle };
 }
 const exclusions = { apps: ["Example.exe"], sites: ["example.com"] };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const kinds = (calls: unknown[][]) => calls.map(([kind]) => kind);
 
-/** The reader's own identity of what is in front: a process on macOS, a window elsewhere (on Linux the
- * reader's own window token), named as the main helper names it on each platform. */
+/** The field read is of the paste's own target, by the identity both programs share: the process on
+ * macOS and Linux, the window's handle on Windows; on Linux the main helper's window token is mapped to
+ * its process (`LinuxSystem.appOf`), since tokens are each process's own. */
 test.each([
-  ["darwin", "pid"],
-  ["win32", "window"],
-  ["linux", "window"],
-] as const)("on %s the target is the reader's frontmost %s, and the field is read by it", async (platform, key) => {
-  const { field, calls, settle } = reader(platform);
-  const target = field.target();
-  settle[0]!.resolve({ [key]: 42 });
-  expect(await target).toBe(42);
+  ["darwin", "pid", 42],
+  ["win32", "window", 42],
+  ["linux", "pid", 4242],
+] as const)("on %s the field is read by the target's %s", async (platform, key, own) => {
+  const mapped: number[] = [];
+  const { field, calls, settle } = reader(platform, (target) => (mapped.push(target), platform === "linux" ? 4242 : target));
   const value = field.value(42, exclusions);
-  settle[1]!.resolve({ value: "Meet Xyvora." });
+  settle[0]!.resolve({ value: "Meet Xyvora." });
   expect(await value).toBe("Meet Xyvora.");
+  expect(mapped).toEqual([42]);
   expect(calls).toEqual([
-    ["request", "frontmostApp", {}, config.fieldReaderTimeout],
-    ["request", "focusedFieldValue", { [key]: 42, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }, config.fieldReaderTimeout],
+    ["request", "focusedFieldValue", { [key]: own, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }, config.fieldReaderTimeout],
   ]);
   expect(config.fieldReaderTimeout).toBe(config.correctionWatchDuration);
 });
 
-test.each([null, {}, { window: 0 }, { window: -1 }, { window: 0.5 }, { window: Number.MAX_SAFE_INTEGER + 1 }, { window: "42" }, { pid: 42 }])(
-  "no target in %j is none",
-  async (reply) => {
-    const { field, settle } = reader("win32");
-    const target = field.target();
-    settle[0]!.resolve(reply);
-    expect(await target).toBeNull();
-  },
-);
+/** A target the reader has no identity for (a Linux window whose process is unknown) is no field. */
+test("a target with no identity in the reader reads nothing", async () => {
+  const { field, calls } = reader("linux", () => null);
+  expect(await field.value(42, exclusions)).toBeNull();
+  expect(calls).toEqual([]);
+});
 
 test.each([null, {}, { value: null }, { value: 10 }, { value: "a".repeat(config.correctionMaxFieldLength + 1) }])("no text in %j is none", async (reply) => {
   const { field, settle } = reader();
@@ -76,27 +72,28 @@ test("an empty field is its text, and a field at the cap is read whole", async (
   expect(await full).toHaveLength(config.correctionMaxFieldLength);
 });
 
-/** A watch that starts while the last watch's read is still going (a slow terminal read when the next
- * dictation was pasted): that read is no longer wanted, so the reader starts afresh first. */
-test("a new watch while a read is still going ends the reader before asking what is in front", async () => {
+/** A read asked while the last is still going is a new watch's (a slow terminal read when the next
+ * dictation was pasted; reads within one watch come one after another): the last is no longer wanted,
+ * so the reader starts afresh first. */
+test("a new read while one is still going ends the reader first", async () => {
   const { field, calls, settle } = reader();
   void field.value(42, exclusions).catch(() => undefined);
-  void field.target();
+  void field.value(43, exclusions);
   expect(kinds(calls)).toEqual(["request", "restart", "request"]);
   // Reads within one watch come one after another: none is still going when the next is asked.
-  settle[1]!.resolve({ window: 42 });
+  settle[1]!.resolve({ value: "" });
   await flush();
-  void field.value(42, exclusions);
+  void field.value(43, exclusions);
   expect(kinds(calls)).toEqual(["request", "restart", "request", "request"]);
 });
 
 test.each([
-  ["a newer watch", async (field: FieldReader) => void field.target()],
-  ["its time", async (_field: FieldReader, settle: Settle[]) => settle[1]!.reject(new HelperError("timeout", "frontmostApp"))],
+  ["a newer watch", async (field: FieldReader) => void field.value(44, exclusions)],
+  ["its time", async (_field: FieldReader, settle: Settle[]) => settle[1]!.reject(new HelperError("timeout", "focusedFieldValue"))],
 ])("a read that superseded another is still ended by %s after the other settles", async (_name, end) => {
   const { field, calls, settle } = reader();
   void field.value(42, exclusions).catch(() => undefined);
-  void field.target().catch(() => undefined);
+  void field.value(43, exclusions).catch(() => undefined);
   // The superseded read settles after the new one started: the new one, still going, stays tracked.
   settle[0]!.reject(new HelperError("exited", "focusedFieldValue"));
   await flush();
@@ -114,7 +111,7 @@ test.each([
   void field.value(42, exclusions).catch(() => undefined);
   end(settle[0]!);
   await flush();
-  void field.target();
+  void field.value(43, exclusions);
   expect(kinds(calls)).toEqual(["request", "request"]);
 });
 
@@ -124,14 +121,14 @@ test("a read past its time ends the reader, so a stuck provider can't hold the n
   settle[0]!.reject(new HelperError("timeout", "focusedFieldValue"));
   await expect(value).rejects.toThrow(HelperError);
   expect(kinds(calls)).toEqual(["request", "restart"]);
-  void field.target();
+  void field.value(43, exclusions);
   expect(kinds(calls)).toEqual(["request", "restart", "request"]);
 });
 
 test("an old read timing out after a newer request started leaves the newer one alone", async () => {
   const { field, calls, settle } = reader();
   void field.value(42, exclusions).catch(() => undefined);
-  void field.target();
+  void field.value(43, exclusions);
   settle[0]!.reject(new HelperError("timeout", "focusedFieldValue"));
   await flush();
   expect(kinds(calls)).toEqual(["request", "restart", "request"]);
@@ -154,7 +151,7 @@ test("the debug log times each request and says when a watch restarts the reader
   try {
     const { field, settle } = reader();
     void field.value(42, exclusions).catch(() => undefined);
-    void field.target();
+    void field.value(43, exclusions);
     settle[0]!.reject(new HelperError("exited", "focusedFieldValue"));
     settle[1]!.resolve(null);
     await flush();
@@ -164,6 +161,6 @@ test("the debug log times each request and says when a watch restarts the reader
   expect(lines).toEqual([
     "FieldReader: the last read is still going; restarting the reader",
     expect.stringMatching(/^FieldReader: focusedFieldValue failed \(HelperError\.exited\(focusedFieldValue\)\) after \d+ms$/),
-    expect.stringMatching(/^FieldReader: frontmostApp answered in \d+ms$/),
+    expect.stringMatching(/^FieldReader: focusedFieldValue answered in \d+ms$/),
   ]);
 });

@@ -16,6 +16,24 @@ test('a native foreground token reaches the dictation caller', async () => {
   const request = vi.fn(async () => ({ window: 42 })); const system = new LinuxSystem({ request } as unknown as HelperClient);
   expect(await system.frontmostApp()).toBe(42); expect(request).toHaveBeenCalledExactlyOnceWith('frontmostApp');
 });
+/** voice-field-reader names the paste's target by its process: a window token is voice-linux's own.
+ * Only the last reply naming a window is kept, so nothing grows. */
+test('the window in front maps to its process for the field reader, from the last reply only', async () => {
+  const replies: unknown[] = [{ window: 42, pid: 4242 }, null, { window: 43 }, { window: 44, pid: 4444 }, { window: 45, pid: 0 }];
+  const request = vi.fn(async () => replies.shift()); const system = new LinuxSystem({ request } as unknown as HelperClient);
+  expect(system.appOf(42)).toBeNull();
+  expect(await system.frontmostApp()).toBe(42);
+  expect(system.appOf(42)).toBe(4242);
+  expect(system.appOf(43)).toBeNull();
+  expect(await system.frontmostApp()).toBeNull();
+  expect(system.appOf(42)).toBe(4242);
+  expect(await system.frontmostApp()).toBe(43);
+  expect([system.appOf(43), system.appOf(42)]).toEqual([null, null]);
+  expect(await system.frontmostApp()).toBe(44);
+  expect([system.appOf(44), system.appOf(42)]).toEqual([4444, null]);
+  expect(await system.frontmostApp()).toBe(45);
+  expect(system.appOf(45)).toBeNull();
+});
 test('search results cross the actual child-process protocol', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tabmail-file-wire-'));
   try {

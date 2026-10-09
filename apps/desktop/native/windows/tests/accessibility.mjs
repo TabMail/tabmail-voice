@@ -131,15 +131,15 @@ try {
   assert.deepEqual(await request("readScreen", { excludedAppIDs: ["VOICE-UI-FIXTURE.EXE"] }), { hidden: true }, "exclusion is exact and case insensitive, and says only that the screen is hidden");
   assert.deepEqual(await request("focusedFieldValue", { ...fieldParams, excludedAppIDs: ["voice-ui-fixture.exe"] }), { value: null });
   assert.ok(await request("readScreen", { excludedAppIDs: ["voice-ui-fixture"] }), "prefix does not exclude a different ID");
-  // The field reader names the window in front as the main helper does.
+  // The field reader reads the window the main helper names, the paste's own target, by its handle.
   const front = await request("frontmostApp");
-  assert.deepEqual((await rawRequest(fieldReader, "frontmostApp", {})).result, front, "the field reader's frontmost window");
+  assert.deepEqual(await request("focusedFieldValue", { ...fieldParams, window: front.window }), { value: "password: [redacted]" }, "the field reader reads the main helper's window");
   // The main helper reads neither the screen nor the field, and each reader nothing else.
   assert.equal((await rawRequest(helper, "readScreen", { excludedAppIDs: [], excludedHosts: [] })).error?.message, "Windows native request failed", "the main helper reads no screen");
   assert.equal((await rawRequest(helper, "focusedFieldValue", { ...fieldParams, excludedAppIDs: [], excludedHosts: [] })).error?.message, "Windows native request failed", "the main helper reads no field");
   for (const method of ["caretAnchor", "insert", "focusedFieldValue", "frontmostApp", "microphoneStart"])
     assert.equal((await rawRequest(reader, method, {})).error?.message, "Windows native request failed", `the screen reader does no ${method}`);
-  for (const method of ["caretAnchor", "insert", "readScreen", "microphoneStart"])
+  for (const method of ["caretAnchor", "insert", "readScreen", "frontmostApp", "microphoneStart"])
     assert.equal((await rawRequest(fieldReader, method, {})).error?.message, "Windows native request failed", `the field reader does no ${method}`);
   const exits = [once(fixture.child, "exit"), once(helper.child, "exit"), once(reader.child, "exit"), once(fieldReader.child, "exit")];
   fixture.child.stdin.end(); helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();

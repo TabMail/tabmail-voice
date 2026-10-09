@@ -100,9 +100,10 @@ export interface DictationDependencies {
   connectorTools: readonly ConnectorTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
-  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`), the field read by
-   * voice-field-reader; none without the native microphone path. */
-  corrections?: { watch(pasted: string, exclusions: ScreenExclusions): void; stop(): void };
+  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`) in the field of the app
+   * or window it was pasted into (`targetApp`), read by voice-field-reader; none without the native
+   * microphone path. */
+  corrections?: { watch(target: number, pasted: string, exclusions: ScreenExclusions): void; stop(): void };
   /** Marks the dictionary's words in a dictation's transcript and cleaned text used
    * (`AppSettings.useWords`), so a full dictionary keeps them (ADR-DESK-038). */
   useWords: (texts: readonly string[]) => void;
@@ -208,8 +209,8 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
-  /** The app in front at key-down: the paste goes there only. The corrections are learned from the
-   * field voice-field-reader finds in front after the paste, which a paste that lands is in. */
+  /** The app in front at key-down: the paste goes there only, and the corrections are learned from
+   * its field, never from whatever is in front after the paste. */
   private targetApp: Promise<number | null> = Promise.resolve(null);
   /** The keyboard's language at key-down, which the badge shows and the transcription is asked in. */
   private languageRead: Promise<string | null> = Promise.resolve(null);
@@ -742,7 +743,11 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
         await this.paste(text, targetApp, signal, this.screenRead);
         const corrections = this.deps.corrections;
-        if (settings.learnsWords && corrections && isCurrent()) corrections.watch(text, { apps: settings.excludedApps, sites: settings.excludedSites });
+        if (settings.learnsWords && corrections) {
+          // Resolved already: the paste was checked against it.
+          const target = await targetApp;
+          if (target !== null && isCurrent()) corrections.watch(target, text, { apps: settings.excludedApps, sites: settings.excludedSites });
+        }
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
         const waiting = performance.now();
