@@ -17,7 +17,9 @@ export class LinuxSystem {
     await this.helper.request("insert", { text, window, deadline: Date.now() + config.helperRequestTimeout }, config.helperRequestTimeout + config.insertionReplyGrace, signal);
   }
 
-  /** Opaque foreground window identity, rather than a process id shared by multiple windows. */
+  /** Opaque foreground window identity, rather than a process id shared by multiple windows. Each reply
+   * naming a window replaces what `appOf` maps: a caller that asks during a correction watch ends that
+   * watch (its token no longer maps), so today only a key-down and the paste's check ask. */
   async frontmostApp(): Promise<number | null> {
     const reply = await this.helper.request<{ window?: unknown; pid?: unknown } | null>("frontmostApp");
     const window = positive(reply?.window);
