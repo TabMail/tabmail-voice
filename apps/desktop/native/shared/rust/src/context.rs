@@ -1203,7 +1203,6 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             if !read.text.is_empty() {
                 read.push(&LINE_BREAK.to_string(), caret_parts, false);
             }
-            read.piece();
             for (part, text) in caret.iter().enumerate() {
                 read.push(text, caret_parts + part, true);
             }

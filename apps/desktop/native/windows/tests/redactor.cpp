@@ -83,6 +83,6 @@ int main(int argc, char** argv) {
             expect(std::chrono::steady_clock::now() - start < std::chrono::seconds(2), "hostile input time bound");
         }
         std::cout << suite.at("cases").size() << " single cases, " << suite.at("lineCases").size()
-            << " line cases, idempotence, rule removal mutations, and long and hostile runs passed\n";
+            << " line cases, idempotence, redactor removal mutations, and long and hostile runs passed\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

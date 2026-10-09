@@ -3616,7 +3616,8 @@ well-structured place for the redactors.
   meets. Every scan is linear in the text, so there is no engine to give up: fancy-regex, the rule
   compiler, the engine-failure path (which took everything after a failing rule's last match) and
   its tests are deleted. Case-blind names and prefixes compare the text case-folded once (Unicode
-  simple case folding). The kept word edge (an `sk-` key, a `Bearer` token, a `_test_` payment key
+  simple case folding), and so does a case-blind token's body (a Kelvin sign or a long s folds to a
+  letter it may hold); its least length counts characters. The kept word edge (an `sk-` key, a `Bearer` token, a `_test_` payment key
   glued to the word before it stays shown) holds where the screen shows that word and the key in
   one piece; a piece the screen shows on its own (a block, a styled run; `privacy::taken_with_edges`)
   gives its first character an edge, and a prefix glued to text another redactor takes goes with it
@@ -3644,10 +3645,11 @@ well-structured place for the redactors.
   - **Words that look random.** A run of `[A-Za-z0-9+/_-]` (padding at its end), cut at a `/`, `_`
     or `-` piece that is itself word-like, goes when a part is at least 24 characters long, holds a
     letter and a digit (a word of letters and `+` with no digit stays, as the tuning below was
-    measured; owner, 2026-10-08), is not hex (letters before hex count as hex, so git hashes, digests and ids
-    stay), has at most half of its characters in word-like runs (a capital and three or more small
-    letters, three or more small letters, three or more capitals not followed by a small one), and
-    carries at least 3.5 bits of Shannon entropy per character. Every number is data in its
+    measured; owner, 2026-10-08), is not hex (letters or a `0x` before hex count as hex, so git
+    hashes, digests, ids and hex numbers such as an address or a transaction hash stay), has at
+    most half of its characters in word-like runs (a capital and three or more small letters,
+    three or more small letters, three or more capitals not followed by a small one), and carries
+    at least 3.5 bits of Shannon entropy per character. Every number is data in its
     redactor. It was tuned on every word of 24 or more characters in our own sources (benign) against
     2,000 random keys per alphabet at 24, 40 and 64 characters (recall). Entropy alone does not
     separate them (at 24 characters random base64 averages 3.86 bits; identifiers and paths reach
@@ -3671,7 +3673,8 @@ well-structured place for the redactors.
   59,000 generated glued and paired secrets, 2,538 screen reads, and a second generated set of
   217,000 glued tokens and key lines: no key character `main` takes is shown; the only bytes `main`
   takes that the scanner shows are five single blanks after a key, as the exact-text read already
-  keeps them. The regular expressions it replaces also took a chain of `Bearer` words as one find;
+  keeps them, and a short word ending in padding at the start of a text's first line before a key's
+  base64 on that line (`abc=` before it), which holds no key character. The regular expressions it replaces also took a chain of `Bearer` words as one find;
   the scanner shows what that chain held that is no token (a body shorter than a token's least
   length) and a token after a `Bearer` glued to a word, the kept word edge above. Expectations the
   owner's rules changed are renamed in the shared cases to say what now goes.

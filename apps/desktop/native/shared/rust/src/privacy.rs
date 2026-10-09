@@ -86,8 +86,8 @@ fn redact_with(lines: &Lines, redactors: &[Redactor]) -> Result<Lines, Error> {
 
 /// The lines are joined with `\n` and redacted as one text. Each piece keeps what was not taken
 /// out, and a run taken out leaves one marker, in the piece holding the first character it took
-/// (none where it took only the line breaks between lines, which stay). Each piece's start is an
-/// edge: a key's prefix there has its word edge.
+/// (none where it took only the line breaks between lines, which stay). A piece's start is no word
+/// edge: the pieces of a line are one text.
 fn redact_with_anchors(
     lines: &Lines,
     redactors: &[Redactor],

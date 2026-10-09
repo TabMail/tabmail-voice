@@ -226,6 +226,7 @@ fn invalid_definitions_are_refused() {
     for (field, value) in [
         ("name", Value::String("Uppercase".into())),
         ("name", Value::String("bad\nname".into())),
+        ("name", Value::String("1name".into())),
         ("description", Value::String(String::new())),
         ("kind", Value::String("regex".into())),
         ("min", Value::from(0)),
@@ -236,6 +237,10 @@ fn invalid_definitions_are_refused() {
         ("exact", Value::from(16)),
         ("prefixes", Value::Array(vec![])),
         ("prefixes", Value::Array(vec![Value::String(String::new())])),
+        (
+            "prefixes",
+            Value::Array(vec![Value::String("\u{e9}-".into())]),
+        ),
     ] {
         let mut changed = original.clone();
         let index = original["redactors"]
@@ -261,9 +266,11 @@ fn invalid_definitions_are_refused() {
         .position(|r| r["kind"] == "privateKey")
         .unwrap();
     for field in ["begin", "label", "close"] {
-        let mut changed = original.clone();
-        changed["redactors"][key][field] = Value::String("\u{e9}".into());
-        assert!(refused(&changed), "{field}");
+        for value in ["\u{e9}", ""] {
+            let mut changed = original.clone();
+            changed["redactors"][key][field] = Value::String(value.into());
+            assert!(refused(&changed), "{field} {value:?}");
+        }
     }
     for (field, value) in [
         ("maxWordShare", Value::from(0.0)),
@@ -584,7 +591,10 @@ fn a_window_cut_where_a_sentence_ends_takes_all_the_whole_text_takes_inside_it()
             .map(|(offset, _)| offset)
             .chain(std::iter::once(sample.len()))
         {
-            for marker in [". ", ".\n", "!\u{2003}", "?\n", "; "] {
+            for marker in ['.', ',', ';', '!', '?']
+                .iter()
+                .flat_map(|mark| [" ", "\n", "\u{2003}"].map(|space| format!("{mark}{space}")))
+            {
                 let whole = format!("{}{marker}{}", &sample[..cut], &sample[cut..]);
                 let taken = taken_bytes(&whole, &redactors);
                 // A window keeps the punctuation and whitespace it starts or ends at; a find may
@@ -602,6 +612,25 @@ fn a_window_cut_where_a_sentence_ends_takes_all_the_whole_text_takes_inside_it()
                     }
                 }
             }
+        }
+    }
+}
+
+/// A key's line that a sentence's end comes before is where a source window can start: what the
+/// whole text takes there, a window starting at that sentence's end takes too.
+#[test]
+fn a_window_starting_on_a_key_line_takes_all_the_whole_text_takes_there() {
+    let redactors = redactors().unwrap();
+    let line = "QUJD".repeat(16);
+    for whole in [
+        format!("Note. {line}\nNote. {line} more"),
+        format!("{line}\n{line}\nNote. {line} more"),
+    ] {
+        let taken = taken_bytes(&whole, redactors);
+        let cut = whole.rfind(". ").unwrap();
+        let window = taken_bytes(&whole[cut..], redactors);
+        for (at, &one) in window.iter().enumerate() {
+            assert!(one || !taken[cut + at] || at < 2, "{whole:?} at {at}");
         }
     }
 }

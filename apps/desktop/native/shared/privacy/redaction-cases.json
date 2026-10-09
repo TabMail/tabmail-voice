@@ -8215,6 +8215,242 @@
    "{redacted}",
    " next paragraph"
   ]
+ },
+ {
+  "name": "a Bearer token whose body holds a Kelvin sign goes, as its case fold is a letter",
+  "text": [
+   "Authorization: Bearer ",
+   "abcdefghK",
+   "ijklmnopqrstuvwxyz"
+  ],
+  "expected": [
+   "Authorization: Bearer ",
+   "{redacted}"
+  ]
+ },
+ {
+  "name": "a Bearer token whose body holds a long s goes, as its case fold is a letter",
+  "text": [
+   "Authorization: Bearer ",
+   "abcdefghſ",
+   "ijklmnopqrstuvwxyz"
+  ],
+  "expected": [
+   "Authorization: Bearer ",
+   "{redacted}"
+  ]
+ },
+ {
+  "name": "a Bearer token's least length counts characters, not bytes",
+  "text": [
+   "Authorization: Bearer ",
+   "abcdefghijklmnK"
+  ],
+  "expected": [
+   "Authorization: Bearer ",
+   "abcdefghijklmnK"
+  ]
+ },
+ {
+  "name": "a hex number starting 0x stays: an address",
+  "text": [
+   "to 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f0",
+   " done"
+  ],
+  "expected": [
+   "to 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f0",
+   " done"
+  ]
+ },
+ {
+  "name": "a hex number starting 0x stays: a transaction hash",
+  "text": [
+   "tx 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f05aeb9c0d",
+   "3f17e2a48b6c",
+   "09d1",
+   " done"
+  ],
+  "expected": [
+   "tx 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f05aeb9c0d",
+   "3f17e2a48b6c",
+   "09d1",
+   " done"
+  ]
+ },
+ {
+  "name": "a key's short last line after numbered lines goes, whatever its number",
+  "text": [
+   "10 | ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n11 | ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n12 | QUJDQQ==\nmore"
+  ],
+  "expected": [
+   "10 | ",
+   "{redacted}",
+   "\nmore"
+  ]
+ },
+ {
+  "name": "a word of letters and digits that repeats a few characters stays: too little entropy",
+  "text": [
+   "x q1w2q1w2q1w2",
+   "q1w2q1w2q1w2q1w2 y"
+  ],
+  "expected": [
+   "x q1w2q1w2q1w2",
+   "q1w2q1w2q1w2q1w2 y"
+  ]
+ },
+ {
+  "name": "a word of digits and symbols with no letter stays",
+  "text": [
+   "x 12+34/56_78",
+   "-90+13/57_92",
+   "-46+80 y"
+  ],
+  "expected": [
+   "x 12+34/56_78",
+   "-90+13/57_92",
+   "-46+80 y"
+  ]
+ },
+ {
+  "name": "a word of capitals with a digit stays: its capital runs are word-like",
+  "text": [
+   "x ACCOUNTSERVICE",
+   "PRINCIPAL7XQ y"
+  ],
+  "expected": [
+   "x ACCOUNTSERVICE",
+   "PRINCIPAL7XQ y"
+  ]
+ },
+ {
+  "name": "lines that end in three padding characters are no key's lines",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\nok"
+  ],
+  "expected": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\nok"
+  ]
+ },
+ {
+  "name": "a key's short last line after quoted lines goes past extra spaces after the quote mark",
+  "text": [
+   "> ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n> ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n>    QUJDQQ== and more"
+  ],
+  "expected": [
+   "> ",
+   "{redacted}",
+   " and more"
+  ]
+ },
+ {
+  "name": "a header with other than a word before its label is no key's header",
+  "text": [
+   "-----BEGIN A.B PRIVATE ",
+   "KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\nend"
+  ],
+  "expected": [
+   "-----BEGIN A.B PRIVATE ",
+   "KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\nend"
+  ]
  }
  ],
  "lineCases": [

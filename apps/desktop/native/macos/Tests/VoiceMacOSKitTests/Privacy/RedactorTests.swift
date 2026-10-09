@@ -395,7 +395,7 @@ struct RedactorTests {
     }
 
     /// Text read off the screen has no length limit and may be anyone's, and it is redacted with no
-    /// deadline: each pattern must take time in proportion to the text. A pattern scanned again from
+    /// deadline: each redactor must take time in proportion to the text. A pattern scanned again from
     /// every position took minutes on these.
     /// One text after another, so that the suites running beside this one keep their cores.
     @Test func hostileTextIsRedactedInTimeProportionalToItsLength() throws {

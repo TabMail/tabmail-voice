@@ -135,6 +135,20 @@ impl Folded {
             })
             .collect()
     }
+
+    /// The run of characters from `from` whose case fold is in `set`: where it ends, and where it
+    /// ends after `most` of them at most, with how many it holds.
+    fn run(&self, from: usize, set: &Set, most: usize) -> (usize, usize, usize) {
+        let Ok(start) = self.starts.binary_search(&from) else {
+            return (from, from, 0);
+        };
+        let count = self.chars[start..]
+            .iter()
+            .take_while(|&&ch| ch.is_ascii() && set.has(ch as u8))
+            .count();
+        let end = |count: usize| self.starts.get(start + count).copied().unwrap_or(self.len);
+        (end(count), end(count.min(most)), count)
+    }
 }
 
 fn tokens(
@@ -168,14 +182,31 @@ fn tokens(
             }
             body += spaces;
         }
-        let run = run_end(bytes, body, |b| token.body.has(b), &mut cache);
+        // A case-blind token's body is case-blind too: a character goes when its case fold does.
+        let (run, exact_end, length) = match token.length {
+            _ if token.ignore_case => {
+                let most = match token.length {
+                    Length::Exact(exact) => exact,
+                    Length::Min(_) => usize::MAX,
+                };
+                folded.run(body, &token.body, most)
+            }
+            Length::Exact(exact) => {
+                let run = run_end(bytes, body, |b| token.body.has(b), &mut cache);
+                (run, body + exact.min(run - body), run - body)
+            }
+            Length::Min(_) => {
+                let run = run_end(bytes, body, |b| token.body.has(b), &mut cache);
+                (run, run, run - body)
+            }
+        };
         let edged = !token.word_edge
             || start == 0
             || !is_word_byte(bytes[start - 1])
             || edges.binary_search(&start).is_ok();
         let end = match token.length {
-            Length::Min(min) if run - body >= min => run,
-            Length::Exact(exact) if run - body >= exact => body + exact,
+            Length::Min(min) if length >= min => run,
+            Length::Exact(exact) if length >= exact => exact_end,
             // A prefix glued to a key is part of that key, however short what follows it is.
             _ if !edged && run > body => run,
             _ => continue,
@@ -289,19 +320,15 @@ fn line_break(character: char) -> bool {
     matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
-/// The text's lines: each one's byte range, without its line break (`\r\n` is one).
+/// The text's lines: each one's byte range, without its line break (`\r\n` leaves a blank line
+/// between, which the scan passes over as it does any blank line).
 fn lines(text: &str) -> Vec<Range<usize>> {
     let mut lines = Vec::new();
     let mut start = 0;
-    let mut chars = text.char_indices().peekable();
-    while let Some((at, ch)) = chars.next() {
+    for (at, ch) in text.char_indices() {
         if line_break(ch) {
             lines.push(start..at);
             start = at + ch.len_utf8();
-            if ch == '\r' && chars.peek().is_some_and(|&(_, next)| next == '\n') {
-                chars.next();
-                start += 1;
-            }
         }
     }
     lines.push(start..text.len());
@@ -650,7 +677,12 @@ fn random_words(text: &str, entropy: &Entropy, found: &mut Vec<Found>) {
     let bytes = text.as_bytes();
     let random = |part: Range<usize>, found: &mut Vec<Found>| {
         let word = &bytes[part.clone()];
-        let letters = word.iter().take_while(|b| b.is_ascii_alphabetic()).count();
+        // What comes before the hex: letters (a name, `commit`), or the `0x` hex numbers start with.
+        let letters = if word.starts_with(b"0x") || word.starts_with(b"0X") {
+            2
+        } else {
+            word.iter().take_while(|b| b.is_ascii_alphabetic()).count()
+        };
         let hex = word[letters..]
             .iter()
             .filter(|&&b| b != entropy.padding)
