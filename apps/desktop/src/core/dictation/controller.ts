@@ -592,11 +592,12 @@ export class DictationController extends Observable {
     const current = this.generation;
     this.currentLevel = 0;
     this.setPhase({ kind: "transcribing" });
-    this.releasedAt = performance.now();
+    const releasedAt = performance.now();
+    this.releasedAt = releasedAt;
     log.debug(() => `DictationController: released after ${this.startedAt === null ? "?" : elapsed(this.startedAt)}; recording ${config.releaseTailDuration}ms more`);
     this.releaseTailTimer = after(config.releaseTailDuration, () => {
       if (this.generation !== current) return;
-      void this.completeRecording(current);
+      void this.completeRecording(current, releasedAt);
     });
   }
 
@@ -620,11 +621,12 @@ export class DictationController extends Observable {
   }
 
   /** Transcribes one recording, cleaned up in the same request, and inserts it (dictation), or
-   * transcribes it and carries it out (agent mode). Public for tests. */
-  async transcribe(flac: Uint8Array, generation: number): Promise<void> {
+   * transcribes it and carries it out (agent mode). Its wait for the text ends
+   * `transcriptionDeadline` after `releasedAt`. */
+  private async transcribe(flac: Uint8Array, generation: number, releasedAt: number): Promise<void> {
     const signal = this.abort.signal;
     const isCurrent = () => this.generation === generation && !signal.aborted;
-    const deadline = this.deadlineFromRelease();
+    const deadline = releasedAt + this.transcriptionDeadline;
     await this.deliver(generation, () =>
       this.withinDeadline(deadline, async (timeout) => {
         const upload = await this.preparedUpload(false);
@@ -635,12 +637,6 @@ export class DictationController extends Observable {
         return { parts: [{ transcription, overlapped: false }], lost: null, deadline };
       }),
     );
-  }
-
-  /** When this dictation's wait for its text ends: `transcriptionDeadline` after the release (now, if
-   * not released: a test calling `transcribe`). */
-  private deadlineFromRelease(): number {
-    return (this.releasedAt ?? performance.now()) + this.transcriptionDeadline;
   }
 
   /** Runs `operation`, a dictation's wait for its text, until `deadline` (owner, 2026-10-08: "nobody
@@ -1002,8 +998,8 @@ export class DictationController extends Observable {
    * 2026-10-03: "paste only the up to successful part"). The first giving up loses the dictation, as
    * one recording's failure does. A chunk not in by `transcriptionDeadline` after the release gives
    * up then, as a request that timed out (owner, 2026-10-08), and the chunks after it are called off. */
-  private async transcribeChunks(last: RecordedChunk, generation: number): Promise<void> {
-    const deadline = this.deadlineFromRelease();
+  private async transcribeChunks(last: RecordedChunk, generation: number, releasedAt: number): Promise<void> {
+    const deadline = releasedAt + this.transcriptionDeadline;
     const signal = this.chunkAbort.signal;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     this.chunkCut(last, generation);
@@ -1460,7 +1456,7 @@ export class DictationController extends Observable {
     this.microphoneFailed(new Error("microphone lost"), current);
   }
 
-  private async completeRecording(current: number): Promise<void> {
+  private async completeRecording(current: number, releasedAt: number): Promise<void> {
     this.deps.capture.stop();
     const recorder = this.recorder;
     if (!recorder) return;
@@ -1482,8 +1478,8 @@ export class DictationController extends Observable {
       this.fail(nothingHeardMessage);
       return;
     }
-    if (recording.lastChunk !== null) return this.transcribeChunks(recording.lastChunk, current);
-    await this.transcribe(recording.flac, current);
+    if (recording.lastChunk !== null) return this.transcribeChunks(recording.lastChunk, current, releasedAt);
+    await this.transcribe(recording.flac, current, releasedAt);
   }
 
   private updateLevel(level: number): void {
