@@ -15,10 +15,10 @@ export type OverlaySurface = Pick<BrowserWindow,
   "hide" | "isVisible" | "setBounds" | "getBounds" | "setOpacity" | "setIgnoreMouseEvents" | "setShape" | "showInactive"
 >;
 
-/** How the overlay, at the chat window's tallest size while it shows, takes clicks only on the chat:
- * by the page saying when the pointer is over it (`chatPointer`), where the window can let clicks
- * through while still passing the pointer's moves to the page (macOS, Windows); or cut to the chat's
- * shape (`setShape`), where it can't (Linux). */
+/** How the overlay, at the chat window's tallest size while it shows, takes clicks only on the chat
+ * (and, while it shows, on the note for a text not pasted): by the page saying when the pointer is
+ * over it (`pointerOver`), where the window can let clicks through while still passing the pointer's
+ * moves to the page (macOS, Windows); or cut to its shape (`setShape`), where it can't (Linux). */
 export type ChatHitTest = "pointer" | "shape";
 
 /**
@@ -53,8 +53,11 @@ export class OverlayWindowController {
    * show for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
    * blinks"). Meanwhile the page draws it closed (on Linux, with no window opacity, only that). */
   private chatClosing = false;
-  /** The overlay takes clicks: the pointer is over the chat window (`ChatHitTest` "pointer"). */
-  private chatTakesClicks = false;
+  /** The overlay takes clicks: the pointer is over the chat window, or the note (`ChatHitTest`
+   * "pointer"). */
+  private takesClicks = false;
+  /** The note for a text not pasted shows, and copies it when clicked (ADR-DESK-042). */
+  private note = false;
   private measuredChatHeight: number | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
@@ -101,6 +104,7 @@ export class OverlayWindowController {
   update(phase: Phase, chatOpen = false): void {
     this.requestedChat = chatOpen;
     this.requestedPill = phase.kind !== "idle" && phase.kind !== "arming";
+    if (this.note && phase.kind !== "notPasted") this.endNote();
     if (chatOpen) {
       this.cancelHide();
       if (this.chat === null) this.showChat();
@@ -118,13 +122,16 @@ export class OverlayWindowController {
         this.lookupGeneration += 1;
         this.lookupPending = false;
         return;
-      case "copied":
+      case "notPasted":
         // Not pasted where the user spoke: the note goes where the user is now, at the mouse
-        // pointer (ADR-DESK-042).
+        // pointer (ADR-DESK-042), and takes clicks once the page says where it is.
+        if (this.note) return;
         this.cancelHide();
         this.lookupGeneration += 1;
         this.lookupPending = false;
         this.anchor = this.pointer();
+        this.note = true;
+        this.takesClicks = false;
         this.show();
         return;
       case "arming":
@@ -174,15 +181,31 @@ export class OverlayWindowController {
     // Placed under a pointer that has not moved since: it takes clicks there already.
     const pointer = screen.getCursorScreenPoint();
     const frame = this.chatFrame(height);
-    if (pointer.x >= frame.x && pointer.x < frame.x + frame.width && pointer.y >= frame.y && pointer.y < frame.y + frame.height) this.chatPointer(true);
+    if (pointer.x >= frame.x && pointer.x < frame.x + frame.width && pointer.y >= frame.y && pointer.y < frame.y + frame.height) this.pointerOver(true);
   }
 
-  /** The pointer went over the chat window, or off it (`ChatHitTest`): the overlay takes clicks only
-   * over it, letting the rest through to the app under it. */
-  chatPointer(over: boolean): void {
-    if (this.chat === null || this.chatHitTest !== "pointer" || over === this.chatTakesClicks) return;
-    this.chatTakesClicks = over;
+  /** The pointer went over the chat window or the note, or off it (`ChatHitTest`): the overlay takes
+   * clicks only over it, letting the rest through to the app under it. */
+  pointerOver(over: boolean): void {
+    if ((this.chat === null && !this.note) || this.chatHitTest !== "pointer" || over === this.takesClicks) return;
+    this.takesClicks = over;
     this.window.setIgnoreMouseEvents(!over, { forward: true });
+  }
+
+  /** The note measured itself, at `frame` in the overlay: where the overlay is cut to its shape
+   * (`ChatHitTest` "shape"), only the note takes clicks. */
+  fitNote(frame: Rect): void {
+    if (!this.note || this.chatHitTest !== "shape") return;
+    this.window.setShape([rounded(frame)]);
+    this.window.setIgnoreMouseEvents(false);
+  }
+
+  /** The note went: the whole overlay lets clicks through again. */
+  private endNote(): void {
+    this.note = false;
+    this.takesClicks = false;
+    if (this.chatHitTest === "shape") this.window.setShape([]);
+    this.window.setIgnoreMouseEvents(true, { forward: true });
   }
 
   /** Opens the chat window over the pill, which stays where it is, at the caret the request was
@@ -208,7 +231,7 @@ export class OverlayWindowController {
       this.window.setIgnoreMouseEvents(false);
     } else {
       // Clicks only once the pointer is over the chat, which the page says as it moves.
-      this.chatTakesClicks = false;
+      this.takesClicks = false;
       this.window.setIgnoreMouseEvents(true, { forward: true });
     }
     this.window.setBounds(rounded(this.chatFrame(this.chat.side.maxHeight)));

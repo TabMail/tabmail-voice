@@ -42,7 +42,7 @@ apps/desktop/
 │   │   ├── VoiceMicrophone/         `voice-microphone`'s `main.swift`
 │   │   ├── VoiceMicrophoneKit/      The microphone, in a process of its own that runs one engine, ending itself after each dictation or an input change to be started afresh: `MicrophoneService` (its requests), `MicrophoneCapture` (the engine, prepared ahead), `HelperConfig`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
-│   │       ├── Dictation/               Paste (the clipboard written, never read), the caret, the focused field read after a paste and its reader (`FieldReaderService`), the keyboard's language, the screen read and its reader
+│   │       ├── Dictation/               Paste (`TextInserter`; the clipboard saved ahead and put back after by `ClipboardKeeper`, never read by the paste), the caret, the focused field read after a paste and its reader (`FieldReaderService`), the keyboard's language, the screen read and its reader
 │   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor` and `SharedContext`, thin adapters to the shared Rust core); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
@@ -130,10 +130,12 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    `TranscriptionClient` (one forced-refresh retry on 401) with the cleanup's variables: the screen
    context read at key-down (`ScreenContextProbe`, waited for up to `contextWait`) and the
    dictionary. The backend transcribes it and runs the cleanup prompt in the same request, under its
-   own deadline (backend ADR-027), and `voice-macos` pastes the cleaned text into the focused field,
-   leaving it on the clipboard (`TextInserter`); with another app in front than at key-down
-   (`focusChanged`), nothing is pasted and the text is left on the clipboard, with a note at the mouse
-   pointer (phase `copied`). Either way the text joins the paste history. If the cleanup failed for any reason, the transcript
+   own deadline (backend ADR-027), and `voice-macos` pastes the cleaned text into the focused field
+   (`TextInserter`), then puts back the clipboard it saved as the dictation started and ended
+   (`clipboardSave`, `ClipboardKeeper`: ADR-DESK-002, amended 2026-10-08); with another app in front
+   than at key-down (`focusChanged`), nothing is pasted or copied, and a note at the mouse pointer
+   offers to copy it for 10 s (phase `notPasted`; a click gives `copied`). Either way the text joins
+   the paste history. If the cleanup failed for any reason, the transcript
    is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is
    cut into chunks of up to 105 s, each overlapping the one before, as it is recorded (`Chunker`; cuts at pauses are off since 2026-10-07), each sent with its cleanup while the user
    goes on and retried in the background; at the release the last chunk is sent and the texts are

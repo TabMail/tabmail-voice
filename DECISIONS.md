@@ -31,7 +31,7 @@ from mail and calendar. Verified end-to-end by `SpeechTranscriptionSessionTests`
   sends audio off-device, so it's the owner's call.
 - First use of a language downloads its model (`AssetInventory`); the app does this at launch.
 
-## ADR-DESK-002: Insert by pasting, then restore the clipboard (amended: the clipboard is written, never read)
+## ADR-DESK-002: Insert by pasting, then restore the clipboard (amended: the paste never reads the clipboard; it is saved ahead and put back after)
 
 **Context:** Dictated text must land in any focused field: native, Electron, browser, terminal.
 
@@ -75,6 +75,74 @@ the helper's 500 ms open wait still cannot be written, and that paste fails. The
 privacy fixtures keep the test machine's clipboard as they found it (`SavedClipboard`); `electron.mjs`
 and `terminal-paste.mjs` leave their synthetic text on the test VM's clipboard. The helpers never put
 anything back.
+
+**Amendment (owner, 2026-10-08) — saved ahead, put back after; the paste still never waits.** Owner:
+*"I now want our paste to not affect clipboard unless we of course change app"*, *"we don't
+contaminate the clipboard directly"*, and of the delay the old save caused: *"I still don't want that
+delay, so pasting should happen and the cleaning up sort of best effort cleanup or delayed cleanup as
+required. So no holdup."* This reverses the 2026-10-05 "not put back"; its "the paste never reads the
+clipboard" stands.
+- **Save, ahead and in the background.** Every system helper answers a new wire method,
+  `clipboardSave {}` → `{}`, at once. The app sends it, without waiting, as a dictation starts (right
+  after `arming`) and as it ends (`transcribing`). The helper's `ClipboardKeeper` then reads every
+  item and type off the request path: a detached task on the Mac (measured: a read stuck on a late
+  provider never holds up a main-thread write; it comes back stale and is dropped), a thread of its
+  own on Windows, asynchronous portal `SelectionRead`s on Ubuntu's event loop. A clipboard left as it
+  was since the last save (the pasteboard's `changeCount`, the clipboard sequence number, the portal's
+  selection announcement) is not read again. One read runs at a time: a save asked for while one is
+  still reading is skipped on the Mac and Windows (an owner that never answers holds one read, not
+  one per copy); on Ubuntu the newer save cancels the older read.
+- **Paste, then put back.** `insert` writes the text and sends the paste keys at once, as before,
+  and answers after the keys. `restoreDelay` after them (the shared core's, 500 ms: the target reads
+  the clipboard as it handles the keys), in the background, the saved clipboard goes back, only while
+  the clipboard still holds the paste's text and the save was of the clipboard as it was just before
+  the paste. The paste's own change count is the one its clear gives on the Mac and its own selection
+  announcement on Ubuntu; on Windows the sequence number is read once the paste closes the clipboard
+  (closing adds the formats Windows makes from the text), so the put-back also checks, with the
+  clipboard open, that it still holds the paste's text. Otherwise the text stays: a copy made in between is never overwritten, and there is no
+  other fallback. A paste refused once its text is written puts the clipboard back too. Two pastes in
+  a row, the second before the first's put-back: the clipboard as it was before both goes back, once.
+- **Not saved, not put back:** a password manager's clipboard (the Mac's
+  `org.nspasteboard.ConcealedType`, Windows' `ExcludeClipboardContentFromMonitorProcessing`, Ubuntu's
+  `x-kde-passwordManagerHint`), told by its types before any data is asked for: putting it back would
+  outlive the manager's clear; an Ubuntu file transfer (`application/vnd.portal.filetransfer`); a
+  clipboard over the shared core's limits (`maxBytes` 64 MiB, `maxFormats` 256; the core's
+  `{"clipboard": {}}` request gives them and the delay; Windows counts its memory formats toward
+  `maxBytes`, and copies a bitmap, palette or metafile handle uncounted); Windows' owner-display and
+  private handles.
+  The paste's own text is marked as before, so it is never saved either.
+- **Residuals, to be confirmed by the owner:** (a) Windows only: a save still reading when the paste
+  comes holds the clipboard open, as any other program can, and the paste waits up to its 500 ms open
+  wait for it; a save held past that by an app slow to hand its data over fails the paste. (b) On the
+  Mac and Ubuntu a save still under way at the paste is dropped and the text stays. (c) A copy made
+  after the release-time save and before the paste is lost to the paste, as any copy the paste
+  writes over: the clipboard as it was before that copy is not put back, and the text stays. (d) Ubuntu saves
+  nothing until the portal first announces the selection (GNOME is silent at session start). (e) A
+  password manager's clipboard is not put back; the text stays. (f) Mac and Windows: a clipboard
+  copied while an earlier save is still reading is not saved, and the text stays. (g) Mac and
+  Ubuntu have no conditional clipboard write: a copy that lands between the put-back's check and its
+  write (on the Mac, two adjacent calls, the items built before the check) is overwritten by the
+  clipboard as it was. Windows checks and writes with the clipboard open, which no other writer can
+  take. A clipboard the Mac fails to read (no items, which macOS gives for an error, not an empty
+  list) is not saved, so never put back as empty. After a put-back
+  the Mac and Windows read the clipboard again at the next dictation (the change count read after a
+  put-back may already be a newer copy's, which an old save must never be taken for); Ubuntu keeps
+  the offer it put back while the session still owns it.
+- **Tests.** Mac `ClipboardKeeperTests` (every type put back; an empty clipboard; the paste never
+  waits for a save held on a late provider; a copy after the paste, or between the save and the
+  paste, kept; a save the clipboard changed during dropped; two pastes; one read for an unchanged
+  clipboard, and again once put back; one read at a time; every item put back in order; a slow
+  paste still reading the text; a concealed clipboard never read; one that fails to read, or an item
+  whose owner gives no data, never put back; a copy made as the paste is written kept; an app
+  reading the clipboard after the keys gets the text; the limits, rejected over and kept at them), `MacServiceRequestTests` (the registered `clipboardSave` and `insert` share one
+  keeper: saved, pasted, put back), the app's `clipboardSave.test.ts` (a save that times out, exits
+  or is refused holds up no paste and rejects nowhere); Windows `paste.mjs` (put back with every
+  format, a copy after the paste, a save older than the clipboard, a password manager's copy, a late
+  owner saved in the background and put back, and the paste itself still never asking a late owner)
+  and `clipboard-keeper.cpp` (a copy made as the paste closes the clipboard kept; one made as a save
+  lets it go saved at the release, or the text left);
+  Ubuntu `input-session.cpp` (the same over the fake portal, plus a read held when the paste comes,
+  file transfers, too many formats and the unannounced selection).
 
 ## ADR-DESK-003: Not sandboxed; Developer ID distribution
 
@@ -3029,6 +3097,17 @@ from an app run off its disk image not shown). The menu and Settings › General
 the General card. A refusal or failed install logs the platform's own fixed sentence, never content.
 
 ## ADR-DESK-042: The text goes where the caret was at key-down, or onto the clipboard
+
+> **Amended (owner, 2026-10-08): nothing goes on the clipboard by itself; the note offers to copy.**
+> With the paste putting the clipboard back (ADR-DESK-002, same date), a switched app no longer
+> writes the text to the clipboard either. The note at the mouse pointer says "Switched apps. Click
+> to copy." (a dictation whose end was lost: "Couldn't transcribe the end. Click to copy the rest.")
+> for `notPastedDisplayDuration` (10 s), with a bar running down the time, and takes clicks (pointer
+> mode on the Mac and Windows, the note's own shape on Linux). A click copies the text (IPC
+> `copyNotPasted`) and shows "Copied to clipboard" once the clipboard has taken it, or "Couldn't
+> copy. It's in the paste history." when it refused it; the note expiring, or the next hold, drops
+> the text, and wins over a click's write still under way. It still goes into the paste history
+> (ADR-DESK-043) either way.
 
 > **Amended (owner, 2026-09-30, same day): only the app is checked.** Tested on a dev build in
 > iTerm2, every dictation was copied as "Cursor moved" though nothing had moved: iTerm2's caret is a

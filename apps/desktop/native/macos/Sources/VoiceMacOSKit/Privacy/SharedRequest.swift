@@ -6,7 +6,8 @@ import Foundation
 import VoiceHelperSupport
 
 /// Request rules every helper shares, decided by the shared core (`voice_core_request_json`,
-/// ADR-DESK-054): a focused field read's bound and reply, and a paste's text.
+/// ADR-DESK-054): a focused field read's bound and reply, a paste's text, and the clipboard a paste
+/// saves and puts back.
 enum SharedRequest {
     private static func call(_ request: JSON) throws -> JSON {
         try JSONDecoder().decode(JSON.self, from: Redactor.request(JSONEncoder().encode(request), operation: .request))
@@ -42,6 +43,24 @@ enum SharedRequest {
             return try call(["field": ["maxLength": bound, "text": .null]])
         }
     }
+
+    /// How long after a paste's keys the clipboard as it was goes back, and the most a saved
+    /// clipboard may hold (`ClipboardKeeper`).
+    struct ClipboardRules: Decodable, Sendable {
+        /// Milliseconds.
+        var restoreDelay: Int
+        var maxBytes: Int
+        var maxFormats: Int
+    }
+
+    static let clipboardRules: ClipboardRules = {
+        do {
+            let reply = try call(["clipboard": [:]])
+            return try JSONDecoder().decode(ClipboardRules.self, from: JSONEncoder().encode(reply))
+        } catch {
+            preconditionFailure("the shared core gives the clipboard's rules")
+        }
+    }()
 
     /// Refuses a paste's text that is empty, longer than the core allows or holds a NUL.
     static func insert(_ text: String) throws {

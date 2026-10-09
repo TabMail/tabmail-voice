@@ -149,18 +149,124 @@ describe("overlay page", () => {
     expect(document.querySelector<HTMLElement>(".tip-lines")?.style.height).toBe(`${config.tipBoxHeight(count)}px`);
   });
 
-  /** A text copied instead of pasted (ADR-DESK-042) says so in the pill with a clipboard, not a
-   * failure's exclamation mark. */
-  test("the copied note shows its message by a clipboard", async () => {
+  /** A text not pasted (ADR-DESK-042) says so in the pill with a clipboard, not a failure's
+   * exclamation mark, with a bar for the time left; a click on it copies the text. Clicked, it says
+   * so by the clipboard, and takes no more clicks. */
+  test("the not-pasted note shows its message by a clipboard and copies when clicked", async () => {
     const page = await overlayPage();
-    const message = "Switched apps: copied to clipboard and history";
-    await page.show({ ...listening, phase: { kind: "copied", message } });
+    const message = "Switched apps. Click to copy.";
+    const noteFrame = { x: 17, y: 23, width: 180, height: 30 };
+    const measured = HTMLElement.prototype.getBoundingClientRect;
+    const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("note") ? ({ ...noteFrame, top: noteFrame.y, left: noteFrame.x, right: noteFrame.x + noteFrame.width, bottom: noteFrame.y + noteFrame.height, toJSON: () => noteFrame } as DOMRect) : measured.call(this);
+    });
+    await page.show({ ...listening, phase: { kind: "notPasted", message } });
     expect(document.querySelector(".pill .message")?.textContent).toBe(message);
-    const copiedIcon = document.querySelector(".pill svg")?.innerHTML;
+    expect(document.querySelector(".pill.note .chat-timeout")).not.toBeNull();
+    const clipboardIcon = document.querySelector(".pill svg")?.innerHTML;
+    expect(clipboardIcon).toContain("rect");
+    await act(async () => document.querySelector<HTMLElement>(".pill.note")?.click());
+    expect(page.commands).toContainEqual({ type: "copyNotPasted" });
+    // Its frame, as laid out, is sent, for an overlay cut to its shape to take clicks over it (Linux).
+    expect(page.commands).toContainEqual({ type: "noteFrame", frame: noteFrame });
+    measure.mockRestore();
+
+    await page.show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+    expect(document.querySelector(".pill.note")).toBeNull();
+    expect(document.querySelector(".pill svg")?.innerHTML).toBe(clipboardIcon);
     await page.show({ ...listening, phase: { kind: "failed", message } });
-    expect(document.querySelector(".pill .message")?.textContent).toBe(message);
-    expect(document.querySelector(".pill svg")?.innerHTML).not.toBe(copiedIcon);
-    expect(copiedIcon).toContain("rect");
+    expect(document.querySelector(".pill svg")?.innerHTML).not.toBe(clipboardIcon);
+  });
+
+  /** The note's bar runs down its ten seconds (the owner's ask, held here rather than read from the
+   * config under test) by itself: full, half gone, then empty, copying nothing; gone with the note,
+   * it asks for no more frames. */
+  test("the not-pasted note's bar runs down its ten seconds", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const page = await overlayPage();
+      await page.show({ ...listening, phase: { kind: "notPasted", message: "Switched apps. Click to copy." } });
+      const width = () => parseFloat(document.querySelector<HTMLElement>(".pill.note .chat-timeout")?.style.width ?? "");
+
+      expect(width()).toBeCloseTo(100, 0);
+      vi.advanceTimersByTime(5_000);
+      expect(width()).toBeCloseTo(50, 0);
+      vi.advanceTimersByTime(5_000);
+      expect(width()).toBe(0);
+      expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
+
+      await page.show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+      expect(document.querySelector(".chat-timeout")).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The note appears scaled down and springs to its size, which no resize reports: its frame is
+   * sent again once it has, so an overlay cut to it (Linux) takes clicks over all of it. */
+  test("the not-pasted note's frame is sent again once it has sprung to its size", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const entrance = { x: 30, y: 26, width: 150, height: 24 };
+    const sprung = { x: 17, y: 23, width: 180, height: 30 };
+    let frame = entrance;
+    const measured = HTMLElement.prototype.getBoundingClientRect;
+    const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("note") ? ({ ...frame, top: frame.y, left: frame.x, right: frame.x + frame.width, bottom: frame.y + frame.height, toJSON: () => frame } as DOMRect) : measured.call(this);
+    });
+    try {
+      const page = await overlayPage();
+      // `show` lets the page settle on a timer: run it.
+      const show = async (state: OverlayState) => {
+        const shown = page.show(state);
+        await vi.advanceTimersByTimeAsync(0);
+        await shown;
+      };
+      await show({ ...listening, phase: { kind: "notPasted", message: "Switched apps. Click to copy." } });
+      const frames = () => page.commands.filter((command) => command.type === "noteFrame").map((command) => command.frame);
+      expect(frames()).toEqual([entrance]);
+
+      frame = sprung;
+      await vi.advanceTimersByTimeAsync(config.pillSpringResponseSeconds * 1000);
+      expect(frames()).toEqual([entrance, sprung]);
+      expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
+
+      // Gone before it has sprung, it sends no frame after.
+      await show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+      await show({ ...listening, phase: { kind: "notPasted", message: "Switched apps. Click to copy." } });
+      await show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+      await vi.advanceTimersByTimeAsync(config.pillSpringResponseSeconds * 1000);
+      expect(frames()).toEqual([entrance, sprung, sprung]);
+    } finally {
+      measure.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  /** The note takes clicks where the overlay lets them through only over it: each move of the
+   * pointer says whether it is over the note, and leaving the window, it is not. Once the note is
+   * gone, the pointer is no longer reported. */
+  test("the not-pasted note says where the pointer is", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, phase: { kind: "notPasted", message: "Switched apps. Click to copy." } });
+    const pointers = () => page.commands.filter((command) => command.type === "pointerOver");
+    const move = (target: Element | null) => target?.dispatchEvent(new Event("pointermove", { bubbles: true }));
+
+    move(document.querySelector(".pill.note .message"));
+    move(document.querySelector(".canvas"));
+    move(document.querySelector(".pill.note"));
+    document.documentElement.dispatchEvent(new Event("pointerleave"));
+    expect(pointers()).toEqual([
+      { type: "pointerOver", over: true },
+      { type: "pointerOver", over: false },
+      { type: "pointerOver", over: true },
+      { type: "pointerOver", over: false },
+    ]);
+
+    await page.show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+    move(document.querySelector(".pill"));
+    document.documentElement.dispatchEvent(new Event("pointerleave"));
+    expect(pointers()).toHaveLength(4);
   });
 
   test.each([["en-US", "EN"], ["en", "EN"], ["zh-Hant-TW", "ZH"], ["pt-BR", "PT"], ["ko-KR", "KO"]])("language %s uses compact badge %s without losing its full accessible label", async (language, badge) => {
@@ -1149,7 +1255,7 @@ describe("the chat window", () => {
   test("it says where the pointer is", async () => {
     const page = await overlayPage();
     await page.show({ ...running, chatPlacement: above, chat: chat(null), tools: ["compose", "answer"] });
-    const pointers = () => page.commands.filter((command) => command.type === "chatPointer");
+    const pointers = () => page.commands.filter((command) => command.type === "pointerOver");
     const move = (target: Element | null) => target?.dispatchEvent(new Event("pointermove", { bubbles: true }));
 
     move(document.querySelector(".chat-text"));
@@ -1157,10 +1263,10 @@ describe("the chat window", () => {
     move(document.querySelector(".chat-canvas .bubble"));
     document.documentElement.dispatchEvent(new Event("pointerleave"));
     expect(pointers()).toEqual([
-      { type: "chatPointer", over: true },
-      { type: "chatPointer", over: false },
-      { type: "chatPointer", over: true },
-      { type: "chatPointer", over: false },
+      { type: "pointerOver", over: true },
+      { type: "pointerOver", over: false },
+      { type: "pointerOver", over: true },
+      { type: "pointerOver", over: false },
     ]);
 
     await page.show({ ...idle, chatPlacement: null, chat: null });

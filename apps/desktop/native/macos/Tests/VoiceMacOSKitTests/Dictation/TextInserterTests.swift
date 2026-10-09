@@ -14,7 +14,7 @@ struct TextInserterTests {
     private let customType = NSPasteboard.PasteboardType("ai.tabmail.test.custom")
 
     private func inserter(onPaste: @escaping @MainActor () -> Void = {}) -> TextInserter {
-        TextInserter(pasteboard: pasteboard, pasteKeystroke: { onPaste() })
+        TextInserter(clipboard: ClipboardKeeper(pasteboard: pasteboard), pasteKeystroke: { onPaste() })
     }
 
     @Test func pastesTheTextMarkedTransient() async {
@@ -26,13 +26,13 @@ struct TextInserterTests {
             typesAtPaste = pasteboard.types ?? []
         }.insert("Dictated text")
         #expect(seenAtPaste == "Dictated text")
-        #expect(typesAtPaste.contains(TextInserter.transientType))
-        #expect(typesAtPaste.contains(TextInserter.concealedType))
+        #expect(typesAtPaste.contains(ClipboardKeeper.transientType))
+        #expect(typesAtPaste.contains(ClipboardKeeper.concealedType))
     }
 
-    /// The user's clipboard is replaced, never read: an app that hands its clipboard over late
-    /// can't hold the paste up, and nothing of the user's is copied.
-    @Test func neverReadsTheUsersClipboard() async {
+    /// The paste itself never reads the clipboard (`ClipboardKeeper.save` does, ahead of it): an app
+    /// that hands its clipboard over late can't hold the paste up.
+    @Test func thePasteNeverReadsTheClipboard() async {
         let provider = LateProvider()
         let item = NSPasteboardItem()
         item.setDataProvider(provider, forTypes: [.string, customType])
@@ -44,33 +44,34 @@ struct TextInserterTests {
         #expect(provider.asked == 0)
     }
 
-    /// The paste's steps are timed in the debug log (stderr, which the app keeps in debug mode), with
-    /// nothing of the text. No other test in this target redirects stderr; each target runs alone.
+    /// The paste's steps, the clipboard's save and its put-back included, are timed in the debug
+    /// log (stderr, which the app keeps in debug mode), with nothing of the text or the clipboard. No
+    /// other test in this target redirects stderr; each target runs alone. Their order is not
+    /// checked: other tests in the target paste at the same time, and log the same steps.
     @Test func timesThePasteStepsWithoutTheText() async throws {
         let marker = "Dictated \(UUID().uuidString)"
+        let copied = "Copied \(UUID().uuidString)"
+        pasteboard.clearContents()
+        pasteboard.setString(copied, forType: .string)
+        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: .init(restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
         let pipe = Pipe()
         let saved = dup(STDERR_FILENO)
         dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
-        await inserter().insert(marker)
+        keeper.save()
+        await keeper.saveTask?.value
+        await TextInserter(clipboard: keeper, pasteKeystroke: {}).insert(marker)
+        await keeper.restoreTask?.value
         dup2(saved, STDERR_FILENO)
         close(saved)
         try pipe.fileHandleForWriting.close()
 
         let lines = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").map(String.init)
-        let steps = ["clipboard written", "paste keystroke sent"].map { step in
-            lines.firstIndex { $0.wholeMatch(of: try! Regex("debug TextInserter: \(step) after \\d+ms")) != nil }
+        let steps = ["ClipboardKeeper: clipboard saved", "TextInserter: clipboard written", "TextInserter: paste keystroke sent", "ClipboardKeeper: clipboard put back"].map { step in
+            lines.firstIndex { $0.wholeMatch(of: try! Regex("debug \(step) after \\d+ms")) != nil }
         }
         #expect(steps.allSatisfy { $0 != nil })
-        #expect(steps.compactMap { $0 } == steps.compactMap { $0 }.sorted())
+        #expect(!lines.contains { $0.contains(copied) })
         #expect(!lines.contains { $0.contains(marker) })
-    }
-
-    @Test func theTextStaysOnTheClipboard() async {
-        pasteboard.clearContents()
-        pasteboard.setString("user text", forType: .string)
-        await inserter().insert("Dictated text")
-        #expect(pasteboard.pasteboardItems?.count == 1)
-        #expect(pasteboard.string(forType: .string) == "Dictated text")
     }
 }
 

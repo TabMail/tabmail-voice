@@ -31,7 +31,8 @@ const app = vi.hoisted(() => ({
   helpers: new Map<string, { options: { name: string; executable: string; args?: string[]; restartExitCode?: number; stopEndsAtOnce?: boolean }; lifecycle: string[]; onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
-  copy: null as ((text: string) => void) | null,
+  copy: null as ((text: string) => Promise<boolean>) | null,
+  saveClipboard: null as (() => void) | null,
   corrections: undefined as { watch(target: number, pasted: string): void; stop(): void } | undefined,
   frontmostApp: undefined as (() => Promise<number | null>) | undefined,
   useWords: undefined as ((texts: readonly string[]) => void) | undefined,
@@ -52,7 +53,7 @@ const app = vi.hoisted(() => ({
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
-  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; hitTest?: string } | null,
+  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; notes: Rect[]; hitTest?: string } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
@@ -322,7 +323,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords> }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords> }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
@@ -331,6 +332,7 @@ vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
       app.connectorTools = dependencies.connectorTools;
       app.paste = dependencies.paste;
       app.copy = dependencies.copy;
+      app.saveClipboard = dependencies.saveClipboard;
       app.controller = this;
     }
     chat: object | null = null;
@@ -341,6 +343,9 @@ vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
     readonly calls: string[] = [];
     keepChatOpen() {
       this.calls.push("keepChatOpen");
+    }
+    async copyNotPasted() {
+      this.calls.push("copyNotPasted");
     }
     closeChat() {
       this.calls.push("closeChat");
@@ -377,6 +382,7 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
     readonly pointers: boolean[] = [];
+    readonly notes: Rect[] = [];
     constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null, _fallback?: unknown, readonly hitTest?: string) {
       app.overlay = this;
     }
@@ -389,8 +395,11 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     fitChat(height: number) {
       this.heights.push(height);
     }
-    chatPointer(over: boolean) {
+    pointerOver(over: boolean) {
       this.pointers.push(over);
+    }
+    fitNote(frame: Rect) {
+      this.notes.push(frame);
     }
   },
 }));
@@ -454,6 +463,7 @@ afterEach(() => {
   app.capture = null;
   app.paste = null;
   app.copy = null;
+  app.saveClipboard = null;
   app.corrections = undefined;
   app.frontmostApp = undefined;
   app.useWords = undefined;
@@ -671,22 +681,33 @@ describe("main process wiring", () => {
     expect(app.helpers.get("voice-macos")?.requests).toEqual([]);
   });
 
-  /** A text not pasted (ADR-DESK-042) goes on the clipboard. */
+  /** The clipboard is saved for the paste to put back by the helper that pastes, never waited for
+   * (ADR-DESK-002); a save that fails is only logged. */
+  test.each([["darwin", "voice-macos"], ["win32", "voice-windows"], ["linux", "voice-linux"]] as const)("on %s the clipboard is saved by %s", async (platform, name) => {
+    await launch(platform);
+    const helper = app.helpers.get(name);
+    app.saveClipboard?.();
+    expect(helper?.requests.filter((request) => request.method === "clipboardSave")).toHaveLength(1);
+  });
+
+  /** A text not pasted (ADR-DESK-042) goes on the clipboard when its note is clicked, and the
+   * controller hears it is there. */
   test("a text not pasted is copied", async () => {
     await launch("darwin");
 
-    app.copy?.("Hello.");
+    expect(await app.copy?.("Hello.")).toBe(true);
     expect(app.clipboard).toEqual(["Hello."]);
   });
 
-  /** Electron 44's clipboard write is a promise: a refused one is logged, never left unhandled. */
+  /** Electron 44's clipboard write is a promise: a refused one is logged, never left unhandled, and
+   * the controller hears it isn't there, for the note to say so. */
   test("a clipboard write that fails is logged", async () => {
     await launch("darwin");
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       app.clipboardFails = true;
-      app.copy?.("Hello.");
-      await new Promise((resolve) => setImmediate(resolve));
+      expect(await app.copy?.("Hello.")).toBe(false);
+      expect(app.clipboard).toEqual([]);
       expect(stderr).toHaveBeenCalledWith("main: couldn't copy to the clipboard: Error\n");
     } finally {
       stderr.mockRestore();
@@ -958,9 +979,9 @@ describe("main process wiring", () => {
     await send({ type: "answerConfirmation", confirmed: false });
     await send({ type: "chatHeight", height: 180 });
     expect(await send({ type: "chatHeight", height: -1 })).toEqual({ error: expect.any(String) });
-    await send({ type: "chatPointer", over: true });
-    await send({ type: "chatPointer", over: false });
-    expect(await send({ type: "chatPointer", over: "yes" } as never)).toEqual({ error: expect.any(String) });
+    await send({ type: "pointerOver", over: true });
+    await send({ type: "pointerOver", over: false });
+    expect(await send({ type: "pointerOver", over: "yes" } as never)).toEqual({ error: expect.any(String) });
     await send({ type: "openChatLink", url: "https://example.com/closed" });
     if (controller) controller.chat = {};
     await send({ type: "openChatLink", url: "https://example.com/docs" });
@@ -972,6 +993,21 @@ describe("main process wiring", () => {
     // macOS forwards the pointer's moves through a click-through window; Linux can't (`ChatHitTest`).
     expect(app.overlay?.hitTest).toBe("pointer");
     expect(app.opened).toEqual(["https://example.com/docs"]);
+  });
+
+  /** The note for a text not pasted: a click reaches the controller, which copies the text; its frame
+   * reaches the overlay, and one that is no frame is refused. */
+  test("the not-pasted note's commands", async () => {
+    await launch("darwin");
+
+    await send({ type: "copyNotPasted" });
+    await send({ type: "noteFrame", frame: { x: 10, y: 20, width: 180, height: 32 } });
+    for (const frame of [null, { x: 10, y: 20, width: -1, height: 32 }, { x: 10, y: 20, width: Number.NaN, height: 32 }, { x: 10, y: 20, width: 180 }]) {
+      expect(await send({ type: "noteFrame", frame } as never)).toEqual({ error: expect.any(String) });
+    }
+
+    expect(app.controller?.calls).toEqual(["copyNotPasted"]);
+    expect(app.overlay?.notes).toEqual([{ x: 10, y: 20, width: 180, height: 32 }]);
   });
 
   /** An agent tool's switch is stored and shows in the Settings and welcome windows; a name that is
@@ -1791,8 +1827,8 @@ describe("main process wiring", () => {
       expect(updater?.installs).toBe(1);
     });
 
-    /** A text copied instead of pasted (ADR-DESK-042) ends a dictation as a failure does. */
-    test.each(["failed", "copied"])("after a %s dictation, Restart Now installs at once", async (ended) => {
+    /** A text not pasted (ADR-DESK-042), its note showing or clicked, ends a dictation as a failure does. */
+    test.each(["failed", "notPasted", "copied"])("after a %s dictation, Restart Now installs at once", async (ended) => {
       await launchPackaged();
       const updater = app.autoUpdater;
       const controller = app.controller as unknown as { phase: { kind: string }; onPhaseChange: (phase: { kind: string }) => void };

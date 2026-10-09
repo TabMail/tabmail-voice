@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Request rules every helper shares (ADR-DESK-054): the bound of a focused field's read for
-//! correction learning and its reply, a paste's text and deadline, and a microphone start's or
-//! stop's session and rate. The helper reads the field and checks it is no password field itself;
+//! correction learning and its reply, a paste's text and deadline, the clipboard a paste saves and
+//! puts back, and a microphone start's or stop's session and rate. The helper reads the field and checks it is no password field itself;
 //! the core decides what of it is sent.
 
 use serde_json::{Value, json};
@@ -15,6 +15,14 @@ const FIELD_MAX_LENGTH: u64 = 20_000;
 const INSERT_TEXT_BYTES: usize = 512 * 1024;
 /// How far past the helper's clock a paste's deadline may be, in milliseconds.
 const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
+/// How long after the paste keys the clipboard as it was is put back, in milliseconds: the target
+/// app reads the clipboard as it handles the keys, after they are sent (ADR-DESK-002).
+const CLIPBOARD_RESTORE_DELAY_MILLISECONDS: u64 = 500;
+/// The most data a saved clipboard holds, in bytes, all its formats together; a larger one is not
+/// saved, and not put back.
+const CLIPBOARD_SAVE_BYTES: u64 = 64 * 1024 * 1024;
+/// The most formats a saved clipboard holds; one with more is not saved, and not put back.
+const CLIPBOARD_SAVE_FORMATS: u64 = 256;
 /// The recording rates a microphone start may ask for, in whole hertz.
 const MICROPHONE_SAMPLE_RATES: std::ops::RangeInclusive<u64> = 8_000..=96_000;
 
@@ -98,6 +106,19 @@ fn insert(request: &Value) -> Result<Value, u32> {
     }
 }
 
+/// `{"clipboard": {}}` → `{"restoreDelay": ms, "maxBytes": n, "maxFormats": n}`: how long after a
+/// paste's keys the clipboard as it was goes back, and the most a saved clipboard may hold.
+fn clipboard(request: &Value) -> Result<Value, u32> {
+    if !request.as_object().is_some_and(serde_json::Map::is_empty) {
+        return Err(1);
+    }
+    Ok(json!({
+        "restoreDelay": CLIPBOARD_RESTORE_DELAY_MILLISECONDS,
+        "maxBytes": CLIPBOARD_SAVE_BYTES,
+        "maxFormats": CLIPBOARD_SAVE_FORMATS,
+    }))
+}
+
 /// `{"microphoneStop": {"session": s}}` → `{"session": s}` when s is a whole number from 1;
 /// `{"microphoneStart": {"session": s, "sampleRate": r}}` → `{"session": s, "sampleRate": r}` when r
 /// is also a whole number of hertz from 8,000 to 96,000. The session's order is `microphone`'s.
@@ -127,6 +148,7 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
     let reply = match object.iter().next() {
         Some((key, request)) if key == "field" => field(request)?,
         Some((key, request)) if key == "insert" => insert(request)?,
+        Some((key, request)) if key == "clipboard" => clipboard(request)?,
         Some((key, request)) if key == "microphoneStart" => microphone(request, true)?,
         Some((key, request)) if key == "microphoneStop" => microphone(request, false)?,
         _ => return Err(1),

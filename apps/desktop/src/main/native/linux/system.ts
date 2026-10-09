@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../../../core/config.js";
+import { errorName, log } from "../../../core/log.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { keyboardLanguageCode } from "../keyboardLanguage.js";
@@ -10,6 +11,14 @@ import { keyboardLanguageCode } from "../keyboardLanguage.js";
 /** Native Ubuntu device and focused-field operations, through voice-linux. */
 export class LinuxSystem {
   constructor(private readonly helper: HelperClient, private readonly geometryHelper: HelperClient = helper) {}
+
+  /** Saves the clipboard in the helper, in the background, for the next paste to put back after its
+   * keys (ADR-DESK-002). Never waited for: a save that fails leaves the paste's text on the clipboard. */
+  saveClipboard(): void {
+    this.helper.request("clipboardSave").catch((error: unknown) => {
+      log.debug(`LinuxSystem: clipboard save failed: ${errorName(error)}`);
+    });
+  }
 
   /** Inserts only into the original positive target; the native helper revalidates it. */
   async paste(text: string, signal: AbortSignal, window: number): Promise<void> {

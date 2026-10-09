@@ -69,6 +69,7 @@ describe("helper wire contract", () => {
     const mac = new MacSystem(helper);
     await new NativeTextRedactor(helper).redact("Example", new AbortController().signal, { before: "Earlier", after: "Later" });
     const app = "org.example.app";
+    mac.saveClipboard();
     await mac.paste("text");
     await mac.frontmostApp();
     await mac.keyboardLanguage();

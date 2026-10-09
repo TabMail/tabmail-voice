@@ -58,7 +58,7 @@ export interface ToolContext {
    * started with (ADR-DESK-017); null when there is none. */
   emailApp: string | null;
   /** Pastes into the app the user spoke over. When the user has gone to another app, it pastes nothing
-   * and throws, the text copied instead (ADR-DESK-042). */
+   * and throws, the text kept for its note to copy when clicked (ADR-DESK-042). */
   paste(text: string): Promise<void>;
   thunderbird: ThunderbirdRelay;
   /** Shows a reply in the chat window, opening it if it is closed. */
@@ -86,7 +86,7 @@ export interface AgentTool {
   /** The text the loop wrote (trimmed, not empty), ready to deliver. */
   fitted(text: string, context: ScreenContext | null): string;
   /** Puts the text where the tool puts it. Throws when it can't: then nothing is pasted, though Edit's
-   * and Compose's text goes to the clipboard and the paste history instead (ADR-DESK-042). */
+   * and Compose's text goes into the paste history and the note that copies it (ADR-DESK-042). */
   deliver(text: string, context: ToolContext): Promise<void>;
 }
 

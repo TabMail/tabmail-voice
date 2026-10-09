@@ -6,7 +6,7 @@ import * as config from "../config.js";
 import { Observable } from "../util/observable.js";
 import { trimWhitespace } from "../util/text.js";
 
-/** A text dictation or agent mode pasted, or copied when it could not paste. `id` tells entries
+/** A text dictation or agent mode pasted, or could not paste. `id` tells entries
  * apart while the list changes; `at` is when it came, in milliseconds since 1970. */
 export interface PasteEntry {
   id: number;

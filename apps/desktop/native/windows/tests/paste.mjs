@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
+import { isDeepStrictEqual } from "node:util";
 const fixture = spawn(process.argv[3], [], { stdio: ["pipe", "pipe", "pipe"] });
 const helper = spawn(process.argv[2], [], { stdio: ["pipe", "pipe", "pipe"] });
 let id = 0, errors = "";
@@ -52,10 +53,10 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let fixtureCommand = "window";
 // Say what never answered, or a hung run fails without a word.
 const timeout = setTimeout(() => {
-  const stages = errors.match(/^debug paste stage: [a-z-]+$/gmu) ?? [];
+  const stages = errors.match(/debug paste stage: [a-z-]+ after \d+ms/gu) ?? [];
   process.stderr.write(`paste test timed out waiting for ${pending.size ? `helper ${[...pending.keys()].map((key) => `${methods.get(key)} #${key}`).join(", ")}` : "no helper reply"}${readers.length ? `, fixture ${fixtureCommand}` : ""}; last paste stages: ${stages.slice(-4).join(" / ")}\n`);
   helper.kill(); fixture.kill(); process.exitCode = 1;
-}, 20_000);
+}, 40_000);
 try {
   const { window } = await next();
   const params = (extra = {}) => ({ window, text: "Synthetic inserted text", deadline: Date.now() + 2000, ...extra });
@@ -65,6 +66,28 @@ try {
     let value;
     while ((value = (await command("value")).text) !== expected) {
       assert.ok(Date.now() < by, `${label} (field holds ${JSON.stringify(value)})`);
+      await pause(20);
+    }
+  };
+  // Past the shared core's restore delay (500 ms), with room for a slow test machine.
+  const restoreWait = 1500;
+  const clipboardBecomes = async (label, expected) => {
+    const by = Date.now() + 4000;
+    let value;
+    while (!isDeepStrictEqual(value = await command("clipboard"), expected)) {
+      assert.ok(Date.now() < by, `${label} (clipboard holds ${JSON.stringify(value)})`);
+      await pause(20);
+    }
+  };
+  // Asks the helper to save the clipboard, as the app does while the user speaks, and waits for the
+  // save it logs (`outcome`) to be done.
+  const keeperLines = (outcome) => errors.split(`debug clipboard keeper: clipboard ${outcome} after `).length;
+  const saved = async (outcome = "saved") => {
+    const count = keeperLines(outcome);
+    assert.deepEqual((await request("clipboardSave").result).result, {}, "the save is answered at once");
+    const by = Date.now() + 4000;
+    while (keeperLines(outcome) === count) {
+      assert.ok(Date.now() < by, `the clipboard is ${outcome}`);
       await pause(20);
     }
   };
@@ -78,8 +101,44 @@ try {
   assert.equal(pasted.error, undefined, "native insertion succeeds");
   // The helper answers once the paste keys are sent; the field takes the paste when it handles them.
   await until("the text is pasted", "Before Synthetic inserted text after.");
-  // The clipboard is written, never put back: the text stays, kept out of history and the cloud.
+  // With no save of the clipboard ahead, it is not put back: the text stays, kept out of history
+  // and the cloud.
   assert.deepEqual(await command("clipboard"), pastedClipboard, "the text stays on the clipboard, marked private");
+  // Saved ahead, the clipboard as it was, every format of it, goes back after the paste: the text is
+  // on it as the keys are sent, and not after.
+  await command("editable");
+  await command("seed");
+  await saved();
+  assert.equal((await request("insert", params()).result).error, undefined, "a paste after a save succeeds");
+  assert.deepEqual(await command("clipboard"), pastedClipboard, "the text is on the clipboard as the keys are sent");
+  await until("the text is pasted after a save", "Before Synthetic inserted text after.");
+  await clipboardBecomes("the clipboard as it was goes back after the paste", original);
+  // A copy made after the paste, before the clipboard goes back, is kept.
+  await command("editable");
+  await saved();
+  assert.equal((await request("insert", params()).result).error, undefined);
+  await until("the text is pasted before a copy", "Before Synthetic inserted text after.");
+  await command("copy");
+  await pause(restoreWait);
+  assert.equal((await command("clipboard")).text, "Synthetic newer copy", "a copy made after the paste is never overwritten");
+  // A save older than a copy made before the paste is never put back over it: the text stays.
+  await command("editable");
+  await command("seed");
+  await saved();
+  await command("copy");
+  assert.equal((await request("insert", params()).result).error, undefined);
+  await until("the text is pasted after a newer copy", "Before Synthetic inserted text after.");
+  await pause(restoreWait);
+  assert.deepEqual(await command("clipboard"), pastedClipboard, "a save older than the clipboard is not put back");
+  // A password manager's clipboard is not saved, and not put back, where its manager would no
+  // longer clear it: the text stays.
+  await command("editable");
+  await command("conceal");
+  await saved("not to be saved");
+  assert.equal((await request("insert", params()).result).error, undefined);
+  await until("the text is pasted over a concealed copy", "Before Synthetic inserted text after.");
+  await pause(restoreWait);
+  assert.deepEqual(await command("clipboard"), pastedClipboard, "a concealed clipboard is not put back");
   for (const mode of ["password"]) {
     await command(mode);
     await command("seed");
@@ -128,8 +187,18 @@ try {
   const late = await request("insert", params()).result;
   assert.equal(late.error, undefined, "a late clipboard owner does not block insertion");
   await until("late clipboard owner: the text is pasted", "Before Synthetic inserted text after.");
-  assert.equal((await command("asked")).helper, false, "the helper never reads the clipboard");
+  assert.equal((await command("asked")).helper, false, "the paste never reads the clipboard");
   assert.deepEqual(await command("clipboard"), pastedClipboard);
+  // Saved in the background, the late owner's clipboard is read while the user speaks, and goes back
+  // after the paste.
+  await command("editable");
+  await command("delayed");
+  await saved();
+  assert.equal((await command("asked")).helper, true, "the save asked the late owner for its data");
+  assert.equal((await request("insert", params()).result).error, undefined);
+  await until("late clipboard owner saved: the text is pasted", "Before Synthetic inserted text after.");
+  await clipboardBecomes("the late owner's clipboard goes back after the paste",
+    { command: "clipboard", text: "Synthetic delayed clipboard", binary: "", excluded: false });
   // A clipboard another program holds open can't be written: nothing is sent.
   await command("editable");
   await command("seed");
@@ -151,8 +220,12 @@ try {
   const exits = [once(fixture, "exit"), once(helper, "exit")];
   fixture.stdin.end(); helper.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
-  assert.equal(pending.size, 0); assert.equal(errors.replaceAll("\r\n", "\n").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete)\n/gmu, ""), "", "only categorical insertion diagnostics are emitted");
-  process.stdout.write("Windows insertion, write-only clipboard, cancellation, privacy and refusal checks passed\n");
+  assert.equal(pending.size, 0);
+  assert.equal(errors.replaceAll("\r\n", "\n")
+    .replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete) after \d+ms\n/gmu, "")
+    .replace(/^debug clipboard keeper: (clipboard (saved|not to be saved|put back) after \d+ms|clipboard unchanged since it was saved|no save of the clipboard as it was; it won't be put back|clipboard changed since the paste; not put back|clipboard couldn't be put back|nothing saved to put back; the paste's text stays)\n/gmu, ""),
+  "", "only categorical, timed insertion diagnostics are emitted");
+  process.stdout.write("Windows insertion, clipboard save and put-back, cancellation, privacy and refusal checks passed\n");
 } finally {
   clearTimeout(timeout); helper.kill(); fixture.kill(); helperLines.close(); fixtureLines.close();
 }

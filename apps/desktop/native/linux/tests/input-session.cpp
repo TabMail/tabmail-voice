@@ -20,8 +20,13 @@ struct Fixture {
     std::function<void()> onTransfer;
     std::function<void(int, unsigned)> onKey;
     std::optional<std::pair<int, unsigned>> failKey;
-    // Reads of the clipboard: the helper never makes one.
+    // Reads of the clipboard: only a save makes them, never a paste. Another app's clipboard, by
+    // format; held reads wait for the test to answer them.
     unsigned publications = 0, reads = 0;
+    std::map<std::string, std::vector<unsigned char>> foreign;
+    bool holdReads = false;
+    std::vector<GDBusMethodInvocation*> heldReads;
+    std::vector<std::string> published;
     // Another app copies just after the helper publishes, before it pastes.
     bool copyAfterPublish = false;
     std::vector<unsigned char> expected = original;
@@ -59,10 +64,9 @@ struct Fixture {
                 *interface, &table, this, nullptr, &error.value));
         g_dbus_node_info_unref(info);
     }
-    void owner(bool ours, const char* format = "text/plain;charset=utf-8") {
+    void owner(bool ours, std::vector<const char*> formats = {"text/plain;charset=utf-8"}) {
         GVariantBuilder dictionary; g_variant_builder_init(&dictionary, G_VARIANT_TYPE_VARDICT);
-        const char* formats[]{format};
-        g_variant_builder_add(&dictionary, "{sv}", "mime_types", g_variant_new_strv(formats, 1));
+        g_variant_builder_add(&dictionary, "{sv}", "mime_types", g_variant_new_strv(formats.data(), formats.size()));
         g_variant_builder_add(&dictionary, "{sv}", "session_is_owner", g_variant_new_boolean(ours));
         require(g_dbus_connection_emit_signal(bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionOwnerChanged",
             g_variant_new("(o@a{sv})", session.c_str(), g_variant_builder_end(&dictionary)), nullptr));
@@ -94,7 +98,18 @@ struct Fixture {
             // Deliberately no initial owner signal: matches ownerless GNOME startup.
         } else if (method == "SelectionRead") {
             ++reads;
-            g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Synthetic read refused");
+            const gchar* path = nullptr; const gchar* mime = nullptr; g_variant_get(args, "(&o&s)", &path, &mime);
+            const auto found = foreign.find(mime);
+            if (holdReads) { heldReads.push_back(invocation); return; }
+            if (found == foreign.end()) {
+                g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Synthetic read refused");
+                return;
+            }
+            int pipes[2]; require(pipe2(pipes, O_CLOEXEC) == 0);
+            require(write(pipes[1], found->second.data(), found->second.size()) == ssize_t(found->second.size())); close(pipes[1]);
+            auto fds = own(g_unix_fd_list_new()); Error error;
+            const int handle = g_unix_fd_list_append(fds.get(), pipes[0], &error.value); require(handle >= 0 && !error.value); close(pipes[0]);
+            g_dbus_method_invocation_return_value_with_unix_fd_list(invocation, g_variant_new("(h)", handle), fds.get());
         } else if (method == "SelectionWrite") {
             int pipes[2]; require(pipe2(pipes, O_CLOEXEC | O_NONBLOCK) == 0);
             auto fds = own(g_unix_fd_list_new()); Error error;
@@ -107,6 +122,10 @@ struct Fixture {
             require(size == ssize_t(expected.size()) && std::equal(expected.begin(), expected.end(), bytes)); ++completed;
             g_dbus_method_invocation_return_value(invocation, nullptr); if (onTransfer) onTransfer();
         } else if (method == "SetSelection") {
+            auto dictionary = variant(g_variant_get_child_value(args, 1));
+            auto formats = variant(g_variant_lookup_value(dictionary.get(), "mime_types", G_VARIANT_TYPE_STRING_ARRAY));
+            published.clear();
+            if (formats) { gsize count = 0; const gchar** names = g_variant_get_strv(formats.get(), &count); published.assign(names, names + count); g_free(names); }
             ++publications; owner(true);
             if (copyAfterPublish) { copyAfterPublish = false; owner(false); }
             g_dbus_method_invocation_return_value(invocation, nullptr);
@@ -130,7 +149,7 @@ int main() {
     gchar* temporary = g_dir_make_tmp("voice-portal-test-XXXXXX", nullptr); require(temporary != nullptr);
     const std::string tokenPath = std::string(temporary) + "/token"; g_free(temporary);
     Fixture fixture; Output output; InputSession input(output, tokenPath); auto loop = g_main_loop_new(nullptr, false);
-    g_timeout_add_seconds(8, [](gpointer) -> gboolean { std::_Exit(1); }, nullptr);
+    g_timeout_add_seconds(16, [](gpointer) -> gboolean { std::_Exit(1); }, nullptr);
     bool restoredWithoutGrant = true;
     input.restore([&](bool granted) { restoredWithoutGrant = granted; });
     require(!restoredWithoutGrant && fixture.grants == 0);
@@ -161,7 +180,9 @@ int main() {
     emitOwner(g_variant_builder_end(&malformed));
     require(!input.state->selection.ours);
     bool focused = true, terminal = false;
-    Inserter inserter(input, [&](uint64_t token) { return focused && token == 42; }, [&] { return terminal; });
+    // A short put-back delay keeps the run quick; the shared core's own is checked by its cases.
+    ClipboardKeeper keeper(input, {100, 1024 * 1024, 8});
+    Inserter inserter(input, keeper, [&](uint64_t token) { return focused && token == 42; }, [&] { return terminal; });
     { auto inner = input.state->onOwnerChange; input.state->onOwnerChange = [&changes, inner] { ++changes; inner(); }; }
     const auto parameters = [] {
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -193,6 +214,8 @@ int main() {
         std::istringstream lines(log.str());
         const std::regex line("debug paste stage: ([a-z -]+) after [0-9]+ms");
         for (std::string entry; std::getline(lines, entry);) {
+            // A put-back from an earlier paste may come due meanwhile.
+            if (entry.starts_with("debug clipboard keeper: ")) continue;
             std::smatch match;
             require(std::regex_match(entry, match, line) && entry.find(text) == std::string::npos);
             names.push_back(match[1]);
@@ -224,7 +247,7 @@ int main() {
     // Another app's file transfer on the clipboard is replaced like any copy, and never read.
     {
         const auto seen = changes;
-        fixture.owner(false, "application/vnd.portal.filetransfer");
+        fixture.owner(false, {"application/vnd.portal.filetransfer"});
         while (changes == seen) g_main_context_iteration(nullptr, true);
     }
     run(93, true);
@@ -295,12 +318,123 @@ int main() {
     require(fixture.publications == 1 && offered());
     // No insertion read the clipboard.
     require(fixture.reads == 0);
+    // The clipboard saved ahead (as the app asks while the user speaks), every format of it, read in
+    // the background, goes back after the paste. Its debug log is timed and holds no clipboard data.
+    std::ostringstream keeperLog;
+    auto* earlierLog = std::cerr.rdbuf(keeperLog.rdbuf());
+    const auto count = [&](const std::string& line) {
+        const auto log = keeperLog.str();
+        size_t found = 0;
+        for (auto at = log.find("debug clipboard keeper: " + line); at != std::string::npos; at = log.find("debug clipboard keeper: " + line, at + 1)) ++found;
+        return found;
+    };
+    const auto until = [&](const std::function<bool()>& done) { while (!done()) g_main_context_iteration(nullptr, true); };
+    // Waits out a put-back that may come.
+    const auto settle = [&] {
+        bool due = false;
+        g_timeout_add(300, [](gpointer data) -> gboolean { *static_cast<bool*>(data) = true; return G_SOURCE_REMOVE; }, &due);
+        until([&] { return due; });
+    };
+    const auto copy = [&](std::vector<const char*> formats) {
+        const auto seen = changes;
+        fixture.owner(false, formats);
+        while (changes == seen) g_main_context_iteration(nullptr, true);
+        fixture.keys.clear(); fixture.onKey = {}; fixture.publications = 0; fixture.reads = 0;
+    };
+    const std::vector<unsigned char> picture{1, 2, 3};
+    fixture.foreign = {{"text/plain;charset=utf-8", fixture.original}, {"image/png", picture}};
+    const auto putBack = [&] {
+        return input.state->selection.ours && input.state->offer.size() == 2 && *input.state->offer.at("image/png") == picture &&
+            *input.state->offer.at("text/plain;charset=utf-8") == fixture.original;
+    };
+    settle();
+    copy({"text/plain;charset=utf-8", "image/png"});
+    keeper.save();
+    until([&] { return count("clipboard saved after") == 1; });
+    require(fixture.reads == 2);
+    // Saved as it is: not read again.
+    keeper.save();
+    require(fixture.reads == 2 && count("clipboard unchanged since it was saved") == 1);
+    run(110, true);
+    // The text is offered as the keys are sent, and not after.
+    require(fixture.publications == 1 && offered());
+    until([&] { return count("clipboard put back after") == 1; });
+    require(fixture.publications == 2 && putBack() && fixture.published == std::vector<std::string>{"image/png", "text/plain;charset=utf-8"});
+    // A clipboard put back is saved as it is, with no read.
+    fixture.reads = 0;
+    keeper.save();
+    require(fixture.reads == 0 && count("clipboard saved after") == 2);
+    // Two pastes in a row, the second before the first's put-back: the clipboard as it was before
+    // both goes back once.
+    fixture.publications = 0;
+    run(111, true);
+    run(112, true);
+    until([&] { return count("clipboard put back after") == 2; });
+    settle();
+    require(fixture.publications == 3 && putBack() && count("clipboard put back after") == 2);
+    // A copy made after the paste, before the put-back, is kept.
+    keeper.save();
+    fixture.publications = 0;
+    run(113, true);
+    copy({"text/plain;charset=utf-8"});
+    settle();
+    require(fixture.publications == 0 && !input.state->selection.ours && count("clipboard changed since the paste; not put back") == 1);
+    // A save older than a copy made before the paste is never put back over it.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    keeper.save();
+    until([&] { return count("clipboard saved after") == 4; });
+    copy({"text/plain;charset=utf-8"});
+    run(114, true);
+    settle();
+    require(fixture.publications == 1 && offered() && count("no save of the clipboard as it was; it won't be put back") >= 1);
+    // A save still reading when the paste comes is dropped: the paste never waits for it, and its
+    // text stays.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    fixture.holdReads = true;
+    keeper.save();
+    until([&] { return fixture.heldReads.size() == 1; });
+    run(115, true);
+    settle();
+    require(fixture.publications == 1 && offered() && count("the clipboard's save still under way; it won't be put back") == 1);
+    fixture.holdReads = false;
+    for (auto* held : fixture.heldReads) g_dbus_method_invocation_return_dbus_error(held, "org.freedesktop.portal.Error.Failed", "Synthetic read refused");
+    fixture.heldReads.clear();
+    // A password manager's copy and a file transfer are not read, not saved and not put back.
+    for (const char* withheld : {"x-kde-passwordManagerHint", "application/vnd.portal.filetransfer"}) {
+        copy({"text/plain;charset=utf-8", withheld});
+        const auto skipped = count("clipboard not to be saved after");
+        keeper.save();
+        require(fixture.reads == 0 && count("clipboard not to be saved after") == skipped + 1);
+        run(116, true);
+        settle();
+        require(fixture.publications == 1 && offered());
+    }
+    // More formats than the shared core allows are not saved.
+    std::vector<std::string> many;
+    for (int index = 0; index <= 8; ++index) many.push_back("application/x-synthetic-" + std::to_string(index));
+    std::vector<const char*> manyNames;
+    for (const auto& name : many) manyNames.push_back(name.c_str());
+    copy(manyNames);
+    keeper.save();
+    require(fixture.reads == 0 && count("clipboard not to be saved after") == 3);
+    // The paste's own text, left on the clipboard where nothing was saved, is not saved.
+    copy({"text/plain;charset=utf-8"});
+    run(117, true);
+    settle();
+    keeper.save();
+    require(fixture.reads == 0 && count("the clipboard holds the paste's text; not saved") == 1);
+    require(keeperLog.str().find("Synthetic") == std::string::npos);
     std::weak_ptr<const std::vector<unsigned char>> retained = input.state->offer.at("text/plain;charset=utf-8");
     require(!retained.expired());
     input.state->close();
     require(retained.expired());
     input.restore([&](bool granted) { require(granted); g_main_loop_quit(loop); });
     g_main_loop_run(loop); require(fixture.grants == 2);
+    // GNOME announces no selection when a session starts: until it does, nothing is saved.
+    require(!input.state->selection.known);
+    keeper.save();
+    require(fixture.reads == 0 && count("clipboard not known yet; not saved") == 1);
+    std::cerr.rdbuf(earlierLog);
     struct stat tokenMetadata{}; require(stat(tokenPath.c_str(), &tokenMetadata) == 0 && (tokenMetadata.st_mode & 0777) == 0600);
     PortalToken tokens(tokenPath); require(tokens.take() == "synthetic-restore-token" && tokens.take().empty());
     require(tokens.save("rotated-token") && tokens.take() == "rotated-token");
@@ -322,5 +456,5 @@ int main() {
         g_main_loop_run(loop); require(replied);
     }
     input.state->close(); rmdir(tokenPath.substr(0, tokenPath.find_last_of('/')).c_str());
-    g_main_loop_unref(loop); std::cout << "portal FD transfers, write-only Unicode paste, target changes, cancellation, key cleanup and intervening copy passed\n";
+    g_main_loop_unref(loop); std::cout << "portal FD transfers, Unicode paste, clipboard save and put-back, target changes, cancellation, key cleanup and intervening copy passed\n";
 }
