@@ -210,8 +210,16 @@ struct Layout {
     text: String,
     owner: Vec<usize>,
     shown: Vec<bool>,
+    /// Where a piece the screen shows on its own starts (a block, a run of it), for the word edge
+    /// of a key's prefix. A field's text around what it shows and the caret's split are one text.
+    edges: Vec<usize>,
 }
 impl Layout {
+    fn piece(&mut self) {
+        if self.edges.last() != Some(&self.text.len()) {
+            self.edges.push(self.text.len());
+        }
+    }
     fn push(&mut self, text: &str, part: usize, shown: bool) {
         self.text.push_str(text);
         self.owner.extend(std::iter::repeat_n(part, text.len()));
@@ -1169,6 +1177,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             if index > 0 {
                 read.push(block.before, index, false);
             }
+            read.piece();
             if block.kind == "caret" {
                 for (part, text) in caret.iter().enumerate() {
                     read.push(text, caret_parts + part, true);
@@ -1178,6 +1187,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             match (&block.runs, &block.source) {
                 (Some(runs), _) => {
                     for (text, visible) in runs {
+                        read.piece();
                         read.push(text, index, *visible);
                     }
                 }
@@ -1193,6 +1203,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             if !read.text.is_empty() {
                 read.push(&LINE_BREAK.to_string(), caret_parts, false);
             }
+            read.piece();
             for (part, text) in caret.iter().enumerate() {
                 read.push(text, caret_parts + part, true);
             }
@@ -1201,8 +1212,9 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             text: source,
             owner,
             shown,
+            edges,
         } = read;
-        let taken = privacy::taken(&source).map_err(|_| 3u32)?;
+        let taken = privacy::taken_with_edges(&source, &edges).map_err(|_| 3u32)?;
         // Each part gets the characters it shows that the redaction did not take. Where it took
         // text out (one match, or several that overlap or meet), one marker goes in the part that
         // shows the first character taken; where it took out only what the read does not show,
@@ -1401,38 +1413,55 @@ mod layout_tests {
     /// redacts it whole and says where once: the redaction sees the line as the screen shows it.
     #[test]
     fn a_key_split_into_pieces_of_one_line_is_redacted_whole_once() {
-        let key = format!("AKIA{}", "A".repeat(16));
-        for first in 1..key.len() {
-            for second in first + 1..key.len() {
-                let pieces = [&key[..first], &key[first..second], &key[second..]];
-                let mut x = 0.;
-                let blocks: Vec<Value> = pieces
-                    .iter()
-                    .enumerate()
-                    .map(|(index, piece)| {
-                        let width = 10. * piece.len() as f64;
-                        let block = json!({"kind":if index == 1 {"link"} else {"text"},"text":piece,"frame":[x,0.,width,20.]});
-                        x += width;
-                        block
-                    })
-                    .collect();
-                let reply: Value = serde_json::from_slice(
-                    &process(
-                        &serde_json::to_vec(&json!({"blocks":blocks,"caret":["","",""]})).unwrap(),
+        // A key of each kind that has a word edge, and one of exact length; what stays of it.
+        let body = "abcdefghijklmnopqrst";
+        let keys = [
+            (format!("AKIA{}", "A".repeat(16)), 0),
+            (format!("sk-{body}"), 0),
+            (format!("pk_test_{body}"), 0),
+            (format!("Bearer {body}"), "Bearer ".len()),
+        ];
+        for (key, kept) in keys {
+            for first in 1..key.len() {
+                for second in first + 1..key.len() {
+                    let pieces = [&key[..first], &key[first..second], &key[second..]];
+                    // A piece's own blanks are not read: the screen shows a gap there instead.
+                    if pieces.iter().any(|piece| piece.trim() != *piece) {
+                        continue;
+                    }
+                    let mut x = 0.;
+                    let blocks: Vec<Value> = pieces
+                        .iter()
+                        .enumerate()
+                        .map(|(index, piece)| {
+                            let width = 10. * piece.len() as f64;
+                            let block = json!({"kind":if index == 1 {"link"} else {"text"},"text":piece,"frame":[x,0.,width,20.]});
+                            x += width;
+                            block
+                        })
+                        .collect();
+                    let reply: Value = serde_json::from_slice(
+                        &process(
+                            &serde_json::to_vec(&json!({"blocks":blocks,"caret":["","",""]}))
+                                .unwrap(),
+                        )
+                        .unwrap(),
                     )
-                    .unwrap(),
-                )
-                .unwrap();
-                let rendered = reply["rendered"].as_str().unwrap();
-                assert_eq!(
-                    rendered.matches(privacy::PLACEHOLDER).count(),
-                    1,
-                    "{first} {second}"
-                );
-                assert!(
-                    !rendered.contains("AKIA") && !rendered.contains("AAAA"),
-                    "{first} {second}"
-                );
+                    .unwrap();
+                    let rendered = reply["rendered"].as_str().unwrap();
+                    assert_eq!(
+                        rendered.matches(privacy::PLACEHOLDER).count(),
+                        1,
+                        "{key} {first} {second}"
+                    );
+                    let secret = &key[kept..];
+                    for at in 0..=secret.len() - 4 {
+                        assert!(
+                            !rendered.contains(&secret[at..at + 4]),
+                            "{key} {first} {second}: {rendered}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -2167,6 +2196,40 @@ mod budget_tests {
                 .unwrap();
         assert_eq!(result["rendered"], "| Label | [redacted]");
         assert!(result["blocks"][0].get("runs").is_none());
+    }
+    #[test]
+    fn a_key_in_its_own_run_has_its_word_edge_and_one_glued_in_a_run_or_a_field_does_not() {
+        let rendered = |block: Value| -> String {
+            let request = json!({"blocks":[block]});
+            let result: Value =
+                serde_json::from_slice(&process(&serde_json::to_vec(&request).unwrap()).unwrap())
+                    .unwrap();
+            result["rendered"].as_str().unwrap().to_owned()
+        };
+        let body = "abcdefghijklmnopqrst";
+        for prefix in ["sk-", "pk_test_"] {
+            let key = format!("{prefix}{body}");
+            // A run the screen shows on its own starts a piece: the key goes, the word stays.
+            assert_eq!(
+                rendered(json!({"kind":"row","text":format!("Bearer{key}"),
+                    "runs":[["Bearer",true],[key,true]]})),
+                "| Bearer[redacted]",
+                "{prefix}"
+            );
+            // Glued to the word before it in one run, it stays (owner, 2026-10-08).
+            let glued = format!("Bearer{key}");
+            assert_eq!(
+                rendered(json!({"kind":"row","text":glued,"runs":[[glued,true]]})),
+                format!("| {glued}"),
+                "{prefix}"
+            );
+            // A field's shown text starting part-way through a word is no piece of its own.
+            assert_eq!(
+                rendered(json!({"kind":"field","text":key,"source":["Bearer",key,""]})),
+                format!("> {key}"),
+                "{prefix}"
+            );
+        }
     }
     #[test]
     fn semantic_admission_deduplicates_only_equivalent_recognition_source() {

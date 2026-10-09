@@ -207,8 +207,7 @@ struct RedactorTests {
     }
 
     /// A run far longer than any real text never stops a redactor short: what follows it is still
-    /// redacted. (The engine gives up on a repeat it runs a stack frame for per character, and
-    /// giving up is fast and silent.)
+    /// redacted.
     @Test func aVeryLongRunDoesNotStopTheRedactionOfWhatFollows() throws {
         let length = 400_000
         let runs = [
@@ -246,15 +245,6 @@ struct RedactorTests {
             #expect(context.textBudgetFull)
             #expect(reply["selectionRedacted"] == .bool(true))
         }
-    }
-
-    /// A redactor the engine could not finish withholds everything after its last match: nothing it
-    /// did not look at is sent.
-    @Test func aRedactorThatCouldNotFinishWithholdsTheRest() throws {
-        let gone = Redactor.placeholder
-        let run = "password:" + String(repeating: " ", count: 1_000_100) + "x"
-        #expect(try Redactor.redact([["token=" + "abc123def "], [run, "selected"], ["after"]]) == [["token=\(gone)"], ["", ""], [""]])
-        #expect(try Redactor.redact([["before ", run], ["after"]]) == [[gone, ""], [""]])
     }
 
     /// A label on screen and the focused field holding its value are one secret: the field's texts

@@ -1,162 +1,182 @@
 {
   "comment": [
-    "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046).",
-    "Each redactor looks at the whole text as read, never at what another left of it, so their order does not matter (owner, 2026-10-08): everything any match takes goes, and one {placeholder} stands for each run of matches that overlap or meet. A match takes itself without what `replacement` copies around {placeholder} at the match's ends; {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
-    "Patterns use the pinned Rust fancy-regex engine on every platform. Native adapters never interpret them. Keep patterns linear on hostile text; the Rust conformance and timing tests are authoritative.",
-    "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
-    "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
-    "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
-    "No redactor can hide a secret from another: each finds its secret in the text as read. private-key-cut takes the words of base64 after a header that is cut off, which may hold a later secret's name (the `password` of `password = ...`); that secret's own redactor still finds its value. private-key-body starts only at the start of the text, so that a text starting part-way through a key's line loses that part too. One redactor's matches never overlap each other: each search resumes where the last match's taken part ends (a kept line break may start the next key's lines), and a match must not run over the start of the next secret of its own kind: tokens stop where another of their kind begins, and named-value-up-to-a-name finds a value whose name another value ran into.",
-    "A key with a distinctive prefix (AKIA, AIza, ghp_, github_pat_, glpat-, xoxb-, npm_, hf_, whsec_, eyJ, sk_live_) goes wherever it is, even glued to the letters before or after it, as the screen shows a key run into a word or a piece of styling. A pattern whose prefix ordinary words also hold keeps the edge before it, each forced by a near miss in redaction-cases.json: sk- (risk-...), Bearer (pallbearer), the _test_ payment keys (benchmark_test_..., task_test_...). Such a key glued to the word before it, in one piece or in a styled piece the screen shows glued (a link or bold run), stays: owner, 2026-10-08."
+    "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046). The shared Rust core reads this file directly; every helper links it and passes redaction-cases.json through it.",
+    "Each redactor is data for one of a few shapes (kind), and one scanner reads them all. Every redactor looks at the text as read, never at what another found or took, so their order does not matter (owner, 2026-10-08): everything any of them takes goes, and one {placeholder} stands for each run of taken text that overlaps or meets. Every place a prefix, label or header occurs is looked at on its own; nothing a redactor finds hides the next place from it.",
+    "Character sets are written as in a bracket expression without the brackets: A-Z is a range, and a - at either end is itself. Lengths count characters.",
+    "edge \"word\": the prefix must not follow a letter, a digit or _ in the same piece of text, as ordinary words hold these prefixes (risk-..., pallbearer, benchmark_test_...). A prefix at the start of a piece the screen read shows on its own (a link, a bold run) has its edge, and so does one that starts inside or right at the end of text another redactor takes (a key glued to a key). A key of these kinds glued to the word before it in one piece stays shown: owner, 2026-10-08.",
+    "Every scanner takes time in proportion to the text, whatever the text; the Rust hostile-text timing test is authoritative."
   ],
   "placeholder": "[redacted]",
   "redactors": [
     {
-      "name": "private-key-block",
-      "description": "A whole private-key block, from its header to its end line.",
-      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----[A-Za-z0-9+/=\\s\\\\]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "name": "private-key",
+      "kind": "privateKey",
+      "description": "A private key: from its header (-----BEGIN ... PRIVATE KEY-----) to its end line (-----END ... PRIVATE KEY-----). A header with no end line after it (a key cut off) takes the words of base64 after it (body, and an escaped line break's backslash) up to the first other character that is not whitespace; an end line with no header before it takes the text back to the start, or to just after the end line before it (owner, 2026-10-08), even other text read before the key. Only PRIVATE KEY lines count: a certificate's or a signature's lines take nothing.",
+      "begin": "-----BEGIN ",
+      "end": "-----END ",
+      "label": "PRIVATE KEY",
+      "close": "-----",
+      "words": "A-Z0-9 ",
+      "wordsMax": 40,
+      "body": "A-Za-z0-9+/="
     },
     {
-      "name": "private-key-cut",
-      "description": "A private-key block cut off where the window ends: its header and the words of base64 after it, up to the first character that is not base64 or space (a name or prefix after it may go too; that secret's own redactor still finds its value, as every redactor looks at the text as read).",
-      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----[A-Za-z0-9+/=\\\\]*(?:\\s+[A-Za-z0-9+/=\\\\]+)*",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
-    },
-    {
-      "name": "private-key-end",
-      "description": "A private key's body whose header is not in the text, wherever it is (a page read from the middle of a printed key, after a page number or a running header; a header in a font the reader could not draw, a label beside its first full line, with or without a space): the lines of base64 just before its end line, and the end line.",
-      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)+-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|([^A-Za-z0-9+/=\\n\\r\\x{2028}\\x{2029}][ \\t]*)[A-Za-z0-9+/]{40,}[A-Za-z0-9+/=]*[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
-      "ignoreCase": false,
-      "replacement": "$1$2{placeholder}"
-    },
-    {
-      "name": "private-key-body",
-      "description": "A text that starts inside a private key's body, its header cut off before the text (a page read from the middle of a printed key, a window scrolled past the header): two or more full lines of base64 at the very start, its last, shorter line when that line is one word of base64 (ending its line or running into punctuation), up to the end line if there is one.",
-      "pattern": "^[A-Za-z0-9+/=]*(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*(?:[A-Za-z0-9+/]+={0,2}|={1,2})([^\\sA-Za-z0-9+/=])|(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*(?:[A-Za-z0-9+/]+={0,2}|={1,2})[ \\t]*(?:(?m:$)|(\\r|[\\x{2028}\\x{2029}])))?(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?)",
-      "ignoreCase": false,
-      "replacement": "{placeholder}$1$2"
-    },
-    {
-      "name": "private-key-lines",
-      "description": "A private key's body wherever it is, whatever is around it (a page of a printed key between a running header and a footer, several pages of one read together, a label beside its first line, with or without a space, the label and the blanks after it kept; lines ended by \\n, \\r, U+2028 or U+2029): two or more full lines of base64 one after another, a shorter line between them, and the line after them when it is one word of base64 that ends its line or runs into punctuation (owner, 2026-10-08: a key's last line goes even with no digit or symbol, so a lone word such as Done right after them goes too, while a line that goes on with more words stays). A shorter line between full lines goes only when it looks like base64 (a digit, + or /, padding, or a small letter before a capital). Its end line goes with private-key-end. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05: \"redact key bodies anywhere\"); one such line alone stays.",
-      "pattern": "(^|[^A-Za-z0-9+/][ \\t]*)[A-Za-z0-9+/]{40,}={0,2}(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]*(?:[0-9+/]|[a-z][A-Z])[A-Za-z0-9+/]*={0,2}|[A-Za-z0-9+/]*={1,2})(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+)*(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]+={0,2}|={1,2})(?:[ \\t]*(?:(?m:$)|(\\r|[\\x{2028}\\x{2029}]))|([^\\sA-Za-z0-9+/=])))?",
-      "ignoreCase": false,
-      "replacement": "$1{placeholder}$2$3"
+      "name": "key-lines",
+      "kind": "keyLines",
+      "description": "A key's body without its header or end line, wherever it is: two or more full lines of base64 (a label, a quote mark or a gutter may come before each), single base64 words between them, the line before them when it is the first line of the text and one base64 word (a text starting part-way through a key), and the first base64 word of the line after them, whatever follows it (owner, 2026-10-08), after the same kind of prefix as the lines had. Blank lines between them count as nothing. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05).",
+      "base64": "A-Za-z0-9+/",
+      "padding": "=",
+      "fullLine": 40,
+      "minLines": 2
     },
     {
       "name": "json-web-token",
-      "description": "A JSON web token: three base64url parts, the first two JSON objects. Its last two parts with the dot before them go alone too, as that is what is left of a token glued to the one before it; a token right after a dot still goes whole, as its last part may follow a third part starting eyJ.",
-      "pattern": "(?:eyJ[A-Za-z0-9_-]+)?\\.eyJ[A-Za-z0-9_-]+\\.(?:eyJ[A-Za-z0-9_-]+\\.)?[A-Za-z0-9_-]+",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "jsonWebToken",
+      "description": "A JSON web token: base64url parts joined by dots, the second starting eyJ. A part starting eyJ after a dot, with a part after it, goes with the dot before it and the part after it, and with the part before it when that part holds eyJ (from there), so a token glued to another, or a third part starting eyJ, goes whole.",
+      "start": "eyJ",
+      "part": "A-Za-z0-9_-"
     },
     {
       "name": "bearer-token",
-      "description": "\"Bearer <token>\", as an Authorization header has it. The word stays. Tokens glued after it, each with its own \"Bearer\", go with it.",
-      "pattern": "(^|[^A-Za-z0-9_])(Bearer[\\s]+)(?:[A-Za-z0-9._~+/=-]*Bearer[\\s]+)*[A-Za-z0-9._~+/=-]{16}[A-Za-z0-9._~+/=-]*",
+      "kind": "token",
+      "description": "\"Bearer <token>\", as an Authorization header has it. The word and the space after it stay.",
+      "prefixes": ["Bearer"],
       "ignoreCase": true,
-      "replacement": "$1$2{placeholder}"
+      "edge": "word",
+      "space": true,
+      "keepPrefix": true,
+      "body": "A-Za-z0-9._~+/=-",
+      "min": 16
     },
     {
       "name": "address-password",
-      "description": "The password in an address (scheme://user:password@host). The rest stays.",
-      "pattern": "(://[^\\s/:@]*:)[^\\s/]+(@)",
-      "ignoreCase": false,
-      "replacement": "$1{placeholder}$2"
+      "kind": "addressPassword",
+      "description": "The password in an address (scheme://user:password@host), up to its last @. The rest stays.",
+      "start": "://"
     },
     {
       "name": "named-value",
-      "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"…\"). The name stays. Only a value with a digit and at least 6 characters, so that \"Password: required\" stays.",
-      "pattern": "((?:pa(?:ss|ß)word|pa(?:ss|ß)wd|pwd|pa(?:ss|ß)phrase|secret[_-]?key|secret|token|api[_-]?key|acce(?:ss|ß)[_-]?key|private[_-]?key|credentials?)[\"']?[\\s]*[=:][\\s]*[\"']?)(?=[^\\s\"']{0,200}[0-9])[^\\s\"']{6}[^\\s\"']*",
-      "ignoreCase": true,
-      "replacement": "$1{placeholder}"
-    },
-    {
-      "name": "named-value-up-to-a-name",
-      "description": "A secret value as named-value has it, ending where another secret name given a value begins inside it (token=<value>,password: <value>), so that the second value is found too; named-value still takes the whole run, as a value may hold such a name.",
-      "pattern": "((?:pa(?:ss|ß)word|pa(?:ss|ß)wd|pwd|pa(?:ss|ß)phrase|secret[_-]?key|secret|token|api[_-]?key|acce(?:ss|ß)[_-]?key|private[_-]?key|credentials?)[\"']?[\\s]*[=:][\\s]*[\"']?)(?=[^\\s\"\\']{0,200}[0-9])(?:(?!(?:pa(?:ss|ß)word|pa(?:ss|ß)wd|pwd|pa(?:ss|ß)phrase|secret[_-]?key|secret|token|api[_-]?key|acce(?:ss|ß)[_-]?key|private[_-]?key|credentials?)[\"\\']?[\\s]*[=:])[^\\s\"\\']){6,}",
-      "ignoreCase": true,
-      "replacement": "$1{placeholder}"
+      "kind": "namedValue",
+      "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"...\"). The name stays. Only a value with a digit in its first 201 characters and at least 6 characters, so that \"Password: required\" stays. Names match whatever their case (Unicode simple case folding).",
+      "labels": [
+        "password", "paßword", "passwd", "paßwd", "pwd", "passphrase", "paßphrase",
+        "secretkey", "secret_key", "secret-key", "secret", "token",
+        "apikey", "api_key", "api-key", "accesskey", "access_key", "access-key",
+        "acceßkey", "acceß_key", "acceß-key", "privatekey", "private_key", "private-key",
+        "credential", "credentials"
+      ],
+      "min": 6,
+      "digitWithin": 201
     },
     {
       "name": "api-key-sk",
+      "kind": "token",
       "description": "Keys starting \"sk-\" (several AI providers).",
-      "pattern": "(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{16}[A-Za-z0-9_-]*",
-      "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "prefixes": ["sk-"],
+      "edge": "word",
+      "body": "A-Za-z0-9_-",
+      "min": 16
     },
     {
       "name": "payment-key",
-      "description": "Payment provider keys (secret, restricted, publishable; live or test); a key glued to another stops where the next begins, and test keys glued after it go with it.",
-      "pattern": "(?:(^|[^A-Za-z0-9_])(?:sk|rk|pk)_test_|(?:sk|rk|pk)_live_)(?:(?!(?:sk|rk|pk)_(?:test|live)_)[A-Za-z0-9]){16,}(?:(?:sk|rk|pk)_test_(?:(?!(?:sk|rk|pk)_(?:test|live)_)[A-Za-z0-9])+)*",
-      "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "kind": "token",
+      "description": "Live payment provider keys (secret, restricted, publishable).",
+      "prefixes": ["sk_live_", "rk_live_", "pk_live_"],
+      "body": "A-Za-z0-9",
+      "min": 16
+    },
+    {
+      "name": "payment-test-key",
+      "kind": "token",
+      "description": "Test payment provider keys (secret, restricted, publishable).",
+      "prefixes": ["sk_test_", "rk_test_", "pk_test_"],
+      "edge": "word",
+      "body": "A-Za-z0-9",
+      "min": 16
     },
     {
       "name": "webhook-secret",
-      "description": "Webhook signing secrets, each ending where another of its kind glued to it begins.",
-      "pattern": "whsec_(?:(?!whsec_)[A-Za-z0-9]){16,}",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "token",
+      "description": "Webhook signing secrets.",
+      "prefixes": ["whsec_"],
+      "body": "A-Za-z0-9",
+      "min": 16
     },
     {
       "name": "github-token",
-      "description": "GitHub tokens, each ending where another of its kind glued to it begins.",
-      "pattern": "gh[pousr]_(?:(?!gh[pousr]_)[A-Za-z0-9]){16,}",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "token",
+      "description": "GitHub tokens.",
+      "prefixes": ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"],
+      "body": "A-Za-z0-9",
+      "min": 16
     },
     {
       "name": "github-fine-grained-token",
+      "kind": "token",
       "description": "GitHub fine-grained tokens.",
-      "pattern": "github_pat_[A-Za-z0-9_]{16}[A-Za-z0-9_]*",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "prefixes": ["github_pat_"],
+      "body": "A-Za-z0-9_",
+      "min": 16
     },
     {
       "name": "gitlab-token",
+      "kind": "token",
       "description": "GitLab tokens.",
-      "pattern": "glpat-[A-Za-z0-9_-]{16}[A-Za-z0-9_-]*",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "prefixes": ["glpat-"],
+      "body": "A-Za-z0-9_-",
+      "min": 16
     },
     {
       "name": "aws-access-key-id",
-      "description": "AWS access key ids, and near misses with the same prefix glued before one, so that the match never ends inside the key; a word glued after it stays.",
-      "pattern": "(?:(?:AKIA|ASIA)[0-9A-Z]{0,15})*(?:AKIA|ASIA)[0-9A-Z]{16}",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "token",
+      "description": "AWS access key ids: exactly 16 characters after the prefix; a word glued after it stays.",
+      "prefixes": ["AKIA", "ASIA"],
+      "body": "0-9A-Z",
+      "exact": 16
     },
     {
       "name": "google-api-key",
-      "description": "Google API keys, and near misses with the same prefix glued before one, so that the match never ends inside the key; a word glued after it stays.",
-      "pattern": "(?:AIza[0-9A-Za-z_-]{0,34})*AIza[0-9A-Za-z_-]{35}",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "token",
+      "description": "Google API keys: exactly 35 characters after the prefix; a word glued after it stays.",
+      "prefixes": ["AIza"],
+      "body": "0-9A-Za-z_-",
+      "exact": 35
     },
     {
       "name": "slack-token",
+      "kind": "token",
       "description": "Slack tokens.",
-      "pattern": "xox[abeprs]-[A-Za-z0-9-]{16}[A-Za-z0-9-]*",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "prefixes": ["xoxa-", "xoxb-", "xoxe-", "xoxp-", "xoxr-", "xoxs-"],
+      "body": "A-Za-z0-9-",
+      "min": 16
     },
     {
       "name": "npm-token",
-      "description": "npm tokens, each ending where another of its kind glued to it begins.",
-      "pattern": "npm_(?:(?!npm_)[A-Za-z0-9]){16,}",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "token",
+      "description": "npm tokens.",
+      "prefixes": ["npm_"],
+      "body": "A-Za-z0-9",
+      "min": 16
     },
     {
       "name": "hugging-face-token",
-      "description": "Hugging Face tokens, each ending where another of its kind glued to it begins.",
-      "pattern": "hf_(?:(?!hf_)[A-Za-z0-9]){16,}",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "kind": "token",
+      "description": "Hugging Face tokens.",
+      "prefixes": ["hf_"],
+      "body": "A-Za-z0-9",
+      "min": 16
+    },
+    {
+      "name": "random-word",
+      "kind": "entropy",
+      "description": "A word that looks random, whatever its prefix (owner, 2026-10-08): a run of word characters (padding at its end) is cut at each separator piece that is itself word-like, and a part goes when it is at least minLength long, holds a letter and a digit, is not hex (letters before hex count as hex, so git hashes, digests and ids stay), has at most maxWordShare of its characters in word-like runs (a capital and 3 or more small letters, 3 or more small letters, or 3 or more capitals), and has at least minBits bits of Shannon entropy per character. Tuned on our own sources (no ordinary path, address, identifier or branch name goes) against random keys; see ADR-DESK-046.",
+      "word": "A-Za-z0-9+/_-",
+      "padding": "=",
+      "separators": "/_-",
+      "hex": "0-9A-Fa-f/_-",
+      "minLength": 24,
+      "maxWordShare": 0.5,
+      "minBits": 3.5
     }
   ]
 }

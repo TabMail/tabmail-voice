@@ -10,7 +10,7 @@ The macOS build script and `scripts/swift-errors.sh` build the Rust target befor
 
 ## Redaction contract
 
-`../privacy/redactors.json` is embedded directly, compiled once with fancy-regex, and each applied to the text as read, in no order (the union of their matches is taken out). Native helpers do not interpret its patterns. The fixed engine operation counter is disabled because it rejects benign larger pages; seek optimization remains disabled. Trusted patterns must pass all hostile-text and continuation gates. A real engine stack failure withholds the unprocessed tail and logs only the canonical rule name.
+`../privacy/redactors.json` is embedded directly and read once into typed redactors (`privacy/definitions.rs`), each data for one of a few kinds; one scanner (`privacy/scan.rs`) applies them all to the text as read, in no order (the union of what they take is taken out). Native helpers do not interpret the definitions. Every scan is linear in the text, so there is no engine to fail; the hostile-text and continuation gates hold it to that.
 
 `voice_core_redact_json` takes UTF-8 JSON arrays of lines containing adjacent fragments. Matching precedes fragment redistribution. Boundary mapping uses the existing UTF-16 contract; invalid encoding or boundaries refuse the operation. The ABI validates shape, bounds and version, catches panics with a payload-free hook, and returns an owned output buffer. The caller must free it exactly once with `voice_core_buffer_free`; a nonzero status never permits a raw-text fallback. Pointer validity and non-overlapping input/output memory are the native caller's responsibility, as documented in `include/voice_core.h`.
 

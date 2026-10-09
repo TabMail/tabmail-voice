@@ -884,7 +884,7 @@
       }
     },
     {
-      "name": "a field starting inside a key body keeps the named value after it",
+      "name": "a field starting inside a key body loses the next line's first word, a named value's name, and the value goes too",
       "request": {
         "field": {
           "maxLength": 20000,
@@ -892,7 +892,7 @@
         }
       },
       "expected": {
-        "value": "[redacted]\ntoken = [redacted]"
+        "value": "[redacted] = [redacted]"
       }
     },
     {

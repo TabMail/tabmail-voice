@@ -400,7 +400,7 @@
       }
     },
     {
-      "name": "a key body after a line ending in a link's hidden line break shows where it was redacted",
+      "name": "a key body without its header after a link with a hidden line break takes the text back to the read's start, through its end line",
       "request": {
         "blocks": [
           {
@@ -441,11 +441,11 @@
         ]
       },
       "expected": {
-        "rendered": "[Key:]\n[redacted]"
+        "rendered": "[[redacted]]"
       }
     },
     {
-      "name": "a key body after a field whose hidden text after it ends its line shows where it was redacted",
+      "name": "a key body without its header after a field whose hidden text ends its line takes the text back to the read's start, through its end line",
       "request": {
         "blocks": [
           {
@@ -481,11 +481,11 @@
         ]
       },
       "expected": {
-        "rendered": "> Key:\n[redacted]"
+        "rendered": "> [redacted]"
       }
     },
     {
-      "name": "a key body after the caret's line, its text after the caret ending in a line break, shows where it was redacted",
+      "name": "a key body without its header after the caret's line takes the text back to the read's start, through its end line",
       "request": {
         "blocks": [
           {
@@ -516,7 +516,7 @@
         ]
       },
       "expected": {
-        "rendered": "\u00bb notes \u2038more\n\u00bb \n[redacted]"
+        "rendered": "\u00bb [redacted]\u2038"
       }
     },
     {
@@ -4349,7 +4349,7 @@
       }
     },
     {
-      "name": "a key's body read one block per line, its header cut off, goes",
+      "name": "a key's body read one block per line, its header cut off, takes the text back to the read's start, through its end line",
       "request": {
         "blocks": [
           {
@@ -4420,7 +4420,7 @@
         ]
       },
       "expected": {
-        "rendered": "Page 2\n[redacted]"
+        "rendered": "[redacted]"
       }
     },
     {

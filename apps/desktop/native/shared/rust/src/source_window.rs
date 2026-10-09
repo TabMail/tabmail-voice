@@ -25,9 +25,11 @@ pub(crate) fn recognition_range_with_limit(
     if start_known && end_known {
         return Ok(0..text.len());
     }
-    // These actual source delimiters reset every canonical redactor's
-    // recognition state. Whitespace alone does not: named-value and PEM
-    // continuations can span an arbitrarily long whitespace run.
+    // These actual source delimiters reset every redactor's recognition
+    // state (a private key's end line takes the text before it back to the
+    // window's start, which still takes all of the window before it).
+    // Whitespace alone does not: named-value and PEM continuations can span
+    // an arbitrarily long whitespace run.
     // Keep the delimiter itself so concatenating approved source windows
     // cannot erase the evidence that closed the preceding recognition state.
     let mut characters = text.char_indices().peekable();

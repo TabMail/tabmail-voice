@@ -3606,6 +3606,63 @@ well-structured place for the redactors.
   left out) stands apart on that side. The owner set the gate for this work on 2026-10-08: no worse
   than `main`, and no bug in what it changed; a key body quoted or commented line by line, or in a
   tmux pane beside another, is shown on `main` too and is tracked in the issue tracker.)*
+- *(Amended 2026-10-08, the structured redactors, owner: "the same representation for everything,
+  same structural function with just the list of things to look for… simple is king".)* A redactor
+  is no longer a regular expression. Each is data for one of a few kinds (`token`, `privateKey`,
+  `keyLines`, `jsonWebToken`, `addressPassword`, `namedValue`, `entropy`) in `redactors.json`, read
+  and checked once (`privacy/definitions.rs`), and one scanner applies them all (`privacy/scan.rs`):
+  every redactor reads the text as read, every place a prefix, label or header occurs is looked at
+  on its own, and everything any of them takes goes, one marker for each run that overlaps or
+  meets. Every scan is linear in the text, so there is no engine to give up: fancy-regex, the rule
+  compiler, the engine-failure path (which took everything after a failing rule's last match) and
+  its tests are deleted. Case-blind names and prefixes compare the text case-folded once (Unicode
+  simple case folding). The kept word edge (an `sk-` key, a `Bearer` token, a `_test_` payment key
+  glued to the word before it stays shown) holds where the screen shows that word and the key in
+  one piece; a piece the screen shows on its own (a block, a styled run; `privacy::taken_with_edges`)
+  gives its first character an edge, and a prefix glued to text another redactor takes goes with it
+  (a key glued to a key). An edge only lets a find start; it never ends one. The owner set three
+  rules with it:
+  - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
+    label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows
+    it (`Done and more` loses `Done`; accepted). A word as long as a full line starting the next
+    line counts as one, so a key's last full line may go on with other text, and the word runs on
+    over padding and base64 alike. A run of such lines never goes on past a sentence's end
+    (punctuation, then whitespace) after its first line, because a document's text around a field
+    starts and ends there (the source window); a test cuts a witness of every redactor there and
+    checks the window still takes all the whole text takes inside it.
+  - **An end line with no header.** `-----END … PRIVATE KEY-----` with no header before it takes
+    the text back to the start of the read, or to just after the end line before it, through the
+    end line: a body read without its header goes whatever comes before it, and other text read
+    before the key (another pane, a label) goes too (accepted). Only private-key lines count; a
+    certificate's or a signature's end line takes nothing. A header with no end line after it still
+    takes the words of base64 after it up to the first other character, each such header on its own.
+    A key cut by a window either side keeps none of its body in the window (its own test).
+  - **Words that look random.** A run of `[A-Za-z0-9+/_-]` (padding at its end), cut at a `/`, `_`
+    or `-` piece that is itself word-like, goes when a part is at least 24 characters long, holds a
+    letter and a digit, is not hex (letters before hex count as hex, so git hashes, digests and ids
+    stay), has at most half of its characters in word-like runs (a capital and three or more small
+    letters, three or more small letters, three or more capitals not followed by a small one), and
+    carries at least 3.5 bits of Shannon entropy per character. Every number is data in its
+    redactor. It was tuned on every word of 24 or more characters in our own sources (benign) against
+    2,000 random keys per alphabet at 24, 40 and 64 characters (recall). Entropy alone does not
+    separate them (at 24 characters random base64 averages 3.86 bits; identifiers and paths reach
+    4.0–4.4), so the word-like share does the separating:
+
+    | Word share at most | Benign words taken | base64 24/40/64 | alphanumeric 24/40/64 | URL-safe 24/40/64 |
+    |---|---|---|---|---|
+    | 0.45 | 41 | .81/.90/.91 | .82/.92/.94 | .77/.83/.87 |
+    | 0.50 | 44 | .89/.94/.95 | .92/.95/.98 | .85/.87/.88 |
+    | 0.55 | 46 | .92/.94/.96 | .94/.97/.99 | .86/.91/.89 |
+
+    At 0.5 every benign word taken looks random itself (base64 test blobs, token fixtures, price
+    ids, publishable keys); no ordinary path, address, branch name, dated tag, identifier or
+    `package@version` goes. A key of small letters and digits only is taken about one time in five.
+
+  Checked against `main` and the regular-expression redactors this replaces, over the shared cases,
+  59,000 generated glued and paired secrets and 2,538 screen reads: no key character either takes
+  is shown; the only bytes `main` takes that the scanner shows are five single blanks after a key,
+  as the exact-text read already keeps them. Expectations the owner's rules changed are renamed in
+  the shared cases to say what now goes.
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what

@@ -1105,41 +1105,6 @@ mod tests {
             !String::from_utf8_lossy(&child.stderr).contains("synthetic-private-panic-sentinel")
         );
     }
-    #[test]
-    fn engine_failure_child() {
-        if std::env::var_os("VOICE_CORE_ENGINE_CHILD").is_none() {
-            return;
-        }
-        let text = format!(
-            "token={}\npassword:{}x private-tail-sentinel",
-            "abc123def",
-            " ".repeat(1_000_100)
-        );
-        let input = serde_json::to_vec(&vec![vec![text]]).unwrap();
-        let mut output = Buffer::empty();
-        assert_eq!(
-            unsafe { voice_core_redact_json(input.as_ptr(), input.len(), &mut output) },
-            0
-        );
-        let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
-        assert!(!String::from_utf8_lossy(bytes).contains("private-tail-sentinel"));
-        unsafe {
-            voice_core_buffer_free(output);
-        }
-    }
-    #[test]
-    fn engine_failure_logs_only_the_canonical_name() {
-        let child = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "ffi::tests::engine_failure_child", "--nocapture"])
-            .env("VOICE_CORE_ENGINE_CHILD", "1")
-            .output()
-            .unwrap();
-        assert!(child.status.success());
-        assert_eq!(
-            String::from_utf8(child.stderr).unwrap(),
-            "debug redactor unfinished: named-value\ndebug redactor unfinished: named-value-up-to-a-name\n"
-        );
-    }
 }
 
 #[cfg(test)]

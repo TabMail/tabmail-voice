@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 use super::*;
+use serde_json::Value;
 use std::time::{Duration, Instant};
 const CORPUS: &str = include_str!("../../../privacy/redaction-cases.json");
 
@@ -50,40 +51,37 @@ fn shared_scalar_and_fragmented_corpus() {
 }
 
 #[test]
-fn every_rule_and_case_flag_has_an_observable_fixture() {
+fn every_redactor_and_case_flag_has_an_observable_fixture() {
     let definitions: Value = serde_json::from_str(DEFINITIONS).unwrap();
     let corpus: Value = serde_json::from_str(CORPUS).unwrap();
     let cases = corpus["cases"].as_array().unwrap();
-    let detects = |rules: &[Rule]| {
+    let detects = |redactors: &[Redactor]| {
         cases.iter().any(|case| {
-            redact_with(&vec![vec![joined(&case["text"])]], rules).unwrap()[0][0]
+            redact_with(&vec![vec![joined(&case["text"])]], redactors).unwrap()[0][0]
                 != joined(&case["expected"])
         })
     };
     let mut flips = 0;
     for index in 0..definitions["redactors"].as_array().unwrap().len() {
         let mut removed = definitions.clone();
-        let rule = removed["redactors"].as_array_mut().unwrap().remove(index);
+        let redactor = removed["redactors"].as_array_mut().unwrap().remove(index);
         assert!(
-            detects(&compile(&removed.to_string()).unwrap()),
+            detects(&definitions::parse(&removed.to_string()).unwrap()),
             "removal {}",
-            rule["name"]
+            redactor["name"]
         );
-        // It has no case-dependent literal in its grammar.
-        if rule["name"] == "address-password" {
-            continue;
+        if let Some(flag) = redactor["ignoreCase"].as_bool() {
+            let mut flipped = definitions.clone();
+            flipped["redactors"][index]["ignoreCase"] = Value::Bool(!flag);
+            assert!(
+                detects(&definitions::parse(&flipped.to_string()).unwrap()),
+                "case flag {}",
+                redactor["name"]
+            );
+            flips += 1;
         }
-        let mut flipped = definitions.clone();
-        flipped["redactors"][index]["ignoreCase"] =
-            Value::Bool(!rule["ignoreCase"].as_bool().unwrap());
-        assert!(
-            detects(&compile(&flipped.to_string()).unwrap()),
-            "case flag {}",
-            rule["name"]
-        );
-        flips += 1;
     }
-    assert_eq!(flips, 20);
+    assert_eq!(flips, 1);
 }
 
 #[test]
@@ -167,28 +165,6 @@ fn benign_large_input_is_not_withheld() {
 }
 
 #[test]
-fn actual_engine_failure_withholds_tail_after_successful_match() {
-    let text = format!(
-        "token={}\npassword:{}x\nprivate-tail-sentinel",
-        "abc123def",
-        " ".repeat(1_000_100)
-    );
-    assert_eq!(scalar(&text), format!("token={PLACEHOLDER}"));
-}
-
-/// What the redaction takes out fails closed the same way: everything from the failing rule's last
-/// match on is taken, and the label before the first match stays.
-#[test]
-fn engine_failure_takes_the_tail_after_successful_match() {
-    let text = format!(
-        "token={}\npassword:{}x\nprivate-tail-sentinel",
-        "abc123def",
-        " ".repeat(1_000_100)
-    );
-    assert_eq!(taken(&text).unwrap(), vec!["token=".len()..text.len()]);
-}
-
-#[test]
 fn unicode_boundaries_and_empty_structure() {
     assert_eq!(redact(&vec![]).unwrap(), Lines::new());
     assert_eq!(
@@ -211,14 +187,85 @@ fn unicode_boundaries_and_empty_structure() {
 
 #[test]
 fn invalid_definitions_are_refused() {
-    for change in ["pattern", "replacement", "ignoreCase"] {
-        let mut value: Value = serde_json::from_str(DEFINITIONS).unwrap();
-        value["redactors"][0][change] = match change {
-            "pattern" => Value::String("(".into()),
-            "replacement" => Value::String("$999".into()),
-            _ => Value::Null,
-        };
-        assert!(compile(&value.to_string()).is_err());
+    let original: Value = serde_json::from_str(DEFINITIONS).unwrap();
+    assert!(definitions::parse(DEFINITIONS).is_ok());
+    let refused = |changed: &Value| definitions::parse(&changed.to_string()).is_err();
+    // Every redactor's every field, gone or the wrong type, is refused; so is a stray field.
+    for (index, redactor) in original["redactors"].as_array().unwrap().iter().enumerate() {
+        for key in redactor.as_object().unwrap().keys() {
+            let optional = ["ignoreCase", "edge", "space", "keepPrefix"].contains(&key.as_str());
+            let mut changed = original.clone();
+            changed["redactors"][index][key] = Value::Array(vec![]);
+            assert!(refused(&changed), "{} {key} wrong type", redactor["name"]);
+            if !optional {
+                changed["redactors"][index]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(key);
+                assert!(refused(&changed), "{} {key} missing", redactor["name"]);
+            }
+        }
+        let mut changed = original.clone();
+        changed["redactors"][index]["pattern"] = Value::String("a".into());
+        assert!(refused(&changed), "{} stray field", redactor["name"]);
+    }
+    for (field, value) in [
+        ("name", Value::String("Uppercase".into())),
+        ("name", Value::String("bad\nname".into())),
+        ("description", Value::String(String::new())),
+        ("kind", Value::String("regex".into())),
+        ("min", Value::from(0)),
+        ("body", Value::String(String::new())),
+        ("body", Value::String("z-a".into())),
+        ("body", Value::String("é".into())),
+        ("edge", Value::String("line".into())),
+        ("exact", Value::from(16)),
+        ("prefixes", Value::Array(vec![])),
+        ("prefixes", Value::Array(vec![Value::String(String::new())])),
+    ] {
+        let mut changed = original.clone();
+        let index = original["redactors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|r| r["name"] == "api-key-sk")
+            .unwrap();
+        changed["redactors"][index][field] = value;
+        assert!(refused(&changed), "{field}");
+    }
+    let entropy = original["redactors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["kind"] == "entropy")
+        .unwrap();
+    for (field, value) in [
+        ("maxWordShare", Value::from(0.0)),
+        ("maxWordShare", Value::from(1.5)),
+        ("minBits", Value::from(-1.0)),
+        ("padding", Value::String("==".into())),
+    ] {
+        let mut changed = original.clone();
+        changed["redactors"][entropy][field] = value;
+        assert!(refused(&changed), "{field}");
+    }
+    let mut duplicate = original.clone();
+    let item = duplicate["redactors"][0].clone();
+    duplicate["redactors"].as_array_mut().unwrap().push(item);
+    assert!(refused(&duplicate));
+    for value in [Value::Null, Value::Array(vec![])] {
+        let mut changed = original.clone();
+        changed["redactors"] = value;
+        assert!(refused(&changed));
+    }
+    for value in [
+        Value::Null,
+        Value::String(String::new()),
+        Value::String("[gone]".into()),
+    ] {
+        let mut changed = original.clone();
+        changed["placeholder"] = value;
+        assert!(refused(&changed));
     }
 }
 
@@ -238,44 +285,6 @@ fn corpus_is_nonvacuous_and_contains_no_complete_secret_per_source_line() {
     assert_eq!(names.len(), lines.len());
     for (index, line) in CORPUS.lines().enumerate() {
         assert_eq!(scalar(line), line, "fixture source line {}", index + 1);
-    }
-}
-
-#[test]
-fn definition_schema_guards_survive_generator_removal() {
-    let original: Value = serde_json::from_str(DEFINITIONS).unwrap();
-    for (field, value) in [
-        ("name", Value::String("Uppercase".into())),
-        ("name", Value::String("bad\nname".into())),
-        ("description", Value::String(String::new())),
-        ("pattern", Value::Null),
-        ("replacement", Value::Null),
-        ("replacement", Value::String("$0{placeholder}".into())),
-        ("replacement", Value::String("$1".into())),
-        ("replacement", Value::String(String::new())),
-    ] {
-        let mut changed = original.clone();
-        changed["redactors"][0][field] = value;
-        assert!(compile(&changed.to_string()).is_err(), "{field}");
-    }
-    let mut duplicate = original.clone();
-    let item = duplicate["redactors"][0].clone();
-    duplicate["redactors"].as_array_mut().unwrap().push(item);
-    assert!(compile(&duplicate.to_string()).is_err());
-    for value in [Value::Null, Value::Array(vec![])] {
-        let mut changed = original.clone();
-        changed["redactors"] = value;
-        assert!(compile(&changed.to_string()).is_err());
-    }
-    for value in [
-        Value::Null,
-        Value::String(String::new()),
-        Value::String("$1".into()),
-        Value::String("a\\b".into()),
-    ] {
-        let mut changed = original.clone();
-        changed["placeholder"] = value;
-        assert!(compile(&changed.to_string()).is_err());
     }
 }
 
@@ -405,21 +414,21 @@ fn terminal_anchor_after_a_run_over_a_line_break_counts_the_break() {
     let lines = vec![
         vec![line.clone()],
         vec![line.clone()],
-        vec!["after it".into()],
+        vec!["(after it)".into()],
     ];
-    let end = 2 * line.len() + 2 + "after it".len();
+    let end = 2 * line.len() + 2 + "(after it)".len();
     let (actual, anchors) = redact_anchored(&lines, &[end]).unwrap();
     assert_eq!(
         actual,
         vec![
             vec![PLACEHOLDER.to_string()],
             vec![String::new()],
-            vec!["after it".to_string()]
+            vec!["(after it)".to_string()]
         ]
     );
     assert_eq!(
         anchors,
-        vec![Some(PLACEHOLDER.len() + 2 + "after it".len())]
+        vec![Some(PLACEHOLDER.len() + 2 + "(after it)".len())]
     );
 }
 
@@ -440,5 +449,181 @@ fn taken_runs_are_the_redaction() {
         }
         rebuilt.push_str(&text[copied..]);
         assert_eq!(rebuilt, scalar(&text), "{}", case["name"]);
+    }
+}
+
+/// Every byte some redactor takes, in order.
+fn taken_bytes(text: &str, redactors: &[Redactor]) -> Vec<bool> {
+    let mut taken = vec![false; text.len()];
+    for run in runs(&scan::scan(text, &[], redactors)) {
+        taken[run].fill(true);
+    }
+    taken
+}
+
+/// The redactors in another order take the same; all of them take everything each takes alone
+/// (more only where a key glued to the word before it starts in text another takes).
+#[test]
+fn the_redaction_holds_every_redactor_alone_in_any_order() {
+    let definitions: Value = serde_json::from_str(DEFINITIONS).unwrap();
+    let list = definitions["redactors"].as_array().unwrap();
+    let with = |redactors: Vec<Value>| {
+        let mut changed = definitions.clone();
+        changed["redactors"] = Value::Array(redactors);
+        definitions::parse(&changed.to_string()).unwrap()
+    };
+    let reversed = with(list.iter().rev().cloned().collect());
+    let rotated = with(
+        list[list.len() / 2..]
+            .iter()
+            .chain(&list[..list.len() / 2])
+            .cloned()
+            .collect(),
+    );
+    let alone: Vec<_> = list.iter().map(|r| with(vec![r.clone()])).collect();
+    let all = redactors().unwrap();
+    let corpus: Value = serde_json::from_str(CORPUS).unwrap();
+    for case in corpus["cases"].as_array().unwrap() {
+        let text = joined(&case["text"]);
+        let taken = taken_bytes(&text, all);
+        assert_eq!(taken_bytes(&text, &reversed), taken, "{}", case["name"]);
+        assert_eq!(taken_bytes(&text, &rotated), taken, "{}", case["name"]);
+        let mut union = vec![false; text.len()];
+        for redactors in &alone {
+            for (at, one) in taken_bytes(&text, redactors).into_iter().enumerate() {
+                union[at] |= one;
+            }
+        }
+        assert!(
+            union.iter().zip(&taken).all(|(&one, &all)| !one || all),
+            "{}",
+            case["name"]
+        );
+        assert!(
+            union == taken || case["name"].as_str().unwrap().contains("glued"),
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+/// Every find takes part of what it matched, and both start and end on character boundaries.
+#[test]
+fn every_find_takes_part_of_its_match_on_character_boundaries() {
+    let corpus: Value = serde_json::from_str(CORPUS).unwrap();
+    for case in corpus["cases"].as_array().unwrap() {
+        let text = joined(&case["text"]);
+        for found in scan::scan(&text, &[], redactors().unwrap()) {
+            let (matched, taken) = (&found.matched, &found.taken);
+            assert!(
+                matched.start <= taken.start && taken.end <= matched.end && taken.start < taken.end,
+                "{}",
+                case["name"]
+            );
+            for at in [matched.start, matched.end, taken.start, taken.end] {
+                assert!(text.is_char_boundary(at), "{}", case["name"]);
+            }
+        }
+    }
+}
+
+/// A document's text around what a field shows starts and ends where a sentence does (the source
+/// window). Cut there, the window still takes all that the whole text takes inside it, so a
+/// secret beside the cut is never shown for want of what was cut off.
+#[test]
+fn a_window_cut_where_a_sentence_ends_takes_all_the_whole_text_takes_inside_it() {
+    let definitions: Value = serde_json::from_str(DEFINITIONS).unwrap();
+    let corpus: Value = serde_json::from_str(CORPUS).unwrap();
+    let samples: Vec<String> = corpus["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|case| joined(&case["text"]))
+        .collect();
+    // A private key's end line takes the text before it back to the start, whatever it is: its
+    // own test follows.
+    for definition in definitions["redactors"].as_array().unwrap() {
+        if definition["kind"] == "privateKey" {
+            continue;
+        }
+        let mut one = definitions.clone();
+        one["redactors"] = Value::Array(vec![definition.clone()]);
+        let redactors = definitions::parse(&one.to_string()).unwrap();
+        let sample = samples
+            .iter()
+            .find(|s| s.len() <= 512 && taken_bytes(s, &redactors).contains(&true))
+            .unwrap_or_else(|| panic!("no witness for {}", definition["name"]));
+        for cut in sample
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .chain(std::iter::once(sample.len()))
+        {
+            for marker in [". ", ".\n", "!\u{2003}", "?\n", "; "] {
+                let whole = format!("{}{marker}{}", &sample[..cut], &sample[cut..]);
+                let taken = taken_bytes(&whole, &redactors);
+                // A window keeps the punctuation and whitespace it starts or ends at; a find may
+                // end on that punctuation (a token's body may hold a dot).
+                let after = cut + marker.len();
+                for (window, offset) in [(&whole[cut..], cut), (&whole[..after], 0)] {
+                    let in_window = taken_bytes(window, &redactors);
+                    for (at, &one) in in_window.iter().enumerate() {
+                        assert!(
+                            one || !taken[offset + at] || (cut..after).contains(&(offset + at)),
+                            "{} at {cut} {marker:?}: {:?}",
+                            definition["name"],
+                            &whole[..]
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A private key cut by a window anywhere, at a sentence's end: whichever side of it the window
+/// holds, every character of the key's body in the window goes (the header with what follows it,
+/// or the end line with the text back to the window's start).
+#[test]
+fn a_private_key_cut_by_a_window_loses_all_of_its_body_in_the_window() {
+    let definitions: Value = serde_json::from_str(DEFINITIONS).unwrap();
+    let mut one = definitions.clone();
+    one["redactors"] = Value::Array(
+        definitions["redactors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["kind"] == "privateKey")
+            .cloned()
+            .collect(),
+    );
+    let redactors = definitions::parse(&one.to_string()).unwrap();
+    let line = "a1B2c3D4e5".repeat(4);
+    let header = "-----BEGIN OPENSSH PRIVATE KEY-----\n";
+    let body = format!("{line}\n{line}\na1B2c3==\n");
+    let sample = format!("before\n{header}{body}-----END OPENSSH PRIVATE KEY-----\nafter");
+    let body_start = sample.find(header).unwrap() + header.len();
+    let body = body_start..body_start + body.len();
+    for cut in body.start - header.len()..body.end + 4 {
+        for marker in [". ", "!\n"] {
+            let whole = format!("{}{marker}{}", &sample[..cut], &sample[cut..]);
+            let after = cut + marker.len();
+            // The body's own characters, where they are in `whole`.
+            let secret = |at: usize| {
+                if (cut..after).contains(&at) {
+                    return false;
+                }
+                let at = if at >= after { at - marker.len() } else { at };
+                body.contains(&at) && !sample.as_bytes()[at].is_ascii_whitespace()
+            };
+            for (window, offset) in [(&whole[cut..], cut), (&whole[..after], 0)] {
+                for (at, one) in taken_bytes(window, &redactors).into_iter().enumerate() {
+                    assert!(
+                        one || !secret(offset + at),
+                        "{cut} {marker:?} {}",
+                        offset + at
+                    );
+                }
+            }
+        }
     }
 }

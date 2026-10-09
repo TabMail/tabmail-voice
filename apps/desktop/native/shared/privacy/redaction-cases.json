@@ -1,6 +1,6 @@
 {
  "comment": [
-  "What every helper's redaction must do, whatever its language and regex engine: for each case, `text` joined becomes `expected` joined, where {redacted} stands for redactors.json's `placeholder`.",
+  "What every helper's redaction must do, whatever its language: for each case, `text` joined becomes `expected` joined, where {redacted} stands for redactors.json's `placeholder`.",
   "Texts are split into fragments so that no line of this file holds anything shaped like a real key; the bodies are made up.",
   "`lineCases` are for redacting several texts together, each keeping its share. A line is one or more texts that follow one another with nothing between (the text before the caret, the selection, the text after it); the lines are redacted as the one text they make, a line break between them. Every redactor looks at the lines' one text as read; what a match's replacement copies around the placeholder at the match's ends stays in the texts that held it, and the rest goes. One placeholder stands for each run of matches that overlap or meet, in the text holding the first character the run took; a text wholly inside a run comes back empty, and a line break between texts stays."
  ],
@@ -10,7 +10,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -22,7 +23,8 @@
     "export KEY ",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -36,7 +38,8 @@
    "text": [
     "sk",
     "-proj-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -48,7 +51,8 @@
     "export KEY ",
     "sk",
     "-proj-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -62,7 +66,8 @@
    "text": [
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -74,7 +79,8 @@
     "export KEY ",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -88,7 +94,8 @@
    "text": [
     "rk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -100,7 +107,8 @@
     "export KEY ",
     "rk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -114,7 +122,8 @@
    "text": [
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -126,7 +135,8 @@
     "export KEY ",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -140,7 +150,9 @@
    "text": [
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8"
    ],
    "expected": [
     "{redacted}"
@@ -152,7 +164,9 @@
     "export KEY ",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -166,7 +180,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -178,7 +193,8 @@
     "export KEY ",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -192,7 +208,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -204,7 +221,8 @@
     "export KEY ",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -244,7 +262,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "{redacted}"
@@ -256,7 +276,9 @@
     "export KEY ",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -270,7 +292,8 @@
    "text": [
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -282,7 +305,8 @@
     "export KEY ",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -296,7 +320,9 @@
    "text": [
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8"
    ],
    "expected": [
     "{redacted}"
@@ -308,7 +334,9 @@
     "export KEY ",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -322,7 +350,8 @@
    "text": [
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -334,7 +363,8 @@
     "export KEY ",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -354,7 +384,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "{redacted}"
@@ -372,7 +404,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -388,7 +422,14 @@
     "-----BEGIN OPENSSH ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0\na1B2c3D",
+    "4e5F6g7H8i9J",
+    "0k1L2m3N4o5P",
+    "6q7R8s9T0\na1",
+    "B2c3D4e5F6==",
     "\n",
     "-----END OPENSSH ",
     "PRIVATE KEY-----",
@@ -407,7 +448,14 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6=="
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0\na1B2c3D",
+    "4e5F6g7H8i9J",
+    "0k1L2m3N4o5P",
+    "6q7R8s9T0\na1",
+    "B2c3D4e5F6=="
    ],
    "expected": [
     "before\n",
@@ -420,7 +468,14 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0\na1B2c3D",
+    "4e5F6g7H8i9J",
+    "0k1L2m3N4o5P",
+    "6q7R8s9T0\na1",
+    "B2c3D4e5F6==",
     "\n",
     "-----END ",
     "PRIVATE KEY-----"
@@ -433,7 +488,9 @@
    "name": "a bearer token goes, the word stays",
    "text": [
     "Authorization: Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6"
    ],
    "expected": [
     "Authorization: Bearer ",
@@ -444,7 +501,9 @@
    "name": "a bearer token in lower case",
    "text": [
     "authorization: bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpx"
    ],
    "expected": [
     "authorization: bearer ",
@@ -728,11 +787,14 @@
     "A ",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " and B ",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
     ", password=",
     "hunter22",
     " end"
@@ -791,12 +853,14 @@
    "text": [
     "SK",
     "_LIVE_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "SK",
     "_LIVE_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -805,7 +869,8 @@
     "x",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -841,12 +906,14 @@
    "text": [
     "WH",
     "SEC_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "WH",
     "SEC_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -855,7 +922,8 @@
     "x",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -891,12 +959,14 @@
    "text": [
     "GH",
     "P_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "GH",
     "P_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -905,7 +975,8 @@
     "x",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -941,12 +1012,14 @@
    "text": [
     "GITHUB",
     "_PAT_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "GITHUB",
     "_PAT_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -955,7 +1028,8 @@
     "x",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -991,12 +1065,14 @@
    "text": [
     "GL",
     "PAT-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "GL",
     "PAT-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1005,7 +1081,8 @@
     "x",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -1041,12 +1118,14 @@
    "text": [
     "XO",
     "XB-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "XO",
     "XB-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1055,7 +1134,8 @@
     "x",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -1091,12 +1171,14 @@
    "text": [
     "NP",
     "M_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "NP",
     "M_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1105,7 +1187,8 @@
     "x",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -1141,12 +1224,14 @@
    "text": [
     "H",
     "F_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "H",
     "F_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1155,7 +1240,8 @@
     "x",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -1167,12 +1253,14 @@
    "text": [
     "SK",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "SK",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1181,13 +1269,15 @@
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1196,13 +1286,15 @@
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1211,7 +1303,8 @@
     "key:",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "key:",
@@ -1244,11 +1337,13 @@
    "name": "the word bearer ending another word stays",
    "text": [
     "xBearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "xBearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1318,12 +1413,16 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqx"
    ],
    "expected": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqx"
    ]
   },
   {
@@ -1331,7 +1430,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "m3N4o5P6q7Rs"
    ],
    "expected": [
     "{redacted}",
@@ -1343,12 +1444,16 @@
    "text": [
     "ai",
     "ZA",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "ai",
     "ZA",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ]
   },
   {
@@ -1357,7 +1462,9 @@
     "x",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "x",
@@ -1369,24 +1476,28 @@
    "text": [
     "EY",
     "J",
-    "a1B2c3D4e5F6",
+    "axbxcxdxexfx",
     ".",
     "EY",
     "J",
-    "a1B2c3D4e5F6g7H8i9J0",
+    "axbxcxdxexfxgxhxixjx",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxox"
    ],
    "expected": [
     "EY",
     "J",
-    "a1B2c3D4e5F6",
+    "axbxcxdxexfx",
     ".",
     "EY",
     "J",
-    "a1B2c3D4e5F6g7H8i9J0",
+    "axbxcxdxexfxgxhxixjx",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxox"
    ]
   },
   {
@@ -1401,7 +1512,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "x",
@@ -1435,13 +1548,19 @@
     "-----begin ",
     "private key-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxrx",
+    "sxtx"
    ],
    "expected": [
     "-----begin ",
     "private key-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxrx",
+    "sxtx"
    ]
   },
   {
@@ -1449,7 +1568,8 @@
    "text": [
     "pk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1460,7 +1580,8 @@
    "text": [
     "pk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1471,7 +1592,8 @@
    "text": [
     "sk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1482,7 +1604,8 @@
    "text": [
     "rk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1493,7 +1616,8 @@
    "text": [
     "gh",
     "o_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1504,7 +1628,8 @@
    "text": [
     "gh",
     "u_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1515,7 +1640,8 @@
    "text": [
     "gh",
     "s_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1526,7 +1652,8 @@
    "text": [
     "gh",
     "r_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1537,7 +1664,8 @@
    "text": [
     "xo",
     "xa-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1548,7 +1676,8 @@
    "text": [
     "xo",
     "xe-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1559,7 +1688,8 @@
    "text": [
     "xo",
     "xp-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1570,7 +1700,8 @@
    "text": [
     "xo",
     "xr-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1581,7 +1712,8 @@
    "text": [
     "xo",
     "xs-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1769,7 +1901,8 @@
     "は",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "です"
    ],
    "expected": [
@@ -1784,7 +1917,8 @@
     "키",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "키",
@@ -1797,7 +1931,8 @@
     "clé",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "clé",
@@ -1836,7 +1971,8 @@
     "キーは",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "キーは",
@@ -1847,7 +1983,8 @@
    "name": "a bearer token after Japanese goes",
    "text": [
     "認証はBearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "認証はBearer ",
@@ -1879,7 +2016,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "トークンは",
@@ -1890,7 +2029,8 @@
    "name": "a bearer token after a no-break space goes",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "Bearer ",
@@ -1953,7 +2093,10 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2+c3D4/e5F6+g7H8/i9J0\nk1L2+m3N4/o5P6==",
+    "a1B2+c3D4/e5",
+    "F6+g7H8/i9J0",
+    "\nk1L2+m3N4/o",
+    "5P6==",
     "\n",
     "-----END ",
     "PRIVATE KEY-----",
@@ -1984,7 +2127,10 @@
     "-----BEGIN PGP ",
     "PRIVATE KEY BLOCK-----",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n=a1B2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6\n=a1",
+    "B2",
     "\n",
     "-----END PGP ",
     "PRIVATE KEY BLOCK-----"
@@ -1996,10 +2142,22 @@
   {
    "name": "a public-key block stays",
    "text": [
-    "-----BEGIN PUBLIC KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n-----END PUBLIC KEY-----"
+    "-----BEGIN P",
+    "UBLIC KEY---",
+    "--\na1b2c3d4e",
+    "efeaebecedee",
+    "1f2a3b4c5d6\n",
+    "-----END PUB",
+    "LIC KEY-----"
    ],
    "expected": [
-    "-----BEGIN PUBLIC KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n-----END PUBLIC KEY-----"
+    "-----BEGIN P",
+    "UBLIC KEY---",
+    "--\na1b2c3d4e",
+    "efeaebecedee",
+    "1f2a3b4c5d6\n",
+    "-----END PUB",
+    "LIC KEY-----"
    ]
   },
   {
@@ -2152,7 +2310,8 @@
     "KEY=",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2165,7 +2324,8 @@
     "\"",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2180,7 +2340,8 @@
     "KEY=",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2193,7 +2354,8 @@
     "\"",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2208,7 +2370,8 @@
     "KEY=",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2221,7 +2384,8 @@
     "\"",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2236,7 +2400,8 @@
     "KEY=",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2249,7 +2414,8 @@
     "\"",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2264,7 +2430,8 @@
     "KEY=",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2277,7 +2444,8 @@
     "\"",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2292,7 +2460,8 @@
     "KEY=",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2305,7 +2474,8 @@
     "\"",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2320,7 +2490,8 @@
     "KEY=",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2333,7 +2504,8 @@
     "\"",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2348,7 +2520,8 @@
     "KEY=",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2361,7 +2534,8 @@
     "\"",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2382,7 +2556,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "KEY=",
@@ -2401,7 +2577,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
     "\""
    ],
    "expected": [
@@ -2457,7 +2635,9 @@
     "KEY=",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "KEY=",
@@ -2470,7 +2650,9 @@
     "\"",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     "\""
    ],
    "expected": [
@@ -2484,7 +2666,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     "."
    ],
    "expected": [
@@ -2497,7 +2681,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr",
     "-x"
    ],
    "expected": [
@@ -2555,7 +2741,8 @@
     "😀 key ",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "😀 key ",
@@ -2581,13 +2768,15 @@
     "X",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "X",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2596,13 +2785,15 @@
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2611,13 +2802,15 @@
     "7",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2626,13 +2819,15 @@
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2641,7 +2836,8 @@
     "X",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2654,7 +2850,8 @@
     "x",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2667,7 +2864,8 @@
     "7",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "7",
@@ -2680,7 +2878,8 @@
     "_",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -2693,7 +2892,8 @@
     "X",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2706,7 +2906,8 @@
     "x",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2719,7 +2920,8 @@
     "7",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
@@ -2732,7 +2934,8 @@
     "_",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -2745,7 +2948,8 @@
     "X",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2758,7 +2962,8 @@
     "x",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2771,7 +2976,8 @@
     "7",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
@@ -2784,7 +2990,8 @@
     "_",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -2797,7 +3004,8 @@
     "X",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2810,7 +3018,8 @@
     "x",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2823,7 +3032,8 @@
     "7",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "7",
@@ -2836,7 +3046,8 @@
     "_",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -2849,7 +3060,8 @@
     "X",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2862,7 +3074,8 @@
     "x",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2875,7 +3088,8 @@
     "7",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
@@ -2888,7 +3102,8 @@
     "_",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -2901,7 +3116,8 @@
     "X",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2914,7 +3130,8 @@
     "x",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2927,7 +3144,8 @@
     "7",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
@@ -2940,7 +3158,8 @@
     "_",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -2953,7 +3172,8 @@
     "X",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
@@ -2966,7 +3186,8 @@
     "x",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -2979,7 +3200,8 @@
     "7",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
@@ -2992,7 +3214,8 @@
     "_",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -3005,7 +3228,8 @@
     "X",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "X",
@@ -3018,7 +3242,8 @@
     "x",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
@@ -3031,7 +3256,8 @@
     "7",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
@@ -3044,7 +3270,8 @@
     "_",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
@@ -3109,7 +3336,9 @@
     "X",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "X",
@@ -3122,7 +3351,9 @@
     "x",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "x",
@@ -3135,7 +3366,9 @@
     "7",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "7",
@@ -3148,7 +3381,9 @@
     "_",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "_",
@@ -3167,7 +3402,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "X",
@@ -3186,7 +3423,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "x",
@@ -3205,7 +3444,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "7",
@@ -3224,7 +3465,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "_",
@@ -3236,12 +3479,14 @@
    "text": [
     "X",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "X",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3249,12 +3494,14 @@
    "text": [
     "x",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "x",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3262,12 +3509,14 @@
    "text": [
     "7",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3275,12 +3524,14 @@
    "text": [
     "_",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "_",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3295,7 +3546,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "-",
@@ -3327,7 +3580,8 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2+c3D4/e5F6+g7H8/i9J0"
+    "a1B2+c3D4/e5",
+    "F6+g7H8/i9J0"
    ],
    "expected": [
     "{redacted}"
@@ -3427,7 +3681,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4_e5F6g7H8-i9J0k1L2m3N4o5P6q"
+    "a1B2c3D4_e5F",
+    "6g7H8-i9J0k1",
+    "L2m3N4o5P6q"
    ],
    "expected": [
     "{redacted}"
@@ -3475,7 +3731,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr",
     "X"
    ],
    "expected": [
@@ -3488,7 +3746,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr",
     "7"
    ],
    "expected": [
@@ -3501,7 +3761,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     "_"
    ],
    "expected": [
@@ -3689,7 +3951,8 @@
    "name": "the word Bearer and its token two spaces apart",
    "text": [
     "Bearer  ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "Bearer  ",
@@ -3700,7 +3963,8 @@
    "name": "the word Bearer and its token on two lines ended by a carriage return",
    "text": [
     "Authorization: Bearer\r\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "Authorization: Bearer\r\n",
@@ -3723,7 +3987,8 @@
     "hunter/",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "password=",
@@ -3837,7 +4102,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ":next"
    ],
    "expected": [
@@ -3850,7 +4116,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ";next"
    ],
    "expected": [
@@ -3863,7 +4130,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "@next"
    ],
    "expected": [
@@ -3876,7 +4144,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "^next"
    ],
    "expected": [
@@ -3889,7 +4158,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ":next"
    ],
    "expected": [
@@ -3902,7 +4172,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ";next"
    ],
    "expected": [
@@ -3915,7 +4186,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "@next"
    ],
    "expected": [
@@ -3928,7 +4200,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "^next"
    ],
    "expected": [
@@ -3941,7 +4214,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ":next"
    ],
    "expected": [
@@ -3954,7 +4228,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ";next"
    ],
    "expected": [
@@ -3967,7 +4242,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "@next"
    ],
    "expected": [
@@ -3980,7 +4256,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "^next"
    ],
    "expected": [
@@ -4196,7 +4473,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     ":next"
    ],
    "expected": [
@@ -4230,7 +4509,9 @@
    "name": "a bearer token holding . past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2.m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    ".m3N4",
     " next"
    ],
    "expected": [
@@ -4243,7 +4524,9 @@
    "name": "a bearer token holding _ past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4256,7 +4539,9 @@
    "name": "a bearer token holding ~ past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2~m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "~m3N4",
     " next"
    ],
    "expected": [
@@ -4269,7 +4554,9 @@
    "name": "a bearer token holding + past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2+m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "+m3N4",
     " next"
    ],
    "expected": [
@@ -4282,7 +4569,9 @@
    "name": "a bearer token holding / past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2/m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "/m3N4",
     " next"
    ],
    "expected": [
@@ -4295,7 +4584,9 @@
    "name": "a bearer token holding = past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2=m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "=m3N4",
     " next"
    ],
    "expected": [
@@ -4308,7 +4599,9 @@
    "name": "a bearer token holding - past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "-m3N4",
     " next"
    ],
    "expected": [
@@ -4361,7 +4654,9 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4374,7 +4669,9 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "-m3N4",
     " next"
    ],
    "expected": [
@@ -4387,7 +4684,9 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4400,7 +4699,9 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4413,7 +4714,9 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "-m3N4",
     " next"
    ],
    "expected": [
@@ -4533,7 +4836,8 @@
     "\n",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4549,7 +4853,8 @@
     "\n",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4587,7 +4892,8 @@
     "\n",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4603,7 +4909,8 @@
     "\n",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4619,7 +4926,8 @@
     "\n",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4635,7 +4943,8 @@
     "\n",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4651,7 +4960,8 @@
     "\n",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4667,7 +4977,8 @@
     "\n",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4683,7 +4994,8 @@
     "\n",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -4844,11 +5156,19 @@
   {
    "name": "a text that starts inside a key's body, through its end line",
    "text": [
-    "e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "e5F6g7H8i9J0",
+    "k1L2m3N4o5P6",
+    "q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -4866,11 +5186,20 @@
    "text": [
     "k1L2m3N4o5P6q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "{redacted}"
@@ -4879,24 +5208,42 @@
   {
    "name": "a text that starts with one long base64 line keeps it",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nThe report follows."
    ],
    "expected": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nThe report follows."
    ]
   },
   {
    "name": "a key's body after a page number, through its end line, goes",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n1\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -4913,22 +5260,31 @@
    "name": "a key's body before and after a page footer goes, through its end line",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nPage 1 of 2\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "-----END ",
     "PRIVATE KEY-----",
     " after"
    ],
    "expected": [
-    "Server notes\n",
-    "{redacted}",
-    "\nPage 1 of 2\n",
     "{redacted}",
     " after"
    ]
@@ -4937,9 +5293,15 @@
    "name": "a key's body without its header line, after other text, goes through its end line",
    "text": [
     "Appendix: server key\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -4947,7 +5309,6 @@
     "PRIVATE KEY-----"
    ],
    "expected": [
-    "Appendix: server key\n",
     "{redacted}"
    ]
   },
@@ -4962,7 +5323,6 @@
     "\nafter"
    ],
    "expected": [
-    "Page 2\n",
     "{redacted}",
     "\nafter"
    ]
@@ -4971,30 +5331,34 @@
    "name": "a key's body without its header line, across a page break, goes through its end line",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
     "-----END ",
     "PRIVATE KEY-----",
     "\nafter"
    ],
    "expected": [
-    "Server notes\n",
     "{redacted}",
     "\nafter"
    ]
   },
   {
-   "name": "an end line alone is no key's body",
+   "name": "an end line alone takes the text before it back to the start",
    "text": [
     "The file ends with -----END ",
     "PRIVATE KEY-----",
     "."
    ],
    "expected": [
-    "The file ends with -----END ",
-    "PRIVATE KEY-----",
+    "{redacted}",
     "."
    ]
   },
@@ -5002,18 +5366,24 @@
    "name": "base64 lines before an end line in lower case are no key's body",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\n",
-    "a1B2c3D4e5F6==",
+    "a1b2c3d4e5f6==",
     "\n",
     "-----end ",
     "private key-----"
    ],
    "expected": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\n",
-    "a1B2c3D4e5F6==",
+    "a1b2c3d4e5f6==",
     "\n",
     "-----end ",
     "private key-----"
@@ -5023,9 +5393,15 @@
    "name": "base64 lines after the start of a text go too, as a key's body would",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Server notes\n",
@@ -5037,9 +5413,15 @@
    "text": [
     "k1L2m3N4o5P6q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "-----end ",
     "private key-----"
@@ -5054,20 +5436,35 @@
    "name": "a page in the middle of a printed key, between a running header and a footer, goes",
    "text": [
     "Confidential.\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nPage 2 of 3.\n\nConfidential.\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Confidential.\n",
     "{redacted}",
-    "\nPage 2 of 3.\n\nConfidential.\n",
+    " 2 of 3.\n\nConfidential.\n",
     "{redacted}"
    ]
   },
@@ -5075,9 +5472,15 @@
    "name": "a key's body beside a label on its first line goes, its first line too",
    "text": [
     "Key: ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nend"
    ],
    "expected": [
@@ -5089,9 +5492,15 @@
    "name": "a key's body beside a label after a tab goes, its first line too",
    "text": [
     "Key:\t",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Key:\t",
@@ -5102,7 +5511,10 @@
    "name": "a key's body beside a label on its first line goes through its end line",
    "text": [
     "Key: ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -5110,7 +5522,6 @@
     "PRIVATE KEY-----"
    ],
    "expected": [
-    "Key: ",
     "{redacted}"
    ]
   },
@@ -5118,12 +5529,18 @@
    "name": "one long line of base64 beside a label stays",
    "text": [
     "Checksum: ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nend"
    ],
    "expected": [
     "Checksum: ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nend"
    ]
   },
@@ -5131,9 +5548,15 @@
    "name": "a key's body whose lines are separated by U+2029, as a Qt editor gives its paragraphs goes",
    "text": [
     "Notes:\u2029",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2029",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2029end"
    ],
    "expected": [
@@ -5145,9 +5568,15 @@
    "name": "a key's body whose lines are separated by U+2028 goes",
    "text": [
     "Notes:\u2028",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2028",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2028end"
    ],
    "expected": [
@@ -5159,9 +5588,15 @@
    "name": "a key's body whose lines are separated by a carriage return alone goes",
    "text": [
     "Notes:\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\rend"
    ],
    "expected": [
@@ -5173,7 +5608,10 @@
    "name": "a key's body separated by U+2029 goes through its end line",
    "text": [
     "Notes:\u2029",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2029",
     "a1B2c3D4e5F6==",
     "\u2029",
@@ -5181,7 +5619,6 @@
     "PRIVATE KEY-----"
    ],
    "expected": [
-    "Notes:\u2029",
     "{redacted}"
    ]
   },
@@ -5190,9 +5627,15 @@
    "text": [
     "a1B2c3D4e5F6g7H8i9J0",
     "\u2029",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2029",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2029- end"
    ],
    "expected": [
@@ -5204,27 +5647,39 @@
    "name": "a list of long hashes goes, as a key's body would",
    "text": [
     "Checksums:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nend of list"
    ],
    "expected": [
     "Checksums:\n",
     "{redacted}",
-    "\nend of list"
+    " of list"
    ]
   },
   {
    "name": "one long line of base64 alone stays",
    "text": [
     "Checksum:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nend"
    ],
    "expected": [
     "Checksum:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nend"
    ]
   },
@@ -5260,7 +5715,9 @@
     "Key",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "Key",
@@ -5429,9 +5886,15 @@
    "name": "a key's last, shorter line goes with its lines",
    "text": [
     "Key:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6g7H8"
    ],
@@ -5444,9 +5907,15 @@
    "name": "a key's last line, padded and shorter, goes with its lines, and the line break after it stays",
    "text": [
     "Notes:\u2028",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2028",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\u2028",
     "a1B2==",
     "\u2028end"
@@ -5461,9 +5930,15 @@
    "name": "a word on its own line after a key's lines goes, as a key's last line may be any word",
    "text": [
     "Checksums:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nDone"
    ],
    "expected": [
@@ -5472,33 +5947,51 @@
    ]
   },
   {
-   "name": "a short line after a key's lines that goes on with other text stays",
+   "name": "a short line after a key's lines that goes on with other text loses its first word",
    "text": [
     "Checksums:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nv2 and more"
    ],
    "expected": [
     "Checksums:\n",
     "{redacted}",
-    "\nv2 and more"
+    " and more"
    ]
   },
   {
    "name": "a key's lines on both sides of a short line go together, its line breaks a carriage return alone",
    "text": [
     "Notes:\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\r",
     "a1B2c3",
     "\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\rend"
    ],
    "expected": [
@@ -5510,15 +6003,23 @@
    "name": "a key's body holding a run shaped like a Google key goes whole",
    "text": [
     "Key:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "q7R8s9T0u1",
     "AI",
     "za",
-    "b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S",
+    "b2C3d4E5f6G7",
+    "h8I9j0K1l2M3",
+    "n4O5p6Q7r8S",
     "9t0U1v2W3x4",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6g7H8"
    ],
@@ -5532,7 +6033,10 @@
    "text": [
     "-----BEGIN ",
     "PRIVATE KEY-----\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "q7R8s9T0u1",
     "AK",
@@ -5540,7 +6044,10 @@
     "B2C3D4E5F6G7H8I9",
     "J0K1L2M3N4O5P6Q7R8S9t0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "{redacted}"
@@ -5551,12 +6058,17 @@
    "text": [
     "-----BEGIN ",
     "PRIVATE KEY-----\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "q7R8s9T0u1",
     "AI",
     "za",
-    "b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S",
+    "b2C3d4E5f6G7",
+    "h8I9j0K1l2M3",
+    "n4O5p6Q7r8S",
     "9t0U1v2W3x4",
     "\n",
     "-----END ",
@@ -5572,7 +6084,10 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "pass",
     "word = ",
@@ -5589,7 +6104,10 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "tok",
     "en = ",
@@ -5606,7 +6124,10 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "Bea",
     "rer ",
@@ -5623,7 +6144,10 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "PASS",
     "WORD = \"",
@@ -5644,7 +6168,10 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "pass",
     "word : ",
@@ -5658,13 +6185,22 @@
    ]
   },
   {
-   "name": "a text starting inside a key body keeps the named value after it",
+   "name": "a text starting inside a key body loses the next line's first word, a named value's name, and the value goes too",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "pass",
     "word = ",
@@ -5673,18 +6209,23 @@
    ],
    "expected": [
     "{redacted}",
-    "\npass",
-    "word = ",
+    " = ",
     "{redacted}"
    ]
   },
   {
-   "name": "a text starting inside a key body, after a word, keeps the named value after it",
+   "name": "a key body after a word loses the next line's first word, a named value's name, and the value goes too",
    "text": [
     "notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "pass",
     "word = ",
@@ -5693,23 +6234,32 @@
    ],
    "expected": [
     "{redacted}",
-    "\npass",
-    "word = ",
+    " = ",
     "{redacted}"
    ]
   },
   {
    "name": "a GitHub token after a key body the text starts inside is still redacted",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -5718,11 +6268,20 @@
   {
    "name": "a JSON web token after a key body the text starts inside is still redacted",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "ey",
     "J",
@@ -5741,15 +6300,26 @@
   {
    "name": "a Google key holding a dash after a key body the text starts inside is still redacted",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "AI",
     "za",
-    "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6"
+    "SyA1b2C3d4E5",
+    "f6G7h8I9j0K1",
+    "l2M3n4-O5p6"
    ],
    "expected": [
     "{redacted}"
@@ -5758,11 +6328,20 @@
   {
    "name": "a key body the text starts inside, with a short padded last line, goes whole",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "AbC1dE2fG3=="
    ],
@@ -5773,11 +6352,20 @@
   {
    "name": "a named value after a key body's short last line keeps its name",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "AbC1dE2fG3==",
     "\n",
@@ -5802,7 +6390,9 @@
     "B2C3D4E5F6G7H8I9",
     "AI",
     "za",
-    "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6",
+    "SyA1b2C3d4E5",
+    "f6G7h8I9j0K1",
+    "l2M3n4-O5p6",
     " ok"
    ],
    "expected": [
@@ -5818,11 +6408,21 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\\n",
     "a1B2c3D4e5F6",
     "\\n\","
@@ -5840,10 +6440,17 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
     "…"
    ],
    "expected": [
@@ -5858,8 +6465,13 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "…"
    ],
    "expected": [
@@ -5872,8 +6484,13 @@
    "text": [
     "-----BEGIN ",
     "PRIVATE KEY-----",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "…"
    ],
    "expected": [
@@ -5888,8 +6505,13 @@
     "-----BEGIN EC ",
     "PRIVATE KEY-----",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     " ",
     "a1B2c3D4e5F6g7H8i9J0",
     "…"
@@ -5906,11 +6528,21 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
     "a1B2c3D4e5F6",
     "\""
@@ -5923,14 +6555,29 @@
   {
    "name": "a text starting inside a key body loses its last line touching a closing quote",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
     "a1B2c3D4e5F6",
     "\"\"\""
@@ -5943,14 +6590,29 @@
   {
    "name": "a text starting inside a key body loses its last line of capitals alone",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
     "ABCDEFGH"
    ],
@@ -5962,14 +6624,29 @@
    "name": "a key's lines after a label lose their last line of capitals alone",
    "text": [
     "Notes:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
     "ABCDEFGH"
    ],
@@ -5982,14 +6659,29 @@
    "name": "a key's lines inside quotes lose their last line touching the closing quotes",
    "text": [
     "KEY = \"\"\"\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
     "\n",
     "a1B2c3D4e5F6",
     "\"\"\""
@@ -6003,9 +6695,15 @@
   {
    "name": "two full lines of a key at the start of a text lose their last line of capitals, and the line after it stays",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "ABCDEFGH",
     "\nDone and more"
@@ -6018,11 +6716,20 @@
   {
    "name": "a text starting inside a key body whose lines are a blank line apart loses its last line",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
     "ABCD"
    ],
@@ -6224,22 +6931,29 @@
    ]
   },
   {
-   "name": "a word between lines of base64 that does not look like base64 ends them, as only a key's last line may be any word",
+   "name": "a word between lines of base64 goes with them",
    "text": [
     "Checksums:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nDone\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nend of list"
    ],
    "expected": [
     "Checksums:\n",
     "{redacted}",
-    "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "\nend of list"
+    " of list"
    ]
   },
   {
@@ -6284,11 +6998,20 @@
   {
    "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into quotes",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
     "ABCD\"\"\""
    ],
@@ -6300,11 +7023,20 @@
   {
    "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into a comma",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
     "a1B2c3D4e5==,"
    ],
@@ -6316,11 +7048,20 @@
   {
    "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into a parenthesis",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
     "abc)"
    ],
@@ -6332,11 +7073,20 @@
   {
    "name": "a text starting inside a key body whose lines are separated by U+2029 keeps the separator before the next line",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
     "a1B2c3D4e5==",
     " Thanks"
@@ -6351,25 +7101,37 @@
    "text": [
     "Notes:",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
     "ABCDEFGH",
     " ",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     " ",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     " ",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     " ",
     "end"
    ],
    "expected": [
-    "Notes:",
-    " ",
-    "{redacted}",
-    " ",
+    "Notes:\u2029",
     "{redacted}"
    ]
   },
@@ -6378,25 +7140,37 @@
    "text": [
     "Notes:",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     " ",
     "ABCDEFGH",
     " ",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     " ",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     " ",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     " ",
     "end"
    ],
    "expected": [
-    "Notes:",
-    " ",
-    "{redacted}",
-    " ",
+    "Notes:\u2028",
     "{redacted}"
    ]
   },
@@ -6405,25 +7179,37 @@
    "text": [
     "Notes:",
     "\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\r",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\r",
     "ABCDEFGH",
     "\r",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     "\r",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     "\r",
-    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
     "\r",
     "end"
    ],
    "expected": [
-    "Notes:",
-    "\r",
-    "{redacted}",
-    "\r",
+    "Notes:\r",
     "{redacted}"
    ]
   },
@@ -6535,7 +7321,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "x",
@@ -6554,7 +7342,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
     " ok"
    ],
    "expected": [
@@ -6575,7 +7365,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     ".",
@@ -6595,7 +7387,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "{redacted}"
@@ -6653,7 +7447,9 @@
     "ab",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "{redacted}"
@@ -6664,10 +7460,14 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "{redacted}"
@@ -6677,11 +7477,20 @@
    "name": "a key's body straight after a label with no space goes, the label stays",
    "text": [
     "Key:",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Key:",
@@ -6692,11 +7501,20 @@
    "name": "a key's body straight after a quote goes, the quotes stay",
    "text": [
     "\"",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\""
    ],
    "expected": [
@@ -6709,11 +7527,20 @@
    "name": "a key's body straight after a no-break space goes",
    "text": [
     "Key:\u00a0",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Key:\u00a0",
@@ -6721,17 +7548,353 @@
    ]
   },
   {
-   "name": "a key's last body line and end line straight after a label with no space go, the label stays",
+   "name": "a key's last body line and end line straight after a label with no space go, back to the start of the text",
    "text": [
     "Key:",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "-----END ",
     "PRIVATE KEY-----"
    ],
    "expected": [
-    "Key:",
     "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word with no known prefix goes",
+   "text": [
+    "Use key ",
+    "scCpjrf9TntY",
+    "RTnAhKVDbzxo",
+    "psCdmfJ0",
+    " now"
+   ],
+   "expected": [
+    "Use key ",
+    "{redacted}",
+    " now"
+   ]
+  },
+  {
+   "name": "a random word of the least length goes",
+   "text": [
+    "3sQzFDDdaZwe",
+    "WFevZLHMeuiw"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word one character short of the least length stays",
+   "text": [
+    "1dfVhQZsm5qY",
+    "SkfrZamXgbH"
+   ],
+   "expected": [
+    "1dfVhQZsm5qY",
+    "SkfrZamXgbH"
+   ]
+  },
+  {
+   "name": "a random word of base64 with its padding goes whole",
+   "text": [
+    "2djk3mf3sxP3",
+    "jMLToUfEy7MI",
+    "rcFmIa7HDQpK",
+    "NfKh",
+    "== after"
+   ],
+   "expected": [
+    "{redacted}",
+    " after"
+   ]
+  },
+  {
+   "name": "a random word of URL-safe characters goes",
+   "text": [
+    "id=",
+    "ieSmb4i19BVs",
+    "GAs00tANgrzr",
+    "6UEMqf"
+   ],
+   "expected": [
+    "id=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after a prefix in the wrong case goes, the prefix stays",
+   "text": [
+    "SK",
+    "_LIVE_",
+    "3sQzFDDdaZwe",
+    "WFevZLHMeuiw"
+   ],
+   "expected": [
+    "SK",
+    "_LIVE_",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random part of a path goes, the path's words stay",
+   "text": [
+    "files/",
+    "3sQzFDDdaZwe",
+    "WFevZLHMeuiw",
+    "/report.pdf"
+   ],
+   "expected": [
+    "files/",
+    "{redacted}",
+    "/report.pdf"
+   ]
+  },
+  {
+   "name": "a word of letters with no digit stays",
+   "text": [
+    "iZfsDfZnqmJh",
+    "LlRCCrrnAlqy",
+    "ahkz"
+   ],
+   "expected": [
+    "iZfsDfZnqmJh",
+    "LlRCCrrnAlqy",
+    "ahkz"
+   ]
+  },
+  {
+   "name": "a git commit hash stays",
+   "text": [
+    "commit ",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ],
+   "expected": [
+    "commit ",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ]
+  },
+  {
+   "name": "a hash glued to the word before it stays",
+   "text": [
+    "commit",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ],
+   "expected": [
+    "commit",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ]
+  },
+  {
+   "name": "a UUID stays",
+   "text": [
+    "89512e07-58e",
+    "e-2675-7eac-",
+    "80fe1df6fe6a"
+   ],
+   "expected": [
+    "89512e07-58e",
+    "e-2675-7eac-",
+    "80fe1df6fe6a"
+   ]
+  },
+  {
+   "name": "a long identifier with digits stays",
+   "text": [
+    "containsAnyKey",
+    "EmptyRfc822Header",
+    "Version2"
+   ],
+   "expected": [
+    "containsAnyKey",
+    "EmptyRfc822Header",
+    "Version2"
+   ]
+  },
+  {
+   "name": "a file path with digits stays",
+   "text": [
+    "src/core/agent/v2/",
+    "connectors/registry2024Generated.ts"
+   ],
+   "expected": [
+    "src/core/agent/v2/",
+    "connectors/registry2024Generated.ts"
+   ]
+  },
+  {
+   "name": "an address with numbered parts stays",
+   "text": [
+    "https://example.com/",
+    "Org/repo-name/issues/186/comments/2024"
+   ],
+   "expected": [
+    "https://example.com/",
+    "Org/repo-name/issues/186/comments/2024"
+   ]
+  },
+  {
+   "name": "a branch name with a date stays",
+   "text": [
+    "agent/release-2026-10-08-",
+    "final-candidate-v3"
+   ],
+   "expected": [
+    "agent/release-2026-10-08-",
+    "final-candidate-v3"
+   ]
+  },
+  {
+   "name": "a package name with its version stays",
+   "text": [
+    "@electron-forge/",
+    "plugin-webpack@7.4.0-beta.12"
+   ],
+   "expected": [
+    "@electron-forge/",
+    "plugin-webpack@7.4.0-beta.12"
+   ]
+  },
+  {
+   "name": "a certificate's end line after text takes nothing, as only a private key's does",
+   "text": [
+    "notes\n",
+    "-----END CERTIFICATE-----",
+    "\nafter"
+   ],
+   "expected": [
+    "notes\n",
+    "-----END CERTIFICATE-----",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a signature's end line after its lines takes nothing, as only a private key's does",
+   "text": [
+    "Signed text\n",
+    "iQEzBAEBCAAd\n",
+    "-----END PGP SIGNATURE-----"
+   ],
+   "expected": [
+    "Signed text\n",
+    "iQEzBAEBCAAd\n",
+    "-----END PGP SIGNATURE-----"
+   ]
+  },
+  {
+   "name": "a certificate's header with no end line takes nothing",
+   "text": [
+    "-----BEGIN CERTIFICATE-----\n",
+    "MIIB"
+   ],
+   "expected": [
+    "-----BEGIN CERTIFICATE-----\n",
+    "MIIB"
+   ]
+  },
+  {
+   "name": "a key's last full line that goes on with other text goes, the text after stays",
+   "text": [
+    "Key ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    " thanks"
+   ],
+   "expected": [
+    "Key ",
+    "{redacted}",
+    " thanks"
+   ]
+  },
+  {
+   "name": "lines of base64 on both sides of a sentence's end go as two runs, as a window may start there, the punctuation stays",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n. ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n. ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two keys cut off one after the other, each after its own header, both go",
+   "text": [
+    "-----BEGIN PRIVATE ",
+    "KEY-----\n",
+    "m3N4o5P6",
+    "q7R8s9T0",
+    "\n-----BEGIN PRIVATE ",
+    "KEY-----\n",
+    "a1B2c3D4",
+    "e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a short line after a key's lines that runs on past its padding goes up to the next character that is neither",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\nQUJD==",
+    "=QUJD",
+    "QUJD and more"
+   ],
+   "expected": [
+    "{redacted}",
+    " and more"
    ]
   }
  ],
@@ -6752,12 +7915,16 @@
     ],
     [
      [
-      "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2",
+      "m3N4o5P6"
      ]
     ],
     [
      [
-      "q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2"
+      "q7R8s9T0u1V2",
+      "w3X4y5Z6a7B8",
+      "c9D0e1F2"
      ]
     ],
     [
@@ -6809,7 +7976,8 @@
     ],
     [
      [
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ]
    ],
@@ -7021,7 +8189,8 @@
      [
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ],
      [
       " end"
@@ -7050,7 +8219,8 @@
       "a ",
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2",
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2",
       " b"
      ]
     ],
@@ -7059,7 +8229,8 @@
       "c ",
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ],
     [
@@ -7118,7 +8289,8 @@
       "🙂 ",
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2",
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2",
       " 🙂"
      ]
     ],
@@ -7329,7 +8501,8 @@
      [
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ]
    ],
@@ -7359,7 +8532,8 @@
      [
       "gh",
       "p_",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ]
    ],
