@@ -1838,6 +1838,30 @@ mod budget_tests {
             }
         }
     }
+    /// A caret's parts are one text with no piece edge between them: a selection starting inside a
+    /// word starts no key there, after a caret block or with none. A real space before it does.
+    #[test]
+    fn a_selection_starting_inside_a_word_starts_no_key_there() {
+        let selection = ["sk", "-assessment-template-v2"].concat();
+        for blocks in [json!([{"kind":"caret","text":""}]), json!([])] {
+            for (before, redacted) in [("ri", false), ("ri ", true)] {
+                let reply = call(json!({"blocks":blocks,"caret":[before,selection,""]}));
+                let caret: String = reply["caret"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|part| part.as_str().unwrap())
+                    .collect();
+                let expected = if redacted {
+                    format!("{before}{}", privacy::PLACEHOLDER)
+                } else {
+                    format!("{before}{selection}")
+                };
+                assert_eq!(caret, expected, "{reply:?}");
+                assert_eq!(reply["selectionRedacted"], redacted, "{reply:?}");
+            }
+        }
+    }
     /// The whole screen read with `caret` as a helper sent it, after a text block.
     fn screen_with_caret(blocks: Value, caret: Value) -> Value {
         let input = json!({
@@ -2244,6 +2268,47 @@ mod budget_tests {
                 "{prefix}: {shown}"
             );
         }
+    }
+    /// A random word in a piece of its own goes even where the piece before it is glued on (a
+    /// label beside a link): the piece is looked at as a word too. In one run, the glued word as a
+    /// whole is what is looked at.
+    #[test]
+    fn a_random_word_in_its_own_piece_goes_beside_a_glued_word() {
+        let word = ["GHIJa1KLMNb2", "PQRSc3TUVWd4"].concat();
+        let rendered = |request: Value| -> String {
+            let result: Value =
+                serde_json::from_slice(&process(&serde_json::to_vec(&request).unwrap()).unwrap())
+                    .unwrap();
+            result["rendered"].as_str().unwrap().to_owned()
+        };
+        assert_eq!(
+            rendered(
+                json!({"blocks":[{"kind":"row","text":format!("Bearer{word}"),
+                "runs":[["Bearer",true],[word,true]]}]})
+            ),
+            "| Bearer[redacted]"
+        );
+        assert_eq!(
+            rendered(
+                json!({"blocks":[{"kind":"row","text":format!("{word}Bearer"),
+                "runs":[[word,true],["Bearer",true]]}]})
+            ),
+            "| [redacted]Bearer"
+        );
+        let glued = format!("Bearer{word}");
+        assert_eq!(
+            rendered(json!({"blocks":[{"kind":"row","text":glued,"runs":[[glued,true]]}]})),
+            format!("| {glued}")
+        );
+        let shown = rendered(json!({"blocks":[
+            {"kind":"text","text":"Bearer","frame":[0.,0.,60.,20.]},
+            {"kind":"link","text":word,"frame":[60.,0.,240.,20.]}],"caret":["","",""]}));
+        assert!(
+            shown.contains("Bearer")
+                && shown.contains(privacy::PLACEHOLDER)
+                && !shown.contains(&word),
+            "{shown}"
+        );
     }
     #[test]
     fn semantic_admission_deduplicates_only_equivalent_recognition_source() {

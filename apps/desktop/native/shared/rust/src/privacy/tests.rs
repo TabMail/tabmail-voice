@@ -282,6 +282,53 @@ fn invalid_definitions_are_refused() {
         changed["redactors"][entropy][field] = value;
         assert!(refused(&changed), "{field}");
     }
+    // Every member of a list, after a good one, and every count at and below its least value.
+    for (index, redactor) in original["redactors"].as_array().unwrap().iter().enumerate() {
+        for field in ["labels", "prefixes"] {
+            if redactor.get(field).is_none() {
+                continue;
+            }
+            for member in [Value::Null, Value::from(7), Value::String(String::new())] {
+                let mut changed = original.clone();
+                changed["redactors"][index][field] =
+                    Value::Array(vec![Value::String("a".into()), member]);
+                assert!(refused(&changed), "{} {field} member", redactor["name"]);
+            }
+        }
+        for field in [
+            "min",
+            "exact",
+            "wordsMax",
+            "fullLine",
+            "minLines",
+            "digitWithin",
+            "minLength",
+        ] {
+            if redactor.get(field).is_none() {
+                continue;
+            }
+            for value in [Value::from(-1), Value::from(0), Value::from(1.5)] {
+                let mut changed = original.clone();
+                changed["redactors"][index][field] = value;
+                assert!(refused(&changed), "{} {field}", redactor["name"]);
+            }
+        }
+    }
+    let mut zero = original.clone();
+    zero["redactors"][entropy]["minBits"] = Value::from(0.0);
+    assert!(refused(&zero), "minBits 0");
+    // A label of any case and script is fine; an empty one is not.
+    let named = original["redactors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["kind"] == "namedValue")
+        .unwrap();
+    let mut label = original.clone();
+    label["redactors"][named]["labels"] = Value::Array(vec![Value::String("pa\u{df}word".into())]);
+    assert!(!refused(&label));
+    label["redactors"][named]["labels"] = Value::Array(vec![Value::String(String::new())]);
+    assert!(refused(&label), "empty label");
     let mut duplicate = original.clone();
     let item = duplicate["redactors"][0].clone();
     duplicate["redactors"].as_array_mut().unwrap().push(item);

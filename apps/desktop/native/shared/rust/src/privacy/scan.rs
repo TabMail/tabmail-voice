@@ -4,7 +4,8 @@
 
 //! The one scanner. Each redactor reads the text as read and reports what it found; none sees
 //! what another found or took, and every place a prefix, label or header occurs is looked at on
-//! its own, so no find can hide another (owner, 2026-10-08). Every scan is linear in the text.
+//! its own, so no find can hide another (owner, 2026-10-08). Every scan goes forward through the
+//! text, reading each character a bounded number of times; the places found are sorted once.
 
 use super::definitions::{
     AddressPassword, Entropy, JsonWebToken, KeyLines, Kind, Length, NamedValue, PrivateKey,
@@ -37,7 +38,7 @@ pub(super) fn scan(text: &str, edges: &[usize], redactors: &[Redactor]) -> Vec<F
             Kind::JsonWebToken(jwt) => json_web_tokens(text, jwt, &mut found),
             Kind::AddressPassword(address) => address_passwords(text, address, &mut found),
             Kind::NamedValue(named) => named_values(text, &folded, named, &mut found),
-            Kind::Entropy(entropy) => random_words(text, entropy, &mut found),
+            Kind::Entropy(entropy) => random_words(text, edges, entropy, &mut found),
         }
     }
     if !glued.is_empty() {
@@ -117,8 +118,9 @@ impl Folded {
         }
     }
 
-    /// Every place `pattern` occurs whatever its case, overlapping ones too: where it starts and ends.
-    fn matches(&self, pattern: &str) -> Vec<(usize, usize)> {
+    /// Every place `pattern` occurs whatever its case, overlapping ones too: where it starts and
+    /// ends, and the index of the character it ends at.
+    fn matches(&self, pattern: &str) -> Vec<(usize, usize, usize)> {
         let fold = CaseMapper::new();
         let pattern: Vec<char> = pattern.chars().map(|ch| fold.simple_fold(ch)).collect();
         self.chars
@@ -126,28 +128,29 @@ impl Folded {
             .enumerate()
             .filter(|(_, window)| *window == pattern.as_slice())
             .map(|(index, _)| {
-                let end = self
-                    .starts
-                    .get(index + pattern.len())
-                    .copied()
-                    .unwrap_or(self.len);
-                (self.starts[index], end)
+                let end = index + pattern.len();
+                (self.starts[index], self.at(end), end)
             })
             .collect()
     }
 
-    /// The run of characters from `from` whose case fold is in `set`: where it ends, and where it
-    /// ends after `most` of them at most, with how many it holds.
-    fn run(&self, from: usize, set: &Set, most: usize) -> (usize, usize, usize) {
-        let Ok(start) = self.starts.binary_search(&from) else {
-            return (from, from, 0);
-        };
-        let count = self.chars[start..]
+    /// Where the character at `index` starts in the text (its length past the last one).
+    fn at(&self, index: usize) -> usize {
+        self.starts.get(index).copied().unwrap_or(self.len)
+    }
+
+    /// The run of characters from the one at `index` whose case fold is in `set`: where it ends,
+    /// and where it ends after `most` of them at most, with how many it holds.
+    fn run(&self, index: usize, set: &Set, most: usize) -> (usize, usize, usize) {
+        let count = self.chars[index..]
             .iter()
             .take_while(|&&ch| ch.is_ascii() && set.has(ch as u8))
             .count();
-        let end = |count: usize| self.starts.get(start + count).copied().unwrap_or(self.len);
-        (end(count), end(count.min(most)), count)
+        (
+            self.at(index + count),
+            self.at(index + count.min(most)),
+            count,
+        )
     }
 }
 
@@ -160,27 +163,42 @@ fn tokens(
     glued: &mut Vec<Found>,
 ) {
     let bytes = text.as_bytes();
-    let mut starts: Vec<(usize, usize)> = Vec::new();
+    // Where each prefix starts and ends, and, case-blind, the index of the character it ends at.
+    let mut starts: Vec<(usize, usize, usize)> = Vec::new();
     for prefix in &token.prefixes {
         if token.ignore_case {
             starts.extend(folded.matches(prefix));
         } else {
-            starts.extend(occurrences(text, prefix).map(|at| (at, at + prefix.len())));
+            starts.extend(occurrences(text, prefix).map(|at| (at, at + prefix.len(), 0)));
         }
     }
     starts.sort_unstable();
     let mut cache = 0..0;
-    for (start, prefix_end) in starts {
+    let mut edge = 0;
+    for (start, prefix_end, index) in starts {
         let mut body = prefix_end;
+        let mut body_index = index;
         if token.space {
-            let spaces = text[prefix_end..]
-                .char_indices()
-                .find(|(_, ch)| !ch.is_whitespace())
-                .map_or(text.len() - prefix_end, |(offset, _)| offset);
+            let spaces = if token.ignore_case {
+                folded.chars[index..]
+                    .iter()
+                    .take_while(|ch| ch.is_whitespace())
+                    .count()
+            } else {
+                text[prefix_end..]
+                    .char_indices()
+                    .find(|(_, ch)| !ch.is_whitespace())
+                    .map_or(text.len() - prefix_end, |(offset, _)| offset)
+            };
             if spaces == 0 {
                 continue;
             }
-            body += spaces;
+            body_index += spaces;
+            body = if token.ignore_case {
+                folded.at(body_index)
+            } else {
+                body + spaces
+            };
         }
         // A case-blind token's body is case-blind too: a character goes when its case fold does.
         let (run, exact_end, length) = match token.length {
@@ -189,7 +207,7 @@ fn tokens(
                     Length::Exact(exact) => exact,
                     Length::Min(_) => usize::MAX,
                 };
-                folded.run(body, &token.body, most)
+                folded.run(body_index, &token.body, most)
             }
             Length::Exact(exact) => {
                 let run = run_end(bytes, body, |b| token.body.has(b), &mut cache);
@@ -200,10 +218,13 @@ fn tokens(
                 (run, run, run - body)
             }
         };
-        let edged = !token.word_edge
-            || start == 0
-            || !is_word_byte(bytes[start - 1])
-            || edges.binary_search(&start).is_ok();
+        // The starts go forward through the text, and so does the edge they are checked against.
+        let edged = !token.word_edge || start == 0 || !is_word_byte(bytes[start - 1]) || {
+            while edge < edges.len() && edges[edge] < start {
+                edge += 1;
+            }
+            edges.get(edge) == Some(&start)
+        };
         let end = match token.length {
             Length::Min(min) if length >= min => run,
             Length::Exact(exact) if length >= exact => exact_end,
@@ -271,8 +292,8 @@ fn private_keys(text: &str, key: &PrivateKey, found: &mut Vec<Found>) {
     }
     lines.sort_unstable();
     // A header opens a key; the first end line after it closes it, from the first header open. An
-    // end line with nothing open takes the text back to the end of the end line before it (owner,
-    // 2026-10-08).
+    // end line with nothing open takes the text back to the end of the end line before it, or to
+    // the start of the text (owner, 2026-10-08).
     let mut open: Vec<usize> = Vec::new();
     let mut closed = 0;
     for (start, end, begins) in lines {
@@ -280,13 +301,7 @@ fn private_keys(text: &str, key: &PrivateKey, found: &mut Vec<Found>) {
             open.push(start);
             continue;
         }
-        let from = open.first().copied().unwrap_or_else(|| {
-            text[closed..]
-                .char_indices()
-                .find(|(_, ch)| !ch.is_whitespace())
-                .map_or(closed, |(offset, _)| closed + offset)
-                .min(start)
-        });
+        let from = open.first().copied().unwrap_or(closed);
         open.clear();
         found.push(Found {
             matched: from..end,
@@ -564,6 +579,7 @@ fn named_values(text: &str, folded: &Folded, named: &NamedValue, found: &mut Vec
         .labels
         .iter()
         .flat_map(|label| folded.matches(label))
+        .map(|(at, end, _)| (at, end))
         .collect();
     labels.sort_unstable();
     let mut cache = 0..0;
@@ -673,7 +689,7 @@ fn bits(word: &[u8]) -> f64 {
         .sum()
 }
 
-fn random_words(text: &str, entropy: &Entropy, found: &mut Vec<Found>) {
+fn random_words(text: &str, edges: &[usize], entropy: &Entropy, found: &mut Vec<Found>) {
     let bytes = text.as_bytes();
     let random = |part: Range<usize>, found: &mut Vec<Found>| {
         let word = &bytes[part.clone()];
@@ -700,21 +716,9 @@ fn random_words(text: &str, entropy: &Entropy, found: &mut Vec<Found>) {
             });
         }
     };
-    let mut at = 0;
-    while at < bytes.len() {
-        if !entropy.word.has(bytes[at]) {
-            at += 1;
-            continue;
-        }
-        let mut end = at;
-        while end < bytes.len() && entropy.word.has(bytes[end]) {
-            end += 1;
-        }
-        while end < bytes.len() && bytes[end] == entropy.padding {
-            end += 1;
-        }
-        // Cut the word at each separator piece that is itself word-like (a path's `src`, a
-        // branch name's `final`), and look at each part between such pieces.
+    // Cut a word at each separator piece that is itself word-like (a path's `src`, a branch
+    // name's `final`), and look at each part between such pieces.
+    let look = |at: usize, end: usize, found: &mut Vec<Found>| {
         let mut part = at;
         let mut piece = at;
         while piece <= end {
@@ -732,6 +736,36 @@ fn random_words(text: &str, entropy: &Entropy, found: &mut Vec<Found>) {
         }
         if part < end {
             random(trim(bytes, part..end, &entropy.separators), found);
+        }
+    };
+    let mut edge = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        if !entropy.word.has(bytes[at]) {
+            at += 1;
+            continue;
+        }
+        let mut end = at;
+        while end < bytes.len() && entropy.word.has(bytes[end]) {
+            end += 1;
+        }
+        while end < bytes.len() && bytes[end] == entropy.padding {
+            end += 1;
+        }
+        look(at, end, found);
+        // A piece the screen shows on its own inside the word (a link glued to a label) is looked
+        // at as a word too: a find more, never one less.
+        while edge < edges.len() && edges[edge] <= at {
+            edge += 1;
+        }
+        let mut from = at;
+        while edge < edges.len() && edges[edge] < end {
+            look(from, edges[edge], found);
+            from = edges[edge];
+            edge += 1;
+        }
+        if from > at {
+            look(from, end, found);
         }
         at = end;
     }

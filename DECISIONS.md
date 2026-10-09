@@ -3613,7 +3613,8 @@ well-structured place for the redactors.
   and checked once (`privacy/definitions.rs`), and one scanner applies them all (`privacy/scan.rs`):
   every redactor reads the text as read, every place a prefix, label or header occurs is looked at
   on its own, and everything any of them takes goes, one marker for each run that overlaps or
-  meets. Every scan is linear in the text, so there is no engine to give up: fancy-regex, the rule
+  meets. Every scan goes forward through the text, reading each character a bounded number of
+  times (the places found are sorted once), so there is no engine to give up: fancy-regex, the rule
   compiler, the engine-failure path (which took everything after a failing rule's last match) and
   its tests are deleted. Case-blind names and prefixes compare the text case-folded once (Unicode
   simple case folding), and so does a case-blind token's body (a Kelvin sign or a long s folds to a
@@ -3649,7 +3650,9 @@ well-structured place for the redactors.
     hashes, digests, ids and hex numbers such as an address or a transaction hash stay), has at
     most half of its characters in word-like runs (a capital and three or more small letters,
     three or more small letters, three or more capitals not followed by a small one), and carries
-    at least 3.5 bits of Shannon entropy per character. Every number is data in its
+    at least 3.5 bits of Shannon entropy per character. A piece the screen shows on its own inside
+    a word (a link or a block glued to a label beside it) is looked at as a word too: a find more,
+    never one less. Every number is data in its
     redactor. It was tuned on every word of 24 or more characters in our own sources (benign) against
     2,000 random keys per alphabet at 24, 40 and 64 characters (recall). Entropy alone does not
     separate them (at 24 characters random base64 averages 3.86 bits; identifiers and paths reach
@@ -3670,14 +3673,18 @@ well-structured place for the redactors.
     taken about one time in five. Each of the three owner decisions has its shared cases.
 
   Checked against `main` and the regular-expression redactors this replaces, over the shared cases,
-  59,000 generated glued and paired secrets, 2,538 screen reads, and a second generated set of
-  217,000 glued tokens and key lines: no key character `main` takes is shown; the only bytes `main`
-  takes that the scanner shows are five single blanks after a key, as the exact-text read already
-  keeps them, and a short word ending in padding at the start of a text's first line before a key's
-  base64 on that line (`abc=` before it), which holds no key character. The regular expressions it replaces also took a chain of `Bearer` words as one find;
-  the scanner shows what that chain held that is no token (a body shorter than a token's least
-  length) and a token after a `Bearer` glued to a word, the kept word edge above. Expectations the
-  owner's rules changed are renamed in the shared cases to say what now goes.
+  66,000 generated glued and paired secrets, 2,762 screen reads, and a second generated set of
+  217,000 glued tokens and key lines: no key character `main` takes is shown. The gate counts key
+  characters, not blanks (owner, 2026-10-08: "that gate is artificial … something reasonable and
+  robust"): whitespace `main`'s expressions swallowed beside a key (a tab indenting key lines, a line
+  break after a cut-off key, a blank between two chained `Bearer` tokens) stays as the screen shows
+  it, and so does a short word ending in padding at the start of a text's first line before a key's
+  base64 on that line (`abc=` before it), which holds no key character. An end line with no header
+  takes the blanks before the key's body back to where it starts. The regular expressions it
+  replaces also took a chain of `Bearer` words as one find; the scanner shows what that chain held
+  that is no token (a body shorter than a token's least length) and a token after a `Bearer` glued
+  to a word, the kept word edge above. Expectations the owner's rules changed are renamed in the
+  shared cases to say what now goes.
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what

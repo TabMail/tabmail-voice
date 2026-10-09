@@ -8019,8 +8019,6 @@
   "expected": [
    "Intro text\n",
    "{redacted}",
-   "\n",
-   "{redacted}",
    "\nafter"
   ]
  },
@@ -8451,7 +8449,192 @@
    "QUJD",
    "\nend"
   ]
- }
+ },
+  {
+   "name": "an end line with no header after a blank at the start of the text takes the blank too",
+   "text": [
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD",
+    "\n-----END ",
+    "PRIVATE KEY",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Bearer label glued to a Bearer token goes with it, and the blank after it stays as shown",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4",
+    "e5F6g7H8",
+    "Bearer Bearer ",
+    "a1B2c3D4",
+    "e5F6g7H8"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id overlapping another at its last letter goes whole",
+   "text": [
+    "AKIA",
+    "KIA",
+    "11111111",
+    "11111111"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS session key id overlapping another at its last letter goes whole",
+   "text": [
+    "ASIA",
+    "SIA",
+    "11111111",
+    "11111111"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id takes sixteen characters and the word after it stays",
+   "text": [
+    "AKIA",
+    "11111111",
+    "11111111",
+    " done"
+   ],
+   "expected": [
+    "{redacted}",
+    " done"
+   ]
+  },
+  {
+   "name": "a private-key header with a capital word after its name takes the key",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY X",
+    "-----",
+    "\nA"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key header with a digit after its name is no header",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY2",
+    "-----",
+    "\nA"
+   ],
+   "expected": [
+    "-----BEGIN PRIVATE KEY2-----\nA"
+   ]
+  },
+  {
+   "name": "a JSON web token's first part starts at its first header prefix",
+   "text": [
+    "ey",
+    "JA",
+    "ey",
+    "JB.",
+    "ey",
+    "JC.D"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word and a dot before a JSON web token stay",
+   "text": [
+    "ordinary.",
+    "ey",
+    "JC.D"
+   ],
+   "expected": [
+    "ordinary",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a mixed word at exactly the least entropy goes",
+   "text": [
+    "G1H2J3K4G1H2",
+    "J3K4G5H6J7K8",
+    "G5H6J7K8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a mixed word below the least entropy stays",
+   "text": [
+    "G1G1G1G1G1G1",
+    "G1G1G1G1G1G1",
+    "G1G1G1G1"
+   ],
+   "expected": [
+    "G1G1G1G1G1G1G1G1G1G1G1G1G1G1G1G1"
+   ]
+  },
+  {
+   "name": "runs of three capitals are word-like, so a word made of them stays",
+   "text": [
+    "GHJ1KLM2NPQ3",
+    "RST4UVW5x6y7z8"
+   ],
+   "expected": [
+    "GHJ1KLM2NPQ3RST4UVW5x6y7z8"
+   ]
+  },
+  {
+   "name": "the same word with its capitals broken up goes",
+   "text": [
+    "GhJ1KlM2NpQ3",
+    "RsT4UvW5x6y7z8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a capital before one small letter is no word, so a word of them goes",
+   "text": [
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a capital before three small letters starts a word, so a word of them stays",
+   "text": [
+    "GHIJabc1KLMN",
+    "bcd2PQRScde3",
+    "TUVWdef4"
+   ],
+   "expected": [
+    "GHIJabc1KLMNbcd2PQRScde3TUVWdef4"
+   ]
+  }
  ],
  "lineCases": [
   {
