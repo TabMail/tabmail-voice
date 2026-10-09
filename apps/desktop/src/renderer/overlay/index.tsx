@@ -39,8 +39,9 @@ type Mode =
   | { kind: "transcribing" }
   | { kind: "running"; tool: AgentToolID | null }
   | { kind: "message"; text: string }
-  /** The text went on the clipboard instead of being pasted: the note beside a clipboard. */
-  | { kind: "copied"; text: string }
+  /** The text was not pasted: the note beside a clipboard, which copies it when clicked, with an x
+   * that dismisses it and a bar under it showing the time left. */
+  | { kind: "notPasted"; text: string }
   /** A server error, while the transcription is tried again: the note alone, no warning sign. */
   | { kind: "retrying"; text: string }
   /** Under the open chat window while nothing runs. */
@@ -62,8 +63,8 @@ function modeOf(state: OverlayState): Mode {
       return { kind: "running", tool: phase.tool };
     case "failed":
       return { kind: "message", text: phase.message };
-    case "copied":
-      return { kind: "copied", text: phase.message };
+    case "notPasted":
+      return { kind: "notPasted", text: phase.message };
   }
 }
 
@@ -355,8 +356,8 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
   useEffect(() => {
     // Over the chat or the pill's bubbles, or not. Each move says so: the window may have been placed
     // afresh meanwhile, letting clicks through until told.
-    const moved = (event: PointerEvent) => void send({ type: "chatPointer", over: event.target instanceof Element && event.target.closest(".chat, .bubble") !== null });
-    const left = () => void send({ type: "chatPointer", over: false });
+    const moved = (event: PointerEvent) => void send({ type: "pointerOver", over: event.target instanceof Element && event.target.closest(".chat, .bubble") !== null });
+    const left = () => void send({ type: "pointerOver", over: false });
     document.addEventListener("pointermove", moved);
     document.documentElement.addEventListener("pointerleave", left);
     return () => {
@@ -635,8 +636,10 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
 /** The pill, at most `maxWidth` wide: a long message wraps rather than reach the window's edge. */
 function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }: { mode: Mode; level: number; hasVoice: boolean; isRetrying: boolean; language: string | null; isAgent: boolean; maxWidth: number }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
-  const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "copied" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
+  const isNote = mode.kind === "notPasted";
+  const leadingPadding = isCircle ? 0 : mode.kind === "message" || isNote || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
+  useNoteHitArea(ref, isNote);
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
     paddingLeft: leadingPadding,
@@ -681,13 +684,28 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
       );
       break;
     case "message":
-    case "copied":
+    case "notPasted":
       content = (
         <>
           {mode.kind === "message" ? <ExclamationIcon size={config.overlayFontSize} /> : <ClipboardIcon size={config.overlayFontSize} />}
           <span className="message" style={{ fontSize: config.overlayFontSize, maxWidth: config.pillMaxTextWidth, WebkitLineClamp: config.pillMaxTextLines }}>
             {mode.text}
           </span>
+          {isNote && (
+            <button
+              type="button"
+              className="note-close"
+              aria-label="Dismiss"
+              onClick={(event) => {
+                // The x dismisses, and copies nothing: the click is not the note's.
+                event.stopPropagation();
+                void send({ type: "dismissNotPasted" });
+              }}
+              style={{ width: config.noteCloseButtonSize, height: config.noteCloseButtonSize, fontSize: config.chatCaptionFontSize }}
+            >
+              ✕
+            </button>
+          )}
         </>
       );
       break;
@@ -701,13 +719,53 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
   }
 
   return (
-    <div ref={ref} className="pill" style={style}>
+    <div
+      ref={ref}
+      className={isNote ? "pill note" : "pill"}
+      style={isNote ? { ...style, overflow: "hidden", cursor: "pointer" } : style}
+      role={isNote ? "button" : undefined}
+      onClick={isNote ? () => void send({ type: "copyNotPasted" }) : undefined}
+    >
       {content}
+      {isNote && <NoteTimeoutBar />}
       {mode.kind === "transcribing" && <SpinningRim isRetrying={isRetrying} />}
       {/* Working: a gradient arc circles the pill's border, as the running tool's bubble's. */}
       {mode.kind === "running" && <CirclingBorder />}
     </div>
   );
+}
+
+/** The note's time left, from when it shows (`notPastedDisplayDuration`). */
+function NoteTimeoutBar() {
+  const [closesAt] = useState(() => Date.now() + config.notPastedDisplayDuration);
+  return <TimeoutBar closesAt={closesAt} timeout={config.notPastedDisplayDuration} />;
+}
+
+/** While the note for a text not pasted shows, the overlay takes clicks over it: the page says when
+ * the pointer is over it (macOS, Windows), and where it is (Linux, where the overlay is cut to it). */
+function useNoteHitArea(ref: React.RefObject<HTMLDivElement | null>, active: boolean): void {
+  useEffect(() => {
+    const element = ref.current;
+    if (!active || !element) return;
+    const moved = (event: PointerEvent) => void send({ type: "pointerOver", over: event.target instanceof Element && event.target.closest(".note") !== null });
+    const left = () => void send({ type: "pointerOver", over: false });
+    const measure = () => {
+      const frame = element.getBoundingClientRect();
+      void send({ type: "noteFrame", frame: { x: frame.x, y: frame.y, width: frame.width, height: frame.height } });
+    };
+    document.addEventListener("pointermove", moved);
+    document.documentElement.addEventListener("pointerleave", left);
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    // Again once it has sprung to its size: it appears scaled down.
+    const settled = setTimeout(measure, config.pillSpringResponseSeconds * 1000);
+    return () => {
+      document.removeEventListener("pointermove", moved);
+      document.documentElement.removeEventListener("pointerleave", left);
+      observer.disconnect();
+      clearTimeout(settled);
+    };
+  }, [active]);
 }
 
 /** The dictation's language in a small circle at the pill's left end, as its ISO code (`KO`). */

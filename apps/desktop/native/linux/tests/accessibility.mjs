@@ -40,8 +40,9 @@ function send(target, method, params) {
   return reply;
 }
 const request = (method, params = {}) => send(method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper, method, params);
-// A field is read by the field reader's own token for the window in front: tokens are per process.
-const fieldTarget = async () => (await send(fieldReader, "frontmostApp", {})).result.window;
+// A field is read by the process of the window pasted into, as the main helper names it: window tokens
+// are each process's own, so the two programs share the process.
+const fieldTarget = async () => (await send(helper, "frontmostApp", {})).result.pid;
 const fixture = spawn("/usr/bin/python3", [process.argv[3]], {
   env: { ...process.env, GDK_BACKEND: "wayland", GIO_LAUNCHED_DESKTOP_FILE: desktopFile },
   stdio: ["pipe", "pipe", "pipe"],
@@ -79,15 +80,18 @@ try {
   const helperTarget = (await request("frontmostApp")).result.window;
   assert.ok(Number.isSafeInteger(helperTarget) && helperTarget > 0);
   const target = await fieldTarget();
-  assert.ok(Number.isSafeInteger(target) && target > 0);
-  assert.equal((await request("focusedFieldValue", { ...policy, window: target, maxLength: 20000 })).result.value, "Synthetic field content");
+  assert.equal(target, fixture.pid, "the main helper names the app in front by its process");
+  assert.equal((await request("focusedFieldValue", { ...policy, pid: target, maxLength: 20000 })).result.value, "Synthetic field content");
+  // Only the app pasted into is read: another process, or a window token (each process's own), reads nothing.
+  for (const named of [{ pid: target + 1 }, { pid: -target }, { pid: String(target) }, { window: helperTarget }, {}])
+    assert.equal((await request("focusedFieldValue", { ...policy, ...named, maxLength: 20000 })).result, null, `no field for ${JSON.stringify(named)}`);
   // The shared core's bound: 1 to 20,000 UTF-16 units, a longer field sent as null.
-  for (const maxLength of [0, 20001, undefined]) assert.ok((await request("focusedFieldValue", { ...policy, window: target, maxLength })).error);
-  assert.equal((await request("focusedFieldValue", { ...policy, window: target, maxLength: 23 })).result.value, "Synthetic field content");
-  assert.deepEqual((await request("focusedFieldValue", { ...policy, window: target, maxLength: 22 })).result, { value: null });
+  for (const maxLength of [0, 20001, undefined]) assert.ok((await request("focusedFieldValue", { ...policy, pid: target, maxLength })).error);
+  assert.equal((await request("focusedFieldValue", { ...policy, pid: target, maxLength: 23 })).result.value, "Synthetic field content");
+  assert.deepEqual((await request("focusedFieldValue", { ...policy, pid: target, maxLength: 22 })).result, { value: null });
   assert.deepEqual((await request("readScreen", { ...policy, excludedAppIDs: ["AI.TABMAIL.VOICE.FIXTURE.DESKTOP"] })).result, { hidden: true });
   // The bound is checked before anything else, so an excluded app does not hide a bad request.
-  assert.ok((await request("focusedFieldValue", { ...policy, excludedAppIDs: ["AI.TABMAIL.VOICE.FIXTURE.DESKTOP"], window: target, maxLength: 0 })).error);
+  assert.ok((await request("focusedFieldValue", { ...policy, excludedAppIDs: ["AI.TABMAIL.VOICE.FIXTURE.DESKTOP"], pid: target, maxLength: 0 })).error);
   assert.ok((await request("readScreen", { excludedAppIDs: [] })).error);
   assert.equal((await request("readScreen", { ...policy, excludedHosts: Array(1001).fill("synthetic.example") })).result?.bundleID, "ai.tabmail.voice.fixture.desktop");
   await command({ kind: "select", from: 10, to: 15 });
@@ -100,26 +104,27 @@ try {
   assert.equal(read.selectedText, "");
   assert.ok(!JSON.stringify(read).includes("synthetic-password-must-not-be-read"));
   const passwordTarget = await fieldTarget();
-  assert.equal(passwordTarget, target, "changing fields keeps the original window target");
-  assert.deepEqual((await request("focusedFieldValue", { ...policy, window: passwordTarget, maxLength: 20000 })).result, { value: null });
+  assert.equal(passwordTarget, target, "changing fields keeps the original app");
+  assert.equal((await request("frontmostApp")).result.window, helperTarget, "changing fields keeps the original window target");
+  assert.deepEqual((await request("focusedFieldValue", { ...policy, pid: passwordTarget, maxLength: 20000 })).result, { value: null });
   await command({ kind: "entry", text: "password: syntheticvalue123" });
   read = await context();
   assert.equal(read.textBeforeCaret, "password: [redacted]");
   assert.ok(!JSON.stringify(read).includes("syntheticvalue123"));
   const redactedTarget = await fieldTarget();
-  assert.equal((await request("focusedFieldValue", { ...policy, window: redactedTarget, maxLength: 20000 })).result.value, "password: [redacted]");
+  assert.equal((await request("focusedFieldValue", { ...policy, pid: redactedTarget, maxLength: 20000 })).result.value, "password: [redacted]");
   // An emoji is two UTF-16 units: "a😀" fits in 3, not in 2.
   await command({ kind: "entry", text: "a😀" });
   await context();
   const emojiTarget = await fieldTarget();
-  assert.equal((await request("focusedFieldValue", { ...policy, window: emojiTarget, maxLength: 3 })).result.value, "a😀");
-  assert.deepEqual((await request("focusedFieldValue", { ...policy, window: emojiTarget, maxLength: 2 })).result, { value: null });
+  assert.equal((await request("focusedFieldValue", { ...policy, pid: emojiTarget, maxLength: 3 })).result.value, "a😀");
+  assert.deepEqual((await request("focusedFieldValue", { ...policy, pid: emojiTarget, maxLength: 2 })).result, { value: null });
   // The main helper reads neither the screen nor the field, and each reader nothing else.
   assert.equal((await send(helper, "readScreen", policy)).error?.message, "native request failed", "the main helper reads no screen");
   assert.equal((await send(helper, "focusedFieldValue", { ...policy, window: helperTarget, maxLength: 20000 })).error?.message, "native request failed", "the main helper reads no field");
   for (const method of ["caretAnchor", "insert", "focusedFieldValue", "frontmostApp", "microphoneStart", "appInfo"])
     assert.equal((await send(reader, method, {})).error?.message, "native request failed", `the screen reader does no ${method}`);
-  for (const method of ["caretAnchor", "insert", "readScreen", "microphoneStart", "appInfo"])
+  for (const method of ["caretAnchor", "insert", "readScreen", "frontmostApp", "microphoneStart", "appInfo"])
     assert.equal((await send(fieldReader, method, {})).error?.message, "native request failed", `the field reader does no ${method}`);
   const exits = [once(helper.child, "exit"), once(reader.child, "exit"), once(fieldReader.child, "exit")];
   helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();

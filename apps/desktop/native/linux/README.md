@@ -24,7 +24,9 @@ running capture fails, and the app starts it afresh; which session runs is the s
 decision (`../shared/microphone`). `voice-screen-reader`, a program of
 its own, reads the screen and nothing else, and `voice-field-reader`, another, reads the focused
 field that correction learning watches after a paste and nothing else; each keeps its own record of
-what has focus, so its window tokens are its own (ADR-DESK-053).
+what has focus, so its window tokens are its own (ADR-DESK-053). The field reader is therefore asked
+for the field by the process of the window pasted into (`pid`, which `voice-linux`'s `frontmostApp`
+gives beside the window's token) and reads it only while the window in front is that process's.
 
 Install Node.js 24, CMake, Ninja, a C++20 compiler and the development packages for
 AT-SPI (2.56 or later), GLib/GIO, PulseAudio, IBus (`libibus-1.0-dev`), ICU and nlohmann-json. From the app:
@@ -99,17 +101,25 @@ state directory, consuming it on restoration and saving its replacement after a
 successful grant. Startup attempts restoration only when a saved token exists;
 first-time authorization remains an explicit permission-button action. Revoked grants or a compositor that refuses restoration can
 still require consent again. Tokens are never logged. The
-helper never reads the clipboard: it publishes the text, validates the original
+paste never reads the clipboard: it publishes the text, validates the original
 app/window and waits for this session to own the selection before sending the
-paste chord, releases its injected keys, and leaves the text on the clipboard
-(ADR-DESK-002). Clipboard portal version 1 has no atomic owner check, so a copy
+paste chord, and releases its injected keys. `ClipboardKeeper` saved the
+clipboard ahead (`clipboardSave`, asynchronous `SelectionRead`s on the event
+loop, once the portal has announced the selection) and puts it back
+`restoreDelay` after the paste, only while this session still owns the
+selection it offered the text in; a password manager's copy
+(`x-kde-passwordManagerHint`) and a file transfer are not saved (ADR-DESK-002,
+amended 2026-10-08). Clipboard portal version 1 has no atomic owner check, so a copy
 made between the final check and the chord has a compositor race. An uncertain
 paste is never retried. The terminal paste chord uses the provider's terminal role (Ctrl+Shift+V); ordinary
 fields use Ctrl+V. Live GNOME clipboard behavior still requires runtime testing.
 See the [portal contract](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Clipboard.html)
 and [Mutter clipboard implementation](https://gitlab.gnome.org/GNOME/mutter/-/blob/main/src/backends/meta-clipboard-session.c).
 The private-bus fixture covers silent startup, explicit clears, malformed owner
-events and a paste that never reads the clipboard.
+events, a paste that never reads the clipboard, and the save and put-back: every
+format put back, a copy after the paste or between the save and the paste kept,
+two pastes, a read still held when the paste comes, password-manager copies,
+file transfers, too many formats and an unannounced selection.
 
 Foreground and focus events drive accessibility lookup. Failed window lookups
 retry at most five times, a second apart, and stop when the window is left. There

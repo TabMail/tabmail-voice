@@ -33,6 +33,8 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
     acknowledgments = os.fdopen(ack_read)
     sequence = 0
     policy = {'excludedAppIDs': [], 'excludedHosts': []}
+    # The stand-in's two apps, each a process of its own (foreground-provider.cpp).
+    first, second = 4194305, 4194306
 
     def line(stream):
         assert select.select([stream], [], [], 3)[0], 'native fixture response timed out'
@@ -86,15 +88,15 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         deadline = int(time.time() * 1000) + 2000
         request('insert', {'window': window, 'text': 'Synthetic held paste', 'deadline': deadline}, refused=refused)
 
-    def field():
+    # The field reader is asked for the field of the app pasted into by its process, as voice-linux's
+    # frontmostApp names it: it reads the window in front only while that window is the app's.
+    def field(pid=first):
         if not fields:
             return None
-        target = request('frontmostApp')
-        assert target and target['window'] > 0
-        return request('focusedFieldValue', {**policy, 'window': target['window'], 'maxLength': 20000})
+        return request('focusedFieldValue', {**policy, 'pid': pid, 'maxLength': 20000})
 
     def target():
-        return True if reader else request('frontmostApp')
+        return True if reader else field() if fields else request('frontmostApp')
 
     try:
         if reader:
@@ -104,10 +106,10 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText'):
                 request(method, refused=True)
         elif fields:
-            # Asked the moment the field reader starts, as the app does after restarting it when a watch
-            # supersedes a read still going: the answer waits for the reader to find what has focus.
-            assert request('frontmostApp'), 'a watch started as the field reader starts finds the app in front'
-            for method in ('readScreen', 'caretAnchor', 'insert', 'redactText', 'requestInsertion'):
+            # Asked the moment the field reader starts, as the app does after restarting it when a new
+            # watch's read supersedes one still going: the answer waits for the reader to find what has focus.
+            assert field() == {'value': 'Synthetic field content'}, 'a read sent as the field reader starts finds the app in front'
+            for method in ('frontmostApp', 'readScreen', 'caretAnchor', 'insert', 'redactText', 'requestInsertion'):
                 request(method, refused=True)
         else:
             assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
@@ -134,12 +136,12 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         # The Shell holds the keyboard while the dictation key is down: the focus moves to the Shell
         # and back, and the window in front stays the target, with the same token, throughout. The
         # reader asks the extension too, so a read at the key's press still reads that window.
-        window = None if reader else request('frontmostApp')['window']
+        window = None if reader or fields else request('frontmostApp')['window']
         command('h')
         if reader:
             assert 'First synthetic app' in screen()['renderedText'], 'the screen is read while the Shell holds the keyboard'
-        else:
-            assert request('frontmostApp') == {'window': window}, 'the target stays while the Shell holds the keyboard'
+        elif not fields:
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'the target stays while the Shell holds the keyboard'
         if fields:
             assert field() == {'value': 'Synthetic field content'}, 'the field is read while the Shell holds the keyboard'
         elif not reader:
@@ -157,8 +159,10 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             paste(window, refused=True)
             assert portal_events(0.5) == [], 'no selection or key reaches the portal while the Shell holds the keyboard'
         command('H')
-        if not reader:
-            assert request('frontmostApp') == {'window': window}, 'the target keeps its token after the hold'
+        if fields:
+            assert field() == {'value': 'Synthetic field content'}, 'the field is read after the hold'
+        elif not reader:
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'the target keeps its token after the hold'
         if not reader and not fields:
             # The same paste once the hold ends goes through: the control for the refusal above.
             paste(window, refused=False)
@@ -170,10 +174,12 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         if reader:
             assert screen() is None, 'the Shell is never read as the target'
         else:
-            assert request('frontmostApp') is None, 'the Shell is never the target'
+            assert target() is None, 'the Shell is never the target'
         command('H')
-        if not reader:
-            assert request('frontmostApp') == {'window': window}
+        if fields:
+            assert field() == {'value': 'Synthetic field content'}
+        elif not reader:
+            assert request('frontmostApp') == {'window': window, 'pid': first}
         for mode in ('l', 'v'):
             command(mode)
             if reader:
@@ -222,6 +228,15 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert command('b') == (2, 1)
         if reader:
             assert 'Second synthetic app' in screen()['renderedText']
+        elif fields:
+            # The field pasted into is the first app's: with the second in front, nothing is read; the
+            # second app's own field is read by its process. A window token names nothing here.
+            assert field(first) is None, 'another app in front is never read for the app pasted into'
+            assert field(second) == {'value': 'Synthetic field content'}, 'the app in front is read by its process'
+            for named in ({'window': 1}, {'pid': -1}, {'pid': str(second)}, {'pid': 0}, {}):
+                assert request('focusedFieldValue', {**policy, **named, 'maxLength': 20000}) is None, f'no field for {named}'
+        else:
+            assert request('frontmostApp')['pid'] == second, "the helper names the second app's process"
         # Each real consumer must refresh children added after its cached preflight.
         command('p')
         if reader:
@@ -229,17 +244,16 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert read['textBeforeCaret'] == '' and 'synthetic-private-password' not in json.dumps(read)
         command('u')
         if fields:
-            assert field() == {'value': 'Synthetic field content'}
+            assert field(second) == {'value': 'Synthetic field content'}
             command('p')
-            assert field() == {'value': None}
+            assert field(second) == {'value': None}
             command('u')
-            assert field() == {'value': 'Synthetic field content'}
+            assert field(second) == {'value': 'Synthetic field content'}
         excluded = {**policy, 'excludedHosts': ['synthetic.example']}
         if reader:
             assert screen(excluded) == {'hidden': True}
         elif fields:
-            window = request('frontmostApp')['window']
-            assert request('focusedFieldValue', {**excluded, 'window': window, 'maxLength': 20000}) == {'value': None}
+            assert request('focusedFieldValue', {**excluded, 'pid': second, 'maxLength': 20000}) == {'value': None}
         # A failed request recovers via the actual one-second timer.
         assert command('r') == (3, 1)
         assert (screen() if reader else target()) is None
@@ -266,7 +280,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         time.sleep(1.1)
         assert command('s') == (11, 1)
         if not reader:
-            assert request('frontmostApp') is None, 'departure cancels retries'
+            assert target() is None, 'departure cancels retries'
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
         child.stdin.close()

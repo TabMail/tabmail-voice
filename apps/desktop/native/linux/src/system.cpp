@@ -14,6 +14,11 @@
 
 namespace {
 using JSON = nlohmann::json;
+// What a saved clipboard may hold, and when it goes back: the shared core's.
+voice::ClipboardKeeper::Rules clipboardRules() {
+    const auto rules = voice::core::request({{"clipboard", JSON::object()}}, voice_core_request_json);
+    return {rules.at("restoreDelay").get<unsigned>(), rules.at("maxBytes").get<unsigned long long>(), rules.at("maxFormats").get<size_t>()};
+}
 JSON appInfo(const JSON& params) {
     if (!params.is_object() || !params.contains("path") || !params["path"].is_string())
         throw std::runtime_error("invalid path");
@@ -38,7 +43,8 @@ int main() {
     voice::GnomeCaret gnomeCaret;
     voice::Foreground foreground([&] { return gnomeCaret.holding(); });
     voice::InputSession input(output);
-    voice::Inserter inserter(input, [&](uint64_t token) { return foreground.matches(token); }, [&] {
+    voice::ClipboardKeeper clipboard(input, clipboardRules());
+    voice::Inserter inserter(input, clipboard, [&](uint64_t token) { return foreground.matches(token); }, [&] {
         const auto target = foreground.target(); return target && target->terminal;
     });
     voice::Channel channel(output, [&](const std::string& method, const JSON& params, voice::Channel::Reply reply, int64_t id) {
@@ -48,6 +54,10 @@ int main() {
             if (params.is_object() && params.contains("id") && params["id"].is_number_integer()) inserter.cancel(params["id"].get<int64_t>());
         } else if (method == "insert") {
             inserter.insert(id, params, reply);
+        } else if (method == "clipboardSave") {
+            // Answered at once: the clipboard is read in the background, for the next paste to put back.
+            clipboard.save();
+            reply(JSON::object(), true);
         } else if (method == "requestInsertion") {
             const auto parent = params.value("parent", std::string{});
             if (!parent.empty() && (parent.size() > 32 || !parent.starts_with("x11:") ||

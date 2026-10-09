@@ -27,8 +27,10 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
         },
         [&](const auto& target, const voice::ScreenExclusions& policy) -> JSON {
             if (!foreground.targets(target->token)) return nullptr;
+            // A field is read only in the app pasted into, named by its process (window tokens are each
+            // process's own): a window of another app that came to the front meanwhile is not read.
             if (method == "focusedFieldValue" &&
-                (!params.contains("window") || !params["window"].is_number_unsigned() || params["window"] != target->token)) return nullptr;
+                (!target->pid || !params.contains("pid") || !params["pid"].is_number_unsigned() || params["pid"] != target->pid)) return nullptr;
             const auto path = voice::ancestors(target->focus);
             const auto window = std::find_if(path.begin(), path.end(), [](const auto& node) {
                 const auto role = voice::role(node); return role == ATSPI_ROLE_FRAME || role == ATSPI_ROLE_DIALOG || role == ATSPI_ROLE_WINDOW;

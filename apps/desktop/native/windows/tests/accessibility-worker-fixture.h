@@ -55,7 +55,8 @@ void waitEntered() { std::unique_lock lock(gateMutex); if (!gateChanged.wait_for
 void releaseGate() { std::lock_guard lock(gateMutex); released = true; gateChanged.notify_all(); }
 uint64_t unixMilliseconds() { return 1000; }
 std::wstring utf16(std::string s) { return std::wstring(s.begin(), s.end()); }
-void paste(HWND, std::wstring, uint64_t, std::function<bool()> canceled) { if (!canceled()) ++inserts; }
+struct ClipboardKeeper {};
+void paste(HWND, std::wstring, uint64_t, std::function<bool()> canceled, ClipboardKeeper&) { if (!canceled()) ++inserts; }
 struct Automation {
  JSON caret(HWND w) { ++caretCalls; gate(); if (providerFailure) throw std::runtime_error("synthetic provider failure"); if (!w || w != GetForegroundWindow()) return nullptr; return {{"x", reinterpret_cast<uintptr_t>(w)}, {"y", 20}, {"width", 1}, {"height", 20}}; }
 };

@@ -148,7 +148,7 @@ export const microphoneStartRetryDelay = 250;
  * checks the deadline before each step, and sends the paste keys after its last check. */
 export const insertionReplyGrace = 500;
 /** The paste history a triple tap shows (ADR-DESK-043): the texts dictation and agent mode pasted, or
- * copied when they could not paste, the newest first, at most this many. In memory only, for the
+ * could not paste, the newest first, at most this many. In memory only, for the
  * app's life: no user content is saved. */
 export const pasteHistoryLimit = 20;
 /** The paste history window, opened where the chat window does (by the pill): this wide, as tall as its entries up to
@@ -722,6 +722,13 @@ export const agentBubbleRunningSpringResponseSeconds = 0.35;
 export const agentBubbleRunningSpringEasing = "cubic-bezier(0.3, 1.7, 0.5, 1)";
 /** How long an error message stays on the overlay. */
 export const overlayErrorDisplayDuration = 3_000;
+/** How long the note for a text not pasted (the user switched apps) stays at the mouse pointer,
+ * copying the text when clicked, with a bar under it showing the time left (owner, 2026-10-08). */
+export const notPastedDisplayDuration = 10_000;
+/** How often a dictation asks its helper to save the clipboard, from key-down until the paste writes
+ * (ADR-DESK-002, amended 2026-10-09): a copy made while the words are transcribed is saved, to be
+ * put back after the paste. The helper reads only a clipboard that changed. */
+export const clipboardSaveInterval = 250;
 
 // MARK: Chat window (the Answer tool's replies, over the pill)
 
@@ -780,6 +787,8 @@ export const chatRevealRise = 4;
 export const chatThinkingLabel = "Thinking…";
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
+/** The not-pasted note's x, which dismisses it. */
+export const noteCloseButtonSize = 18;
 /** The spinner beside what a tool the answer's model called is doing, while it runs. */
 export const chatActivitySpinnerRevolutionsPerSecond = 1;
 export const chatActivitySpinnerLineWidth = 1.5;

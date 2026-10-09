@@ -10,38 +10,26 @@ import VoiceHelperSupport
 ///
 /// Pasting (write pasteboard → ⌘V) is the one insertion path that works in native, Electron and
 /// browser text fields alike; setting `kAXSelectedTextAttribute` silently fails in most web views
-/// (DECISIONS.md ADR-DESK-002). The clipboard is only written, never read: the text stays on it.
+/// (DECISIONS.md ADR-DESK-002). The paste never waits on the clipboard as it was: `ClipboardKeeper`
+/// saved it ahead and puts it back after the paste keys, in the background.
 @MainActor
 struct TextInserter {
-    /// Marker types from nspasteboard.org: clipboard managers skip items carrying them, so the
-    /// dictated text does not pollute clipboard history.
-    static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
-    static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-
-    let pasteboard: NSPasteboard
+    let clipboard: ClipboardKeeper
     /// Posts ⌘V. Injected so tests can exercise the pasteboard handling without posting events.
     let pasteKeystroke: @MainActor () async -> Void
 
-    init(pasteboard: NSPasteboard = .general, pasteKeystroke: @escaping @MainActor () async -> Void = TextInserter.postCommandV) {
-        self.pasteboard = pasteboard
+    init(clipboard: ClipboardKeeper, pasteKeystroke: @escaping @MainActor () async -> Void = TextInserter.postCommandV) {
+        self.clipboard = clipboard
         self.pasteKeystroke = pasteKeystroke
     }
 
     func insert(_ text: String) async {
         let started = ContinuousClock.now
-        pasteboard.clearContents()
-        let item = NSPasteboardItem()
-        item.setString(text, forType: .string)
-        item.setString("", forType: Self.transientType)
-        item.setString("", forType: Self.concealedType)
-        pasteboard.writeObjects([item])
-        HelperLog.debug("TextInserter: clipboard written after \(Self.milliseconds(since: started))ms")
+        let ours = clipboard.write(text)
+        HelperLog.debug("TextInserter: clipboard written after \(ClipboardKeeper.milliseconds(since: started))ms")
         await pasteKeystroke()
-        HelperLog.debug("TextInserter: paste keystroke sent after \(Self.milliseconds(since: started))ms")
-    }
-
-    private static func milliseconds(since start: ContinuousClock.Instant) -> Int {
-        Int((start.duration(to: .now) / .milliseconds(1)).rounded())
+        HelperLog.debug("TextInserter: paste keystroke sent after \(ClipboardKeeper.milliseconds(since: started))ms")
+        clipboard.restore(after: ours)
     }
 
     static func postCommandV() async {

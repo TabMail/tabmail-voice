@@ -1,5 +1,5 @@
 {
-  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), the clipboard a paste saves and puts back (500 ms after the paste keys; at most 64 MiB and 256 formats), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
   "cases": [
     {
       "name": "a field bound at the most a request may ask",
@@ -685,6 +685,33 @@
           "deadline": 1760000001000,
           "now": 1760000000000.5
         }
+      },
+      "refused": true
+    },
+    {
+      "name": "the clipboard a paste saves and puts back",
+      "request": {
+        "clipboard": {}
+      },
+      "expected": {
+        "restoreDelay": 500,
+        "maxBytes": 67108864,
+        "maxFormats": 256
+      }
+    },
+    {
+      "name": "the clipboard's rules asked with a parameter",
+      "request": {
+        "clipboard": {
+          "restoreDelay": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "the clipboard's rules asked with no object",
+      "request": {
+        "clipboard": null
       },
       "refused": true
     },

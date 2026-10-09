@@ -10,12 +10,12 @@ import VoiceHelperSupport
 /// replies holds up no paste, caret or microphone, and the app can end it (`FieldReader` in the app).
 /// `voice-macos` doesn't serve it.
 ///
-/// - `frontmostApp` → `{pid}` of the app in front, or null: the field the watch reads is that app's.
 /// - `focusedFieldValue {pid, maxLength, excludedAppIDs, excludedHosts}` → `{value}`: the text of
-///   the app's focused field, null for none, a password field (`FocusedField`), or one in an app or
-///   on a website the user excludes from screen reading, which is not read. The shared core
-///   (`SharedRequest`) checks `maxLength`, sends null for a field longer than it in UTF-16 code
-///   units, and takes secret-looking text out of the rest.
+///   the focused field of `pid`, the app the dictation was pasted into as `voice-macos` named it at
+///   key-down (never what is in front after the paste), null for none, a password field
+///   (`FocusedField`), or one in an app or on a website the user excludes from screen reading, which
+///   is not read. The shared core (`SharedRequest`) checks `maxLength`, sends null for a field
+///   longer than it in UTF-16 code units, and takes secret-looking text out of the rest.
 public enum FieldReaderService {
     @MainActor
     public static func register(on channel: HelperChannel) {
@@ -25,10 +25,6 @@ public enum FieldReaderService {
     /// `screen` reads through Accessibility, or is a test's stand-in.
     @MainActor
     static func register(on channel: HelperChannel, screen: ScreenAccess) {
-        channel.on("frontmostApp") { _ in
-            guard let (pid, _, _) = await MainActor.run(body: screen.frontmost) else { return .null }
-            return ["pid": .number(Double(pid))]
-        }
         channel.on("focusedFieldValue") { params in
             guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else {
                 throw HelperError("focusedFieldValue needs pid and maxLength")

@@ -274,12 +274,12 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "running", tool: "answer" }, true);
     // Over the chat only, as the page says the pointer is.
     expect(overlay.ignoresMouse()).toBe(true);
-    controller.chatPointer(true);
+    controller.pointerOver(true);
     expect(overlay.ignoresMouse()).toBe(false);
-    controller.chatPointer(false);
+    controller.pointerOver(false);
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
-    controller.chatPointer(true);
+    controller.pointerOver(true);
     expect(overlay.visible()).toBe(true);
     expect(overlay.bounds().width).toBe(config.chatWidth + 2 * config.chatShadowMargin);
     expect(placed).toEqual([null, { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: expect.any(Number) as number }]);
@@ -304,7 +304,7 @@ describe("OverlayWindowController", () => {
     expect(overlay.forwardsMouse()).toBe(true);
     const closed = overlay.bounds();
     controller.fitChat(200);
-    controller.chatPointer(true);
+    controller.pointerOver(true);
     expect(overlay.bounds()).toEqual(closed);
     expect(overlay.ignoresMouse()).toBe(true);
   });
@@ -321,7 +321,7 @@ describe("OverlayWindowController", () => {
     expect(overlay.ignoresMouse()).toBe(true);
     controller.update({ kind: "idle" }, false);
     controller.update({ kind: "listening" });
-    controller.chatPointer(true);
+    controller.pointerOver(true);
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
   });
@@ -387,7 +387,7 @@ describe("OverlayWindowController", () => {
     // clicks whatever it says (ignoring them here would leave no move to undo it).
     const shaped = overlay.shape();
     for (const over of [true, false, true, false]) {
-      controller.chatPointer(over);
+      controller.pointerOver(over);
       expect(overlay.ignoresMouse()).toBe(false);
       expect(overlay.shape()).toEqual(shaped);
     }
@@ -564,12 +564,12 @@ describe("OverlayWindowController", () => {
     }
   });
 
-  /** A text copied instead of pasted (ADR-DESK-042) says so where the user is now, at the mouse
-   * pointer, not at the caret they left; a failure stays where the pill was. */
+  /** A text not pasted (ADR-DESK-042) says so where the user is now, at the mouse pointer, not at the
+   * caret they left; a failure stays where the pill was. */
   test.each<[string, Phase, boolean]>([
-    ["copied", { kind: "copied", message: "Copied." }, true],
+    ["not-pasted", { kind: "notPasted", message: "Click to copy." }, true],
     ["failed", { kind: "failed", message: "Failed." }, false],
-  ])("a %s note shows at the pointer only when copied", async (_, end, atPointer) => {
+  ])("a %s note shows at the pointer only when not pasted", async (_, end, atPointer) => {
     const caret: Rect = { x: 200, y: 200, width: 1, height: 16 };
     screenNow.pointer = { x: 1000, y: 600 };
     try {
@@ -595,6 +595,58 @@ describe("OverlayWindowController", () => {
     } finally {
       screenNow.pointer = pointerAtRest;
     }
+  });
+
+  /** The not-pasted note takes clicks where the pointer is over it (macOS, Windows), and the rest of
+   * the overlay lets them through; clicked and refused by the clipboard, the note says so where it
+   * was, and the overlay lets every click through again. */
+  test("the not-pasted note takes clicks only under the pointer, until it goes", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    controller.update({ kind: "transcribing" });
+    controller.update({ kind: "notPasted", message: "Click to copy." });
+    const atNote = overlay.bounds();
+    expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
+
+    controller.pointerOver(true);
+    expect(overlay.ignoresMouse()).toBe(false);
+    controller.pointerOver(false);
+    expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
+    // A measured frame is the shape-cut overlay's (Linux) only.
+    controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
+    expect(overlay.shape()).toEqual([]);
+    controller.pointerOver(true);
+    // The same note again (a state push) changes nothing.
+    controller.update({ kind: "notPasted", message: "Click to copy." });
+    expect(overlay.ignoresMouse()).toBe(false);
+
+    controller.update({ kind: "failed", message: "Couldn't copy." });
+    expect(overlay.visible()).toBe(true);
+    expect(overlay.bounds()).toEqual(atNote);
+    expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
+    // No longer a note: the pointer over it no longer takes clicks.
+    controller.pointerOver(true);
+    expect(overlay.ignoresMouse()).toBe(true);
+  });
+
+  /** Where the overlay is cut to a shape (Linux), the note takes clicks over its measured frame only,
+   * and the next hold gets the whole, click-through overlay back. */
+  test("the not-pasted note is the shape-cut overlay's only shape while it shows", () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
+    controller.update({ kind: "notPasted", message: "Click to copy." });
+    controller.fitNote({ x: 10.4, y: 20.6, width: 180.2, height: 32 });
+    expect(overlay.shape()).toEqual([{ x: 10, y: 21, width: 180, height: 32 }]);
+    expect(overlay.ignoresMouse()).toBe(false);
+
+    controller.update({ kind: "arming" });
+    expect(overlay.shape()).toEqual([]);
+    expect(overlay.ignoresMouse()).toBe(true);
+    controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
+    expect(overlay.shape()).toEqual([]);
   });
 
   /** A caret found after the chat window opened doesn't move it back to where the pill would be. */
@@ -627,7 +679,7 @@ test("a shell exclusion region constrains the shared pill and interactive chat",
   expect(controller.pillPlace.pill.x).toBe(162.5);
   controller.update({ kind: "running", tool: "answer" }, true);
   controller.fitChat(320);
-  controller.chatPointer(true);
+  controller.pointerOver(true);
   expect(controller.chatPlacement?.width).toBe(325);
   expect(overlay.ignoresMouse()).toBe(false);
   const bounds = overlay.bounds();
@@ -659,13 +711,13 @@ test("placement refresh recovers chat after Search leaves no usable area", () =>
   expect(overlay.visible()).toBe(true);
   expect(controller.chatPlacement?.width).toBe(325);
   area = { x: 900, y: 0, width: 300, height: 900 };
-  controller.chatPointer(true);
+  controller.pointerOver(true);
   controller.refreshPlacement();
   controller.fitChat(200);
   expect(overlay.bounds().x + config.chatShadowMargin).toBeGreaterThanOrEqual(900);
   // Placed afresh, it lets clicks through until the page's next move says the pointer is over it.
   expect(overlay.ignoresMouse()).toBe(true);
-  controller.chatPointer(true);
+  controller.pointerOver(true);
   expect(overlay.ignoresMouse()).toBe(false);
   area = null;
   controller.refreshPlacement();
@@ -788,7 +840,7 @@ test("late caret cannot change saved placement or the chat opened from it", asyn
   expect(controller.pillPlace).toEqual(place);
   controller.update({ kind: "running", tool: "answer" }, true);
   controller.fitChat(180);
-  controller.chatPointer(true);
+  controller.pointerOver(true);
   expect(window.bounds().x + (controller.chatPlacement?.pillX ?? -10000)).toBe(onScreenX);
   expect(window.visible()).toBe(true);
   expect(window.ignoresMouse()).toBe(false);

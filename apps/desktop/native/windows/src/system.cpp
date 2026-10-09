@@ -24,6 +24,12 @@
 using JSON = nlohmann::json;
 namespace {
 
+// What a saved clipboard may hold, and when it goes back: the shared core's.
+voice::ClipboardRules clipboardRules() {
+    const auto rules = voice::core::request({{"clipboard", JSON::object()}}, voice_core_request_json);
+    return {rules.at("restoreDelay").get<unsigned>(), rules.at("maxBytes").get<unsigned long long>(), rules.at("maxFormats").get<size_t>()};
+}
+
 JSON handle(const std::string& method, const JSON& params) {
     if (method == "redactText") return voice::core::request(params, voice_core_redact_text_json);
     if (method == "appInfo") return voice::privacy::appInfo(params);
@@ -60,7 +66,7 @@ JSON handle(const std::string& method, const JSON& params) {
 // performing stale requests after an app timeout. The microphone is voice-microphone.exe's.
 class AccessibilityWorker {
 public:
-    explicit AccessibilityWorker(const voice::Output& output) : output(output) {
+    AccessibilityWorker(const voice::Output& output, voice::ClipboardKeeper& clipboard) : output(output), clipboard(clipboard) {
         std::thread([this] {
             voice::COM com;
             while (true) {
@@ -105,7 +111,7 @@ public:
                             // wait ends at the deadline, and this margin keeps the watchdog clear of it.
                             busyUntil = GetTickCount64() + wait + voice::HelperConfig::clipboardOpenWaitMs;
                         }
-                        voice::paste(window, voice::utf16(params["text"].get<std::string>()), deadline, [this] { return canceled.load(); });
+                        voice::paste(window, voice::utf16(params["text"].get<std::string>()), deadline, [this] { return canceled.load(); }, this->clipboard);
                         result = JSON::object();
                     } else {
                         voice::Automation automation;
@@ -166,6 +172,7 @@ public:
     }
 private:
     const voice::Output& output;
+    voice::ClipboardKeeper& clipboard;
     std::mutex mutex;
     std::condition_variable changed;
     struct Request { JSON input; HWND window; };
@@ -185,7 +192,8 @@ int main(int argc, char** argv) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     voice::Output output;
     voice::ShellWatch shellWatch(output);
-    AccessibilityWorker accessibility(output);
+    voice::ClipboardKeeper clipboard(clipboardRules());
+    AccessibilityWorker accessibility(output, clipboard);
     std::string line;
     char byte;
     while (std::cin.get(byte)) {
@@ -209,6 +217,12 @@ int main(int argc, char** argv) {
         // The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
         // programs of their own.
         if (input["method"] == "caretAnchor" || input["method"] == "insert") { accessibility.request(std::move(input)); continue; }
+        // Answered at once: the clipboard is read on a thread of its own, for the next paste to put back.
+        if (input["method"] == "clipboardSave") {
+            try { clipboard.save(); output.send({{"id", id}, {"result", JSON::object()}}); }
+            catch (...) { output.send({{"id", id}, {"error", {{"message", "Windows native request failed"}}}}); }
+            continue;
+        }
         try {
             output.send({{"id", id}, {"result", handle(input["method"].get<std::string>(), input.value("params", JSON::object()))}});
         } catch (...) {

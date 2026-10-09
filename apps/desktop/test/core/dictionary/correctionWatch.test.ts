@@ -14,17 +14,13 @@ const none: ScreenExclusions = { apps: [], sites: [] };
 const vault: ScreenExclusions = { apps: ["org.example.vault"], sites: ["example.com"] };
 const corrected = "Please forward the Xyvora contract today.";
 
-/** A field the test edits, read as the field reader would read it (the app in front `pid`), and the
- * words learned. */
+/** A field the test edits, read as the field reader would read it (of the target the watch was
+ * given), and the words learned. */
 function setup(initial: string | null = pasted) {
-  const field = { value: initial as string | null, reads: 0, pids: [] as number[], excluded: [] as ScreenExclusions[], fails: false, target: pid as number | null, targets: 0 };
+  const field = { value: initial as string | null, reads: 0, pids: [] as number[], excluded: [] as ScreenExclusions[], fails: false };
   const learned: string[][] = [];
   const watch = new CorrectionWatch(
     {
-      target: async () => {
-        field.targets += 1;
-        return field.target;
-      },
       value: async (readPid, exclusions) => {
         field.reads += 1;
         field.pids.push(readPid);
@@ -53,7 +49,7 @@ describe("CorrectionWatch", () => {
    * so the helper reads none of them; a field it won't read (null) ends the watch, nothing learned. */
   test("every read carries the dictation's excluded apps and websites, and an app not read teaches nothing", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, vault);
+    watch.watch(pid, pasted, vault);
     await poll();
     await poll();
     expect(field.excluded).toEqual([{ apps: ["org.example.vault"], sites: ["example.com"] }, { apps: ["org.example.vault"], sites: ["example.com"] }]);
@@ -72,7 +68,7 @@ describe("CorrectionWatch", () => {
   test("learns a correction in a terminal's box, across the rows the terminal wrapped", async () => {
     const box = (text: string) => `> ${text.replace("Zivora ", "Zivora\u2029  ").replace("Xyvora ", "Xyvora\u2029  ")}`;
     const { field, learned, watch } = setup(box(pasted));
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = box(corrected);
     await poll();
@@ -81,7 +77,7 @@ describe("CorrectionWatch", () => {
     expect(learned).toEqual([["Xyvora"]]);
 
     const shell = setup("$ Please forward the Zivora con\u2029tract today.");
-    shell.watch.watch(pasted, none);
+    shell.watch.watch(pid, pasted, none);
     await poll();
     shell.field.value = "$ Please forward the Xyvora con\u2029tract today.";
     await poll();
@@ -95,7 +91,7 @@ describe("CorrectionWatch", () => {
   test("a field without rows learns a respelling not written as one", async () => {
     const dictated = "Please forward the zivora corp contract today.";
     const { field, learned, watch } = setup(dictated);
-    watch.watch(dictated, none);
+    watch.watch(pid, dictated, none);
     await poll();
     field.value = "Please forward the Xyvora  Corp contract today.";
     await poll();
@@ -121,7 +117,7 @@ describe("CorrectionWatch", () => {
     const outcomes = new Set<string>();
     for (let width = 12; width <= 80; width += 1) {
       const { field, learned, watch } = setup(wrapped(dictated, width));
-      watch.watch(dictated, none);
+      watch.watch(pid, dictated, none);
       await poll();
       field.value = wrapped(fixed, width);
       await poll();
@@ -136,7 +132,7 @@ describe("CorrectionWatch", () => {
    * does not hold it, and teaches nothing. */
   test("never joins a field's own line breaks", async () => {
     const { field, learned, watch } = setup("Please forward the Zivora\ncontract today.");
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = "Please forward the Xyvora\ncontract today.";
     await poll();
@@ -149,7 +145,7 @@ describe("CorrectionWatch", () => {
    * dictation's key-down), and only once. */
   test("learns a correction that stayed, when the watch ends", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = corrected;
     await poll();
@@ -173,7 +169,7 @@ describe("CorrectionWatch", () => {
     [pasted, ["Please forward the Xyvora contract today."], []],
   ])("only the edit the field ends on is learned: %s", async (text, steps, words) => {
     const { field, learned, watch } = setup(text);
-    watch.watch(text, none);
+    watch.watch(pid, text, none);
     await poll();
     for (const step of steps) {
       field.value = step;
@@ -195,7 +191,7 @@ describe("CorrectionWatch", () => {
     [`${pasted} Thanks!`, []],
   ])("after a correction settles, a field reading %j learns %j", async (after, words) => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = corrected;
     await poll();
@@ -214,7 +210,7 @@ describe("CorrectionWatch", () => {
     [corrected, pasted],
   ])("paused on %j, then changed and sent at once, teaches nothing", async (paused, last) => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = paused;
     await poll();
@@ -231,7 +227,7 @@ describe("CorrectionWatch", () => {
   /** Text typed after a correction, read before it stays, keeps the correction. */
   test("a correction then words added and sent at once is learned", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = corrected;
     await poll();
@@ -249,7 +245,7 @@ describe("CorrectionWatch", () => {
    * holds still. */
   test("a field still changing is not compared", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     for (const partial of ["Please forward the X contract today.", "Please forward the Xy contract today.", "Please forward the Xyv contract today."]) {
       field.value = partial;
@@ -267,7 +263,7 @@ describe("CorrectionWatch", () => {
    * holds the pasted text. */
   test("waits for the pasted text to be in the field", async () => {
     const { field, learned, watch } = setup("");
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     await poll();
     field.value = pasted;
@@ -282,7 +278,7 @@ describe("CorrectionWatch", () => {
   /** Words added after the paste settle as an edit, but respell nothing. */
   test("an edit that respells nothing teaches nothing", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = `${pasted} Thanks!`;
     await poll();
@@ -294,7 +290,7 @@ describe("CorrectionWatch", () => {
 
   test("a field that never holds the pasted text teaches nothing", async () => {
     const { field, learned, watch } = setup("Something else.");
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = "Something else, Xyvora.";
     await vi.advanceTimersByTimeAsync(duration);
@@ -306,7 +302,7 @@ describe("CorrectionWatch", () => {
    * settled on; one made after it is not learned. */
   test("learns when its duration ends", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = corrected;
     await vi.advanceTimersByTimeAsync(duration - 2 * interval);
@@ -318,7 +314,7 @@ describe("CorrectionWatch", () => {
 
   test("stops reading after its duration", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await vi.advanceTimersByTimeAsync(duration);
     expect(field.reads).toBe(duration / interval);
     field.value = corrected;
@@ -334,7 +330,7 @@ describe("CorrectionWatch", () => {
     ["a failed read", (field: { value: string | null; fails: boolean }) => (field.fails = true)],
   ])("%s ends the watch", async (_label, fail) => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     fail(field);
     await poll();
@@ -351,7 +347,7 @@ describe("CorrectionWatch", () => {
    * the correction the field had settled on. */
   test("the end of the field learns what it settled on", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = corrected;
     await poll();
@@ -365,7 +361,7 @@ describe("CorrectionWatch", () => {
   /** The next dictation's key-down stops the watch, so its paste is never taken for a correction. */
   test("stop ends the watch", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     watch.stop();
     field.value = corrected;
@@ -382,7 +378,6 @@ describe("CorrectionWatch", () => {
     let reads = 0;
     const watch = new CorrectionWatch(
       {
-        target: async () => pid,
         value: (): Promise<string> => {
           reads += 1;
           if (reads === 1) return Promise.resolve(pasted);
@@ -394,7 +389,7 @@ describe("CorrectionWatch", () => {
       interval,
       duration,
     );
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     await poll();
     await poll();
@@ -409,13 +404,12 @@ describe("CorrectionWatch", () => {
   /** A new watch replaces the last, learning what the last settled on: only the new one reads. */
   test("a new watch ends the last", async () => {
     const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
+    watch.watch(pid, pasted, none);
     await poll();
     field.value = corrected;
     await poll();
     await poll();
-    field.target = 7;
-    watch.watch("Meet Brevale.", none);
+    watch.watch(7, "Meet Brevale.", none);
     expect(learned).toEqual([["Xyvora"]]);
     field.value = "Meet Brevale.";
     await poll();
@@ -425,48 +419,5 @@ describe("CorrectionWatch", () => {
     watch.stop();
     expect(field.pids).toEqual([pid, pid, pid, 7, 7, 7]);
     expect(learned).toEqual([["Xyvora"], ["Brevalle"]]);
-  });
-  /** The watch reads the app or window the reader finds in front as it starts, the one pasted into,
-   * and none at all when there is none. */
-  test("the watch reads the field of what is in front as it starts, and nothing without it", async () => {
-    const { field, learned, watch } = setup();
-    watch.watch(pasted, none);
-    expect(field.targets).toBe(1);
-    await poll();
-    field.target = 7;
-    await poll();
-    expect(field.pids).toEqual([pid, pid]);
-    watch.stop();
-
-    field.target = null;
-    watch.watch(pasted, none);
-    await vi.advanceTimersByTimeAsync(duration);
-    expect(field.targets).toBe(2);
-    expect(field.reads).toBe(2);
-    expect(learned).toEqual([]);
-  });
-
-  /** A reader that can't say what is in front is a watch with nothing to read. */
-  test("a failed target lookup watches nothing", async () => {
-    const { field, learned, watch } = setup();
-    const failing = new CorrectionWatch({ target: () => Promise.reject(new Error("reader gone")), value: async () => { field.reads += 1; return field.value; } }, (words) => learned.push(words), interval, duration);
-    failing.watch(pasted, none);
-    await vi.advanceTimersByTimeAsync(duration);
-    expect(field.reads).toBe(0);
-    expect(learned).toEqual([]);
-    watch.stop();
-  });
-
-  /** The next dictation's key-down while the reader is still looking up the target: the old watch
-   * never starts reading, so the next paste is never taken for an edit of the last. */
-  test("a watch stopped while its target is looked up never reads", async () => {
-    const { field, learned } = setup();
-    let answer: (target: number | null) => void = () => {};
-    const slow = new CorrectionWatch({ target: () => new Promise((resolve) => (answer = resolve)), value: async () => { field.reads += 1; return field.value; } }, (words) => learned.push(words), interval, duration);
-    slow.watch(pasted, none);
-    slow.stop();
-    answer(pid);
-    await vi.advanceTimersByTimeAsync(duration);
-    expect(field.reads).toBe(0);
   });
 });

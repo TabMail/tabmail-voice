@@ -6,10 +6,12 @@
 // does nothing else. A read may take as long as the app in front takes to answer over AT-SPI; in a
 // process of its own it holds up no caret lookup, paste or recording, and the app ends the process
 // when it no longer wants the read (`FieldReader` in the app, ADR-DESK-053). It keeps its own record
-// of what has focus, so its window tokens are its own; EOF ends it.
+// of what has focus; EOF ends it.
 //
-// - `frontmostApp` → `{window}`, this program's token for the window in front, or null.
-// - `focusedFieldValue {window, maxLength, excludedAppIDs, excludedHosts}` → `{value}`.
+// - `focusedFieldValue {pid, maxLength, excludedAppIDs, excludedHosts}` → `{value}`: the focused field
+//   of the window in front, read only while that window is the process `pid`'s, the app the dictation
+//   was pasted into as voice-linux named it at key-down (window tokens are each process's own, so the
+//   two programs share the process), or null.
 #include <atspi/atspi.h>
 #include <iostream>
 #include <optional>
@@ -28,13 +30,12 @@ int main() {
     voice::GnomeCaret gnomeCaret;
     voice::Foreground foreground([&] { return gnomeCaret.holding(); });
     const auto serve = [&](const std::string& method, const nlohmann::json& params, voice::Channel::Reply reply, int64_t) {
-        if (method == "frontmostApp") reply(voice::frontmostApp(foreground), true);
-        else if (method == "focusedFieldValue") reply(voice::focusedRead(method, params, foreground), true);
+        if (method == "focusedFieldValue") reply(voice::focusedRead(method, params, foreground), true);
         else throw std::runtime_error("unknown method");
     };
     // Requests are served only after Foreground's start-up idle has looked for what has focus, as in
-    // voice-screen-reader: the app restarts this program when a watch supersedes a read still going
-    // and asks it at once what is in front; served from the start, that would find nothing.
+    // voice-screen-reader: the app restarts this program when a new watch's read supersedes one still
+    // going and asks it at once for the field; served from the start, that would find nothing.
     std::optional<voice::Channel> channel;
     auto open = [&] { channel.emplace(output, serve); };
     g_idle_add([](gpointer data) -> gboolean { (*static_cast<decltype(open)*>(data))(); return G_SOURCE_REMOVE; }, &open);

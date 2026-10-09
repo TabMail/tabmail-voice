@@ -7,8 +7,7 @@ import VoiceHelperSupport
 import VoiceMacOSKit
 
 // voice-field-reader: the focused field's read for correction learning, and nothing else
-// (`FieldReaderService`). The main run loop answers which app is in front; the Accessibility read
-// runs off it.
+// (`FieldReaderService`). The main run loop takes the requests; the Accessibility read runs off it.
 MainActor.assumeIsolated {
     let channel = HelperChannel()
     FieldReaderService.register(on: channel)

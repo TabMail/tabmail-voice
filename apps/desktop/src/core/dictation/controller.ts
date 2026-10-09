@@ -49,16 +49,21 @@ export type Phase =
    * thinks, so Answer's bubble never runs for a request that ends by writing (owner, 2026-10-07). */
   | { kind: "running"; tool: AgentToolID | null }
   | { kind: "failed"; message: string }
-  /** The user went to another app before the paste: the text is on the clipboard and in the paste
-   * history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
-  | { kind: "copied"; message: string };
+  /** The user went to another app before the paste: nothing is pasted and the clipboard is left as
+   * it is; the text is in the paste history, and a note at the mouse pointer copies it when clicked,
+   * for `notPastedDisplayDuration`, and goes once clicked, or dismissed by its x (ADR-DESK-042,
+   * amended 2026-10-08 and 2026-10-09). */
+  | { kind: "notPasted"; message: string };
 
-/** What the pointer's message says when the text was copied instead of pasted. */
-export const notPastedMessage = "Switched apps: copied to clipboard and history";
+/** What the pointer's note says when the text was not pasted. */
+export const notPastedMessage = "Switched apps. Click to copy.";
 
-/** A text copied instead of pasted: the dictation ends with its message (`copied`). */
+/** What the note says once clicked, when the clipboard refused the text: the paste history has it. */
+export const notCopiedMessage = "Couldn't copy. It's in the paste history.";
+
+/** A text not pasted: the dictation ends with its note (`notPasted`). */
 class NotPastedError extends Error {
-  constructor() {
+  constructor(readonly text: string) {
     super(notPastedMessage);
     this.name = "NotPastedError";
   }
@@ -80,8 +85,13 @@ export interface DictationDependencies {
   /** Pastes into the focused field, for the dictation whose `signal` it is: one canceled before the
    * paste reaches the system pastes nothing. */
   paste: (text: string, signal: AbortSignal, target: number) => Promise<void>;
-  /** Puts `text` on the clipboard, when it was not pasted. */
-  copy: (text: string) => void;
+  /** Puts `text` on the clipboard: a text not pasted, when its note is clicked. True once written,
+   * false when the clipboard refused it. */
+  copy: (text: string) => Promise<boolean>;
+  /** Saves the clipboard in the background, for the next paste to put back after its keys
+   * (ADR-DESK-002): asked from key-down every `clipboardSaveInterval` until the paste writes, never
+   * waited for. */
+  saveClipboard: () => void;
   /** Every text pasted, or copied instead, for the triple tap's list (ADR-DESK-043). */
   history: PasteHistory;
   thunderbird: ThunderbirdRelay;
@@ -100,9 +110,10 @@ export interface DictationDependencies {
   connectorTools: readonly ConnectorTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
-  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`), the field read by
-   * voice-field-reader; none without the native microphone path. */
-  corrections?: { watch(pasted: string, exclusions: ScreenExclusions): void; stop(): void };
+  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`) in the field of the app
+   * or window it was pasted into (`targetApp`), read by voice-field-reader; none without the native
+   * microphone path. */
+  corrections?: { watch(target: number, pasted: string, exclusions: ScreenExclusions): void; stop(): void };
   /** Marks the dictionary's words in a dictation's transcript and cleaned text used
    * (`AppSettings.useWords`), so a full dictionary keeps them (ADR-DESK-038). */
   useWords: (texts: readonly string[]) => void;
@@ -121,8 +132,8 @@ export const retryingMessage = "Server error, retrying…";
 /** Shown after a long dictation whose later chunks couldn't be transcribed: what came before them was
  * pasted (ADR-DESK-049). Kept to one line of the pill. */
 export const partlyTranscribedMessage = "Couldn't transcribe the end. The rest was pasted.";
-/** `partlyTranscribedMessage` for one copied instead, as the user switched apps (ADR-DESK-042). */
-export const partlyCopiedMessage = "Couldn't transcribe the end. The rest was copied.";
+/** `partlyTranscribedMessage` for one not pasted, as the user switched apps (ADR-DESK-042). */
+export const partlyNotPastedMessage = "Couldn't transcribe the end. Click to copy the rest.";
 
 /** The status the backend answers when the speech model did not answer in time. */
 const gatewayTimeout = 504;
@@ -208,8 +219,8 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
-  /** The app in front at key-down: the paste goes there only. The corrections are learned from the
-   * field voice-field-reader finds in front after the paste, which a paste that lands is in. */
+  /** The app in front at key-down: the paste goes there only, and the corrections are learned from
+   * its field, never from whatever is in front after the paste. */
   private targetApp: Promise<number | null> = Promise.resolve(null);
   /** The keyboard's language at key-down, which the badge shows and the transcription is asked in. */
   private languageRead: Promise<string | null> = Promise.resolve(null);
@@ -236,6 +247,9 @@ export class DictationController extends Observable {
   private silenceTimer: Timer | null = null;
   private releaseTailTimer: Timer | null = null;
   private failureResetTimer: Timer | null = null;
+  private clipboardSaveTimer: Timer | null = null;
+  /** The text the not-pasted note copies when clicked, while it shows. */
+  private notPastedText: string | null = null;
   /** Tips to show this dictation, in turn, once the pill listens and hears (`showDueTip`). */
   private dueTips: DictationTip[] = [];
   private tipTimer: Timer | null = null;
@@ -497,6 +511,7 @@ export class DictationController extends Observable {
     // said before the microphone starts is recorded.
     if (this.generation !== current) return;
     this.setPhase({ kind: "arming" });
+    this.saveClipboardUntilThePaste();
     this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
     const read = this.contextRead;
     if (read) {
@@ -742,7 +757,11 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
         await this.paste(text, targetApp, signal, this.screenRead);
         const corrections = this.deps.corrections;
-        if (settings.learnsWords && corrections && isCurrent()) corrections.watch(text, { apps: settings.excludedApps, sites: settings.excludedSites });
+        if (settings.learnsWords && corrections) {
+          // Resolved already: the paste was checked against it.
+          const target = await targetApp;
+          if (target !== null && isCurrent()) corrections.watch(target, text, { apps: settings.excludedApps, sites: settings.excludedSites });
+        }
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
         const waiting = performance.now();
@@ -814,9 +833,10 @@ export class DictationController extends Observable {
       if (!isCurrent()) return;
       this.teardown();
       if (error instanceof NotPastedError) {
-        // Copied instead of pasted, the missing end is still said.
+        // Not pasted, the missing end is still said.
         if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
-        this.showMessage({ kind: "copied", message: lost === null ? error.message : partlyCopiedMessage });
+        this.notPastedText = error.text;
+        this.showMessage({ kind: "notPasted", message: lost === null ? error.message : partlyNotPastedMessage }, config.notPastedDisplayDuration);
         return;
       }
       log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
@@ -1339,28 +1359,30 @@ export class DictationController extends Observable {
 
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015), and keeps
    * the text in the paste history, pasted or not. Only into `targetApp`, the app in front at
-   * key-down: when the user has gone to another app (`focusChanged`), the text goes on the clipboard
-   * instead, and the dictation ends saying so (`NotPastedError`, ADR-DESK-042). A dictation passes its
-   * screen read at key-down, to be spaced from a delimiter before the caret and from a word after it
-   * (`spacedFromCaret`); the history and the clipboard get the text as it is. */
+   * key-down: when the user has gone to another app (`focusChanged`), nothing is pasted and the
+   * clipboard is left alone; the dictation ends with a note that copies the text when clicked
+   * (`NotPastedError`, ADR-DESK-042). A dictation passes its screen read at key-down, to be spaced from
+   * a delimiter before the caret and from a word after it (`spacedFromCaret`); the history and the
+   * note's copy get the text as it is. */
   private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal, screenRead: ScreenContext | null = null): Promise<void> => {
     log.content("DictationController: pasting", text);
     const checking = performance.now();
     const changed = await this.focusChanged(targetApp);
     log.debug(() => `DictationController: app in front checked in ${elapsed(checking)}`);
-    // Canceled while the app in front was read: the text is no longer wanted anywhere, not even on
-    // the clipboard, whose contents it would replace unseen.
+    // Canceled while the app in front was read: the text is no longer wanted anywhere, not even in
+    // the history.
     if (signal.aborted) throw new CancellationError();
     this.deps.history.add(text);
     if (changed) {
-      log.debug("DictationController: another app is in front; copied instead");
-      this.deps.copy(text);
-      throw new NotPastedError();
+      log.debug("DictationController: another app is in front; not pasted");
+      throw new NotPastedError(text);
     }
     const target = await targetApp;
     if (signal.aborted) throw new CancellationError();
     // focusChanged requires a positive identity; pass it through for the native final check.
-    if (target === null) throw new NotPastedError();
+    if (target === null) throw new NotPastedError(text);
+    // A save asked once the text is on the clipboard would be of the paste's own text.
+    this.stopSavingClipboard();
     const pasting = performance.now();
     await this.deps.paste(spacedFromCaret(screenRead?.textBeforeCaret ?? "", text, screenRead?.textAfterCaret ?? ""), signal, target);
     log.debug(() => `DictationController: pasted in ${elapsed(pasting)}${this.sinceRelease()}`);
@@ -1686,6 +1708,7 @@ export class DictationController extends Observable {
 
   private teardown(): void {
     this.deps.capture.stop();
+    this.stopSavingClipboard();
     this.recorder = null;
     this.contextRead = null;
     cancelTimer(this.revealTimer);
@@ -1716,16 +1739,55 @@ export class DictationController extends Observable {
     this.showMessage({ kind: "failed", message });
   }
 
-  /** Shows a failure, or the text copied instead of pasted, for `overlayErrorDisplayDuration`. */
-  private showMessage(phase: Extract<Phase, { kind: "failed" | "copied" }>): void {
+  /** Saves the clipboard now and every `clipboardSaveInterval` until the paste writes or the
+   * dictation ends (ADR-DESK-002, amended 2026-10-09): what goes back after the paste is the newest
+   * copy, one made while the words are transcribed too. An unchanged clipboard is not read again. */
+  private saveClipboardUntilThePaste(): void {
+    this.stopSavingClipboard();
+    const save = (): void => {
+      this.deps.saveClipboard();
+      this.clipboardSaveTimer = after(config.clipboardSaveInterval, save);
+    };
+    save();
+  }
+
+  private stopSavingClipboard(): void {
+    cancelTimer(this.clipboardSaveTimer);
+    this.clipboardSaveTimer = null;
+  }
+
+  /** Shows a failure or a text not pasted, for `duration`. */
+  private showMessage(phase: Extract<Phase, { kind: "failed" | "notPasted" }>, duration = config.overlayErrorDisplayDuration): void {
     this.setPhase(phase);
     cancelTimer(this.failureResetTimer);
-    this.failureResetTimer = after(config.overlayErrorDisplayDuration, () => {
+    this.failureResetTimer = after(duration, () => {
       if (this.currentPhase === phase) this.setPhase({ kind: "idle" });
     });
   }
 
+  /** The not-pasted note was clicked: its text goes on the clipboard, and the note goes once it is
+   * there, or says it isn't. A newer hold, or the note's end, while the clipboard is written wins. */
+  async copyNotPasted(): Promise<void> {
+    const note = this.currentPhase;
+    const text = this.notPastedText;
+    if (note.kind !== "notPasted" || text === null) return;
+    const written = await this.deps.copy(text);
+    if (this.currentPhase !== note) return;
+    log.debug(`DictationController: not-pasted note clicked; ${written ? "copied" : "not copied"}`);
+    if (written) this.setPhase({ kind: "idle" });
+    else this.fail(notCopiedMessage);
+  }
+
+  /** The not-pasted note's x: it goes, copying nothing; the text stays in the paste history. */
+  dismissNotPasted(): void {
+    if (this.currentPhase.kind !== "notPasted") return;
+    log.debug("DictationController: not-pasted note dismissed");
+    this.setPhase({ kind: "idle" });
+  }
+
   private setPhase(phase: Phase): void {
+    // The note's text is held only while the note shows.
+    if (phase.kind !== "notPasted") this.notPastedText = null;
     this.currentPhase = phase;
     this.onPhaseChange?.(phase);
     this.changed();
@@ -1734,7 +1796,7 @@ export class DictationController extends Observable {
 
 /** Nothing under way: idle, or a message showing, which the next hold replaces. */
 export function isResting(phase: Phase): boolean {
-  return phase.kind === "idle" || phase.kind === "failed" || phase.kind === "copied";
+  return phase.kind === "idle" || phase.kind === "failed" || phase.kind === "notPasted";
 }
 
 type Timer = ReturnType<typeof setTimeout>;

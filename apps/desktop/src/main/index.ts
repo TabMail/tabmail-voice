@@ -155,7 +155,6 @@ function launch(): void {
   const screenReader = new ScreenReader(screenReaderHelper);
   // So is the focused field for correction learning (`FieldReader`).
   const fieldReaderHelper = new HelperClient({ name: "voice-field-reader", executable: join(helpers, process.platform === "win32" ? "voice-field-reader.exe" : "voice-field-reader"), stopEndsAtOnce: true });
-  const fieldReader = new FieldReader(fieldReaderHelper, process.platform);
   const accessibilityActivator = process.platform === "win32"
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
@@ -167,6 +166,9 @@ function launch(): void {
   const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : linuxPermissions ?? macPermissions);
   if (linuxPermissions) linuxPermissions.onChange = () => { permissions.refresh(); pushSettingsWindows(); };
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
+  // It reads the paste's own target, named as the main helper named it: a Linux window token is each
+  // process's own, so there the reader is given its window's process.
+  const fieldReader = new FieldReader(fieldReaderHelper, process.platform, system instanceof LinuxSystem ? (window) => system.appOf(window) : (target) => target);
   const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
   const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), process.env.APPIMAGE ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
   // The microphone has a helper to itself on every platform, so nothing another helper waits on
@@ -228,6 +230,7 @@ function launch(): void {
     tips,
     paste: (text, signal, target) => system instanceof WindowsSystem || system instanceof LinuxSystem ? system.paste(text, signal, target) : system.paste(text, signal),
     copy: (text) => copyText(text),
+    saveClipboard: () => system.saveClipboard(),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
@@ -577,11 +580,16 @@ function launch(): void {
     return { x: Math.round(frame.x), y: Math.round(frame.y), width: frame.width, height: Math.round(frame.height) };
   }
 
-  /** Puts `text` on the clipboard (a promise since Electron 44), logging a write that fails. */
-  function copyText(text: string): void {
-    clipboard.writeText(text).catch((error: unknown) => {
+  /** Puts `text` on the clipboard (a promise since Electron 44): true once written, false, logged,
+   * when the write fails. */
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch (error) {
       log.error(`main: couldn't copy to the clipboard: ${errorName(error)}`);
-    });
+      return false;
+    }
   }
 
   /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
@@ -904,12 +912,21 @@ function launch(): void {
       case "chatHeight":
         overlay.fitChat(command.height);
         return;
-      case "chatPointer":
-        overlay.chatPointer(command.over);
+      case "pointerOver":
+        overlay.pointerOver(command.over);
+        return;
+      case "copyNotPasted":
+        void controller.copyNotPasted();
+        return;
+      case "dismissNotPasted":
+        controller.dismissNotPasted();
+        return;
+      case "noteFrame":
+        overlay.fitNote(command.frame);
         return;
       case "copyHistoryEntry": {
         const text = history.text(command.id);
-        if (text !== null) copyText(text);
+        if (text !== null) void copyText(text);
         closeHistory();
         return;
       }
