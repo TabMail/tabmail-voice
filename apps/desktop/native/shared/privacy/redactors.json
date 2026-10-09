@@ -57,7 +57,7 @@
     {
       "name": "named-value",
       "kind": "namedValue",
-      "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"...\"). The name stays. Only a value with a digit in its first 201 characters and at least 6 characters, so that \"Password: required\" stays. Names match whatever their case (Unicode simple case folding).",
+      "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"...\"). The name stays. Only a value with a digit (0-9) in its first 201 characters and at least 6 characters, so that \"Password: required\" stays. Names match whatever their case (Unicode simple case folding).",
       "labels": [
         "password", "paßword", "passwd", "paßwd", "pwd", "passphrase", "paßphrase",
         "secretkey", "secret_key", "secret-key", "secret", "token",
@@ -169,7 +169,7 @@
     {
       "name": "random-word",
       "kind": "entropy",
-      "description": "A word that looks random, whatever its prefix (owner, 2026-10-08): a run of word characters (padding at its end) is cut at each separator piece that is itself word-like, and a part goes when it is at least minLength long, holds a letter and a digit, is not hex (letters or a 0x before hex count as hex, so git hashes, digests, ids and hex numbers stay), has at most maxWordShare of its characters in word-like runs (a capital and 3 or more small letters, 3 or more small letters, or 3 or more capitals), and has at least minBits bits of Shannon entropy per character. Tuned on our own sources (no ordinary path, address, identifier or branch name goes) against random keys; see ADR-DESK-046.",
+      "description": "A word that looks random, whatever its prefix (owner, 2026-10-08): a run of word characters (padding at its end) is cut at each separator piece that is itself word-like, and a part goes when it is at least minLength long, holds a letter and a digit, is not hex (letters or a 0x before hex count as hex, so git hashes, digests, ids and hex numbers stay), is not an internationalized domain name's label (xn--), has at most maxWordShare of its characters in word-like runs (a capital and 3 or more small letters, 3 or more small letters, or 3 or more capitals), and has at least minBits bits of Shannon entropy per character. Tuned on our own sources (no ordinary path, address, identifier or branch name goes) against random keys; see ADR-DESK-046.",
       "word": "A-Za-z0-9+/_-",
       "padding": "=",
       "separators": "/_-",

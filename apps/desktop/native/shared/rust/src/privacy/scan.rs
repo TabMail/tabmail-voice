@@ -694,6 +694,10 @@ fn random_words(text: &str, edges: &[usize], entropy: &Entropy, found: &mut Vec<
     let bytes = text.as_bytes();
     let random = |part: Range<usize>, found: &mut Vec<Found>| {
         let word = &bytes[part.clone()];
+        // An internationalized domain name's label (`xn--`, then its letters encoded) is a name.
+        if word.len() >= 4 && word[..4].eq_ignore_ascii_case(b"xn--") {
+            return;
+        }
         // What comes before the hex: letters (a name, `commit`), or the `0x` hex numbers start with.
         let letters = if word.starts_with(b"0x") || word.starts_with(b"0X") {
             2

@@ -738,8 +738,11 @@ fn a_piece_edge_only_adds_to_what_a_glued_key_takes() {
             taken_with_edges(&ordinary, &[]).unwrap().is_empty(),
             "{prefix}"
         );
-        assert!(
-            !taken_with_edges(&ordinary, &[5]).unwrap().is_empty(),
+        // As a piece of its own it takes what it takes alone: a `Bearer` label stays shown.
+        let label = if prefix == "Bearer " { prefix.len() } else { 0 };
+        assert_eq!(
+            taken_with_edges(&ordinary, &[5]).unwrap(),
+            vec![5 + label..ordinary.len()],
             "{prefix}"
         );
     }

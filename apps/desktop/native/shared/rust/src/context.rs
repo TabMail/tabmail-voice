@@ -1898,6 +1898,28 @@ mod budget_tests {
                 assert!(!rendered.contains(&key), "{kind}: {rendered}");
             }
         }
+        // Nor does the cut after what it shows: the field's word is looked at whole (word-like
+        // there), while the same two runs both shown look at the shown piece on its own.
+        let word = ["GHIJa1KLMNb2", "PQRSc3TUVWd4"].concat();
+        let mut semantic = crate::semantic::SemanticText::new(1).unwrap();
+        semantic
+            .offer_projected(2, vec![String::new(), word.clone(), "Bearer".to_owned()])
+            .unwrap();
+        semantic.offer(3, "").unwrap();
+        let projection: Value =
+            serde_json::from_slice(&semantic.finish_projected().unwrap()).unwrap();
+        assert_eq!(projection["runs"], json!([[word, true], ["Bearer", false]]));
+        let reply = call(json!({"blocks":[{"kind":"row","text":projection["text"],
+            "runs":projection["runs"]}],"caret":["","",""]}));
+        assert_eq!(reply["rendered"], format!("| {word}"));
+        let shown = call(
+            json!({"blocks":[{"kind":"row","text":format!("{word}Bearer"),
+            "runs":[[word, true], ["Bearer", true]]}],"caret":["","",""]}),
+        );
+        assert_eq!(
+            shown["rendered"],
+            format!("| {}Bearer", privacy::PLACEHOLDER)
+        );
     }
     /// The whole screen read with `caret` as a helper sent it, after a text block.
     fn screen_with_caret(blocks: Value, caret: Value) -> Value {

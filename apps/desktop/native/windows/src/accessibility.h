@@ -494,11 +494,14 @@ private:
         std::optional<ContextFrame> first, last;
         LONG lower = 0, upper = -1;
         bool valid = SafeArrayGetDim(rectangles) == 1 && SUCCEEDED(SafeArrayGetLBound(rectangles, 1, &lower)) &&
-            SUCCEEDED(SafeArrayGetUBound(rectangles, 1, &upper)) && (upper - lower + 1) % 4 == 0;
-        for (LONG index = lower; valid && index + 3 <= upper; index += 4) {
+            SUCCEEDED(SafeArrayGetUBound(rectangles, 1, &upper));
+        // Counted wide, so bounds a provider gives near the ends of LONG never overflow.
+        const long long count = static_cast<long long>(upper) - lower + 1;
+        valid = valid && count % 4 == 0;
+        for (long long offset = 0; valid && offset + 4 <= count; offset += 4) {
             double rect[4]{};
             for (LONG part = 0; part < 4; ++part) {
-                LONG position = index + part;
+                LONG position = static_cast<LONG>(lower + offset + part);
                 if (FAILED(SafeArrayGetElement(rectangles, &position, &rect[part])) || !std::isfinite(rect[part])) valid = false;
             }
             if (!valid || rect[2] <= 0 || rect[3] <= 0) continue;

@@ -8779,6 +8779,104 @@
     "\nordinary prose.\n",
     "{redacted}"
    ]
+  },
+  {
+   "name": "an internationalized domain name's label in an address stays",
+   "text": [
+    "https://xn--4gqvdz1c",
+    "25ix4k8mqcxl",
+    "8q3dgth.example/docs"
+   ],
+   "expected": [
+    "https://xn--4gqvdz1c25ix4k8mqcxl8q3dgth.example/docs"
+   ]
+  },
+  {
+   "name": "a capitalized internationalized label stays, and a random path part after it still goes",
+   "text": [
+    "XN--4GQVDZ1C",
+    "25IX4K8MQCXL",
+    "8Q3DGTH.example/",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "XN--4GQVDZ1C25IX4K8MQCXL8Q3DGTH.example/",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a hex number with padding after it stays",
+   "text": [
+    "x = 0x012345",
+    "6789abcdef01",
+    "23456789abcd",
+    "ef0123456789",
+    "abcdef012345",
+    "6789abcdef==0"
+   ],
+   "expected": [
+    "x = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef==0"
+   ]
+  },
+  {
+   "name": "a line of padding alone between a key's full lines counts as one of its words",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQQ\n==\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\nDone and more"
+   ],
+   "expected": [
+    "{redacted}",
+    " and more"
+   ]
+  },
+  {
+   "name": "a line of padding alone after one full line takes nothing",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQQ\n=="
+   ],
+   "expected": [
+    "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQQ\n=="
+   ]
+  },
+  {
+   "name": "a line after a key's quoted lines whose first character spans the quote's width stays",
+   "text": [
+    "> QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD\n> ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD\na\u00e9 word"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\na\u00e9 word"
+   ]
+  },
+  {
+   "name": "a named value whose digit is not an ASCII digit stays",
+   "text": [
+    "password=hunter",
+    "\u0662x"
+   ],
+   "expected": [
+    "password=hunter",
+    "\u0662x"
+   ]
   }
  ],
  "lineCases": [
