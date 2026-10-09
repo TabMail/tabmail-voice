@@ -971,6 +971,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
       test("an edit in another window switched to as the paste lands is not", async () => {
         expect(await learnedAfter(true)).toEqual([]);
       });
+
+      /** The watch runs beside the dictation, never in it: with its first read still unanswered, the
+       * dictation has pasted and is over. */
+      test("a watch whose read is still going holds nothing up", async () => {
+        const reading = deferred<string | null>();
+        let reads = 0;
+        const reader = {
+          value: () => {
+            reads += 1;
+            return reading.promise;
+          },
+        };
+        const corrections = new CorrectionWatch(reader, () => {}, interval, duration);
+        const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
+        transcription.enqueue(200, cleanedReply);
+        await holdAndRelease(controller);
+        expect(await eventually(() => reads === 1 && pastes.length === 1 && settled(controller))).toBe(true);
+        reading.resolve(null);
+      });
     });
 
     /** Agent mode's text is the agent's, not a dictation to correct. */
