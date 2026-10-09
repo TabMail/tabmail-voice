@@ -36,8 +36,14 @@ inline DWORD integrity(DWORD pid) {
     if (!count) throw std::runtime_error("target integrity invalid");
     return *GetSidSubAuthority(label->Label.Sid, count - 1);
 }
-inline void paste(HWND window, const std::wstring& text, uint64_t deadline, const std::function<bool()>& canceled) {
-    std::cerr << "debug paste stage: focus-check\n";
+// Pastes `text` into `window`'s focused field. The clipboard as it was is never read here:
+// `keeper` saved it ahead, and puts it back after the paste keys.
+inline void paste(HWND window, const std::wstring& text, uint64_t deadline, const std::function<bool()>& canceled, ClipboardKeeper& keeper) {
+    const auto started = GetTickCount64();
+    const auto stage = [started](const char* name) {
+        std::cerr << "debug paste stage: " + std::string(name) + " after " + std::to_string(GetTickCount64() - started) + "ms\n";
+    };
+    stage("focus-check");
     Automation automation;
     auto field = automation.focused(window);
     // Send the ordinary paste command; the target decides whether to consume it.
@@ -66,15 +72,26 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     GUITHREADINFO focus{}; focus.cbSize = sizeof(focus);
     const DWORD thread = GetWindowThreadProcessId(window, nullptr);
     if (!GetGUIThreadInfo(thread, &focus) || !focus.hwndFocus) throw std::runtime_error("focus unavailable");
-    // The clipboard is written, never read: what it held is replaced, and the text stays on it.
     Clipboard clipboard;
-    std::cerr << "debug paste stage: clipboard-open\n";
+    stage("clipboard-open");
     const auto now = unixMilliseconds();
     clipboard.open(std::min<unsigned long long>(HelperConfig::clipboardOpenWaitMs, deadline > now ? deadline - now : 0));
-    std::cerr << "debug paste stage: final-focus-check\n";
+    const DWORD before = GetClipboardSequenceNumber();
+    stage("final-focus-check");
     guard();
-    std::cerr << "debug paste stage: clipboard-write\n";
+    stage("clipboard-write");
     clipboard.putText(text);
+    clipboard.close();
+    // Read once closed: closing adds the formats Windows makes from the text, each a new number.
+    const DWORD ours = GetClipboardSequenceNumber();
+    keeper.wrote(before, ours);
+    // Whether the keys are sent or the paste is refused from here, the clipboard as it was goes back.
+    struct PutBack {
+        ClipboardKeeper& keeper;
+        DWORD ours;
+        const std::wstring& text;
+        ~PutBack() { keeper.restore(ours, text); }
+    } const putBack{keeper, ours, text};
     GUITHREADINFO current{}; current.cbSize = sizeof(current);
     if (canceled() || unixMilliseconds() >= deadline || GetForegroundWindow() != window ||
         !GetGUIThreadInfo(thread, &current) || current.hwndFocus != focus.hwndFocus) {
@@ -88,13 +105,13 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     keys[0].ki.wVk = VK_LCONTROL; keys[1].ki.wVk = 'V';
     keys[2].ki.wVk = 'V'; keys[2].ki.dwFlags = KEYEVENTF_KEYUP;
     keys[3].ki.wVk = VK_LCONTROL; keys[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    std::cerr << "debug paste stage: send-input\n";
+    stage("send-input");
     const auto sent = SendInput(4, keys, sizeof(INPUT));
     if (sent != 4) {
         // Release only our own injected keys if a partial insertion was reported.
         if (sent) SendInput(2, keys + 2, sizeof(INPUT));
         throw std::runtime_error("native insertion failed");
     }
-    std::cerr << "debug paste stage: complete\n";
+    stage("complete");
 }
 }

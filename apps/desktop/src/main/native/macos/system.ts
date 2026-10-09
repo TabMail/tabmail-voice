@@ -7,6 +7,7 @@ import { type ContactCard, type ContactStore, ContactStoreError } from "../../..
 import { type FileStore, FileStoreError, type FoundItem } from "../../../core/agent/connectors/files.js";
 import type { FocusedElement, ThunderbirdSystem } from "../../../core/agent/connectors/thunderbird/relay.js";
 import * as config from "../../../core/config.js";
+import { errorName, log } from "../../../core/log.js";
 import type { GlobeKeySystem } from "../../../core/hotkey/macos/globeKeyAction.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
@@ -16,7 +17,16 @@ import { keyboardLanguageCode } from "../keyboardLanguage.js";
 export class MacSystem {
   constructor(private readonly helper: HelperClient) {}
 
-  /** Pastes `text` into the focused field; the clipboard keeps it (ADR-DESK-002). Given
+  /** Saves the clipboard in the helper, in the background, for the next paste to put back after its
+   * keys (ADR-DESK-002). Never waited for: a save that fails leaves the paste's text on the clipboard. */
+  saveClipboard(): void {
+    this.helper.request("clipboardSave").catch((error: unknown) => {
+      log.debug(`MacSystem: clipboard save failed: ${errorName(error)}`);
+    });
+  }
+
+  /** Pastes `text` into the focused field, answering once the paste keys are sent; the helper puts
+   * the clipboard as saved (`saveClipboard`) back after them (ADR-DESK-002). Given
    * its dictation's `signal`, the paste waits out a helper restart unless the dictation is canceled
    * first (`HelperClient.request`). */
   async paste(text: string, signal?: AbortSignal): Promise<void> {

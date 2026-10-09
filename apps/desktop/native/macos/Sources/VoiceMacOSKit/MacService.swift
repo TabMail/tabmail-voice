@@ -14,8 +14,10 @@ import VoiceHelperSupport
 /// it (`ScreenReaderService`); nor is the field read for correction learning (`focusedFieldValue`),
 /// which `voice-field-reader` serves (`FieldReaderService`).
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
-/// - `insert {text}` → `{}`: pastes `text` into the focused field once the shared core accepts it;
-///   the clipboard keeps it.
+/// - `clipboardSave` → `{}`: saves the clipboard in the background, for the next paste to put back
+///   (`ClipboardKeeper`); the app asks as a dictation starts and as it ends.
+/// - `insert {text}` → `{}`: pastes `text` into the focused field once the shared core accepts it,
+///   answering once the paste keys are sent; the clipboard as saved goes back after them.
 /// - `keyboardLanguage` → `{code}`: the active input source's raw locale, or null; the app normalizes it.
 /// - `fullUserName` → `{name}`: the user account's full name, empty when it has none.
 /// - `globeRead` → `{value}` (null when this macOS lacks the calls); `globeUpdate {value}` → `{}`.
@@ -50,14 +52,18 @@ public enum MacService {
     }
 
     /// `eventStore` and `contactStore` are the user's calendars and contacts, `fileSearch` Spotlight,
-    /// `fileOpener` the Finder and `paste` the pasteboard and ⌘V, or a test's stand-ins.
+    /// `fileOpener` the Finder, `clipboard` the pasteboard (one `ClipboardKeeper` for the save and the
+    /// paste) and `pasteKeystroke` ⌘V, or a test's stand-ins.
     @MainActor
     static func register(
         on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore,
         fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace,
-        paste: @escaping @MainActor @Sendable (String) async -> Void = { await TextInserter().insert($0) }
+        clipboard: ClipboardKeeper? = nil,
+        pasteKeystroke: @escaping @MainActor @Sendable () async -> Void = TextInserter.postCommandV
     ) -> AnyObject {
         let activator = AccessibilityActivator()
+        let clipboard = clipboard ?? ClipboardKeeper()
+        let paste: @MainActor @Sendable (String) async -> Void = { await TextInserter(clipboard: clipboard, pasteKeystroke: pasteKeystroke).insert($0) }
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
         channel.on("redactText") { params in
             let result = try Redactor.request(JSONEncoder().encode(params), operation: .text)
@@ -71,6 +77,10 @@ public enum MacService {
                 // The flip is its own inverse: back to Accessibility's top-left coordinates.
                 return .rect(CaretLocator.cocoaRect(fromAccessibility: cocoa, primaryScreenHeight: primaryHeight))
             }.value
+        }
+        channel.on("clipboardSave") { _ in
+            await clipboard.save()
+            return [:]
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string else { throw HelperError("insert needs text") }

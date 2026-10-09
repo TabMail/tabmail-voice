@@ -67,6 +67,17 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
             std::cout << nlohmann::json({{"command", "delayed"}}).dump() << '\n' << std::flush;
         } else if (value == 9) {
             std::cout << nlohmann::json({{"command", "asked"}, {"helper", helperAsked}}).dump() << '\n' << std::flush;
+        } else if (value == 10) {
+            // A password manager's copy: text marked to be left out of clipboard monitors.
+            const UINT excluded = RegisterClipboardFormatW(L"ExcludeClipboardContentFromMonitorProcessing");
+            if (!excluded || !openClipboard(window) || !EmptyClipboard()) ExitProcess(1);
+            const std::wstring text = L"Synthetic concealed copy";
+            voice::ClipboardItem content(CF_UNICODETEXT, voice::memoryCopy(text.c_str(), (text.size() + 1) * sizeof(wchar_t)));
+            const DWORD zero = 0;
+            voice::ClipboardItem marker(excluded, voice::memoryCopy(&zero, sizeof(zero)));
+            content.publish(); marker.publish();
+            CloseClipboard();
+            std::cout << nlohmann::json({{"command", "conceal"}}).dump() << '\n' << std::flush;
         } else if (value == 1 || value == 2) {
             if (!openClipboard(window)) ExitProcess(1);
             if (!EmptyClipboard()) ExitProcess(1);
@@ -146,8 +157,8 @@ int run(bool preservesClipboard) {
     std::thread([window] {
         std::string command;
         while (std::getline(std::cin, command)) {
-            if (command == "seed" || command == "copy" || command == "value" || command == "clipboard" || command == "lock" || command == "unlock" || command == "delayed" || command == "asked") {
-                PostMessageW(window, WM_APP + 2, command == "seed" ? 1 : command == "copy" ? 2 : command == "value" ? 3 : command == "clipboard" ? 4 : command == "lock" ? 5 : command == "delayed" ? 7 : command == "asked" ? 9 : 6, 0);
+            if (command == "seed" || command == "copy" || command == "value" || command == "clipboard" || command == "lock" || command == "unlock" || command == "delayed" || command == "asked" || command == "conceal") {
+                PostMessageW(window, WM_APP + 2, command == "seed" ? 1 : command == "copy" ? 2 : command == "value" ? 3 : command == "clipboard" ? 4 : command == "lock" ? 5 : command == "delayed" ? 7 : command == "asked" ? 9 : command == "conceal" ? 10 : 6, 0);
                 continue;
             }
             const WPARAM mode = command == "password" ? 2 : command == "readOnly" ? 3 : command == "button" ? 4 : command == "close" ? 5 : command == "long" ? 6 : command == "limit" ? 7 : command == "unicode" ? 8 : command == "empty" ? 9 : command == "secret" ? 10 : 1;

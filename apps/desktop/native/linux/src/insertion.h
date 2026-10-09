@@ -3,13 +3,15 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
 #include "channel.h"
+#include "clipboard_keeper.h"
 #include "foreground.h"
 #include "input_session.h"
 #include "../../shared/rust/VoiceCore.h"
 
 namespace voice {
-// One bounded transaction at a time. The clipboard is written, never read: the
-// text is offered, pasted once this session owns the selection, and left there
+// One bounded transaction at a time. The paste never reads the clipboard: the
+// text is offered and pasted once this session owns the selection, and the
+// clipboard as `ClipboardKeeper` saved it ahead goes back after it
 // (ADR-DESK-002). Clipboard v1 has no compare-and-set: an observed foreign owner
 // vetoes the paste, but the final owner check and the compositor mutation cannot
 // be atomic. Never retry an uncertain paste.
@@ -17,6 +19,10 @@ class Inserter {
     struct Transaction {
         int64_t id;
         uint64_t target;
+        // The selection announcement before the text was offered, and the one that made this
+        // session its owner with the text.
+        uint64_t before = 0;
+        std::optional<uint64_t> owned;
         std::chrono::steady_clock::time_point deadline;
         std::string text;
         Channel::Reply reply;
@@ -30,6 +36,7 @@ class Inserter {
             successful = false, cleaning = false;
     };
     InputSession& input;
+    ClipboardKeeper& clipboard;
     std::function<bool(uint64_t)> targetMatches;
     std::function<bool()> terminalTarget;
     std::shared_ptr<Transaction> current;
@@ -50,6 +57,9 @@ class Inserter {
         if (item->timer && g_main_context_find_source_by_id(nullptr, item->timer)) g_source_remove(item->timer);
         item->timer = 0;
         g_cancellable_cancel(item->cancel.get());
+        // Whether the keys went or the paste was refused once its text was offered, the clipboard
+        // as it was goes back.
+        if (item->published) clipboard.restore(item->owned.value_or(item->before));
         stage(item, item->successful && !item->canceled ? "complete" : "not pasted");
         current.reset(); item->reply(nlohmann::json::object(), item->successful && !item->canceled);
     }
@@ -94,6 +104,8 @@ class Inserter {
         auto bytes = std::make_shared<const std::vector<unsigned char>>(item->text.begin(), item->text.end());
         InputSession::Offer offer{{"text/plain;charset=utf-8", bytes}, {"text/plain", bytes}, {"UTF8_STRING", bytes}};
         item->published = true;
+        item->before = input.state->selection.epoch;
+        clipboard.begin();
         stage(item, "clipboard-write");
         // Keep this call independent of the transaction cancellable. A
         // submitted SetSelection may still commit after cancellation;
@@ -107,12 +119,17 @@ class Inserter {
         });
     }
 public:
-    Inserter(InputSession& input, std::function<bool(uint64_t)> targetMatches,
+    Inserter(InputSession& input, ClipboardKeeper& clipboard, std::function<bool(uint64_t)> targetMatches,
              std::function<bool()> terminalTarget = [] { return false; })
-        : input(input), targetMatches(std::move(targetMatches)), terminalTarget(std::move(terminalTarget)) {
+        : input(input), clipboard(clipboard), targetMatches(std::move(targetMatches)), terminalTarget(std::move(terminalTarget)) {
         input.state->onOwnerChange = [this] {
             if (!current || !current->published) return;
-            if (this->input.state->selection.ours) current->sawOwner = true;
+            const auto& selection = this->input.state->selection;
+            if (selection.ours && !current->owned) {
+                current->owned = selection.epoch;
+                this->clipboard.wrote(current->before, selection.epoch);
+            }
+            if (selection.ours) current->sawOwner = true;
             else current->foreignOwner = true; // Irrevocable, even if ownership later returns.
             maybeInject(current);
         };

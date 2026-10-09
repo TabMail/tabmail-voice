@@ -230,6 +230,7 @@ function launch(): void {
     tips,
     paste: (text, signal, target) => system instanceof WindowsSystem || system instanceof LinuxSystem ? system.paste(text, signal, target) : system.paste(text, signal),
     copy: (text) => copyText(text),
+    saveClipboard: () => system.saveClipboard(),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
@@ -579,11 +580,16 @@ function launch(): void {
     return { x: Math.round(frame.x), y: Math.round(frame.y), width: frame.width, height: Math.round(frame.height) };
   }
 
-  /** Puts `text` on the clipboard (a promise since Electron 44), logging a write that fails. */
-  function copyText(text: string): void {
-    clipboard.writeText(text).catch((error: unknown) => {
+  /** Puts `text` on the clipboard (a promise since Electron 44): true once written, false, logged,
+   * when the write fails. */
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch (error) {
       log.error(`main: couldn't copy to the clipboard: ${errorName(error)}`);
-    });
+      return false;
+    }
   }
 
   /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
@@ -906,12 +912,18 @@ function launch(): void {
       case "chatHeight":
         overlay.fitChat(command.height);
         return;
-      case "chatPointer":
-        overlay.chatPointer(command.over);
+      case "pointerOver":
+        overlay.pointerOver(command.over);
+        return;
+      case "copyNotPasted":
+        void controller.copyNotPasted();
+        return;
+      case "noteFrame":
+        overlay.fitNote(command.frame);
         return;
       case "copyHistoryEntry": {
         const text = history.text(command.id);
-        if (text !== null) copyText(text);
+        if (text !== null) void copyText(text);
         closeHistory();
         return;
       }

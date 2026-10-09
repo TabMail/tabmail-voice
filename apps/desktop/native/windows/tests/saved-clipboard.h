@@ -9,7 +9,8 @@
 
 namespace voice {
 // The test machine's clipboard as a fixture found it, every format, put back when the fixture ends,
-// so a test run leaves it as it was. Tests only: the helper never reads the clipboard.
+// so a test run leaves it as it was. Unlike the helper's `Clipboard::read`, it keeps a password
+// manager's clipboard too, and fails the fixture on one it can't keep.
 class SavedClipboard {
 public:
     SavedClipboard() {

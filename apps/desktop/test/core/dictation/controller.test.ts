@@ -15,7 +15,7 @@ import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
 import { TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import * as config from "../../../src/core/config.js";
-import { DictationController, type DictationDependencies, isResting, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
+import { DictationController, type DictationDependencies, isResting, copiedMessage, nothingHeardMessage, notCopiedMessage, notPastedMessage, partlyNotPastedMessage, partlyTranscribedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { CorrectionWatch } from "../../../src/core/dictionary/correctionWatch.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
@@ -55,7 +55,8 @@ const listening: Phase = { kind: "listening" };
 const transcribing: Phase = { kind: "transcribing" };
 const running = (tool: AgentToolID | null): Phase => ({ kind: "running", tool });
 const failed = (message: string): Phase => ({ kind: "failed", message });
-const copied: Phase = { kind: "copied", message: notPastedMessage };
+const notPasted: Phase = { kind: "notPasted", message: notPastedMessage };
+const copied: Phase = { kind: "copied", message: copiedMessage };
 const microphoneFailed = failed("Couldn't start the microphone.");
 
 /** Without Answer: most agent tests are about the writing tools and Thunderbird, and Answer would
@@ -86,9 +87,9 @@ async function throughout(ms: number, condition: () => boolean): Promise<boolean
   return condition();
 }
 
-/** Done: idle, failed, or copied instead of pasted. */
+/** Done: idle, failed, or not pasted (the note showing, or just clicked). */
 function settled(controller: DictationController): boolean {
-  return controller.phase.kind === "idle" || controller.phase.kind === "failed" || controller.phase.kind === "copied";
+  return controller.phase.kind === "idle" || controller.phase.kind === "failed" || controller.phase.kind === "notPasted" || controller.phase.kind === "copied";
 }
 
 /** The content-log steps of the controller and the agent, without the backend clients' own entries. */
@@ -132,10 +133,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"] } = {},
-  ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory } {
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"] } = {},
+  ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory; clipboardSaves: () => number } {
     const pastes: string[] = [];
     const copies: string[] = [];
+    let clipboardSaves = 0;
     const history = new PasteHistory();
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
     const controller = new DictationController({
@@ -156,7 +158,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
           if (signal.aborted) throw new CancellationError();
           pastes.push(text);
         }),
-      copy: (text) => copies.push(text),
+      // As `launch.copyText` writes: true once the clipboard has the text, false when it refused it.
+      copy: async (text) => {
+        copies.push(text);
+        return options.copy ? options.copy(text) : true;
+      },
+      saveClipboard: () => {
+        clipboardSaves += 1;
+      },
       history,
       thunderbird: thunderbird.relay(),
       capture: options.capture ?? new CountingCapture(),
@@ -170,7 +179,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       corrections: options.corrections,
       useWords: (texts) => used.push([...texts]),
     });
-    return { controller, pastes, copies, history };
+    return { controller, pastes, copies, history, clipboardSaves: () => clipboardSaves };
   }
 
   /** Runs one recording through the controller; returns what was pasted. */
@@ -676,7 +685,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([transcript]);
     });
 
-    /** Only a dictation is spaced: text copied for another app, and agent mode's, go as written. */
+    /** Only a dictation is spaced: text not pasted, which the note copies, and agent mode's, go as
+     * written. */
     test.each<["dictation" | "agent"]>([["dictation"], ["agent"]])("%s text after a delimiter is not spaced when copied or written by the agent", async (mode) => {
       prefs.value = { ...defaultSettings(), enabledTools: ["compose"] };
       const written = "Synthetic composed result.";
@@ -690,7 +700,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: "Note:", renderedText: "» Note:‸" });
 
       await holdAndRelease(controller, mode);
-      expect(await eventually(() => settled(controller) && pastes.length + copies.length === 1)).toBe(true);
+      expect(await eventually(() => settled(controller) && (pastes.length === 1 || controller.phase.kind === "notPasted"))).toBe(true);
+      await controller.copyNotPasted();
 
       expect(mode === "dictation" ? copies : pastes).toEqual([mode === "dictation" ? cleaned : written]);
     });
@@ -706,7 +717,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["the helper returns a zero target", async () => 0],
       ["the helper returns a negative target", async () => -1],
       ["the helper returns a fractional target", async () => 1.5],
-    ])("when %s, the text is copied, not pasted", async (_, frontmost) => {
+    ])("when %s, nothing is pasted or copied until the note is clicked", async (_, frontmost) => {
       transcription.enqueue(200, cleanedReply);
       let reads = 0;
       const { controller, pastes, copies, history } = makeController({
@@ -715,15 +726,55 @@ describe("DictationController", { timeout: 20_000 }, () => {
       });
 
       await holdAndRelease(controller);
-      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
 
-      expect(controller.phase).toEqual({ kind: "copied", message: "Switched apps: copied to clipboard and history" });
+      expect(controller.phase).toEqual({ kind: "notPasted", message: "Switched apps. Click to copy." });
       expect(pastes).toEqual([]);
-      expect(copies).toEqual([cleaned]);
+      // The clipboard is the user's until the note is clicked (owner, 2026-10-08).
+      expect(copies).toEqual([]);
       expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+
+      await controller.copyNotPasted();
+      expect(copies).toEqual([cleaned]);
+      expect(controller.phase).toEqual(copied);
+      // A second click on the note, now copied, copies nothing more.
+      await controller.copyNotPasted();
+      expect(copies).toEqual([cleaned]);
     });
 
-    test("after a copied text, the next hold pastes as ever", async () => {
+    /** The note's text is held only while it shows: the next hold drops it. */
+    test("a note the next hold replaced copies nothing", async () => {
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const { controller, copies } = makeController({ capture: new CountingCapture(true) });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
+      controller.handle("start");
+      await controller.copyNotPasted();
+
+      expect(copies).toEqual([]);
+      controller.handle("cancel");
+    });
+
+    /** The clipboard is saved for the paste to put back as the dictation starts and again as it
+     * ends, never waited for (ADR-DESK-002). */
+    test("the clipboard is saved at key-down and at the release", async () => {
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes, clipboardSaves } = makeController({ capture: new CountingCapture(true) });
+
+      controller.handle("start");
+      expect(clipboardSaves()).toBe(1);
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      controller.handle("finish");
+      expect(clipboardSaves()).toBe(2);
+      expect(await eventually(() => pastes.length === 1)).toBe(true);
+      expect(clipboardSaves()).toBe(2);
+    });
+
+    test("after a text not pasted, the next hold pastes as ever", async () => {
       transcription.enqueue(200, cleanedReply);
       transcription.gate = async () => {
         front.pid = 202;
@@ -731,14 +782,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes, copies } = makeController({ capture: new CountingCapture(true) });
 
       await holdAndRelease(controller);
-      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
       transcription.gate = undefined;
       transcription.enqueue(200, cleanedReply);
       await holdAndRelease(controller);
 
       expect(await eventually(() => pastes.length === 1)).toBe(true);
       expect(pastes).toEqual([cleaned]);
-      expect(copies).toEqual([cleaned]);
+      expect(copies).toEqual([]);
     });
 
     /** A dictation canceled while the app in front is read wants its text nowhere: not pasted, not
@@ -769,23 +820,58 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries).toEqual([]);
     });
 
-    /** The note shows as long as a failure does, then the pill rests. */
-    test("the copied note goes after its display time", async () => {
+    /** The note shows for ten seconds (the owner's ask, held here rather than read from the config
+     * under test), then the pill rests; clicked, it says the text is copied for as long as a failure
+     * shows. */
+    const notPastedSeconds = 10_000;
+    test("the not-pasted note goes after ten seconds", async () => {
       vi.useFakeTimers();
       transcription.enqueue(200, cleanedReply);
       transcription.gate = async () => {
         front.pid = 202;
       };
-      const { controller } = makeController({ capture: new CountingCapture(true) });
+      const { controller, copies } = makeController({ capture: new CountingCapture(true) });
       try {
         controller.handle("start");
         await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
         controller.handle("finish");
         await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
-        for (let turn = 0; turn < 10 && controller.phase.kind !== "copied"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(controller.phase).toEqual(notPasted);
+        await vi.advanceTimersByTimeAsync(notPastedSeconds - 1);
+        expect(controller.phase).toEqual(notPasted);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(idle);
+        // Gone, it copies nothing.
+        await controller.copyNotPasted();
+        expect(controller.phase).toEqual(idle);
+        expect(copies).toEqual([]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** Clicked, the note says so for as long as a failure shows, where it is. */
+    test("the clicked note goes after a failure's display time", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const { controller, copies } = makeController({ capture: new CountingCapture(true) });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(notPastedSeconds - 1);
+        await controller.copyNotPasted();
+        expect(copies).toEqual([cleaned]);
         expect(controller.phase).toEqual(copied);
         await vi.advanceTimersByTimeAsync(config.overlayErrorDisplayDuration - 1);
-        expect(controller.phase.kind).toBe("copied");
+        expect(controller.phase).toEqual(copied);
         await vi.advanceTimersByTimeAsync(1);
         expect(controller.phase).toEqual(idle);
       } finally {
@@ -794,8 +880,177 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
-    /** Agent mode's text is copied the same way: Edit's and Compose's. */
-    test("agent text for another app is copied", async () => {
+    /** Clicked, the note says the text is copied once the clipboard has it, not before; a clipboard
+     * that refuses it, and the note says so, while the paste history still has the text. */
+    test.each([true, false])("a clicked note says copied only when the clipboard took the text (taken: %s)", async (taken) => {
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const write = deferred<boolean>();
+      const { controller, copies, history } = makeController({ capture: new CountingCapture(true), copy: () => write.promise });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
+      const click = controller.copyNotPasted();
+      await sleep(0);
+      expect(copies).toEqual([cleaned]);
+      expect(controller.phase).toEqual(notPasted);
+
+      write.resolve(taken);
+      await click;
+      expect(controller.phase).toEqual(taken ? copied : { kind: "failed", message: notCopiedMessage });
+      expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+    });
+
+    /** A newer hold while the clipboard is written wins: the write's end doesn't show over it. */
+    test.each([true, false])("a hold while the clicked note's text is written isn't shown over (taken: %s)", async (taken) => {
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const write = deferred<boolean>();
+      const { controller } = makeController({ capture: new CountingCapture(true), copy: () => write.promise });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
+      const click = controller.copyNotPasted();
+      controller.handle("start");
+      const holding = controller.phase;
+      expect(isResting(holding)).toBe(false);
+
+      write.resolve(taken);
+      await click;
+      expect(controller.phase).toBe(holding);
+      controller.handle("cancel");
+    });
+
+    /** The note's end while its text is written wins too: the pill rests. */
+    test("a note that ends while its text is written stays gone", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const write = deferred<boolean>();
+      const { controller } = makeController({ capture: new CountingCapture(true), copy: () => write.promise });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(controller.phase).toEqual(notPasted);
+        await vi.advanceTimersByTimeAsync(notPastedSeconds - 1);
+        const click = controller.copyNotPasted();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(idle);
+
+        write.resolve(true);
+        await click;
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** A later note while an earlier click's text is written wins: the earlier write's end leaves it
+     * showing, and clicked, it copies its own text. Both texts stay in the history. */
+    test.each([true, false])("a later note while an earlier note's text is written stays (taken: %s)", async (taken) => {
+      vi.useFakeTimers();
+      const later = "The later note's text.";
+      transcription.enqueue(200, cleanedReply);
+      transcription.enqueue(200, { text: "the later note's text", cleaned_text: later });
+      transcription.gate = async () => {
+        front.pid = front.pid === 101 ? 202 : 303;
+      };
+      const write = deferred<boolean>();
+      let clipboard = "The user's own copy.";
+      let writes = 0;
+      const { controller, copies, pastes, history } = makeController({
+        capture: new CountingCapture(true),
+        copy: async (text) => {
+          const taking = (writes += 1) === 1 ? await write.promise : true;
+          if (taking) clipboard = text;
+          return taking;
+        },
+      });
+      const dictateToAnotherApp = async () => {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(controller.phase).toEqual(notPasted);
+      };
+      try {
+        await dictateToAnotherApp();
+        const click = controller.copyNotPasted();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(copies).toEqual([cleaned]);
+        await dictateToAnotherApp();
+
+        write.resolve(taken);
+        await click;
+        expect(controller.phase).toEqual(notPasted);
+        expect(clipboard).toBe(taken ? cleaned : "The user's own copy.");
+        await controller.copyNotPasted();
+        expect(copies).toEqual([cleaned, later]);
+        expect(clipboard).toBe(later);
+        expect(controller.phase).toEqual(copied);
+        expect(history.entries.map((entry) => entry.text)).toEqual([later, cleaned]);
+        expect(pastes).toEqual([]);
+      } finally {
+        write.resolve(false);
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** A refused copy says so for as long as a failure shows, then the pill rests; the text is still
+     * in the history, and the next dictation pastes. */
+    test("a refused copy's message goes after a failure's display time", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const { controller, copies, pastes, history } = makeController({ capture: new CountingCapture(true), copy: async () => false });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(notPastedSeconds - 1);
+        await controller.copyNotPasted();
+        expect(controller.phase).toEqual(failed(notCopiedMessage));
+        await vi.advanceTimersByTimeAsync(config.overlayErrorDisplayDuration - 1);
+        expect(controller.phase).toEqual(failed(notCopiedMessage));
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(idle);
+        expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+        expect(copies).toEqual([cleaned]);
+
+        transcription.gate = undefined;
+        front.pid = 101;
+        transcription.enqueue(200, cleanedReply);
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && pastes.length === 0; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(pastes).toEqual([cleaned]);
+        expect(copies).toEqual([cleaned]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** Agent mode's text goes the same way: Edit's and Compose's. */
+    test("agent text for another app is not pasted, and copied when its note is clicked", async () => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, writes("compose", "We ship on Friday."));
       completions.gate = async () => {
@@ -805,12 +1060,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.captureContext = async () => selectionScreen("");
 
       await holdAndRelease(controller, "agent");
-      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
 
-      expect(controller.phase).toEqual(copied);
+      expect(controller.phase).toEqual(notPasted);
       expect(pastes).toEqual([]);
-      expect(copies).toEqual(["We ship on Friday."]);
+      expect(copies).toEqual([]);
       expect(history.entries.map((entry) => entry.text)).toEqual(["We ship on Friday."]);
+      await controller.copyNotPasted();
+      expect(copies).toEqual(["We ship on Friday."]);
     });
   });
 
@@ -914,7 +1171,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await holdAndRelease(controller);
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([]);
-      expect(copies).toEqual([cleaned]);
+      expect(copies).toEqual([]);
       expect(calls).toEqual(["stop"]);
     });
 
@@ -2213,7 +2470,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases).toContainEqual(running(tool));
       expect(completions.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(copied);
+      expect(controller.phase).toEqual(notPasted);
     });
 
     /** Canceled while the paste reads the app in front, the last wait before it, with the next
@@ -2298,7 +2555,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(phases).toContainEqual(running("compose"));
       expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(copied);
+      expect(controller.phase).toEqual(notPasted);
     });
 
     /** The app that counts is the one in front at key-down, not at release: a switch made while the
@@ -2315,8 +2572,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       front.pid = 202;
       controller.handle("finish");
 
-      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
-      expect(controller.phase).toEqual(copied);
+      expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
+      expect(controller.phase).toEqual(notPasted);
       expect(completions.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
     });
@@ -6555,9 +6812,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(backend.sent.filter((sent) => sent.chunk === 2).every((sent) => sent.signal?.aborted === true)).toBe(true);
     });
 
-    /** Copied instead of pasted (the user switched apps, ADR-DESK-042), the text still says its end
-     * is missing. */
-    test("a dictation whose end was lost and that is copied, as the user switched apps, says the end is missing", async () => {
+    /** Not pasted (the user switched apps, ADR-DESK-042), the note still says the end is missing. */
+    test("a dictation whose end was lost and that is not pasted, as the user switched apps, says the end is missing", async () => {
       const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : part(chunk)));
       const { controller, capture, pastes, copies } = makeLong(backend);
 
@@ -6568,8 +6824,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([]);
+      expect(copies).toEqual([]);
+      expect(controller.phase).toEqual({ kind: "notPasted", message: partlyNotPastedMessage });
+      await controller.copyNotPasted();
       expect(copies).toEqual(["Part 0."]);
-      expect(controller.phase).toEqual({ kind: "copied", message: partlyCopiedMessage });
     });
 
     /** A long silence (hands-free, the user away) is cut into chunks the model hears nothing in; the

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import Foundation
+import AppKit
 import os
 import Testing
 import VoiceHelperSupport
@@ -73,11 +73,14 @@ struct MacServiceRequestTests {
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let pasteboard = Self.pasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let before = pasteboard.changeCount
+        let keys = OSAllocatedUnfairLock(initialState: 0)
         let service = MacService.register(
             on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
             contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
-            paste: { text in pasted.withLock { $0.append(text) } })
+            clipboard: ClipboardKeeper(pasteboard: pasteboard), pasteKeystroke: { keys.withLock { $0 += 1 } })
         let requests = [
             #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
             #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
@@ -91,25 +94,75 @@ struct MacServiceRequestTests {
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
         // A refused paste never reaches the pasteboard or ⌘V.
-        #expect(pasted.withLock { $0 }.isEmpty)
+        #expect(pasteboard.changeCount == before)
+        #expect(keys.withLock { $0 } == 0)
         withExtendedLifetime(service) {}
     }
 
-    /// The paste the shared core accepts reaches the pasteboard as sent.
+    /// The paste the shared core accepts reaches the pasteboard as sent, for ⌘V.
     @Test func anAcceptedPasteIsPastedAsSent() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let pasteboard = Self.pasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let pasted = OSAllocatedUnfairLock<[String?]>(initialState: [])
         let service = MacService.register(
             on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
             contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
-            paste: { text in pasted.withLock { $0.append(text) } })
+            clipboard: ClipboardKeeper(pasteboard: pasteboard), pasteKeystroke: { let text = pasteboard.string(forType: .string); pasted.withLock { $0.append(text) } })
         await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"Dictated 😀 text"}}"#.utf8))
         let line = try #require(lines.withLock { $0.first })
         let reply = try #require(JSONSerialization.jsonObject(with: line) as? [String: Any])
         #expect(reply["result"] as? NSDictionary == [:])
         #expect(pasted.withLock { $0 } == ["Dictated 😀 text"])
         withExtendedLifetime(service) {}
+    }
+
+    /// `clipboardSave` answers at once and saves the clipboard for the next `insert`, which puts every
+    /// type of it back after the paste keys; one copied after the save is not put back over.
+    @Test func theSavedClipboardGoesBackAfterTheNextPaste() async throws {
+        let custom = NSPasteboard.PasteboardType("ai.tabmail.test.custom")
+        for copiedAfterTheSave in [false, true] {
+            let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+            let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+            let pasteboard = Self.pasteboard()
+            defer { pasteboard.releaseGlobally() }
+            let item = NSPasteboardItem()
+            item.setString("User text", forType: .string)
+            item.setData(Data([1, 2, 3]), forType: custom)
+            pasteboard.writeObjects([item])
+            let clipboard = ClipboardKeeper(pasteboard: pasteboard, delay: { _ in })
+            let pasted = OSAllocatedUnfairLock<[String?]>(initialState: [])
+            let service = MacService.register(
+                on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
+                contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
+                clipboard: clipboard, pasteKeystroke: { let text = pasteboard.string(forType: .string); pasted.withLock { $0.append(text) } })
+            await channel.handle(line: Data(#"{"id":1,"method":"clipboardSave","params":{}}"#.utf8))
+            await clipboard.saveTask?.value
+            if copiedAfterTheSave {
+                pasteboard.clearContents()
+                pasteboard.setString("Newer text", forType: .string)
+            }
+            await channel.handle(line: Data(#"{"id":2,"method":"insert","params":{"text":"Dictated text"}}"#.utf8))
+            await clipboard.restoreTask?.value
+            let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+            #expect(replies.map { $0["result"] as? NSDictionary } == [[:], [:]])
+            #expect(pasted.withLock { $0 } == ["Dictated text"])
+            if copiedAfterTheSave {
+                #expect(pasteboard.string(forType: .string) == "Dictated text")
+            } else {
+                #expect(pasteboard.string(forType: .string) == "User text")
+                #expect(pasteboard.data(forType: custom) == Data([1, 2, 3]))
+            }
+            withExtendedLifetime(service) {}
+        }
+    }
+
+    /// A private, uniquely named pasteboard: tests never touch the user's clipboard.
+    private static func pasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        return pasteboard
     }
 
     /// The screen is read only by `voice-screen-reader` and the focused field only by

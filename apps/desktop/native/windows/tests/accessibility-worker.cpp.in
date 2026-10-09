@@ -9,7 +9,8 @@
 
 int main() {
  auto* output = new voice::Output;
- auto* worker = new AccessibilityWorker(*output);
+ auto* clipboard = new voice::ClipboardKeeper;
+ auto* worker = new AccessibilityWorker(*output, *clipboard);
  int64_t id = 0;
  JSON cases = JSON::array();
  auto check = [&](const char* name, bool ok) { cases.push_back({{"name", name}, {"pass", ok}}); };
