@@ -749,8 +749,6 @@ fn a_window_cut_where_a_sentence_ends_takes_all_the_whole_text_takes_inside_it()
     }
 }
 
-/// A key's line that a sentence's end comes before is where a source window can start: what the
-/// whole text takes there, a window starting at that sentence's end takes too.
 /// A piece edge only lets a find start: a key glued to a key, however short, goes whether or not
 /// the screen shows it as a piece of its own, and a key glued to a plain word goes only there.
 #[test]
@@ -794,6 +792,54 @@ fn a_piece_edge_only_adds_to_what_a_glued_key_takes() {
     }
 }
 
+/// A key glued to taken text goes as far as the furthest find before it reaches, not only the
+/// last one to start: a shorter key inside a longer one does not cut the longer one short.
+#[test]
+fn a_key_glued_to_a_longer_find_around_a_shorter_one_goes_too() {
+    let body = "a1B2c3D4e5F6g7H8";
+    let aws = ["AKIA", &"A".repeat(16)].concat();
+    assert_eq!(scalar(&format!("whsec_QUJD{aws}aask-{body}")), PLACEHOLDER);
+    assert_eq!(
+        scalar(&format!("whsec_QUJD{}sk-{body}", "A".repeat(24))),
+        PLACEHOLDER
+    );
+    assert_eq!(scalar(&format!("wordsk-{body}")), format!("wordsk-{body}"));
+}
+
+/// A label whose value has no digit near enough is passed over, and a later label inside that
+/// value is still read to its own value's end.
+#[test]
+fn a_label_inside_a_passed_over_value_is_redacted() {
+    let plain = "a".repeat(210);
+    assert_eq!(
+        scalar(&format!("token={plain}password=a1B2c3D4")),
+        format!("token={plain}password={PLACEHOLDER}")
+    );
+    assert_eq!(
+        scalar(&format!("token={}password=a1B2c3D4", "a".repeat(190))),
+        format!("token={PLACEHOLDER}")
+    );
+    assert_eq!(scalar("password=required"), "password=required");
+}
+
+/// Pieces the screen shows on their own add finds to the whole word's, never replace them: a
+/// random word whose pieces are each too short to judge still goes whole.
+#[test]
+fn a_random_word_shown_in_short_pieces_goes_whole() {
+    let word = "GHIJa1KLMNb2PQRSc3TUVWd4";
+    for edges in [&[][..], &[0], &[8, 16]] {
+        assert_eq!(
+            taken_with_edges(word, edges).unwrap(),
+            vec![0..word.len()],
+            "{edges:?}"
+        );
+    }
+    let name = "OpenJDK21U-jdk_x64_linux_hotspot_21.0.4_7.tar.gz";
+    assert!(taken_with_edges(name, &[0]).unwrap().is_empty());
+}
+
+/// A key's line that a sentence's end comes before is where a source window can start: what the
+/// whole text takes there, a window starting at that sentence's end takes too.
 #[test]
 fn a_window_starting_on_a_key_line_takes_all_the_whole_text_takes_there() {
     let redactors = redactors().unwrap();
