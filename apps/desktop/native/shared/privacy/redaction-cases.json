@@ -8025,7 +8025,7 @@
   ]
  },
  {
-  "name": "a random-looking word of letters and a plus sign, with no digit, stays",
+  "name": "a random-looking word of letters and a plus sign, with no digit, stays (owner, 2026-10-08)",
   "text": [
    "x FMfcgzQX+J",
    "WDsKmPqLbTNR",
@@ -8090,6 +8090,130 @@
    "QUJD\nSee. ",
    "{redacted}",
    "\n(end)"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a shared document's id (owner, 2026-10-08)",
+  "text": [
+   "Open https://docs.example.com/document/d/",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt2M",
+   "w9Pz4Qr8",
+   "/edit now"
+  ],
+  "expected": [
+   "Open https://docs.example.com/document/",
+   "{redacted}",
+   "/edit now"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a playlist id (owner, 2026-10-08)",
+  "text": [
+   "Watch https://video.example.com/playlist?list=",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt",
+   " now"
+  ],
+  "expected": [
+   "Watch https://video.example.com/playlist?list=",
+   "{redacted}",
+   " now"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: an OAuth client id (owner, 2026-10-08)",
+  "text": [
+   "Client 123456789012-",
+   "q7xk2rm9tz4l",
+   "p8wv3ny6bh1j",
+   "c5fd0gs7",
+   ".apps.example.com here"
+  ],
+  "expected": [
+   "Client ",
+   "{redacted}",
+   ".apps.example.com here"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a message id (owner, 2026-10-08)",
+  "text": [
+   "Message-ID: <",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0G",
+   "@mail.example.com>"
+  ],
+  "expected": [
+   "Message-ID: <",
+   "{redacted}",
+   "@mail.example.com>"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: an integrity value (owner, 2026-10-08)",
+  "text": [
+   "\"integrity\": \"sha512-",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt2M",
+   "w9Pz4Qr8Vq7X",
+   "k2Rm9Tz4Lp8W",
+   "v3Ny6Bh1Jc5F",
+   "d0Gs7Kt2Mw9P",
+   "z",
+   "==\""
+  ],
+  "expected": [
+   "\"integrity\": \"",
+   "{redacted}",
+   "\""
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a data address's payload (owner, 2026-10-08)",
+  "text": [
+   "src=\"data:image/png;base64,",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt2M",
+   "w9Pz4Qr8Vq7X",
+   "k2Rm9Tz4Lp8W",
+   "v3Ny6Bh1Jc5F",
+   "d0Gs7Kt2Mw9P",
+   "z4Qr8V",
+   "\""
+  ],
+  "expected": [
+   "src=\"data:image/png;base64,",
+   "{redacted}",
+   "\""
+  ]
+ },
+ {
+  "name": "the next line's first word after a key's lines goes past a blank line (owner, 2026-10-08)",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n\nThe next paragraph"
+  ],
+  "expected": [
+   "{redacted}",
+   " next paragraph"
   ]
  }
  ],

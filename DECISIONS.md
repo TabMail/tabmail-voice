@@ -3625,7 +3625,9 @@ well-structured place for the redactors.
   pieces of one text and give no edge. The owner set three rules with it:
   - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
     label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows
-    it (`Done and more` loses `Done`; accepted). A word as long as a full line starting the next
+    it (`Done and more` loses `Done`; accepted). The next line is the next one that is not blank:
+    after a key's lines and a blank line, a paragraph's first word goes too (owner, 2026-10-08,
+    kept as the side that hides more). A word as long as a full line starting the next
     line counts as one, so a key's last full line may go on with other text, and the word runs on
     over padding and base64 alike. When the run stops at a line such a word starts (after a short
     last line, a key's line beside other text), that word goes and ends the key. A run of such lines never goes on past a sentence's end
@@ -3641,7 +3643,8 @@ well-structured place for the redactors.
     A key cut by a window either side keeps none of its body in the window (its own test).
   - **Words that look random.** A run of `[A-Za-z0-9+/_-]` (padding at its end), cut at a `/`, `_`
     or `-` piece that is itself word-like, goes when a part is at least 24 characters long, holds a
-    letter and a digit, is not hex (letters before hex count as hex, so git hashes, digests and ids
+    letter and a digit (a word of letters and `+` with no digit stays, as the tuning below was
+    measured; owner, 2026-10-08), is not hex (letters before hex count as hex, so git hashes, digests and ids
     stay), has at most half of its characters in word-like runs (a capital and three or more small
     letters, three or more small letters, three or more capitals not followed by a small one), and
     carries at least 3.5 bits of Shannon entropy per character. Every number is data in its
@@ -3660,8 +3663,9 @@ well-structured place for the redactors.
     ids, publishable keys); no ordinary path, branch name, dated tag, identifier, UUID, git hash or
     `package@version` goes. A random id inside an address does go, as it is random by nature: a
     shared document's or file's id, a playlist id, an OAuth client id, a message id, an `sha512-`
-    integrity value, a `data:` address's payload. A key of small letters and digits only is taken
-    about one time in five.
+    integrity value, a `data:` address's payload (owner, 2026-10-08: keep hiding them; sparing words
+    inside addresses would spare keys pasted into one). A key of small letters and digits only is
+    taken about one time in five. Each of the three owner decisions has its shared cases.
 
   Checked against `main` and the regular-expression redactors this replaces, over the shared cases,
   59,000 generated glued and paired secrets, 2,538 screen reads, and a second generated set of
