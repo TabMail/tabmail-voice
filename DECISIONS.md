@@ -3622,8 +3622,11 @@ well-structured place for the redactors.
   glued to the word before it stays shown) holds where the screen shows that word and the key in
   one piece; a piece the screen shows on its own (a block, a styled run; `privacy::taken_with_edges`)
   gives its first character an edge, and a prefix glued to text another redactor takes goes with it
-  (a key glued to a key), however short what follows it is. An edge only lets a find start; it never
-  ends one. The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
+  (a key glued to a key), however short what follows it is, whatever the pieces are: an edge only
+  adds a find, never drops one. An edge only lets a find start; it never ends one. Only a cut
+  between two runs the screen shows is an edge: a field's text around what it shows (its hidden runs
+  in a row, heading or link) starts no piece, so a word the field shows from part-way through starts
+  no key there. The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
   pieces of one text and give no edge. The owner set three rules with it:
   - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
     label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows

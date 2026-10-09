@@ -218,21 +218,12 @@ fn tokens(
                 (run, run, run - body)
             }
         };
-        // The starts go forward through the text, and so does the edge they are checked against.
-        let edged = !token.word_edge || start == 0 || !is_word_byte(bytes[start - 1]) || {
-            while edge < edges.len() && edges[edge] < start {
-                edge += 1;
-            }
-            edges.get(edge) == Some(&start)
+        let whole = match token.length {
+            Length::Min(min) if length >= min => Some(run),
+            Length::Exact(exact) if length >= exact => Some(exact_end),
+            _ => None,
         };
-        let end = match token.length {
-            Length::Min(min) if length >= min => run,
-            Length::Exact(exact) if length >= exact => exact_end,
-            // A prefix glued to a key is part of that key, however short what follows it is.
-            _ if !edged && run > body => run,
-            _ => continue,
-        };
-        let find = Found {
+        let find = |end: usize| Found {
             matched: start..end,
             taken: if token.keep_prefix {
                 body..end
@@ -240,11 +231,21 @@ fn tokens(
                 start..end
             },
         };
-        if edged {
-            found.push(find);
-        } else {
-            glued.push(find);
+        if !token.word_edge || start == 0 || !is_word_byte(bytes[start - 1]) {
+            found.extend(whole.map(find));
+            continue;
         }
+        // Glued to the word before it: a piece the screen shows on its own gives it its word edge.
+        // The starts go forward through the text, and so does the edge they are checked against.
+        while edge < edges.len() && edges[edge] < start {
+            edge += 1;
+        }
+        if edges.get(edge) == Some(&start) {
+            found.extend(whole.map(find));
+        }
+        // A prefix glued to a key is part of that key, however short what follows it is, whatever
+        // the pieces are.
+        glued.extend(whole.or((run > body).then_some(run)).map(find));
     }
 }
 

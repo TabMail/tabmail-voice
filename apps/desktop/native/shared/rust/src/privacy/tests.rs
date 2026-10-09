@@ -329,6 +329,46 @@ fn invalid_definitions_are_refused() {
     assert!(!refused(&label));
     label["redactors"][named]["labels"] = Value::Array(vec![Value::String(String::new())]);
     assert!(refused(&label), "empty label");
+    // Every kind's every text and character set, refused when empty, not ASCII or a range written
+    // backwards, and taken when it is fine.
+    for (index, redactor) in original["redactors"].as_array().unwrap().iter().enumerate() {
+        let kind = redactor["kind"].as_str().unwrap();
+        let texts: &[&str] = match kind {
+            "privateKey" => &["begin", "end", "label", "close"],
+            "jsonWebToken" | "addressPassword" => &["start"],
+            _ => &[],
+        };
+        let sets: &[&str] = match kind {
+            "token" => &["body"],
+            "privateKey" => &["words", "body"],
+            "keyLines" => &["base64"],
+            "jsonWebToken" => &["part"],
+            "entropy" => &["word", "separators", "hex"],
+            _ => &[],
+        };
+        for (fields, bad, good) in [
+            (texts, &["", "\u{e9}"][..], "valid"),
+            (sets, &["", "\u{e9}", "z-a"][..], "A-Z0-9_-"),
+        ] {
+            for field in fields {
+                for value in bad {
+                    let mut changed = original.clone();
+                    changed["redactors"][index][field] = Value::String((*value).into());
+                    assert!(refused(&changed), "{kind} {field} {value:?}");
+                }
+                let mut changed = original.clone();
+                changed["redactors"][index][field] = Value::String(good.into());
+                assert!(!refused(&changed), "{kind} {field} {good}");
+            }
+        }
+    }
+    let mut name = original.clone();
+    name["redactors"][0]["name"] = Value::String("redactor-17".into());
+    assert!(!refused(&name));
+    for value in ["17-redactor", "redactor space"] {
+        name["redactors"][0]["name"] = Value::String(value.into());
+        assert!(refused(&name), "{value}");
+    }
     let mut duplicate = original.clone();
     let item = duplicate["redactors"][0].clone();
     duplicate["redactors"].as_array_mut().unwrap().push(item);
@@ -665,6 +705,46 @@ fn a_window_cut_where_a_sentence_ends_takes_all_the_whole_text_takes_inside_it()
 
 /// A key's line that a sentence's end comes before is where a source window can start: what the
 /// whole text takes there, a window starting at that sentence's end takes too.
+/// A piece edge only lets a find start: a key glued to a key, however short, goes whether or not
+/// the screen shows it as a piece of its own, and a key glued to a plain word goes only there.
+#[test]
+fn a_piece_edge_only_adds_to_what_a_glued_key_takes() {
+    let first = ["sk_live_", "abcdefghijklmnopqrst"].concat();
+    let mask = |text: &str, edges: &[usize]| {
+        let mut taken = vec![false; text.len()];
+        for range in taken_with_edges(text, edges).unwrap() {
+            taken[range].fill(true);
+        }
+        taken
+    };
+    for prefix in ["sk-", "Bearer ", "sk_test_"] {
+        for body in ["abc12", "a1B2c3D4e5F6g7H8", "abcdefghijklmnopqrst"] {
+            let text = format!("{first}{prefix}{body} after");
+            let without = mask(&text, &[]);
+            let with = mask(&text, &[first.len()]);
+            assert!(
+                without.iter().zip(&with).all(|(&was, &now)| !was || now),
+                "{prefix}{body}"
+            );
+            assert!(
+                with[..text.len() - " after".len()].iter().all(|&t| t),
+                "{prefix}{body}"
+            );
+        }
+        // Alone, a short body stays; glued to a plain word, a key goes only as a piece of its own.
+        assert_eq!(scalar(&format!("{prefix}abc12")), format!("{prefix}abc12"));
+        let ordinary = format!("notes{prefix}abcdefghijklmnopqrst");
+        assert!(
+            taken_with_edges(&ordinary, &[]).unwrap().is_empty(),
+            "{prefix}"
+        );
+        assert!(
+            !taken_with_edges(&ordinary, &[5]).unwrap().is_empty(),
+            "{prefix}"
+        );
+    }
+}
+
 #[test]
 fn a_window_starting_on_a_key_line_takes_all_the_whole_text_takes_there() {
     let redactors = redactors().unwrap();

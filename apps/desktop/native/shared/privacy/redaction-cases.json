@@ -8634,6 +8634,151 @@
    "expected": [
     "GHIJabc1KLMNbcd2PQRScde3TUVWdef4"
    ]
+  },
+  {
+   "name": "a key's short first word after its lines' full lines goes, the text's start",
+   "text": [
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a key's short first word after a blank line at the text's start goes",
+   "text": [
+    "\nQUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a key's short first word after a CRLF blank line goes",
+   "text": [
+    "\r\nQUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\r\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a key's short first word after blank lines holding spaces goes",
+   "text": [
+    "\n \t\nQUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\n \t\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "two words before a key's lines after a blank line stay",
+   "text": [
+    "\ntwo words\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\ntwo words\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "prose between two whole private keys stays",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\nQUJD\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\nordinary prose.\n",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\nQUJD\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "\nordinary prose.\n",
+    "{redacted}"
+   ]
   }
  ],
  "lineCases": [

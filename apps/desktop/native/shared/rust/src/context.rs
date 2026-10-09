@@ -1186,9 +1186,15 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             }
             match (&block.runs, &block.source) {
                 (Some(runs), _) => {
+                    // A run the screen shows right after another it shows starts a piece; a cut
+                    // between shown and hidden text (a field's text around what it shows) does not.
+                    let mut shown = false;
                     for (text, visible) in runs {
-                        read.piece();
+                        if *visible && shown {
+                            read.piece();
+                        }
                         read.push(text, index, *visible);
+                        shown = *visible;
                     }
                 }
                 (None, Some(parts)) => {
@@ -1859,6 +1865,37 @@ mod budget_tests {
                 };
                 assert_eq!(caret, expected, "{reply:?}");
                 assert_eq!(reply["selectionRedacted"], redacted, "{reply:?}");
+            }
+        }
+    }
+    /// A field read inside a row, a heading or a link keeps its text around what it shows as
+    /// hidden runs: the cut between them is no piece, so a word the field shows from part-way
+    /// through starts no key there. A key it shows whole still goes.
+    #[test]
+    fn a_field_projected_into_a_container_starts_no_key_inside_its_word() {
+        let whole = ["ri", "sk-assessment-template-v2"].concat();
+        let key = ["sk-", "a1B2c3D4", "e5F6g7H8i9J0"].concat();
+        for (parts, shown) in [
+            (
+                vec![whole[..2].to_owned(), whole[2..].to_owned(), String::new()],
+                whole[2..].to_owned(),
+            ),
+            (
+                vec!["x ".to_owned(), key.clone(), String::new()],
+                privacy::PLACEHOLDER.to_owned(),
+            ),
+        ] {
+            let mut semantic = crate::semantic::SemanticText::new(1).unwrap();
+            semantic.offer_projected(2, parts.clone()).unwrap();
+            semantic.offer(3, "").unwrap();
+            let projection: Value =
+                serde_json::from_slice(&semantic.finish_projected().unwrap()).unwrap();
+            for kind in ["row", "heading", "link"] {
+                let reply = call(json!({"blocks":[{"kind":kind,"text":projection["text"],
+                    "runs":projection["runs"]}],"caret":["","",""]}));
+                let rendered = reply["rendered"].as_str().unwrap();
+                assert!(rendered.contains(&shown), "{kind}: {rendered}");
+                assert!(!rendered.contains(&key), "{kind}: {rendered}");
             }
         }
     }
