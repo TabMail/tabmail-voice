@@ -144,6 +144,29 @@ clipboard" stands.
   Ubuntu `input-session.cpp` (the same over the fake portal, plus a read held when the paste comes,
   file transfers, too many formats and the unannounced selection).
 
+**Amendment (owner, 2026-10-09) — the newest copy goes back.** Owner: *"if anything happened in
+between we just [keep] the new thing"*, choosing to keep the newest copy over the clipboard as it was
+at the release. The app no longer asks for a save only at key-down and at the release: it asks at
+key-down and then every `clipboardSaveInterval` (250 ms) through the hold and the transcription,
+until the paste writes (`DictationController.saveClipboardUntilThePaste`; it stops right before the
+paste, where a save would be of the paste's own text, and when the dictation ends any other way). The
+helpers already skip a clipboard unchanged since its save, so an unchanged clipboard costs a change
+count or sequence number compare, and nothing changes in them. What goes back after the paste is the
+copy the user made last, one made while the words are transcribed too. Residuals, amended: (c) a
+copy made within one interval of the paste, or still being read when the paste comes, is lost to
+the paste, and the text stays; (f) a copy made while an earlier save is still reading is saved by the
+next ask after that read ends. (a), (b), (d), (e) and (g) stand: the clipboard holds one thing on
+every platform, so taking the paste's text off it means writing the saved clipboard back, and the Mac
+and Ubuntu have no conditional write for that. The owner accepted these residuals the same day, tracked as P5 issues:
+(a) #194, (b) #195, (c) and (f) #196, (d) #197, (e) #198, (g) #199; and three edges the reviews
+found: a Windows save whose thread can't start stops put-backs until the helper restarts (#200), an
+Ubuntu copy announced as the paste offers its text brings back the older clipboard (#201), and
+Windows bitmap, palette and metafile handles go uncounted toward `maxBytes` (#202).
+- **Tests.** `controller.test.ts` › the clipboard is saved from key-down until the paste writes
+  (asked every interval through the hold and the transcription, never while the paste is out or after
+  it), and a dictation canceled or ended with its note stops saving; Mac `ClipboardKeeperTests` ›
+  `putsTheNewestSavedClipboardBack` (a copy saved by a later ask goes back, every type of it).
+
 ## ADR-DESK-003: Not sandboxed; Developer ID distribution
 
 **Context:** The global hotkey (`NSEvent` global monitors) and ⌘V posting both need Accessibility,
@@ -3108,6 +3131,12 @@ the General card. A refusal or failed install logs the platform's own fixed sent
 > copy. It's in the paste history." when it refused it; the note expiring, or the next hold, drops
 > the text, and wins over a click's write still under way. It still goes into the paste history
 > (ADR-DESK-043) either way.
+>
+> **Amended (owner, 2026-10-09): copied, the note goes; its x dismisses it.** Owner: the note should
+> *"disappear immediately when copied, or should be dismissable by clicking on the x"*. A click whose
+> write succeeds ends the note at once (no "Copied to clipboard" message; the `copied` phase is gone);
+> a refused write still says "Couldn't copy. It's in the paste history.". An x at the note's end
+> (IPC `dismissNotPasted`) ends it at once, copying nothing; the text stays in the paste history.
 
 > **Amended (owner, 2026-09-30, same day): only the app is checked.** Tested on a dev build in
 > iTerm2, every dictation was copied as "Cursor moved" though nothing had moved: iTerm2's caret is a

@@ -622,7 +622,7 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "notPasted", message: "Click to copy." });
     expect(overlay.ignoresMouse()).toBe(false);
 
-    controller.update({ kind: "copied", message: "Copied." });
+    controller.update({ kind: "failed", message: "Couldn't copy." });
     expect(overlay.visible()).toBe(true);
     expect(overlay.bounds()).toEqual(atNote);
     expect(overlay.ignoresMouse()).toBe(true);

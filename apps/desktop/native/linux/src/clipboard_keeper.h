@@ -13,7 +13,7 @@ namespace voice {
 //
 // The paste never reads the clipboard: reading it asks its owner for every format's data, which a
 // busy app hands over late. It is saved ahead, while the user speaks (`save`, which the app asks for
-// as a dictation starts and as it ends), by asynchronous portal reads on the event loop. The
+// from key-down until the paste, every `clipboardSaveInterval`), by asynchronous portal reads on the event loop. The
 // clipboard goes back `restoreDelay` after the paste, and only while this session still owns the
 // selection it offered the paste's text in (`ours`, its announcement) and the save was of the
 // selection just before the paste: a copy made in between is never overwritten, and a paste without

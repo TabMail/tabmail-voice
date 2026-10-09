@@ -15,7 +15,7 @@ import VoiceHelperSupport
 /// which `voice-field-reader` serves (`FieldReaderService`).
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
 /// - `clipboardSave` → `{}`: saves the clipboard in the background, for the next paste to put back
-///   (`ClipboardKeeper`); the app asks as a dictation starts and as it ends.
+///   (`ClipboardKeeper`); the app asks from key-down until the paste, every `clipboardSaveInterval`.
 /// - `insert {text}` → `{}`: pastes `text` into the focused field once the shared core accepts it,
 ///   answering once the paste keys are sent; the clipboard as saved goes back after them.
 /// - `keyboardLanguage` → `{code}`: the active input source's raw locale, or null; the app normalizes it.

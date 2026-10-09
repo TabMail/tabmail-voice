@@ -918,6 +918,9 @@ function launch(): void {
       case "copyNotPasted":
         void controller.copyNotPasted();
         return;
+      case "dismissNotPasted":
+        controller.dismissNotPasted();
+        return;
       case "noteFrame":
         overlay.fitNote(command.frame);
         return;

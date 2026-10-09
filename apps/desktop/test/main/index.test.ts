@@ -347,6 +347,9 @@ vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
     async copyNotPasted() {
       this.calls.push("copyNotPasted");
     }
+    dismissNotPasted() {
+      this.calls.push("dismissNotPasted");
+    }
     closeChat() {
       this.calls.push("closeChat");
     }
@@ -995,18 +998,19 @@ describe("main process wiring", () => {
     expect(app.opened).toEqual(["https://example.com/docs"]);
   });
 
-  /** The note for a text not pasted: a click reaches the controller, which copies the text; its frame
-   * reaches the overlay, and one that is no frame is refused. */
+  /** The note for a text not pasted: a click reaches the controller, which copies the text, and its
+   * x, which dismisses it; its frame reaches the overlay, and one that is no frame is refused. */
   test("the not-pasted note's commands", async () => {
     await launch("darwin");
 
     await send({ type: "copyNotPasted" });
+    await send({ type: "dismissNotPasted" });
     await send({ type: "noteFrame", frame: { x: 10, y: 20, width: 180, height: 32 } });
     for (const frame of [null, { x: 10, y: 20, width: -1, height: 32 }, { x: 10, y: 20, width: Number.NaN, height: 32 }, { x: 10, y: 20, width: 180 }]) {
       expect(await send({ type: "noteFrame", frame } as never)).toEqual({ error: expect.any(String) });
     }
 
-    expect(app.controller?.calls).toEqual(["copyNotPasted"]);
+    expect(app.controller?.calls).toEqual(["copyNotPasted", "dismissNotPasted"]);
     expect(app.overlay?.notes).toEqual([{ x: 10, y: 20, width: 180, height: 32 }]);
   });
 
@@ -1827,8 +1831,8 @@ describe("main process wiring", () => {
       expect(updater?.installs).toBe(1);
     });
 
-    /** A text not pasted (ADR-DESK-042), its note showing or clicked, ends a dictation as a failure does. */
-    test.each(["failed", "notPasted", "copied"])("after a %s dictation, Restart Now installs at once", async (ended) => {
+    /** A text not pasted (ADR-DESK-042), its note showing, ends a dictation as a failure does. */
+    test.each(["failed", "notPasted"])("after a %s dictation, Restart Now installs at once", async (ended) => {
       await launchPackaged();
       const updater = app.autoUpdater;
       const controller = app.controller as unknown as { phase: { kind: string }; onPhaseChange: (phase: { kind: string }) => void };
