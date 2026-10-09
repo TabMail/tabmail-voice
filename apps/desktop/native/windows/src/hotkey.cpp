@@ -48,8 +48,12 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
     if (modifier.bypass(key, down, (event.flags & LLKHF_INJECTED) != 0)) return CallNextHookEx(hook, code, message, data);
     bool owns = false;
     std::optional<voice::Action> action;
+    // Windows passes on the key event of a hook that answers too late (under heavy load; it may
+    // also remove the hook), so the key-down reaches the system anyway. Swallowing its key-up then leaves the system holding the key, and every paste
+    // after it sees a modifier held. A key-up always goes through when the system saw its key-down.
+    const bool leaked = up && (GetAsyncKeyState(static_cast<int>(key)) & 0x8000) != 0;
     if (key == modifier.selected) {
-        owns = down || swallowed[key];
+        owns = down || (swallowed[key] && !leaked);
         if (down) swallowed[key] = true;
         else swallowed[key] = false;
         action = gesture.modifier(down, monotonicSeconds(), modifier.agentIntent());
@@ -58,7 +62,7 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
         if (owns) swallowed[key] = true;
         action = gesture.keyPressed(key, pressed[key]);
     } else {
-        owns = swallowed[key];
+        owns = swallowed[key] && !leaked;
         swallowed[key] = false;
     }
     pressed[key] = down;
