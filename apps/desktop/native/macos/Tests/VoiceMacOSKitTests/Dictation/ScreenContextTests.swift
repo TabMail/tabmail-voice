@@ -18,7 +18,9 @@ struct ScreenContextTests {
         context.append(.text, "Inbox")
         context.append(.text, "  ")
         context.append(.text, " Drafts\n")
-        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: "Drafts")])
+        // An edge that had space keeps one, or a line break if it held one, so the render can tell
+        // two words, and two lines, from pieces that abut.
+        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: " Drafts\n")])
     }
 
     @Test func renderedTextMarksStructure() throws {
@@ -232,6 +234,26 @@ struct ScreenContextTests {
         let context = walk(slack.window, focused: slack.focused, focusPath: slack.focusPath)
         #expect(try context.renderedText() == "Alex Lee [Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
         #expect(context.blocks.last?.frame == slack.focused.frame)
+    }
+
+    /// A key split by styling where one piece wraps (a Slack message) is read whole: the pieces meet
+    /// where the text of the one before ends and the next one's starts, not across a wrapped
+    /// piece's frame, which covers all its lines. Text and link pieces alike.
+    @Test func walkJoinsPiecesWhereAWrappedPieceEnds() throws {
+        func piece(_ role: String, _ text: String, _ frame: CGRect, _ first: CGRect, _ last: CGRect) -> FakeElement {
+            let element = FakeElement(role, role == "AXLink" ? [kAXDescriptionAttribute: text] : [kAXValueAttribute: text], frame: frame)
+            element.ends = [first, last]
+            return element
+        }
+        func box(_ x: CGFloat, _ y: CGFloat) -> CGRect { CGRect(x: x, y: y, width: 8, height: 20) }
+        let area = FakeElement("AXWebArea", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [
+            piece("AXStaticText", "Wrap words that wrap onto a second line sk-Review" + "Wrap", CGRect(x: 0, y: 0, width: 200, height: 40), box(0, 0), box(142, 20)),
+            piece("AXStaticText", "Glued" + "1234567890ab end", CGRect(x: 150, y: 20, width: 120, height: 20), box(150, 20), box(262, 20)),
+            piece("AXStaticText", "Start sk-Review" + "Start", CGRect(x: 0, y: 100, width: 150, height: 20), box(0, 100), box(142, 100)),
+            piece("AXLink", "Tail" + "1234567890abcd words that wrap onto more lines", CGRect(x: 0, y: 100, width: 200, height: 40), box(150, 100), box(0, 120)),
+        ])
+        let context = walk(FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area]))
+        #expect(context.json["renderedText"]?.string == "Wrap words that wrap onto a second line [redacted] end\nStart [redacted] [words that wrap onto more lines]")
     }
 
     /// Outside web content a control's title may be an icon's label, so controls stay skipped.
@@ -567,6 +589,8 @@ final class FakeElement {
     let frame: CGRect?
     let children: [FakeElement]
     var textReads = 0
+    /// The boxes of its text's first and last characters, as the app gives them.
+    var ends: [CGRect]?
 
     init(_ role: String, _ attributes: [String: String] = [:], frame: CGRect? = nil, children: [FakeElement] = []) {
         self.role = role
@@ -579,6 +603,7 @@ final class FakeElement {
 struct FakeScreenTree: ScreenTree {
     func children(of element: FakeElement) -> [FakeElement] { element.children }
     func frame(of element: FakeElement) -> CGRect? { element.frame }
+    func ends(of element: FakeElement) -> [CGRect]? { element.ends }
     func string(_ element: FakeElement, _ name: String) -> String? {
         if name == kAXValueAttribute || name == kAXTitleAttribute || name == kAXDescriptionAttribute { element.textReads += 1 }
         return name == kAXRoleAttribute ? element.role : element.attributes[name]

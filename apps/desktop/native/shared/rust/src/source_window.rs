@@ -25,21 +25,22 @@ pub(crate) fn recognition_range_with_limit(
     if start_known && end_known {
         return Ok(0..text.len());
     }
-    // These actual source delimiters reset every canonical redactor's
-    // recognition state. Whitespace alone does not: named-value and PEM
-    // continuations can span an arbitrarily long whitespace run.
+    // These actual source delimiters reset every redactor's recognition
+    // state but one: a private key's end line takes the text before it back
+    // to the read's start, past them (the owner's rule), so a window that
+    // stops before such a line keeps text the whole read would take.
+    // Whitespace alone does not: named-value and PEM continuations can span
+    // an arbitrarily long whitespace run.
     // Keep the delimiter itself so concatenating approved source windows
     // cannot erase the evidence that closed the preceding recognition state.
-    // A break this core added (a rich editor's, between blocks) is not the
-    // text's own: a `.` before one may be inside a token (a JWT's header).
     let mut characters = text.char_indices().peekable();
     let mut first = None;
     let mut last = None;
     while let Some((start, ch)) = characters.next() {
         if !matches!(ch, '.' | ',' | ';' | '!' | '?')
-            || !characters.peek().is_some_and(|&(_, next)| {
-                next.is_whitespace() && next != crate::context::ADDED_BREAK
-            })
+            || !characters
+                .peek()
+                .is_some_and(|&(_, next)| next.is_whitespace())
         {
             continue;
         }
@@ -113,6 +114,15 @@ mod tests {
     use super::*;
     fn kept(text: &str, start: bool, end: bool) -> String {
         text[recognition_range(text, start, end).unwrap()].to_owned()
+    }
+    #[test]
+    fn a_paragraph_separator_the_provider_gives_ends_a_sentence() {
+        // The text's own U+2029 is a line break like any other (ADR-DESK-007, 2026-10-07): a
+        // sentence ending before one is a delimiter at both open edges.
+        assert_eq!(
+            kept("head.\u{2029}middle.\u{2029}tail", false, false),
+            ".\u{2029}middle.\u{2029}"
+        );
     }
     #[test]
     fn source_edge_facts_are_required_not_assumed() {

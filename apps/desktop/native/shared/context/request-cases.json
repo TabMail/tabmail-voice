@@ -1,5 +1,5 @@
 {
-  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer or when a break the core added (U+2029, a rich editor's block break) could split a secret, else redacted, with those breaks as line breaks), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), the clipboard a paste saves and puts back (500 ms after the paste keys; at most 64 MiB and 256 formats), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), the clipboard a paste saves and puts back (500 ms after the paste keys; at most 64 MiB and 256 formats), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
   "cases": [
     {
       "name": "a field bound at the most a request may ask",
@@ -48,11 +48,11 @@
       }
     },
     {
-      "name": "a rich editor's text, the breaks the core added (U+2029) given as line breaks",
+      "name": "a rich editor's text, its block breaks as the line breaks they are",
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "Hi All,\u2029Why does it move?\u2029\n--"
+          "text": "Hi All,\nWhy does it move?\n\n--"
         }
       },
       "expected": {
@@ -60,19 +60,7 @@
       }
     },
     {
-      "name": "a rich editor's text with a key split by a break the core added, withheld",
-      "request": {
-        "field": {
-          "maxLength": 20000,
-          "text": "Public words.\u2029sk-Review\u2029Fixture1234567890"
-        }
-      },
-      "expected": {
-        "value": null
-      }
-    },
-    {
-      "name": "a terminal's field: the box around its cursor, its pane's rows joined by the core's breaks (U+2029)",
+      "name": "a terminal's field: the box around its cursor, its pane's rows redacted as lines, then given with the core's breaks (U+2029) between them",
       "request": {
         "field": {
           "maxLength": 20000,
@@ -207,7 +195,31 @@
       }
     },
     {
-      "name": "a terminal's field with a key wrapped over two rows of its pane, withheld",
+      "name": "a field's own paragraph separator (U+2029, as a Qt editor gives) is a line break",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Dear team\u2029thanks"
+        }
+      },
+      "expected": {
+        "value": "Dear team\nthanks"
+      }
+    },
+    {
+      "name": "a field holding a key's body whose lines are separated by U+2029, redacted",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Notes:\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029end"
+        }
+      },
+      "expected": {
+        "value": "Notes:\n[redacted]"
+      }
+    },
+    {
+      "name": "a terminal's field with a key on a row of its pane, redacted",
       "request": {
         "field": {
           "maxLength": 20000,
@@ -224,7 +236,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "log one    │key sk-a1B2c3D4\nlog two    │e5F6g7H8i9J0k1L2\nlog three  │$ ",
+                    "text": "log one    │key sk-a1B2c3D4e5F6g7H8i9J0k1L2\nlog two    │$ ",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -242,13 +254,70 @@
               "status": "exact",
               "surface": 1,
               "run": 1,
-              "offset": 71
+              "offset": 58
             }
           }
         }
       },
       "expected": {
-        "value": null
+        "value": "key [redacted]\u2029$ "
+      }
+    },
+    {
+      "name": "a field's two keys on paragraphs of their own (U+2029) are each redacted, nothing withheld",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "sk-ReviewField1234567890abcd\u2029sk-ReviewLink1234567890abcd"
+        }
+      },
+      "expected": {
+        "value": "[redacted]\n[redacted]"
+      }
+    },
+    {
+      "name": "a terminal's field with a key over two rows of its pane, redacted as the lines the screen shows",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "log one    │QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog two    │QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog three  │$ ",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 168
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": "[redacted]\u2029[redacted]\u2029$ "
       }
     },
     {
@@ -816,6 +885,54 @@
         "microphoneStop": {}
       },
       "refused": true
+    },
+    {
+      "name": "a field's named value after a key block cut off keeps its value redacted",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "-----BEGIN RSA PRIVATE KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\npassword = a1B2c3.D4e5F6g7H8"
+        }
+      },
+      "expected": {
+        "value": "[redacted]"
+      }
+    },
+    {
+      "name": "a field's bearer token after a key block cut off, its lines separated by U+2029, keeps its value redacted",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "-----BEGIN RSA PRIVATE KEY----- a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 Bearer a1B2c3.D4e5F6g7H8"
+        }
+      },
+      "expected": {
+        "value": "[redacted]"
+      }
+    },
+    {
+      "name": "a field starting inside a key body loses the next line's first word, a named value's name, and the value goes too",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\ntoken = a1B2c3.D4e5F6g7H8"
+        }
+      },
+      "expected": {
+        "value": "[redacted] = [redacted]"
+      }
+    },
+    {
+      "name": "a field starting inside a key body loses its last line touching a closing quote",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6\"\"\""
+        }
+      },
+      "expected": {
+        "value": "[redacted]\"\"\""
+      }
     }
   ]
 }

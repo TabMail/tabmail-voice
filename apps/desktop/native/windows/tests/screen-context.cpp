@@ -147,6 +147,15 @@ int main(int argc, char** argv) {
     sliver.append(ContextKind::text, "Unknown frame");
     expect(sliver.render().ends_with("\nUnknown frame"), "missing geometry starts a line");
 
+    // A word split by styling where the piece after it wraps: the pieces meet where the first
+    // one's text ends and the next one's starts, which its frame over all its lines doesn't say.
+    VisibleContext wrapped;
+    wrapped.append(ContextKind::text, "Start wrap", ContextFrame{0, 0, 150, 20},
+                   std::array<ContextFrame, 2>{ContextFrame{0, 0, 8, 20}, ContextFrame{142, 0, 8, 20}});
+    wrapped.append(ContextKind::text, "ped and more words that wrap", ContextFrame{0, 0, 200, 40},
+                   std::array<ContextFrame, 2>{ContextFrame{150, 0, 8, 20}, ContextFrame{0, 20, 8, 20}});
+    expect(wrapped.render() == "Start wrapped and more words that wrap", "a wrapped piece meets the one before where its text starts");
+
     VisibleContext caretBoundary({"left", "chosen", "right"});
     caretBoundary.append(ContextKind::caret, "‸");
     caretBoundary.append(ContextKind::text, "‸");

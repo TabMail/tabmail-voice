@@ -1,8 +1,8 @@
 {
  "comment": [
-  "What every helper's redaction must do, whatever its language and regex engine: for each case, `text` joined becomes `expected` joined, where {redacted} stands for redactors.json's `placeholder`.",
+  "What every helper's redaction must do, whatever its language: for each case, `text` joined becomes `expected` joined, where {redacted} stands for redactors.json's `placeholder`.",
   "Texts are split into fragments so that no line of this file holds anything shaped like a real key; the bodies are made up.",
-  "`lineCases` are for redacting several texts together, each keeping its share. A line is one or more texts that follow one another with nothing between (the text before the caret, the selection, the text after it); the lines are redacted as the one text they make, a line break between them. Of a match, what its replacement starts with as the match does stays in the texts that held it. The rest of the replacement, up to what it ends with as the match does, goes to the text the rest of the match began in; every later boundary between texts in the match lands before that kept end, so a text wholly inside the secret comes back empty. The two kept parts never overlap."
+  "`lineCases` are for redacting several texts together, each keeping its share. A line is one or more texts that follow one another with nothing between (the text before the caret, the selection, the text after it); the lines are redacted as the one text they make, a line break between them. Every redactor looks at the lines' one text as read; what a match's replacement copies around the placeholder at the match's ends stays in the texts that held it, and the rest goes. One placeholder stands for each run of matches that overlap or meet, in the text holding the first character the run took; a text wholly inside a run comes back empty, and a line break between texts stays."
  ],
  "cases": [
   {
@@ -10,7 +10,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -22,7 +23,8 @@
     "export KEY ",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -36,7 +38,8 @@
    "text": [
     "sk",
     "-proj-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -48,7 +51,8 @@
     "export KEY ",
     "sk",
     "-proj-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -62,7 +66,8 @@
    "text": [
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -74,7 +79,8 @@
     "export KEY ",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -88,7 +94,8 @@
    "text": [
     "rk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -100,7 +107,8 @@
     "export KEY ",
     "rk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -114,7 +122,8 @@
    "text": [
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -126,7 +135,8 @@
     "export KEY ",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -140,7 +150,9 @@
    "text": [
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8"
    ],
    "expected": [
     "{redacted}"
@@ -152,7 +164,9 @@
     "export KEY ",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -166,7 +180,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -178,7 +193,8 @@
     "export KEY ",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -192,7 +208,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -204,7 +221,8 @@
     "export KEY ",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -244,7 +262,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "{redacted}"
@@ -256,7 +276,9 @@
     "export KEY ",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -270,7 +292,8 @@
    "text": [
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -282,7 +305,8 @@
     "export KEY ",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -296,7 +320,9 @@
    "text": [
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8"
    ],
    "expected": [
     "{redacted}"
@@ -308,7 +334,9 @@
     "export KEY ",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -322,7 +350,8 @@
    "text": [
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -334,7 +363,8 @@
     "export KEY ",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -354,7 +384,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "{redacted}"
@@ -372,7 +404,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
     " # for the build\nnext line"
    ],
    "expected": [
@@ -388,7 +422,14 @@
     "-----BEGIN OPENSSH ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0\na1B2c3D",
+    "4e5F6g7H8i9J",
+    "0k1L2m3N4o5P",
+    "6q7R8s9T0\na1",
+    "B2c3D4e5F6==",
     "\n",
     "-----END OPENSSH ",
     "PRIVATE KEY-----",
@@ -407,7 +448,14 @@
     "-----BEGIN RSA ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6=="
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0\na1B2c3D",
+    "4e5F6g7H8i9J",
+    "0k1L2m3N4o5P",
+    "6q7R8s9T0\na1",
+    "B2c3D4e5F6=="
    ],
    "expected": [
     "before\n",
@@ -420,7 +468,14 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0\na1B2c3D",
+    "4e5F6g7H8i9J",
+    "0k1L2m3N4o5P",
+    "6q7R8s9T0\na1",
+    "B2c3D4e5F6==",
     "\n",
     "-----END ",
     "PRIVATE KEY-----"
@@ -433,7 +488,9 @@
    "name": "a bearer token goes, the word stays",
    "text": [
     "Authorization: Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6"
    ],
    "expected": [
     "Authorization: Bearer ",
@@ -444,7 +501,9 @@
    "name": "a bearer token in lower case",
    "text": [
     "authorization: bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpx"
    ],
    "expected": [
     "authorization: bearer ",
@@ -728,11 +787,14 @@
     "A ",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     " and B ",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
     ", password=",
     "hunter22",
     " end"
@@ -791,27 +853,28 @@
    "text": [
     "SK",
     "_LIVE_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "SK",
     "_LIVE_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a payment key begun inside a word stays",
+   "name": "a payment key begun inside a word goes",
    "text": [
     "x",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -843,27 +906,28 @@
    "text": [
     "WH",
     "SEC_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "WH",
     "SEC_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a webhook secret begun inside a word stays",
+   "name": "a webhook secret begun inside a word goes",
    "text": [
     "x",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -895,27 +959,28 @@
    "text": [
     "GH",
     "P_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "GH",
     "P_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a GitHub token begun inside a word stays",
+   "name": "a GitHub token begun inside a word goes",
    "text": [
     "x",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -947,27 +1012,28 @@
    "text": [
     "GITHUB",
     "_PAT_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "GITHUB",
     "_PAT_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a GitHub fine-grained token begun inside a word stays",
+   "name": "a GitHub fine-grained token begun inside a word goes",
    "text": [
     "x",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -999,27 +1065,28 @@
    "text": [
     "GL",
     "PAT-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "GL",
     "PAT-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a GitLab token begun inside a word stays",
+   "name": "a GitLab token begun inside a word goes",
    "text": [
     "x",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1051,27 +1118,28 @@
    "text": [
     "XO",
     "XB-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "XO",
     "XB-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a Slack token begun inside a word stays",
+   "name": "a Slack token begun inside a word goes",
    "text": [
     "x",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1103,27 +1171,28 @@
    "text": [
     "NP",
     "M_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "NP",
     "M_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "an npm token begun inside a word stays",
+   "name": "an npm token begun inside a word goes",
    "text": [
     "x",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1155,27 +1224,28 @@
    "text": [
     "H",
     "F_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "H",
     "F_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a Hugging Face token begun inside a word stays",
+   "name": "a Hugging Face token begun inside a word goes",
    "text": [
     "x",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1183,12 +1253,14 @@
    "text": [
     "SK",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "SK",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1197,13 +1269,15 @@
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1212,13 +1286,15 @@
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1227,7 +1303,8 @@
     "key:",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "key:",
@@ -1260,11 +1337,13 @@
    "name": "the word bearer ending another word stays",
    "text": [
     "xBearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "xBearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -1281,16 +1360,15 @@
    ]
   },
   {
-   "name": "an AWS access key id one character long stays",
+   "name": "an AWS access key id one character long goes, the character after it stays",
    "text": [
     "AK",
     "IA",
     "ABCDEFGHIJKLMNOPQ"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOPQ"
+    "{redacted}",
+    "Q"
    ]
   },
   {
@@ -1318,7 +1396,7 @@
    ]
   },
   {
-   "name": "an AWS access key id begun inside a word stays",
+   "name": "an AWS access key id begun inside a word goes",
    "text": [
     "X",
     "AK",
@@ -1327,9 +1405,7 @@
    ],
    "expected": [
     "X",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
@@ -1337,25 +1413,30 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqx"
    ],
    "expected": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqx"
    ]
   },
   {
-   "name": "a Google API key one character long stays",
+   "name": "a Google API key one character long goes, the character after it stays",
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "m3N4o5P6q7Rs"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
+    "{redacted}",
+    "s"
    ]
   },
   {
@@ -1363,27 +1444,31 @@
    "text": [
     "ai",
     "ZA",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "ai",
     "ZA",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ]
   },
   {
-   "name": "a Google API key begun inside a word stays",
+   "name": "a Google API key begun inside a word goes",
    "text": [
     "x",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "x",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
@@ -1391,28 +1476,32 @@
    "text": [
     "EY",
     "J",
-    "a1B2c3D4e5F6",
+    "axbxcxdxexfx",
     ".",
     "EY",
     "J",
-    "a1B2c3D4e5F6g7H8i9J0",
+    "axbxcxdxexfxgxhxixjx",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxox"
    ],
    "expected": [
     "EY",
     "J",
-    "a1B2c3D4e5F6",
+    "axbxcxdxexfx",
     ".",
     "EY",
     "J",
-    "a1B2c3D4e5F6g7H8i9J0",
+    "axbxcxdxexfxgxhxixjx",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxox"
    ]
   },
   {
-   "name": "a JSON web token begun inside a word stays",
+   "name": "a JSON web token begun inside a word goes",
    "text": [
     "x",
     "ey",
@@ -1423,19 +1512,13 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "x",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
@@ -1465,13 +1548,19 @@
     "-----begin ",
     "private key-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxrx",
+    "sxtx"
    ],
    "expected": [
     "-----begin ",
     "private key-----",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxrx",
+    "sxtx"
    ]
   },
   {
@@ -1479,7 +1568,8 @@
    "text": [
     "pk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1490,7 +1580,8 @@
    "text": [
     "pk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1501,7 +1592,8 @@
    "text": [
     "sk",
     "_test_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1512,7 +1604,8 @@
    "text": [
     "rk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1523,7 +1616,8 @@
    "text": [
     "gh",
     "o_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1534,7 +1628,8 @@
    "text": [
     "gh",
     "u_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1545,7 +1640,8 @@
    "text": [
     "gh",
     "s_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1556,7 +1652,8 @@
    "text": [
     "gh",
     "r_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1567,7 +1664,8 @@
    "text": [
     "xo",
     "xa-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1578,7 +1676,8 @@
    "text": [
     "xo",
     "xe-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1589,7 +1688,8 @@
    "text": [
     "xo",
     "xp-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1600,7 +1700,8 @@
    "text": [
     "xo",
     "xr-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1611,7 +1712,8 @@
    "text": [
     "xo",
     "xs-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "{redacted}"
@@ -1799,7 +1901,8 @@
     "は",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "です"
    ],
    "expected": [
@@ -1814,7 +1917,8 @@
     "키",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "키",
@@ -1827,7 +1931,8 @@
     "clé",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "clé",
@@ -1866,7 +1971,8 @@
     "キーは",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "キーは",
@@ -1877,7 +1983,8 @@
    "name": "a bearer token after Japanese goes",
    "text": [
     "認証はBearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "認証はBearer ",
@@ -1909,7 +2016,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "トークンは",
@@ -1920,7 +2029,8 @@
    "name": "a bearer token after a no-break space goes",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "Bearer ",
@@ -1983,7 +2093,10 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2+c3D4/e5F6+g7H8/i9J0\nk1L2+m3N4/o5P6==",
+    "a1B2+c3D4/e5",
+    "F6+g7H8/i9J0",
+    "\nk1L2+m3N4/o",
+    "5P6==",
     "\n",
     "-----END ",
     "PRIVATE KEY-----",
@@ -2005,7 +2118,7 @@
    ],
    "expected": [
     "{redacted}",
-    "(copied)"
+    "\n(copied)"
    ]
   },
   {
@@ -2014,7 +2127,10 @@
     "-----BEGIN PGP ",
     "PRIVATE KEY BLOCK-----",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n=a1B2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6\n=a1",
+    "B2",
     "\n",
     "-----END PGP ",
     "PRIVATE KEY BLOCK-----"
@@ -2026,10 +2142,22 @@
   {
    "name": "a public-key block stays",
    "text": [
-    "-----BEGIN PUBLIC KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n-----END PUBLIC KEY-----"
+    "-----BEGIN P",
+    "UBLIC KEY---",
+    "--\na1b2c3d4e",
+    "efeaebecedee",
+    "1f2a3b4c5d6\n",
+    "-----END PUB",
+    "LIC KEY-----"
    ],
    "expected": [
-    "-----BEGIN PUBLIC KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n-----END PUBLIC KEY-----"
+    "-----BEGIN P",
+    "UBLIC KEY---",
+    "--\na1b2c3d4e",
+    "efeaebecedee",
+    "1f2a3b4c5d6\n",
+    "-----END PUB",
+    "LIC KEY-----"
    ]
   },
   {
@@ -2182,7 +2310,8 @@
     "KEY=",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2195,7 +2324,8 @@
     "\"",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2210,7 +2340,8 @@
     "KEY=",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2223,7 +2354,8 @@
     "\"",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2238,7 +2370,8 @@
     "KEY=",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2251,7 +2384,8 @@
     "\"",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2266,7 +2400,8 @@
     "KEY=",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2279,7 +2414,8 @@
     "\"",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2294,7 +2430,8 @@
     "KEY=",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2307,7 +2444,8 @@
     "\"",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2322,7 +2460,8 @@
     "KEY=",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2335,7 +2474,8 @@
     "\"",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2350,7 +2490,8 @@
     "KEY=",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2363,7 +2504,8 @@
     "\"",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2378,7 +2520,8 @@
     "KEY=",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "KEY=",
@@ -2391,7 +2534,8 @@
     "\"",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "\""
    ],
    "expected": [
@@ -2412,7 +2556,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "KEY=",
@@ -2431,7 +2577,9 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
     "\""
    ],
    "expected": [
@@ -2487,7 +2635,9 @@
     "KEY=",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "KEY=",
@@ -2500,7 +2650,9 @@
     "\"",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     "\""
    ],
    "expected": [
@@ -2514,7 +2666,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     "."
    ],
    "expected": [
@@ -2523,22 +2677,22 @@
    ]
   },
   {
-   "name": "a Google API key followed by a hyphen and more stays",
+   "name": "a Google API key followed by a hyphen and more goes, what follows stays",
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr",
     "-x"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "-x"
    ]
   },
   {
-   "name": "an AWS access key id followed by an underscore stays",
+   "name": "an AWS access key id followed by an underscore goes, what follows stays",
    "text": [
     "AK",
     "IA",
@@ -2546,9 +2700,7 @@
     "_x"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP",
+    "{redacted}",
     "_x"
    ]
   },
@@ -2589,7 +2741,8 @@
     "😀 key ",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "😀 key ",
@@ -2615,13 +2768,15 @@
     "X",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "X",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2630,13 +2785,15 @@
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "x",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2645,13 +2802,15 @@
     "7",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -2660,497 +2819,467 @@
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "_",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a payment key straight after a capital stays",
+   "name": "a payment key straight after a capital goes",
    "text": [
     "X",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a payment key straight after a small letter stays",
+   "name": "a payment key straight after a small letter goes",
    "text": [
     "x",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a payment key straight after a digit stays",
+   "name": "a payment key straight after a digit goes",
    "text": [
     "7",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "7",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a payment key straight after an underscore stays",
+   "name": "a payment key straight after an underscore goes",
    "text": [
     "_",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after a capital stays",
+   "name": "a webhook secret straight after a capital goes",
    "text": [
     "X",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after a small letter stays",
+   "name": "a webhook secret straight after a small letter goes",
    "text": [
     "x",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after a digit stays",
+   "name": "a webhook secret straight after a digit goes",
    "text": [
     "7",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after an underscore stays",
+   "name": "a webhook secret straight after an underscore goes",
    "text": [
     "_",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after a capital stays",
+   "name": "a GitHub token straight after a capital goes",
    "text": [
     "X",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after a small letter stays",
+   "name": "a GitHub token straight after a small letter goes",
    "text": [
     "x",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after a digit stays",
+   "name": "a GitHub token straight after a digit goes",
    "text": [
     "7",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after an underscore stays",
+   "name": "a GitHub token straight after an underscore goes",
    "text": [
     "_",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after a capital stays",
+   "name": "a GitHub fine-grained token straight after a capital goes",
    "text": [
     "X",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after a small letter stays",
+   "name": "a GitHub fine-grained token straight after a small letter goes",
    "text": [
     "x",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after a digit stays",
+   "name": "a GitHub fine-grained token straight after a digit goes",
    "text": [
     "7",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "7",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after an underscore stays",
+   "name": "a GitHub fine-grained token straight after an underscore goes",
    "text": [
     "_",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after a capital stays",
+   "name": "a GitLab token straight after a capital goes",
    "text": [
     "X",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after a small letter stays",
+   "name": "a GitLab token straight after a small letter goes",
    "text": [
     "x",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after a digit stays",
+   "name": "a GitLab token straight after a digit goes",
    "text": [
     "7",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after an underscore stays",
+   "name": "a GitLab token straight after an underscore goes",
    "text": [
     "_",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after a capital stays",
+   "name": "a Slack token straight after a capital goes",
    "text": [
     "X",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after a small letter stays",
+   "name": "a Slack token straight after a small letter goes",
    "text": [
     "x",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after a digit stays",
+   "name": "a Slack token straight after a digit goes",
    "text": [
     "7",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after an underscore stays",
+   "name": "a Slack token straight after an underscore goes",
    "text": [
     "_",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after a capital stays",
+   "name": "an npm token straight after a capital goes",
    "text": [
     "X",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "X",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after a small letter stays",
+   "name": "an npm token straight after a small letter goes",
    "text": [
     "x",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after a digit stays",
+   "name": "an npm token straight after a digit goes",
    "text": [
     "7",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after an underscore stays",
+   "name": "an npm token straight after an underscore goes",
    "text": [
     "_",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after a capital stays",
+   "name": "a Hugging Face token straight after a capital goes",
    "text": [
     "X",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "X",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after a small letter stays",
+   "name": "a Hugging Face token straight after a small letter goes",
    "text": [
     "x",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "x",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after a digit stays",
+   "name": "a Hugging Face token straight after a digit goes",
    "text": [
     "7",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after an underscore stays",
+   "name": "a Hugging Face token straight after an underscore goes",
    "text": [
     "_",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "_",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after a capital stays",
+   "name": "an AWS access key id straight after a capital goes",
    "text": [
     "X",
     "AK",
@@ -3159,13 +3288,11 @@
    ],
    "expected": [
     "X",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after a small letter stays",
+   "name": "an AWS access key id straight after a small letter goes",
    "text": [
     "x",
     "AK",
@@ -3174,13 +3301,11 @@
    ],
    "expected": [
     "x",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after a digit stays",
+   "name": "an AWS access key id straight after a digit goes",
    "text": [
     "7",
     "AK",
@@ -3189,13 +3314,11 @@
    ],
    "expected": [
     "7",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after an underscore stays",
+   "name": "an AWS access key id straight after an underscore goes",
    "text": [
     "_",
     "AK",
@@ -3204,73 +3327,71 @@
    ],
    "expected": [
     "_",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after a capital stays",
+   "name": "a Google API key straight after a capital goes",
    "text": [
     "X",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "X",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after a small letter stays",
+   "name": "a Google API key straight after a small letter goes",
    "text": [
     "x",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "x",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after a digit stays",
+   "name": "a Google API key straight after a digit goes",
    "text": [
     "7",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
    ],
    "expected": [
     "7",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after an underscore stays",
+   "name": "a Google API key straight after an underscore goes",
    "text": [
     "_",
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
    ],
    "expected": [
     "_",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after a capital stays",
+   "name": "a JSON web token straight after a capital goes",
    "text": [
     "X",
     "ey",
@@ -3281,23 +3402,17 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "X",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after a small letter stays",
+   "name": "a JSON web token straight after a small letter goes",
    "text": [
     "x",
     "ey",
@@ -3308,23 +3423,17 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "x",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after a digit stays",
+   "name": "a JSON web token straight after a digit goes",
    "text": [
     "7",
     "ey",
@@ -3335,23 +3444,17 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "7",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after an underscore stays",
+   "name": "a JSON web token straight after an underscore goes",
    "text": [
     "_",
     "ey",
@@ -3362,19 +3465,13 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "_",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
@@ -3382,12 +3479,14 @@
    "text": [
     "X",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "X",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3395,12 +3494,14 @@
    "text": [
     "x",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "x",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3408,12 +3509,14 @@
    "text": [
     "7",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "7",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
@@ -3421,16 +3524,18 @@
    "text": [
     "_",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ],
    "expected": [
     "_",
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx"
    ]
   },
   {
-   "name": "a JSON web token straight after a hyphen stays",
+   "name": "a JSON web token straight after a hyphen goes",
    "text": [
     "-",
     "ey",
@@ -3441,19 +3546,13 @@
     "J",
     "a1B2c3D4e5F6g7H8i9J0",
     ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
    ],
    "expected": [
     "-",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
@@ -3481,7 +3580,8 @@
     "-----BEGIN ",
     "PRIVATE KEY-----",
     "\n",
-    "a1B2+c3D4/e5F6+g7H8/i9J0"
+    "a1B2+c3D4/e5",
+    "F6+g7H8/i9J0"
    ],
    "expected": [
     "{redacted}"
@@ -3581,7 +3681,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4_e5F6g7H8-i9J0k1L2m3N4o5P6q"
+    "a1B2c3D4_e5F",
+    "6g7H8-i9J0k1",
+    "L2m3N4o5P6q"
    ],
    "expected": [
     "{redacted}"
@@ -3599,7 +3701,7 @@
    ]
   },
   {
-   "name": "an AWS access key id followed by a small letter stays",
+   "name": "an AWS access key id followed by a small letter goes, what follows stays",
    "text": [
     "AK",
     "IA",
@@ -3607,14 +3709,12 @@
     "x"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP",
+    "{redacted}",
     "x"
    ]
   },
   {
-   "name": "an AWS access key id followed by a digit stays",
+   "name": "an AWS access key id followed by a digit goes, what follows stays",
    "text": [
     "AK",
     "IA",
@@ -3622,54 +3722,52 @@
     "P7x"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNO",
-    "P7x"
+    "{redacted}",
+    "7x"
    ]
   },
   {
-   "name": "a Google API key followed by a capital stays",
+   "name": "a Google API key followed by a capital goes, what follows stays",
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr",
     "X"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "X"
    ]
   },
   {
-   "name": "a Google API key followed by a digit stays",
+   "name": "a Google API key followed by a digit goes, what follows stays",
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr",
     "7"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "7"
    ]
   },
   {
-   "name": "a Google API key followed by an underscore stays",
+   "name": "a Google API key followed by an underscore goes, what follows stays",
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     "_"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "_"
    ]
   },
@@ -3829,10 +3927,7 @@
    ],
    "expected": [
     "{redacted}",
-    "-----END ",
-    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
-    "PRIVATE KEY",
-    "-----"
+    "\n-----END ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 PRIVATE KEY-----"
    ]
   },
   {
@@ -3849,17 +3944,15 @@
    ],
    "expected": [
     "{redacted}",
-    "-----END ",
-    "PRIVATE KEY",
-    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
-    "-----"
+    "\n-----END PRIVATE KEY BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH-----"
    ]
   },
   {
    "name": "the word Bearer and its token two spaces apart",
    "text": [
     "Bearer  ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "Bearer  ",
@@ -3870,7 +3963,8 @@
    "name": "the word Bearer and its token on two lines ended by a carriage return",
    "text": [
     "Authorization: Bearer\r\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "Authorization: Bearer\r\n",
@@ -3893,7 +3987,8 @@
     "hunter/",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
     "password=",
@@ -4007,7 +4102,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ":next"
    ],
    "expected": [
@@ -4020,7 +4116,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ";next"
    ],
    "expected": [
@@ -4033,7 +4130,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "@next"
    ],
    "expected": [
@@ -4046,7 +4144,8 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "^next"
    ],
    "expected": [
@@ -4059,7 +4158,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ":next"
    ],
    "expected": [
@@ -4072,7 +4172,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ";next"
    ],
    "expected": [
@@ -4085,7 +4186,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "@next"
    ],
    "expected": [
@@ -4098,7 +4200,8 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "^next"
    ],
    "expected": [
@@ -4111,7 +4214,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ":next"
    ],
    "expected": [
@@ -4124,7 +4228,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     ";next"
    ],
    "expected": [
@@ -4137,7 +4242,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "@next"
    ],
    "expected": [
@@ -4150,7 +4256,8 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
     "^next"
    ],
    "expected": [
@@ -4178,7 +4285,7 @@
    ]
   },
   {
-   "name": "a JSON web token whose first part holds a colon is none",
+   "name": "a JSON web token whose first part holds a colon loses its last two parts, as a token glued to another leaves them",
    "text": [
     "ey",
     "J",
@@ -4191,15 +4298,8 @@
     "g7H8i9J0"
    ],
    "expected": [
-    "ey",
-    "J",
-    "a1:B2c3",
-    ".",
-    "ey",
-    "J",
-    "d4E5f6",
-    ".",
-    "g7H8i9J0"
+    "eyJa1:B2c3",
+    "{redacted}"
    ]
   },
   {
@@ -4253,7 +4353,7 @@
    ]
   },
   {
-   "name": "a JSON web token with an empty first part is none",
+   "name": "a JSON web token with an empty first part loses its last two parts",
    "text": [
     "ey",
     "J",
@@ -4265,14 +4365,8 @@
     "g7H8i9J0"
    ],
    "expected": [
-    "ey",
-    "J",
-    ".",
-    "ey",
-    "J",
-    "d4E5f6",
-    ".",
-    "g7H8i9J0"
+    "eyJ",
+    "{redacted}"
    ]
   },
   {
@@ -4322,7 +4416,7 @@
    ]
   },
   {
-   "name": "a JSON web token whose first part starts otherwise is none",
+   "name": "a JSON web token whose first part starts otherwise loses its last two parts",
    "text": [
     "ey",
     "a1B2c3",
@@ -4334,14 +4428,8 @@
     "g7H8i9J0"
    ],
    "expected": [
-    "ey",
-    "a1B2c3",
-    ".",
-    "ey",
-    "J",
-    "d4E5f6",
-    ".",
-    "g7H8i9J0"
+    "eya1B2c3",
+    "{redacted}"
    ]
   },
   {
@@ -4385,7 +4473,9 @@
    "text": [
     "AI",
     "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R",
     ":next"
    ],
    "expected": [
@@ -4419,7 +4509,9 @@
    "name": "a bearer token holding . past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2.m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    ".m3N4",
     " next"
    ],
    "expected": [
@@ -4432,7 +4524,9 @@
    "name": "a bearer token holding _ past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4445,7 +4539,9 @@
    "name": "a bearer token holding ~ past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2~m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "~m3N4",
     " next"
    ],
    "expected": [
@@ -4458,7 +4554,9 @@
    "name": "a bearer token holding + past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2+m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "+m3N4",
     " next"
    ],
    "expected": [
@@ -4471,7 +4569,9 @@
    "name": "a bearer token holding / past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2/m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "/m3N4",
     " next"
    ],
    "expected": [
@@ -4484,7 +4584,9 @@
    "name": "a bearer token holding = past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2=m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "=m3N4",
     " next"
    ],
    "expected": [
@@ -4497,7 +4599,9 @@
    "name": "a bearer token holding - past its sixteenth character goes whole",
    "text": [
     "Bearer ",
-    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "-m3N4",
     " next"
    ],
    "expected": [
@@ -4550,7 +4654,9 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4563,7 +4669,9 @@
    "text": [
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "-m3N4",
     " next"
    ],
    "expected": [
@@ -4576,7 +4684,9 @@
    "text": [
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4589,7 +4699,9 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "_m3N4",
     " next"
    ],
    "expected": [
@@ -4602,7 +4714,9 @@
    "text": [
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "-m3N4",
     " next"
    ],
    "expected": [
@@ -4722,10 +4836,10 @@
     "\n",
     "sk",
     "-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4739,10 +4853,10 @@
     "\n",
     "gh",
     "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4765,7 +4879,6 @@
     "a1B2c3D4e5F6g7H8i9J0"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4779,10 +4892,10 @@
     "\n",
     "h",
     "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4796,10 +4909,10 @@
     "\n",
     "np",
     "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4813,10 +4926,10 @@
     "\n",
     "gl",
     "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4830,10 +4943,10 @@
     "\n",
     "wh",
     "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4847,10 +4960,10 @@
     "\n",
     "sk",
     "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4864,10 +4977,10 @@
     "\n",
     "xo",
     "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -4881,10 +4994,10 @@
     "\n",
     "github",
     "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
    ],
    "expected": [
-    "{redacted}",
     "{redacted}"
    ]
   },
@@ -5043,11 +5156,19 @@
   {
    "name": "a text that starts inside a key's body, through its end line",
    "text": [
-    "e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "e5F6g7H8i9J0",
+    "k1L2m3N4o5P6",
+    "q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -5065,11 +5186,20 @@
    "text": [
     "k1L2m3N4o5P6q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "{redacted}"
@@ -5078,24 +5208,42 @@
   {
    "name": "a text that starts with one long base64 line keeps it",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nThe report follows."
    ],
    "expected": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nThe report follows."
    ]
   },
   {
    "name": "a key's body after a page number, through its end line, goes",
    "text": [
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n1\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -5112,22 +5260,31 @@
    "name": "a key's body before and after a page footer goes, through its end line",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nPage 1 of 2\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "-----END ",
     "PRIVATE KEY-----",
     " after"
    ],
    "expected": [
-    "Server notes\n",
-    "{redacted}",
-    "\nPage 1 of 2\n",
     "{redacted}",
     " after"
    ]
@@ -5136,9 +5293,15 @@
    "name": "a key's body without its header line, after other text, goes through its end line",
    "text": [
     "Appendix: server key\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "a1B2c3D4e5F6==",
     "\n",
@@ -5146,7 +5309,6 @@
     "PRIVATE KEY-----"
    ],
    "expected": [
-    "Appendix: server key\n",
     "{redacted}"
    ]
   },
@@ -5161,7 +5323,6 @@
     "\nafter"
    ],
    "expected": [
-    "Page 2\n",
     "{redacted}",
     "\nafter"
    ]
@@ -5170,30 +5331,34 @@
    "name": "a key's body without its header line, across a page break, goes through its end line",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n\n",
     "-----END ",
     "PRIVATE KEY-----",
     "\nafter"
    ],
    "expected": [
-    "Server notes\n",
     "{redacted}",
     "\nafter"
    ]
   },
   {
-   "name": "an end line alone is no key's body",
+   "name": "an end line alone takes the text before it back to the start",
    "text": [
     "The file ends with -----END ",
     "PRIVATE KEY-----",
     "."
    ],
    "expected": [
-    "The file ends with -----END ",
-    "PRIVATE KEY-----",
+    "{redacted}",
     "."
    ]
   },
@@ -5201,18 +5366,24 @@
    "name": "base64 lines before an end line in lower case are no key's body",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\n",
-    "a1B2c3D4e5F6==",
+    "a1b2c3d4e5f6==",
     "\n",
     "-----end ",
     "private key-----"
    ],
    "expected": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\n",
-    "a1B2c3D4e5F6==",
+    "a1b2c3d4e5f6==",
     "\n",
     "-----end ",
     "private key-----"
@@ -5222,9 +5393,15 @@
    "name": "base64 lines after the start of a text go too, as a key's body would",
    "text": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Server notes\n",
@@ -5236,9 +5413,15 @@
    "text": [
     "k1L2m3N4o5P6q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
     "-----end ",
     "private key-----"
@@ -5253,49 +5436,4862 @@
    "name": "a page in the middle of a printed key, between a running header and a footer, goes",
    "text": [
     "Confidential.\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nPage 2 of 3.\n\nConfidential.\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
    ],
    "expected": [
     "Confidential.\n",
     "{redacted}",
-    "\nPage 2 of 3.\n\nConfidential.\n",
+    " 2 of 3.\n\nConfidential.\n",
     "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body beside a label on its first line goes, its first line too",
+   "text": [
+    "Key: ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\nend"
+   ],
+   "expected": [
+    "Key: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body beside a label after a tab goes, its first line too",
+   "text": [
+    "Key:\t",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
+   ],
+   "expected": [
+    "Key:\t",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body beside a label on its first line goes through its end line",
+   "text": [
+    "Key: ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "one long line of base64 beside a label stays",
+   "text": [
+    "Checksum: ",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
+    "\nend"
+   ],
+   "expected": [
+    "Checksum: ",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
+    "\nend"
+   ]
+  },
+  {
+   "name": "a key's body whose lines are separated by U+2029, as a Qt editor gives its paragraphs goes",
+   "text": [
+    "Notes:\u2029",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2029",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2029end"
+   ],
+   "expected": [
+    "Notes:\u2029",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body whose lines are separated by U+2028 goes",
+   "text": [
+    "Notes:\u2028",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2028",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2028end"
+   ],
+   "expected": [
+    "Notes:\u2028",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body whose lines are separated by a carriage return alone goes",
+   "text": [
+    "Notes:\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\rend"
+   ],
+   "expected": [
+    "Notes:\r",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body separated by U+2029 goes through its end line",
+   "text": [
+    "Notes:\u2029",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2029",
+    "a1B2c3D4e5F6==",
+    "\u2029",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text that starts inside a key's body separated by U+2029 goes",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0",
+    "\u2029",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2029",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2029- end"
+   ],
+   "expected": [
+    "{redacted}",
+    "\u2029- end"
    ]
   },
   {
    "name": "a list of long hashes goes, as a key's body would",
    "text": [
     "Checksums:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
     "\nend of list"
    ],
    "expected": [
     "Checksums:\n",
     "{redacted}",
-    "\nend of list"
+    " of list"
    ]
   },
   {
    "name": "one long line of base64 alone stays",
    "text": [
     "Checksum:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nend"
    ],
    "expected": [
     "Checksum:\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1b2c3d4e5f6",
+    "a7b8c9d0e1f2",
+    "a3b4c5d6e7f8",
+    "a9b0",
     "\nend"
+   ]
+  },
+  {
+   "name": "an AWS access key id glued to the label before it goes",
+   "text": [
+    "Key",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "Key",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id glued to the word after it goes, the word stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "Copy"
+   ],
+   "expected": [
+    "{redacted}",
+    "Copy"
+   ]
+  },
+  {
+   "name": "a Google API key glued to the label before it goes",
+   "text": [
+    "Key",
+    "AI",
+    "za",
+    "axbxcxdxexfx",
+    "gxhxixjxkxlx",
+    "mxnxoxpxqxr"
+   ],
+   "expected": [
+    "Key",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token glued to the label before it goes",
+   "text": [
+    "Token",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Token",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token glued to the word after it goes with it",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "Copy"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a live payment key glued to the label before it goes",
+   "text": [
+    "Key",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Key",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token glued to the label before it goes",
+   "text": [
+    "Token",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Token",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word ending in sk before a hyphenated name stays",
+   "text": [
+    "risk",
+    "-assessment-template-v2"
+   ],
+   "expected": [
+    "risk",
+    "-assessment-template-v2"
+   ]
+  },
+  {
+   "name": "a word ending in bearer before a long word stays",
+   "text": [
+    "The pallbe",
+    "arer responsibilities were shared."
+   ],
+   "expected": [
+    "The pallbe",
+    "arer responsibilities were shared."
+   ]
+  },
+  {
+   "name": "a name ending in a test key's letters before a hash stays",
+   "text": [
+    "benchmark",
+    "_test_",
+    "3f2a9c8b7d6e5f40"
+   ],
+   "expected": [
+    "benchmark",
+    "_test_",
+    "3f2a9c8b7d6e5f40"
+   ]
+  },
+  {
+   "name": "an ordinary all-caps word holding ASIA stays",
+   "text": [
+    "EURASIAN AND MALAYSIAN AIRLINES"
+   ],
+   "expected": [
+    "EURASIAN AND MALAYSIAN AIRLINES"
+   ]
+  },
+  {
+   "name": "an ordinary all-caps run holding ASIA stays",
+   "text": [
+    "PANASIA",
+    "NETWORKS"
+   ],
+   "expected": [
+    "PANASIA",
+    "NETWORKS"
+   ]
+  },
+  {
+   "name": "ordinary words holding a key's letters stay",
+   "text": [
+    "algebraization, the highs_and_lows, xoxo-hugs, npm_install, shelf_life, Freyja"
+   ],
+   "expected": [
+    "algebraization, the highs_and_lows, xoxo-hugs, npm_install, shelf_life, Freyja"
+   ]
+  },
+  {
+   "name": "a code name holding a key's letters stays",
+   "text": [
+    "laughs_",
+    "count = weighs_total + npm_",
+    "config.length"
+   ],
+   "expected": [
+    "laughs_",
+    "count = weighs_total + npm_",
+    "config.length"
+   ]
+  },
+  {
+   "name": "a test key glued to a word stays",
+   "text": [
+    "task",
+    "_test_",
+    "createsRecordWell"
+   ],
+   "expected": [
+    "task",
+    "_test_",
+    "createsRecordWell"
+   ]
+  },
+  {
+   "name": "a private-key block in lower case, header to end line, stays",
+   "text": [
+    "-----begin ",
+    "private key-----\n",
+    "m3N4o5P6",
+    "\n-----end ",
+    "private key-----"
+   ],
+   "expected": [
+    "-----begin ",
+    "private key-----\n",
+    "m3N4o5P6",
+    "\n-----end ",
+    "private key-----"
+   ]
+  },
+  {
+   "name": "a key's last, shorter line goes with its lines",
+   "text": [
+    "Key:\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "Key:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's last line, padded and shorter, goes with its lines, and the line break after it stays",
+   "text": [
+    "Notes:\u2028",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2028",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\u2028",
+    "a1B2==",
+    "\u2028end"
+   ],
+   "expected": [
+    "Notes:\u2028",
+    "{redacted}",
+    "\u2028end"
+   ]
+  },
+  {
+   "name": "a word on its own line after a key's lines goes, as a key's last line may be any word",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\nDone"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a short line after a key's lines that goes on with other text loses its first word",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\nv2 and more"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}",
+    " and more"
+   ]
+  },
+  {
+   "name": "a key's lines on both sides of a short line go together, its line breaks a carriage return alone",
+   "text": [
+    "Notes:\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\r",
+    "a1B2c3",
+    "\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\rend"
+   ],
+   "expected": [
+    "Notes:\r",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body holding a run shaped like a Google key goes whole",
+   "text": [
+    "Key:\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "q7R8s9T0u1",
+    "AI",
+    "za",
+    "b2C3d4E5f6G7",
+    "h8I9j0K1l2M3",
+    "n4O5p6Q7r8S",
+    "9t0U1v2W3x4",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "Key:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key block cut off, holding a run shaped like an AWS key, goes whole",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "q7R8s9T0u1",
+    "AK",
+    "IA",
+    "B2C3D4E5F6G7H8I9",
+    "J0K1L2M3N4O5P6Q7R8S9t0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a whole key block holding a run shaped like a Google key goes whole",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "q7R8s9T0u1",
+    "AI",
+    "za",
+    "b2C3d4E5f6G7",
+    "h8I9j0K1l2M3",
+    "n4O5p6Q7r8S",
+    "9t0U1v2W3x4",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a spaced named value after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a spaced token after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "tok",
+    "en = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "Bea",
+    "rer ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a quoted named value after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "PASS",
+    "WORD = \"",
+    "a1B2c3D4",
+    "e5F6g7H8",
+    "\""
+   ],
+   "expected": [
+    "{redacted}",
+    " \"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a named value with a spaced colon after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "pass",
+    "word : ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " : ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body loses the next line's first word, a named value's name, and the value goes too",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key body after a word loses the next line's first word, a named value's name, and the value goes too",
+   "text": [
+    "notes\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token after a key body the text starts inside is still redacted",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a key body the text starts inside is still redacted",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google key holding a dash after a key body the text starts inside is still redacted",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "AI",
+    "za",
+    "SyA1b2C3d4E5",
+    "f6G7h8I9j0K1",
+    "l2M3n4-O5p6"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key body the text starts inside, with a short padded last line, goes whole",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "AbC1dE2fG3=="
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value after a key body's short last line keeps its name",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "AbC1dE2fG3==",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    "\npass",
+    "word = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two keys glued together, with no edge between them, leave one marker",
+   "text": [
+    "see ",
+    "AK",
+    "IA",
+    "B2C3D4E5F6G7H8I9",
+    "AI",
+    "za",
+    "SyA1b2C3d4E5",
+    "f6G7h8I9j0K1",
+    "l2M3n4-O5p6",
+    " ok"
+   ],
+   "expected": [
+    "see ",
+    "{redacted}",
+    " ok"
+   ]
+  },
+  {
+   "name": "a key cut off in an escaped JSON value goes whole, its body one word",
+   "text": [
+    "\"private_key\": \"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\\n",
+    "a1B2c3D4e5F6",
+    "\\n\","
+   ],
+   "expected": [
+    "\"private_key\": \"",
+    "{redacted}",
+    "\","
+   ]
+  },
+  {
+   "name": "a key cut off in an escaped JSON value with an ellipsis goes whole",
+   "text": [
+    "\"private_key\": \"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
+    "…"
+   ],
+   "expected": [
+    "\"private_key\": \"",
+    "{redacted}",
+    "…"
+   ]
+  },
+  {
+   "name": "a key cut off after its first line, the line touching an ellipsis, goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "…"
+   ],
+   "expected": [
+    "{redacted}",
+    "…"
+   ]
+  },
+  {
+   "name": "a key flattened onto one line and cut off goes whole",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "…"
+   ],
+   "expected": [
+    "{redacted}",
+    "…"
+   ]
+  },
+  {
+   "name": "a key cut off in a preview that runs its lines together goes",
+   "text": [
+    "Alice — ",
+    "-----BEGIN EC ",
+    "PRIVATE KEY-----",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "…"
+   ],
+   "expected": [
+    "Alice — ",
+    "{redacted}",
+    "…"
+   ]
+  },
+  {
+   "name": "a key cut off with its last line touching a closing quote goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "\""
+   ],
+   "expected": [
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a text starting inside a key body loses its last line touching a closing quote",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "\"\"\""
+   ],
+   "expected": [
+    "{redacted}",
+    "\"\"\""
+   ]
+  },
+  {
+   "name": "a text starting inside a key body loses its last line of capitals alone",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "ABCDEFGH"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's lines after a label lose their last line of capitals alone",
+   "text": [
+    "Notes:\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "ABCDEFGH"
+   ],
+   "expected": [
+    "Notes:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's lines inside quotes lose their last line touching the closing quotes",
+   "text": [
+    "KEY = \"\"\"\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6",
+    "\n",
+    "a1B2c3D4e5F6",
+    "\"\"\""
+   ],
+   "expected": [
+    "KEY = \"\"\"\n",
+    "{redacted}",
+    "\"\"\""
+   ]
+  },
+  {
+   "name": "two full lines of a key at the start of a text lose their last line of capitals, and the line after it stays",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "ABCDEFGH",
+    "\nDone and more"
+   ],
+   "expected": [
+    "{redacted}",
+    "\nDone and more"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "ABCD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value running into the next name through a comma leaves no value",
+   "text": [
+    "tok",
+    "en=",
+    "abc123",
+    "def456",
+    ",pass",
+    "word: ",
+    "ghi789",
+    "jkl012",
+    " end"
+   ],
+   "expected": [
+    "tok",
+    "en=",
+    "{redacted}",
+    " ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "a named value running into the next name through a semicolon leaves no value",
+   "text": [
+    "sec",
+    "ret=",
+    "abc123",
+    "def456",
+    ";pw",
+    "d = ",
+    "ghi789",
+    "jkl012"
+   ],
+   "expected": [
+    "sec",
+    "ret=",
+    "{redacted}",
+    " = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value running into the next name with nothing between leaves no value",
+   "text": [
+    "tok",
+    "en=",
+    "abc123",
+    "def456",
+    "api",
+    "_key = ",
+    "ghi789",
+    "jkl012"
+   ],
+   "expected": [
+    "tok",
+    "en=",
+    "{redacted}",
+    " = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "named values joined by & in an address go together",
+   "text": [
+    "https://example.com/cb?tok",
+    "en=",
+    "abc123",
+    "def456",
+    "&pass",
+    "word=",
+    "ghi789",
+    "jkl012"
+   ],
+   "expected": [
+    "https://example.com/cb?tok",
+    "en=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a password holding a secret's name with nothing before it goes whole",
+   "text": [
+    "pass",
+    "word=",
+    "abc123",
+    "def",
+    "tok",
+    "en=",
+    "xyz"
+   ],
+   "expected": [
+    "pass",
+    "word=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two GitHub tokens glued together both go",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "gh",
+    "p_",
+    "k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two npm tokens glued together both go",
+   "text": [
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "np",
+    "m_",
+    "k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two Hugging Face tokens glued together both go",
+   "text": [
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "h",
+    "f_",
+    "k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two webhook secrets glued together both go",
+   "text": [
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "wh",
+    "sec_",
+    "k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two live payment keys glued together both go",
+   "text": [
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "rk",
+    "_live_",
+    "k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two JSON web tokens glued together both go",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0",
+    "ey",
+    "J",
+    "k1L2m3",
+    ".",
+    "ey",
+    "J",
+    "n4O5p6",
+    ".",
+    "q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word between lines of base64 goes with them",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\nDone\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\nend of list"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}",
+    " of list"
+   ]
+  },
+  {
+   "name": "an upper-case password holding a secret's name with nothing before it goes whole",
+   "text": [
+    "PASS",
+    "WORD=",
+    "abc123",
+    "def",
+    "TO",
+    "KEN=",
+    "xyz"
+   ],
+   "expected": [
+    "PASS",
+    "WORD=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an upper-case named value running into the next name through a comma leaves no value",
+   "text": [
+    "TO",
+    "KEN=",
+    "abc123",
+    "def456",
+    ",PASS",
+    "WORD: ",
+    "ghi789",
+    "jkl012",
+    " end"
+   ],
+   "expected": [
+    "TO",
+    "KEN=",
+    "{redacted}",
+    " ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into quotes",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "ABCD\"\"\""
+   ],
+   "expected": [
+    "{redacted}",
+    "\"\"\""
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into a comma",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5==,"
+   ],
+   "expected": [
+    "{redacted}",
+    ","
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into a parenthesis",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n\n",
+    "abc)"
+   ],
+   "expected": [
+    "{redacted}",
+    ")"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are separated by U+2029 keeps the separator before the next line",
+   "text": [
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "a1B2c3D4e5==",
+    " Thanks"
+   ],
+   "expected": [
+    "{redacted}",
+    " Thanks"
+   ]
+  },
+  {
+   "name": "two runs of a key's lines separated by U+2029, the first ending in a line of capitals, both go",
+   "text": [
+    "Notes:",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "ABCDEFGH",
+    " ",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    " ",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    " ",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    " ",
+    "end"
+   ],
+   "expected": [
+    "Notes:\u2029",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two runs of a key's lines separated by U+2028, the first ending in a line of capitals, both go",
+   "text": [
+    "Notes:",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    " ",
+    "ABCDEFGH",
+    " ",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    " ",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    " ",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    " ",
+    "end"
+   ],
+   "expected": [
+    "Notes:\u2028",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two runs of a key's lines separated by a carriage return alone, the first ending in a line of capitals, both go",
+   "text": [
+    "Notes:",
+    "\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\r",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\r",
+    "ABCDEFGH",
+    "\r",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    "\r",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    "\r",
+    "x1Y2z3W4v5U6",
+    "t7S8r9Q0p1O2",
+    "m3N4l5K6j7I8",
+    "h9G0",
+    "\r",
+    "end"
+   ],
+   "expected": [
+    "Notes:\r",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two bearer tokens glued together both go",
+   "text": [
+    "Bea",
+    "rer ",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "Bea",
+    "rer ",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    " end"
+   ],
+   "expected": [
+    "Bea",
+    "rer ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "three bearer tokens glued together all go",
+   "text": [
+    "Bea",
+    "rer ",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "Bea",
+    "rer ",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    "Bea",
+    "rer ",
+    "CCCCCCCCCCCCCCCCCCCCCCCC",
+    " end"
+   ],
+   "expected": [
+    "Bea",
+    "rer ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "two test payment keys glued together both go",
+   "text": [
+    "Keys ",
+    "sk",
+    "_test_",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "sk",
+    "_test_",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    " end"
+   ],
+   "expected": [
+    "Keys ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "a test payment key glued after a live one goes with it",
+   "text": [
+    "Keys ",
+    "sk",
+    "_live_",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "sk",
+    "_test_",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    " end"
+   ],
+   "expected": [
+    "Keys ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "three test payment keys glued together all go",
+   "text": [
+    "Keys ",
+    "rk",
+    "_test_",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "pk",
+    "_test_",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    "sk",
+    "_test_",
+    "CCCCCCCCCCCCCCCCCCCCCCCC",
+    " end"
+   ],
+   "expected": [
+    "Keys ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "a JSON web token straight after a full stop goes whole",
+   "text": [
+    "x.",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
+   ],
+   "expected": [
+    "x",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a sentence with no space goes whole",
+   "text": [
+    "See the docs.",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5",
+    " ok"
+   ],
+   "expected": [
+    "See the docs",
+    "{redacted}",
+    " ok"
+   ]
+  },
+  {
+   "name": "a JSON web token after two dots goes whole",
+   "text": [
+    "..",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
+   ],
+   "expected": [
+    ".",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a near miss shaped like its first part goes whole",
+   "text": [
+    "ey",
+    "Jab.",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id after its own prefix glued before it goes whole",
+   "text": [
+    "AK",
+    "IA",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id after a shorter one glued before it goes whole",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJK",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id after a word ending in its temporary prefix goes whole",
+   "text": [
+    "EUR",
+    "AS",
+    "IA",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    " y"
+   ],
+   "expected": [
+    "EUR",
+    "{redacted}",
+    " y"
+   ]
+  },
+  {
+   "name": "a Google API key after its own prefix glued before it goes whole",
+   "text": [
+    "AI",
+    "za",
+    "ab",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google API key after one a character short glued before it goes whole",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body straight after a label with no space goes, the label stays",
+   "text": [
+    "Key:",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
+   ],
+   "expected": [
+    "Key:",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body straight after a quote goes, the quotes stay",
+   "text": [
+    "\"",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a key's body straight after a no-break space goes",
+   "text": [
+    "Key:\u00a0",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0"
+   ],
+   "expected": [
+    "Key:\u00a0",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's last body line and end line straight after a label with no space go, back to the start of the text",
+   "text": [
+    "Key:",
+    "a1B2c3D4e5F6",
+    "g7H8i9J0k1L2",
+    "m3N4o5P6q7R8",
+    "s9T0",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word with no known prefix goes",
+   "text": [
+    "Use key ",
+    "scCpjrf9TntY",
+    "RTnAhKVDbzxo",
+    "psCdmfJ0",
+    " now"
+   ],
+   "expected": [
+    "Use key ",
+    "{redacted}",
+    " now"
+   ]
+  },
+  {
+   "name": "a random word of the least length goes",
+   "text": [
+    "3sQzFDDdaZwe",
+    "WFevZLHMeuiw"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word one character short of the least length stays",
+   "text": [
+    "1dfVhQZsm5qY",
+    "SkfrZamXgbH"
+   ],
+   "expected": [
+    "1dfVhQZsm5qY",
+    "SkfrZamXgbH"
+   ]
+  },
+  {
+   "name": "a random word of base64 with its padding goes whole",
+   "text": [
+    "2djk3mf3sxP3",
+    "jMLToUfEy7MI",
+    "rcFmIa7HDQpK",
+    "NfKh",
+    "== after"
+   ],
+   "expected": [
+    "{redacted}",
+    " after"
+   ]
+  },
+  {
+   "name": "a random word of URL-safe characters goes",
+   "text": [
+    "id=",
+    "ieSmb4i19BVs",
+    "GAs00tANgrzr",
+    "6UEMqf"
+   ],
+   "expected": [
+    "id=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after a prefix in the wrong case goes, the prefix stays",
+   "text": [
+    "SK",
+    "_LIVE_",
+    "3sQzFDDdaZwe",
+    "WFevZLHMeuiw"
+   ],
+   "expected": [
+    "SK",
+    "_LIVE_",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random part of a path goes, the path's words stay",
+   "text": [
+    "files/",
+    "3sQzFDDdaZwe",
+    "WFevZLHMeuiw",
+    "/report.pdf"
+   ],
+   "expected": [
+    "files/",
+    "{redacted}",
+    "/report.pdf"
+   ]
+  },
+  {
+   "name": "a word of letters with no digit stays",
+   "text": [
+    "iZfsDfZnqmJh",
+    "LlRCCrrnAlqy",
+    "ahkz"
+   ],
+   "expected": [
+    "iZfsDfZnqmJh",
+    "LlRCCrrnAlqy",
+    "ahkz"
+   ]
+  },
+  {
+   "name": "a git commit hash stays",
+   "text": [
+    "commit ",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ],
+   "expected": [
+    "commit ",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ]
+  },
+  {
+   "name": "a hash glued to the word before it stays",
+   "text": [
+    "commit",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ],
+   "expected": [
+    "commit",
+    "89512e0758ee",
+    "26757eac80fe",
+    "1df6fe6a8474",
+    "5ca9"
+   ]
+  },
+  {
+   "name": "a UUID stays",
+   "text": [
+    "89512e07-58e",
+    "e-2675-7eac-",
+    "80fe1df6fe6a"
+   ],
+   "expected": [
+    "89512e07-58e",
+    "e-2675-7eac-",
+    "80fe1df6fe6a"
+   ]
+  },
+  {
+   "name": "a long identifier with digits stays",
+   "text": [
+    "containsAnyKey",
+    "EmptyRfc822Header",
+    "Version2"
+   ],
+   "expected": [
+    "containsAnyKey",
+    "EmptyRfc822Header",
+    "Version2"
+   ]
+  },
+  {
+   "name": "a file path with digits stays",
+   "text": [
+    "src/core/agent/v2/",
+    "connectors/registry2024Generated.ts"
+   ],
+   "expected": [
+    "src/core/agent/v2/",
+    "connectors/registry2024Generated.ts"
+   ]
+  },
+  {
+   "name": "an address with numbered parts stays",
+   "text": [
+    "https://example.com/",
+    "Org/repo-name/issues/186/comments/2024"
+   ],
+   "expected": [
+    "https://example.com/",
+    "Org/repo-name/issues/186/comments/2024"
+   ]
+  },
+  {
+   "name": "a branch name with a date stays",
+   "text": [
+    "agent/release-2026-10-08-",
+    "final-candidate-v3"
+   ],
+   "expected": [
+    "agent/release-2026-10-08-",
+    "final-candidate-v3"
+   ]
+  },
+  {
+   "name": "a package name with its version stays",
+   "text": [
+    "@electron-forge/",
+    "plugin-webpack@7.4.0-beta.12"
+   ],
+   "expected": [
+    "@electron-forge/",
+    "plugin-webpack@7.4.0-beta.12"
+   ]
+  },
+  {
+   "name": "a certificate's end line after text takes nothing, as only a private key's does",
+   "text": [
+    "notes\n",
+    "-----END CERTIFICATE-----",
+    "\nafter"
+   ],
+   "expected": [
+    "notes\n",
+    "-----END CERTIFICATE-----",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a signature's end line after its lines takes nothing, as only a private key's does",
+   "text": [
+    "Signed text\n",
+    "iQEzBAEBCAAd\n",
+    "-----END PGP SIGNATURE-----"
+   ],
+   "expected": [
+    "Signed text\n",
+    "iQEzBAEBCAAd\n",
+    "-----END PGP SIGNATURE-----"
+   ]
+  },
+  {
+   "name": "a certificate's header with no end line takes nothing",
+   "text": [
+    "-----BEGIN CERTIFICATE-----\n",
+    "MIIB"
+   ],
+   "expected": [
+    "-----BEGIN CERTIFICATE-----\n",
+    "MIIB"
+   ]
+  },
+  {
+   "name": "a key's last full line that goes on with other text goes, the text after stays",
+   "text": [
+    "Key ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    " thanks"
+   ],
+   "expected": [
+    "Key ",
+    "{redacted}",
+    " thanks"
+   ]
+  },
+  {
+   "name": "lines of base64 on both sides of a sentence's end go as two runs, as a window may start there, the punctuation stays",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n. ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n. ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two keys cut off one after the other, each after its own header, both go",
+   "text": [
+    "-----BEGIN PRIVATE ",
+    "KEY-----\n",
+    "m3N4o5P6",
+    "q7R8s9T0",
+    "\n-----BEGIN PRIVATE ",
+    "KEY-----\n",
+    "a1B2c3D4",
+    "e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a short line after a key's lines that runs on past its padding goes up to the next character that is neither",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "\nQUJD==",
+    "=QUJD",
+    "QUJD and more"
+   ],
+   "expected": [
+    "{redacted}",
+    " and more"
+   ]
+  },
+ {
+  "name": "a word line after a key's lines, then a line a word as long as a full line starts, goes through that word",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\nab12==\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   " trailing words"
+  ],
+  "expected": [
+   "{redacted}",
+   " trailing words"
+  ]
+ },
+ {
+  "name": "a test payment key glued to a key goes with it, however short",
+  "text": [
+   "sk_live_abcd",
+   "abcdabcdabcd",
+   "abcdsk_test_",
+   "abc12 after"
+  ],
+  "expected": [
+   "{redacted}",
+   " after"
+  ]
+ },
+ {
+  "name": "a publishable test key glued to a test key goes with it, however short",
+  "text": [
+   "pk_test_abcd",
+   "abcdabcdabcd",
+   "abcdpk_test_",
+   "abc12 after"
+  ],
+  "expected": [
+   "{redacted}",
+   " after"
+  ]
+ },
+ {
+  "name": "a key glued right at the end of an access key id goes with it",
+  "text": [
+   "AKIAABCDABCD",
+   "ABCDABCDsk-a",
+   "bcdabcdabcda",
+   "bcdabcd after"
+  ],
+  "expected": [
+   "{redacted}",
+   " after"
+  ]
+ },
+ {
+  "name": "a key header inside another key's header goes from the first header",
+  "text": [
+   "Intro\n-----BEGIN RSA ",
+   "PRIVATE KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----BEGIN ",
+   "PRIVATE KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----END PRIVATE ",
+   "KEY-----\nafter"
+  ],
+  "expected": [
+   "Intro\n",
+   "{redacted}",
+   "\nafter"
+  ]
+ },
+ {
+  "name": "an end line with no header after a whole key goes back to just after that key, the text before both stays",
+  "text": [
+   "Intro text\n-----BEGIN ",
+   "PRIVATE KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----END PRIVATE ",
+   "KEY-----\nmiddle words\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----END PRIVATE ",
+   "KEY-----\nafter"
+  ],
+  "expected": [
+   "Intro text\n",
+   "{redacted}",
+   "\nafter"
+  ]
+ },
+ {
+  "name": "a random-looking word of letters and a plus sign, with no digit, stays (owner, 2026-10-08)",
+  "text": [
+   "x FMfcgzQX+J",
+   "WDsKmPqLbTNR",
+   "VHXwlqBcdFz y"
+  ],
+  "expected": [
+   "x FMfcgzQX+J",
+   "WDsKmPqLbTNR",
+   "VHXwlqBcdFz y"
+  ]
+ },
+ {
+  "name": "full lines that end in two padding characters are a key's lines, and the next line's first word goes",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "==\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "==\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "==\nThe end"
+  ],
+  "expected": [
+   "{redacted}",
+   " end"
+  ]
+ },
+ {
+  "name": "a text's first word stays when the key's first line has a sentence end before its base64",
+  "text": [
+   "QUJD\nSee. ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n(end)"
+  ],
+  "expected": [
+   "QUJD\nSee. ",
+   "{redacted}",
+   "\n(end)"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a shared document's id (owner, 2026-10-08)",
+  "text": [
+   "Open https://docs.example.com/document/d/",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt2M",
+   "w9Pz4Qr8",
+   "/edit now"
+  ],
+  "expected": [
+   "Open https://docs.example.com/document/",
+   "{redacted}",
+   "/edit now"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a playlist id (owner, 2026-10-08)",
+  "text": [
+   "Watch https://video.example.com/playlist?list=",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt",
+   " now"
+  ],
+  "expected": [
+   "Watch https://video.example.com/playlist?list=",
+   "{redacted}",
+   " now"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: an OAuth client id (owner, 2026-10-08)",
+  "text": [
+   "Client 123456789012-",
+   "q7xk2rm9tz4l",
+   "p8wv3ny6bh1j",
+   "c5fd0gs7",
+   ".apps.example.com here"
+  ],
+  "expected": [
+   "Client ",
+   "{redacted}",
+   ".apps.example.com here"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a message id (owner, 2026-10-08)",
+  "text": [
+   "Message-ID: <",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0G",
+   "@mail.example.com>"
+  ],
+  "expected": [
+   "Message-ID: <",
+   "{redacted}",
+   "@mail.example.com>"
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: an integrity value (owner, 2026-10-08)",
+  "text": [
+   "\"integrity\": \"sha512-",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt2M",
+   "w9Pz4Qr8Vq7X",
+   "k2Rm9Tz4Lp8W",
+   "v3Ny6Bh1Jc5F",
+   "d0Gs7Kt2Mw9P",
+   "z",
+   "==\""
+  ],
+  "expected": [
+   "\"integrity\": \"",
+   "{redacted}",
+   "\""
+  ]
+ },
+ {
+  "name": "a random id inside an address goes: a data address's payload (owner, 2026-10-08)",
+  "text": [
+   "src=\"data:image/png;base64,",
+   "q7Xk2Rm9Tz4L",
+   "p8Wv3Ny6Bh1J",
+   "c5Fd0Gs7Kt2M",
+   "w9Pz4Qr8Vq7X",
+   "k2Rm9Tz4Lp8W",
+   "v3Ny6Bh1Jc5F",
+   "d0Gs7Kt2Mw9P",
+   "z4Qr8V",
+   "\""
+  ],
+  "expected": [
+   "src=\"data:image/png;base64,",
+   "{redacted}",
+   "\""
+  ]
+ },
+ {
+  "name": "the next line's first word after a key's lines goes past a blank line (owner, 2026-10-08)",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n\nThe next paragraph"
+  ],
+  "expected": [
+   "{redacted}",
+   " next paragraph"
+  ]
+ },
+ {
+  "name": "a Bearer token whose body holds a Kelvin sign goes, as its case fold is a letter",
+  "text": [
+   "Authorization: Bearer ",
+   "abcdefghK",
+   "ijklmnopqrstuvwxyz"
+  ],
+  "expected": [
+   "Authorization: Bearer ",
+   "{redacted}"
+  ]
+ },
+ {
+  "name": "a Bearer token whose body holds a long s goes, as its case fold is a letter",
+  "text": [
+   "Authorization: Bearer ",
+   "abcdefghſ",
+   "ijklmnopqrstuvwxyz"
+  ],
+  "expected": [
+   "Authorization: Bearer ",
+   "{redacted}"
+  ]
+ },
+ {
+  "name": "a Bearer token's least length counts characters, not bytes",
+  "text": [
+   "Authorization: Bearer ",
+   "abcdefghijklmnK"
+  ],
+  "expected": [
+   "Authorization: Bearer ",
+   "abcdefghijklmnK"
+  ]
+ },
+ {
+  "name": "a hex number starting 0x stays: an address",
+  "text": [
+   "to 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f0",
+   " done"
+  ],
+  "expected": [
+   "to 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f0",
+   " done"
+  ]
+ },
+ {
+  "name": "a hex number starting 0x stays: a transaction hash",
+  "text": [
+   "tx 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f05aeb9c0d",
+   "3f17e2a48b6c",
+   "09d1",
+   " done"
+  ],
+  "expected": [
+   "tx 0x",
+   "5aeb9c0d3f17",
+   "e2a48b6c09d1",
+   "e3f5a7b2c4d6",
+   "e8f05aeb9c0d",
+   "3f17e2a48b6c",
+   "09d1",
+   " done"
+  ]
+ },
+ {
+  "name": "a key's short last line after numbered lines goes, whatever its number",
+  "text": [
+   "10 | ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n11 | ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n12 | QUJDQQ==\nmore"
+  ],
+  "expected": [
+   "10 | ",
+   "{redacted}",
+   "\n11 | ",
+   "{redacted}",
+   "\n12 | ",
+   "{redacted}",
+   "\nmore"
+  ]
+ },
+ {
+  "name": "a word of letters and digits that repeats a few characters stays: too little entropy",
+  "text": [
+   "x q1w2q1w2q1w2",
+   "q1w2q1w2q1w2q1w2 y"
+  ],
+  "expected": [
+   "x q1w2q1w2q1w2",
+   "q1w2q1w2q1w2q1w2 y"
+  ]
+ },
+ {
+  "name": "a word of digits and symbols with no letter stays",
+  "text": [
+   "x 12+34/56_78",
+   "-90+13/57_92",
+   "-46+80 y"
+  ],
+  "expected": [
+   "x 12+34/56_78",
+   "-90+13/57_92",
+   "-46+80 y"
+  ]
+ },
+ {
+  "name": "a word of capitals with a digit stays: its capital runs are word-like",
+  "text": [
+   "x ACCOUNTSERVICE",
+   "PRINCIPAL7XQ y"
+  ],
+  "expected": [
+   "x ACCOUNTSERVICE",
+   "PRINCIPAL7XQ y"
+  ]
+ },
+ {
+  "name": "lines that end in three padding characters are no key's lines",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\nok"
+  ],
+  "expected": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "===\nok"
+  ]
+ },
+ {
+  "name": "a key's short last line after quoted lines goes past extra spaces after the quote mark",
+  "text": [
+   "> ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n> ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n>    QUJDQQ== and more"
+  ],
+  "expected": [
+   "> ",
+   "{redacted}",
+   "\n> ",
+   "{redacted}",
+   "\n>    ",
+   "{redacted}",
+   " and more"
+  ]
+ },
+ {
+  "name": "a header with other than a word before its label is no key's header",
+  "text": [
+   "-----BEGIN A.B PRIVATE ",
+   "KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\nend"
+  ],
+  "expected": [
+   "-----BEGIN A.B PRIVATE ",
+   "KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\nend"
+  ]
+ },
+  {
+   "name": "an end line with no header after a blank at the start of the text takes the blank too",
+   "text": [
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD",
+    "\n-----END ",
+    "PRIVATE KEY",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Bearer label glued to a Bearer token goes with it, and the blank after it stays as shown",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4",
+    "e5F6g7H8",
+    "Bearer Bearer ",
+    "a1B2c3D4",
+    "e5F6g7H8"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id overlapping another at its last letter goes whole",
+   "text": [
+    "AKIA",
+    "KIA",
+    "11111111",
+    "11111111"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS session key id overlapping another at its last letter goes whole",
+   "text": [
+    "ASIA",
+    "SIA",
+    "11111111",
+    "11111111"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id takes sixteen characters and the word after it stays",
+   "text": [
+    "AKIA",
+    "11111111",
+    "11111111",
+    " done"
+   ],
+   "expected": [
+    "{redacted}",
+    " done"
+   ]
+  },
+  {
+   "name": "a private-key header with a capital word after its name takes the key",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY X",
+    "-----",
+    "\nA"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key header with a digit after its name is no header",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY2",
+    "-----",
+    "\nA"
+   ],
+   "expected": [
+    "-----BEGIN PRIVATE KEY2-----\nA"
+   ]
+  },
+  {
+   "name": "a JSON web token's first part starts at its first header prefix",
+   "text": [
+    "ey",
+    "JA",
+    "ey",
+    "JB.",
+    "ey",
+    "JC.D"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word and a dot before a JSON web token stay",
+   "text": [
+    "ordinary.",
+    "ey",
+    "JC.D"
+   ],
+   "expected": [
+    "ordinary",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a mixed word at exactly the least entropy goes",
+   "text": [
+    "G1H2J3K4G1H2",
+    "J3K4G5H6J7K8",
+    "G5H6J7K8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a mixed word below the least entropy stays",
+   "text": [
+    "G1G1G1G1G1G1",
+    "G1G1G1G1G1G1",
+    "G1G1G1G1"
+   ],
+   "expected": [
+    "G1G1G1G1G1G1G1G1G1G1G1G1G1G1G1G1"
+   ]
+  },
+  {
+   "name": "runs of three capitals are word-like, so a word made of them stays",
+   "text": [
+    "GHJ1KLM2NPQ3",
+    "RST4UVW5x6y7z8"
+   ],
+   "expected": [
+    "GHJ1KLM2NPQ3RST4UVW5x6y7z8"
+   ]
+  },
+  {
+   "name": "the same word with its capitals broken up goes",
+   "text": [
+    "GhJ1KlM2NpQ3",
+    "RsT4UvW5x6y7z8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a capital before one small letter is no word, so a word of them goes",
+   "text": [
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a capital before three small letters starts a word, so a word of them stays",
+   "text": [
+    "GHIJabc1KLMN",
+    "bcd2PQRScde3",
+    "TUVWdef4"
+   ],
+   "expected": [
+    "GHIJabc1KLMNbcd2PQRScde3TUVWdef4"
+   ]
+  },
+  {
+   "name": "a key's short first word after its lines' full lines goes, the text's start",
+   "text": [
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a key's short first word after a blank line at the text's start goes",
+   "text": [
+    "\nQUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a key's short first word after a CRLF blank line goes",
+   "text": [
+    "\r\nQUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\r\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a key's short first word after blank lines holding spaces goes",
+   "text": [
+    "\n \t\nQUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\n \t\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "two words before a key's lines after a blank line stay",
+   "text": [
+    "\ntwo words\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "\ntwo words\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "prose between two whole private keys stays",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\nQUJD\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\nordinary prose.\n",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\nQUJD\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "\nordinary prose.\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an internationalized domain name's label in an address stays",
+   "text": [
+    "https://xn--4gqvdz1c",
+    "25ix4k8mqcxl",
+    "8q3dgth.example/docs"
+   ],
+   "expected": [
+    "https://xn--4gqvdz1c25ix4k8mqcxl8q3dgth.example/docs"
+   ]
+  },
+  {
+   "name": "a capitalized internationalized label stays, and a random path part after it still goes",
+   "text": [
+    "XN--4GQVDZ1C",
+    "25IX4K8MQCXL",
+    "8Q3DGTH.example/",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "XN--4GQVDZ1C25IX4K8MQCXL8Q3DGTH.example/",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a hex number with padding after it stays",
+   "text": [
+    "x = 0x012345",
+    "6789abcdef01",
+    "23456789abcd",
+    "ef0123456789",
+    "abcdef012345",
+    "6789abcdef==0"
+   ],
+   "expected": [
+    "x = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef==0"
+   ]
+  },
+  {
+   "name": "a line of padding alone between a key's full lines counts as one of its words",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQQ\n==\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\nDone and more"
+   ],
+   "expected": [
+    "{redacted}",
+    " and more"
+   ]
+  },
+  {
+   "name": "a line of padding alone after one full line takes nothing",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQQ\n=="
+   ],
+   "expected": [
+    "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQQ\n=="
+   ]
+  },
+  {
+   "name": "a line after a key's quoted lines whose first character spans the quote's width stays",
+   "text": [
+    "> QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD\n> ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD\na\u00e9 word"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    "\na",
+    "\u00e9",
+    " word"
+   ]
+  },
+  {
+   "name": "a named value whose digit is not an ASCII digit stays",
+   "text": [
+    "password=hunter",
+    "\u0662x"
+   ],
+   "expected": [
+    "password=hunter",
+    "\u0662x"
+   ]
+  },
+  {
+   "name": "a media file's name of sizes, rates and formats in a path stays",
+   "text": [
+    "/tmp/video/3840x2160_",
+    "60fps_yuv420p10le.yuv"
+   ],
+   "expected": [
+    "/tmp/video/3840x2160_60fps_yuv420p10le.yuv"
+   ]
+  },
+  {
+   "name": "a media file's name in an address stays, whatever order and separators",
+   "text": [
+    "https://example.com/video/",
+    "1920x1080-60fps-",
+    "yuv420p10le and ",
+    "yuv420p10le_",
+    "1920x1080_60fps"
+   ],
+   "expected": [
+    "https://example.com/video/1920x1080-60fps-yuv420p10le and yuv420p10le_1920x1080_60fps"
+   ]
+  },
+  {
+   "name": "a random file name in the same address still goes",
+   "text": [
+    "https://example.com/video/",
+    "Xk9mQ2vR7pL4",
+    "nT8wZ3bY6cJ1",
+    ".yuv"
+   ],
+   "expected": [
+    "https://example.com/video/",
+    "{redacted}",
+    ".yuv"
+   ]
+  },
+  {
+   "name": "a padded short first line before a key's full lines goes with them",
+   "text": [
+    "QUJDQQ==\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a padded first word with other words after it stays before a key's full lines",
+   "text": [
+    "QUJDQQ== word\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "QUJDQQ== word\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "three padding characters alone between full lines break the key's lines",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n===\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\n===\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\n(end)"
+   ]
+  },
+  {
+   "name": "two padding characters alone between full lines keep the key's lines together",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n==\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "the next line's first word goes after the same quote mark as the key's lines",
+   "text": [
+    "> QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> Done and more"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    " and more"
+   ]
+  },
+  {
+   "name": "the next line's first short word stays after another kind of prefix",
+   "text": [
+    "> QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n| Done and more"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    "\n| Done and ",
+    "more"
+   ]
+  },
+  {
+   "name": "a media file's name whose numbers are three digits long stays",
+   "text": [
+    "/tmp/video/",
+    "yuv420p10le_",
+    "720x480_30fps.yuv"
+   ],
+   "expected": [
+    "/tmp/video/yuv420p10le_720x480_30fps.yuv"
+   ]
+  },
+  {
+   "name": "a random word of two-digit pairs still goes",
+   "text": [
+    "Q12w34E56r78",
+    "T90y13U57i24O"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a media file's name of short format and rate pieces stays",
+   "text": [
+    "/media/",
+    "x264_8bit_",
+    "60fps_CRF23_",
+    "QP18.mp4"
+   ],
+   "expected": [
+    "/media/x264_8bit_60fps_CRF23_QP18.mp4"
+   ]
+  },
+  {
+   "name": "a page address of locale pieces stays",
+   "text": [
+    "https://",
+    "example.com/",
+    "en-US_es-MX_",
+    "pt-BR_zh-CN_",
+    "ja-JP_v2"
+   ],
+   "expected": [
+    "https://example.com/en-US_es-MX_pt-BR_zh-CN_ja-JP_v2"
+   ]
+  },
+  {
+   "name": "a grid name of two-character pieces stays",
+   "text": [
+    "/media/",
+    "R2_C3_D4_E5_",
+    "F6_G7_H8_I9_",
+    "J0.mp4"
+   ],
+   "expected": [
+    "/media/R2_C3_D4_E5_F6_G7_H8_I9_J0.mp4"
+   ]
+  },
+  {
+   "name": "a word of four pieces, three of them five characters, stays",
+   "text": [
+    "Ab1c2_De3f4_",
+    "Gh5i6_J7k8L9",
+    "m0N1"
+   ],
+   "expected": [
+    "Ab1c2_De3f4_Gh5i6_J7k8L9m0N1"
+   ]
+  },
+  {
+   "name": "a random word of three pieces, two of them short, still goes",
+   "text": [
+    "Ab1c2_De3f4_",
+    "Ghij5Klmn6P7",
+    "q8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word whose short-looking piece is six characters still goes",
+   "text": [
+    "Ab1c2_De3f4_",
+    "Gh5i6j_K7l8M",
+    "9n0P1"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after an internationalized label in an address still goes",
+   "text": [
+    "https://",
+    "example.com/",
+    "xn--fake1/",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "https://example.com/xn--fake1/",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after an internationalized top-level label still goes",
+   "text": [
+    "https://",
+    "example.com.",
+    "XN--p1ai/",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "https://example.com.XN--p1ai/",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after two internationalized labels in one word still goes",
+   "text": [
+    "xn--a/",
+    "xn--b_",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "xn--a/xn--b_",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after several kinds of blank still goes",
+   "text": [
+    "Bearer \t",
+    "\u2003",
+    "abcdefghij",
+    "klmnopqrst"
+   ],
+   "expected": [
+    "Bearer \t\u2003",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after one space still goes",
+   "text": [
+    "Bearer ",
+    "abcdefghij",
+    "klmnopqrst"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer word glued to its body stays",
+   "text": [
+    "Bearer",
+    "abcdefghij",
+    "klmnopqrst"
+   ],
+   "expected": [
+    "Bearerabcdefghijklmnopqrst"
+   ]
+  },
+  {
+   "name": "a bearer body shorter than a token after several blanks stays",
+   "text": [
+    "Bearer \t",
+    "\u2003",
+    "abcdefghij",
+    "klmno"
+   ],
+   "expected": [
+    "Bearer \t\u2003abcdefghijklmno"
+   ]
+  },
+  {
+   "name": "a key's next line word exactly a full line long goes with the key",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD rest"
+   ],
+   "expected": [
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "a key's next line word one past a full line goes with the key",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQ rest"
+   ],
+   "expected": [
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "one full base64 line and a word one short of a full line stay",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJ rest"
+   ],
+   "expected": [
+    "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJ rest"
+   ]
+  },
+  {
+   "name": "a hex number stays",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5D6"
+   ],
+   "expected": [
+    "0xa1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6"
+   ]
+  },
+  {
+   "name": "a hex number with one padding character stays",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5D6="
+   ],
+   "expected": [
+    "0xa1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6="
+   ]
+  },
+  {
+   "name": "a hex number with two padding characters stays",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5D6=="
+   ],
+   "expected": [
+    "0xa1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6=="
+   ]
+  },
+  {
+   "name": "a padded word with one character that is not hex goes",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5Dg=="
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "key lines ending in a no-break space go, the space staying",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\u00a0",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u00a0",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u00a0"
+   ],
+   "expected": [
+    "{redacted}",
+    "\u00a0"
+   ]
+  },
+  {
+   "name": "key lines ending in a space go, the space staying",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD \nQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD \n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD "
+   ],
+   "expected": [
+    "{redacted}",
+    " "
+   ]
+  },
+  {
+   "name": "key lines ending in an ideographic space go, the space staying",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\u3000",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u3000",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u3000"
+   ],
+   "expected": [
+    "{redacted}",
+    "\u3000"
+   ]
+  },
+  {
+   "name": "key lines indented by a no-break space go with the short words around them",
+   "text": [
+    "QUJDQUJD\n",
+    "\u00a0",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "\u00a0",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "D"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "key lines indented by an em space go with the short words around them",
+   "text": [
+    "QUJDQUJD\n",
+    "\u2003",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "\u2003",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "D"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text's first key line holding padding before more base64 goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD==QUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD\nQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJD\nQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text's first key line holding one padding character before more base64 goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD=QUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JD\nQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a short padded word glued before a text's first key line goes with it",
+   "text": [
+    "ab==QUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD\nQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "D\nQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "one line of base64 holding padding before more base64 stays",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD==QUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD"
+   ],
+   "expected": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD==QUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD"
+   ]
+  },
+  {
+   "name": "prose before key lines stays while the key goes",
+   "text": [
+    "Hello there.",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD\nQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD"
+   ],
+   "expected": [
+    "Hello there.",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word of digits, symbols and separators with no letter stays",
+   "text": [
+    "01+23/45+67_",
+    "890123456789"
+   ],
+   "expected": [
+    "01+23/45+67_",
+    "890123456789"
+   ]
+  },
+  {
+   "name": "the same word of digits, symbols and separators with one letter goes",
+   "text": [
+    "A1+23/45+67_",
+    "890123456789"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's next-line word after the key lines' prefix and a no-break space goes",
+   "text": [
+    "> QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD\n",
+    "> QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD\n",
+    "> ",
+    "\u00a0",
+    "QUJDQUJD rest"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    "\n> ",
+    "\u00a0",
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "an app's container path holding UUIDs stays",
+   "text": [
+    "/Users/dev/L",
+    "ibrary/Devel",
+    "oper/CoreSim",
+    "ulator/Devic",
+    "es/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/data/Con",
+    "tainers/Bund",
+    "le/Applicati",
+    "on/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/TabMail.",
+    "app"
+   ],
+   "expected": [
+    "/Users/dev/L",
+    "ibrary/Devel",
+    "oper/CoreSim",
+    "ulator/Devic",
+    "es/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/data/Con",
+    "tainers/Bund",
+    "le/Applicati",
+    "on/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/TabMail.",
+    "app"
+   ]
+  },
+  {
+   "name": "a bundle path whose UUID comes before a short app name stays",
+   "text": [
+    "/private/var",
+    "/containers/",
+    "Bundle/Appli",
+    "cation/C4FF6",
+    "4DE-BB5D-4B4",
+    "8-BC3B-66FA3",
+    "0D0B194/MyAp",
+    "p.app"
+   ],
+   "expected": [
+    "/private/var",
+    "/containers/",
+    "Bundle/Appli",
+    "cation/C4FF6",
+    "4DE-BB5D-4B4",
+    "8-BC3B-66FA3",
+    "0D0B194/MyAp",
+    "p.app"
+   ]
+  },
+  {
+   "name": "a temporary file named for a UUID and a version stays",
+   "text": [
+    "/tmp/c4ff64d",
+    "e-bb5d-4b48-",
+    "bc3b-66fa30d",
+    "0b194_v2.log"
+   ],
+   "expected": [
+    "/tmp/c4ff64d",
+    "e-bb5d-4b48-",
+    "bc3b-66fa30d",
+    "0b194_v2.log"
+   ]
+  },
+  {
+   "name": "a build folder named for a UUID before an architecture stays",
+   "text": [
+    "build/c4ff64",
+    "de-bb5d-4b48",
+    "-bc3b-66fa30",
+    "d0b194/arm64",
+    "/Release"
+   ],
+   "expected": [
+    "build/c4ff64",
+    "de-bb5d-4b48",
+    "-bc3b-66fa30",
+    "d0b194/arm64",
+    "/Release"
+   ]
+  },
+  {
+   "name": "a system extension's folder named for an upper-case UUID stays",
+   "text": [
+    "/Library/Sys",
+    "temExtension",
+    "s/C4FF64DE-B",
+    "B5D-4B48-BC3",
+    "B-66FA30D0B1",
+    "94/io.exampl",
+    "e.agent.syst",
+    "emextension"
+   ],
+   "expected": [
+    "/Library/Sys",
+    "temExtension",
+    "s/C4FF64DE-B",
+    "B5D-4B48-BC3",
+    "B-66FA30D0B1",
+    "94/io.exampl",
+    "e.agent.syst",
+    "emextension"
+   ]
+  },
+  {
+   "name": "a git object path of a hash and a short name stays",
+   "text": [
+    "repo/.git/ob",
+    "jects/ab/cde",
+    "f0123456789a",
+    "bcdef0123456",
+    "789abcdef01/",
+    "x1"
+   ],
+   "expected": [
+    "repo/.git/ob",
+    "jects/ab/cde",
+    "f0123456789a",
+    "bcdef0123456",
+    "789abcdef01/",
+    "x1"
+   ]
+  },
+  {
+   "name": "a random word glued after a UUID still goes",
+   "text": [
+    "c4ff64de-bb5",
+    "d-4b48-bc3b-",
+    "66fa30d0b194",
+    "-a1B2c3D4e5F",
+    "6g7H8i9J0k1L",
+    "2m3N4"
+   ],
+   "expected": [
+    "c4ff64de-bb5",
+    "d-4b48-bc3b-",
+    "66fa30d0b194",
+    "-",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a go.sum listing keeps its module paths",
+   "text": [
+    "example.com/",
+    "mod0 v1.0.0 ",
+    "h1:QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJ=\n",
+    "example.com/",
+    "mod1 v1.0.1 ",
+    "h1:QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJ=\n",
+    "example.com/",
+    "mod2 v1.0.2 ",
+    "h1:QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJ="
+   ],
+   "expected": [
+    "example.com/",
+    "mod0 v1.0.0 ",
+    "h1:",
+    "{redacted}",
+    "\nexample.com",
+    "/mod1 v1.0.1",
+    " ",
+    "{redacted}",
+    "\nexample.com",
+    "/mod2 v1.0.2",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a known_hosts listing keeps its host names",
+   "text": [
+    "host0.exampl",
+    "e.com ssh-ed",
+    "25519 AAAAC3",
+    "NzaC1lZDI1NT",
+    "E5AAAAIQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJD\nhost1.ex",
+    "ample.com ss",
+    "h-ed25519 AA",
+    "AAC3NzaC1lZD",
+    "I1NTE5AAAAIQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJD\nhost",
+    "2.example.co",
+    "m ssh-ed2551",
+    "9 AAAAC3NzaC",
+    "1lZDI1NTE5AA",
+    "AAIQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJD"
+   ],
+   "expected": [
+    "host0.exampl",
+    "e.com ssh-ed",
+    "25519 ",
+    "{redacted}",
+    "\nhost1.examp",
+    "le.com ssh-e",
+    "d25519 ",
+    "{redacted}",
+    "\nhost2.examp",
+    "le.com ssh-e",
+    "d25519 ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a checksum listing keeps its file names",
+   "text": [
+    "SHA256 (rele",
+    "ase-0.tar.gz",
+    ") = 01234567",
+    "89abcdef0123",
+    "456789abcdef",
+    "0123456789ab",
+    "cdef01234567",
+    "89abcdef\nSHA",
+    "256 (release",
+    "-1.tar.gz) =",
+    " 0123456789a",
+    "bcdef0123456",
+    "789abcdef012",
+    "3456789abcde",
+    "f0123456789a",
+    "bcdef\nSHA256",
+    " (release-2.",
+    "tar.gz) = 01",
+    "23456789abcd",
+    "ef0123456789",
+    "abcdef012345",
+    "6789abcdef01",
+    "23456789abcd",
+    "ef"
+   ],
+   "expected": [
+    "SHA256 (rele",
+    "ase-0.tar.gz",
+    ") = ",
+    "{redacted}",
+    "\nSHA256 (rel",
+    "ease-1.tar.g",
+    "z) = ",
+    "{redacted}",
+    "\nSHA256 (rel",
+    "ease-2.tar.g",
+    "z) = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's last line holding a plus and a slash goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nab",
+    "+/cd== done"
+   ],
+   "expected": [
+    "{redacted}",
+    " done"
+   ]
+  },
+  {
+   "name": "a cut-off private key's short body holding a slash and a plus goes whole",
+   "text": [
+    "-----BEGIN P",
+    "RIVATE KEY--",
+    "---\nab/cd+ef"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word naming a commit glued to its hash stays",
+   "text": [
+    "commit3f9a2b",
+    "7c8d1e4f60a5",
+    "b2c9d8e7f1a3",
+    "b4c5d6e7f8"
+   ],
+   "expected": [
+    "commit3f9a2b",
+    "7c8d1e4f60a5",
+    "b2c9d8e7f1a3",
+    "b4c5d6e7f8"
+   ]
+  },
+  {
+   "name": "an upper-case 0X hex number stays",
+   "text": [
+    "0X3F9A2B7C8D",
+    "1E4F60A5B2C9",
+    "D8E7F1A3B4"
+   ],
+   "expected": [
+    "0X3F9A2B7C8D",
+    "1E4F60A5B2C9",
+    "D8E7F1A3B4"
+   ]
+  },
+  {
+   "name": "a mixed word just under the random-word entropy bar stays",
+   "text": [
+    "Ha5Wc6Hx2Hj6",
+    "Hg6Mj7Ma7Hn2"
+   ],
+   "expected": [
+    "Ha5Wc6Hx2Hj6",
+    "Hg6Mj7Ma7Hn2"
+   ]
+  },
+  {
+   "name": "a Bearer token's body ends before a non-ASCII letter",
+   "text": [
+    "Bearer abcde",
+    "fghijklmnopq",
+    "rst",
+    "\u0141",
+    "\u0141",
+    " end"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    "\u0141",
+    "\u0141",
+    " end"
+   ]
+  },
+  {
+   "name": "a word as long as a full line starting the line after prefixed key lines goes",
+   "text": [
+    "> QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD\n> QUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "D\nQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD rest"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "a temporary file named for a hex id of exactly a random word's length stays",
+   "text": [
+    "/tmp/c4ff64d",
+    "ebb5d4b48bc3",
+    "b66fa_v2.log"
+   ],
+   "expected": [
+    "/tmp/c4ff64d",
+    "ebb5d4b48bc3",
+    "b66fa_v2.log"
+   ]
+  },
+  {
+   "name": "a folder named for a UUID after a name holding a digit stays",
+   "text": [
+    "/var/mobile/",
+    "Data2go/C4FF",
+    "64DE-BB5D-4B",
+    "48-BC3B-66FA",
+    "30D0B194"
+   ],
+   "expected": [
+    "/var/mobile/",
+    "Data2go/C4FF",
+    "64DE-BB5D-4B",
+    "48-BC3B-66FA",
+    "30D0B194"
+   ]
+  },
+  {
+   "name": "a key's line split by a space after its first line goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "D QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before a pane border and more base64 on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD \u2502 ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before a pipe and more base64 on its row goes after a label",
+   "text": [
+    "Key:\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JD | QUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD"
+   ],
+   "expected": [
+    "Key:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before a checksum comment on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD  #",
+    " sha256 QUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before an arrow and more base64 on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD ->",
+    " QUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's quoted full line before a pane border and more base64 on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> QUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJD ",
+    "\u2502 QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n> ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a padded word before a key's later line goes with the line",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nab",
+    "== QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word ending in an underscore before a hex run goes whole",
+   "text": [
+    "q7Zk2Xw9Lp_0",
+    "a1b2c3d4e5f-",
+    "-6a7b8c9d0e1",
+    "f"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a final hex run of exactly a random word's length is cut off and the rest stays",
+   "text": [
+    "q7Zk2Xw9LpVr",
+    "_0a1b2c3d4e5",
+    "f6a7b8c9d0e1",
+    "f"
+   ],
+   "expected": [
+    "q7Zk2Xw9LpVr",
+    "_0a1b2c3d4e5",
+    "f6a7b8c9d0e1",
+    "f"
+   ]
+  },
+  {
+   "name": "a word cut at word-like pieces and a hex run keeps a short random piece before them shown",
+   "text": [
+    "q7Zk2Xw9LpVr",
+    "8mQ3sT4u-012",
+    "3456789ab-fa",
+    "ce-cdef01234",
+    "567-xyz"
+   ],
+   "expected": [
+    "q7Zk2Xw9LpVr",
+    "8mQ3sT4u-012",
+    "3456789ab-fa",
+    "ce-cdef01234",
+    "567-xyz"
+   ]
+  },
+  {
+   "name": "a word cut at a hex run over a shorter cut keeps a short random piece after it shown",
+   "text": [
+    "q7Zk2-012345",
+    "6789ab-face-",
+    "cdef01234567",
+    "-q7Zk2Xw9LpV",
+    "r8mQ3sT4u"
+   ],
+   "expected": [
+    "q7Zk2-012345",
+    "6789ab-face-",
+    "cdef01234567",
+    "-q7Zk2Xw9LpV",
+    "r8mQ3sT4u"
+   ]
+  },
+  {
+   "name": "the random id of a Mac's temporary folder in a path goes (owner, 2026-10-09)",
+   "text": [
+    "cd /var/fold",
+    "ers/7x/l8m_8",
+    "q9d4xv5q6y1d",
+    "2qdk_gc0000g",
+    "n/T/tmp.abc"
+   ],
+   "expected": [
+    "cd /var/fold",
+    "ers/",
+    "{redacted}",
+    "/tmp.abc"
+   ]
+  },
+  {
+   "name": "a store path's random hash goes and the package name after it stays (owner, 2026-10-09)",
+   "text": [
+    "/nix/store/6",
+    "qaw23sr1af0f",
+    "3w5n1qzc24hx",
+    "cxjd56a-hell",
+    "o-2.12.1/bin",
+    "/hello"
+   ],
+   "expected": [
+    "/nix/store/",
+    "{redacted}",
+    "-hello-2.12.",
+    "1/bin/hello"
    ]
   }
  ],
@@ -5316,12 +10312,16 @@
     ],
     [
      [
-      "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2",
+      "m3N4o5P6"
      ]
     ],
     [
      [
-      "q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2"
+      "q7R8s9T0u1V2",
+      "w3X4y5Z6a7B8",
+      "c9D0e1F2"
      ]
     ],
     [
@@ -5373,7 +10373,8 @@
     ],
     [
      [
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ]
    ],
@@ -5585,7 +10586,8 @@
      [
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ],
      [
       " end"
@@ -5614,7 +10616,8 @@
       "a ",
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2",
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2",
       " b"
      ]
     ],
@@ -5623,7 +10626,8 @@
       "c ",
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ],
     [
@@ -5682,7 +10686,8 @@
       "🙂 ",
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2",
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2",
       " 🙂"
      ]
     ],
@@ -5893,7 +10898,8 @@
      [
       "sk",
       "-",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ]
    ],
@@ -5904,9 +10910,7 @@
      ]
     ],
     [
-     [
-      "{redacted}"
-     ]
+     []
     ]
    ]
   },
@@ -5925,7 +10929,8 @@
      [
       "gh",
       "p_",
-      "a1B2c3D4e5F6g7H8i9J0k1L2"
+      "a1B2c3D4e5F6",
+      "g7H8i9J0k1L2"
      ]
     ]
    ],
@@ -5936,9 +10941,7 @@
      ]
     ],
     [
-     [
-      "{redacted}"
-     ]
+     []
     ]
    ]
   },
@@ -5974,9 +10977,7 @@
      ]
     ],
     [
-     [
-      "{redacted}"
-     ]
+     []
     ]
    ]
   },
@@ -6121,6 +11122,37 @@
      ],
      [
       ""
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a key glued to the item before it on a terminal's line stays, as glued in one piece",
+   "lines": [
+    [
+     [
+      "notes"
+     ],
+     [
+      "sk-abcdefghij",
+      "klmnopqrst"
+     ],
+     [
+      " after"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "notes"
+     ],
+     [
+      "sk-abcdefghij",
+      "klmnopqrst"
+     ],
+     [
+      " after"
      ]
     ]
    ]

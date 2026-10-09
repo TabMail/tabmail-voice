@@ -390,7 +390,8 @@ enum ScreenContextReader {
                     switch try look(.text) {
                     case .refuse: return false
                     case .marker: context.append(.text, context.hiddenMarker, frame: frame)
-                    case .read: context.append(.text, tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
+                    case .read: context.append(.text, tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame,
+                                               ends: frame == nil ? nil : tree.ends(of: element))
                     }
                     continue
                 case .semantic:
@@ -416,7 +417,8 @@ enum ScreenContextReader {
                         guard let root = try rootLabel() else { return false }
                         try reducer.offer(.root, root)
                     }
-                    context.appendSemantic(kind, try reducer.projectedSource(), frame: frame)
+                    context.appendSemantic(kind, try reducer.projectedSource(), frame: frame,
+                                           ends: kind == .link && frame != nil ? tree.ends(of: element) : nil)
                     continue
                 case .field:
                     // A field is read by its value and not walked into, so a page framed in it is looked for:
@@ -700,6 +702,9 @@ protocol ScreenTree {
     associatedtype Element
     func children(of element: Element) -> [Element]
     func frame(of element: Element) -> CGRect?
+    /// Where the element's text starts and ends on screen: the boxes of its first and last
+    /// characters, when the app gives them (`CaretLocator.textEnds`).
+    func ends(of element: Element) -> [CGRect]?
     func string(_ element: Element, _ name: String) -> String?
     func sourceString(_ element: Element, _ name: String) -> String?
     /// What a web area says of its page's address.
@@ -714,6 +719,7 @@ protocol ScreenTree {
 }
 
 extension ScreenTree {
+    func ends(of element: Element) -> [CGRect]? { nil }
     func sourceString(_ element: Element, _ name: String) -> String? {
         guard let value = string(element, name) else { return nil }
         return try? BoundedCaretSource.snapshot(value as NSString)
@@ -726,6 +732,8 @@ struct LiveScreenTree: ScreenTree {
     }
 
     func frame(of element: AXUIElement) -> CGRect? { CaretLocator.frame(of: element) }
+
+    func ends(of element: AXUIElement) -> [CGRect]? { CaretLocator.textEnds(of: element) }
 
     func string(_ element: AXUIElement, _ name: String) -> String? { CaretLocator.attribute(element, name) as? String }
 

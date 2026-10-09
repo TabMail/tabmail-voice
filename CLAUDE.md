@@ -28,8 +28,9 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   test): never edit it by hand (ADR-DESK-044).
 - **What looks like a secret is defined once, in `apps/desktop/native/shared/privacy/redactors.json`**
   (ADR-DESK-046, shared-core amendment). Every helper links the Rust implementation in
-  `native/shared/rust`; definitions are compiled directly there. Do not restore native regex matching. Do not copy a pattern into a helper by hand; add a case to
-  `redaction-cases.json` with every pattern. What must not be read (password fields, excluded apps
+  `native/shared/rust`; definitions are read directly there, by one scanner. Do not restore regex
+  matching, native or in Rust. Do not copy a redactor into a helper by hand; add a case to
+  `redaction-cases.json` with every redactor. What must not be read (password fields, excluded apps
   and websites, secret-looking text) is refused or removed in the helper, never in the Electron app;
   a rule the app and the helpers both apply (which hosts a site covers) has its cases in
   `native/shared/privacy/` and every side runs them.

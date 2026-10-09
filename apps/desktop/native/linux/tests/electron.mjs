@@ -53,7 +53,11 @@ const page = `
     body { margin: 20px; font: 14px Arial; }
     [contenteditable] { font: 14px/20px Arial; width: 500px; min-height: 240px; padding: 0; border: 0; margin: 0 0 30px; outline: 1px solid #ccc; }
     [contenteditable] div { margin: 0; }
+    p { font: 14px/20px Arial; margin: 0 0 10px; }
   </style>
+  <div style="position:fixed;left:560px;top:20px"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p><p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p></div>
+  <!-- A key split by bold where one piece wraps onto more lines (a Slack message). -->
+  <div style="position:fixed;left:560px;top:200px;width:200px"><p>Wrap <b>words that wrap onto a second line sk-ReviewWrap</b>Glued1234567890ab end</p><p>Start sk-ReviewStart<b>Tail1234567890abcd words that wrap onto more lines</b></p></div>
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
   <div id="rich" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
   <div id="gmail" contenteditable="true">Synthetic opening line<div><br></div><div>Synthetic <b>line</b> to <i>dictate</i> under.</div><div><br><br>--<br>Synthetic signature</div></div>
@@ -74,6 +78,17 @@ async function expectRead(name, before, after) {
   if (read?.textBeforeCaret !== before || read?.textAfterCaret !== after)
     failures.push(`${name}: read ${JSON.stringify({ before: read?.textBeforeCaret, after: read?.textAfterCaret })}, not ${JSON.stringify({ before, after })}`);
 }
+// Pieces of one line on screen (a run of bold, a link) are read as that one line, with the screen's
+// spaces and none where they abut: a key split by bold is redacted whole.
+async function expectInlineLines() {
+  await delay(300);
+  const rendered = (await request("readScreen", { excludedAppIDs: [], excludedHosts: [] }))?.renderedText ?? "";
+  for (const line of ["Key [redacted] here", "Visit [example] now", "Read [more] now", "Paste [[redacted]]", "Code [redacted] end",
+    "Wrap words that wrap onto a second line [redacted] end", "Start [redacted] words that wrap onto more lines"])
+    if (!rendered.split("\n").includes(line)) failures.push(`inline pieces: no line ${JSON.stringify(line)} in the read`);
+  for (const piece of ["sk-Review", "Fixture1234567890", "Link1234567890abcd", "Snippet1234567890", "Glued1234567890ab", "Tail1234567890abcd"])
+    if (rendered.includes(piece)) failures.push(`inline pieces: a piece of the key split by bold is in the read`);
+}
 async function main() {
   const timeout = setTimeout(() => {
     process.stderr.write(`Linux Electron caret test timed out after ${id} requests\n`);
@@ -91,13 +106,14 @@ async function main() {
       pending.get(message.id)?.(message);
       pending.delete(message.id);
     });
-    window = new BrowserWindow({ width: 640, height: 900, title: "Caret read integration test" });
+    window = new BrowserWindow({ width: 1100, height: 900, title: "Caret read integration test" });
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`);
     await delay(1000);
 
     // Plain text: lines 0-1 and 4-5 hold text, 2-3 are empty (a <br> each). Children: text, br,
     // text, br, br, br, text, br, text; before the 3rd <br> of the run is line 3.
     await place("plain", "getSelection().collapse(field, 5);");
+    await expectInlineLines();
     await expectRead("plain text, second empty line", "Synthetic first line\nSynthetic second line\n\n",
                      "\nSynthetic fifth line\nSynthetic sixth line");
 

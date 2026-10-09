@@ -482,6 +482,36 @@ private:
         // An embedded-object marker is not a visible caption.
         return result == "\xEF\xBF\xBC" ? "" : result;
     }
+    // Where an element's text starts and ends on screen: the boxes of its first and last lines in
+    // the page's text (`RangeFromChild`). A piece that wraps has one frame over all its lines, which
+    // says nothing of where it meets the piece before or after it. None when the page gives no lines.
+    static std::optional<std::array<ContextFrame, 2>> textEnds(IUIAutomationTextPattern* document, IUIAutomationElement* element) {
+        if (!document) return {};
+        ComPtr<IUIAutomationTextRange> range;
+        if (FAILED(document->RangeFromChild(element, &range)) || !range) return {};
+        SAFEARRAY* rectangles = nullptr;
+        if (FAILED(range->GetBoundingRectangles(&rectangles)) || !rectangles) return {};
+        std::optional<ContextFrame> first, last;
+        LONG lower = 0, upper = -1;
+        bool valid = SafeArrayGetDim(rectangles) == 1 && SUCCEEDED(SafeArrayGetLBound(rectangles, 1, &lower)) &&
+            SUCCEEDED(SafeArrayGetUBound(rectangles, 1, &upper));
+        // Counted wide, so bounds a provider gives near the ends of LONG never overflow.
+        const long long count = static_cast<long long>(upper) - lower + 1;
+        valid = valid && count % 4 == 0;
+        for (long long offset = 0; valid && offset + 4 <= count; offset += 4) {
+            double rect[4]{};
+            for (LONG part = 0; part < 4; ++part) {
+                LONG position = static_cast<LONG>(lower + offset + part);
+                if (FAILED(SafeArrayGetElement(rectangles, &position, &rect[part])) || !std::isfinite(rect[part])) valid = false;
+            }
+            if (!valid || rect[2] <= 0 || rect[3] <= 0) continue;
+            if (!first) first = ContextFrame{rect[0], rect[1], rect[2], rect[3]};
+            last = ContextFrame{rect[0], rect[1], rect[2], rect[3]};
+        }
+        SafeArrayDestroy(rectangles);
+        if (!valid || !first) return {};
+        return std::array<ContextFrame, 2>{*first, *last};
+    }
     // What is selected in a page that has the focus itself. Empty when nothing is, when the
     // provider gives no single text selection, or when what holds it can't be shown safe.
     std::string selectedInPage(IUIAutomationElement* page, const ScreenExclusions& exclusions, bool& selectionUnavailable) {
@@ -946,7 +976,8 @@ private:
                     continue;
                 }
                 const auto name = safeTextSubtree(node) ? elementName(node) : "";
-                context.append(ContextKind::text, name, geometry);
+                context.append(ContextKind::text, name, geometry,
+                               geometry && !name.empty() ? textEnds(entry.document.Get(), node) : std::nullopt);
                 // A piece of text with no name of its own is walked into: Chromium keeps its text
                 // in its children.
                 if (!normalizedContextText(name).empty()) continue;
@@ -965,7 +996,8 @@ private:
                 const auto gathered = semanticText(node, walker.Get(), kind, entry.inPage, entry.document.Get(), within, exclusions, context);
                 if (!gathered) return refuse();
                 context.appendSemantic(step.kind == "heading" ? ContextKind::heading : step.kind == "link" ? ContextKind::link : ContextKind::row,
-                                       *gathered, geometry);
+                                       *gathered, geometry,
+                                       geometry && step.kind == "link" ? textEnds(entry.document.Get(), node) : std::nullopt);
                 continue;
             } else if (step.action == "caption") {
                 // A page's control: its drawn caption, not its Name, which can be an undrawn

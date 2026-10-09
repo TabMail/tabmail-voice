@@ -82,10 +82,7 @@ int main(int argc, char** argv) {
             Redactor::redact(text);
             expect(std::chrono::steady_clock::now() - start < std::chrono::seconds(2), "hostile input time bound");
         }
-        // Exercise a real Rust stack refusal through the linked C ABI.
-        const auto failed = Redactor::redact(Lines{{u"token=" u"abc123def "}, {std::u16string(u"password:") + std::u16string(1000100, u' ') + u"x private remainder"}});
-        expect(failed == Lines{{std::u16string(u"token=") + std::u16string(placeholder) + std::u16string(placeholder)}, {u""}}, "unfinished match withholds remainder after last completed match");
         std::cout << suite.at("cases").size() << " single cases, " << suite.at("lineCases").size()
-            << " line cases, idempotence, rule removal mutations, long and hostile runs, and failure closure passed\n";
+            << " line cases, idempotence, redactor removal mutations, and long and hostile runs passed\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

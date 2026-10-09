@@ -122,6 +122,10 @@ async function main() {
       <div style="position:fixed;top:-5000px">offscreen-secret</div>
       <div style="position:absolute;width:1px;height:1px;overflow:hidden">Screen-reader-only label</div>
       <a href="https://example.com">Visible link</a>
+      <!-- Pieces of one line (a run of bold, a link), in the window's corner so nothing above moves. -->
+      <div style="position:fixed;right:10px;bottom:10px;background:#fff"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p><p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p></div>
+      <!-- A key split by bold where one piece wraps onto more lines (a Slack message). -->
+      <div style="position:fixed;left:10px;bottom:10px;width:180px;background:#fff"><p>Wrap <b>words that wrap onto a second line sk-ReviewWrap</b>Glued1234567890ab end</p><p>Start sk-ReviewStart<b>Tail1234567890abcd words that wrap onto more lines</b></p></div>
       <!-- Below the window's height, so the checks of what the window shows above are not moved. -->
       <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
       <div id="richParagraphs" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
@@ -162,6 +166,12 @@ async function main() {
     assert.ok(context.renderedText.includes("Unrelated footer outside focused field"), "visible window footer is available");
     assert.ok(context.renderedText.includes("» Before ‸selected‸ after. 🙂"), "focused field is marked at its position in the window");
     assert.ok(context.renderedText.includes("Non-text"), "a labeled web control retains its visible caption");
+    // Pieces of one line on screen (a run of bold, a link) are read as that one line, with the
+    // screen's spaces and none where they abut: a key split by bold is redacted whole.
+    for (const line of ["Key [redacted] here", "Visit [example] now", "Read [more] now", "Paste [[redacted]]", "Code [redacted] end",
+      "Wrap words that wrap onto a second line [redacted] end", "Start [redacted] words that wrap onto more lines"])
+      assert.ok(context.renderedText.split("\n").includes(line), `inline pieces are read as one line: ${line}`);
+    assert.ok(!context.renderedText.includes("sk-Review") && !context.renderedText.includes("Fixture1234567890") && !context.renderedText.includes("Link1234567890abcd") && !context.renderedText.includes("Snippet1234567890") && !context.renderedText.includes("Glued1234567890ab") && !context.renderedText.includes("Tail1234567890abcd"), "a key split by bold or code, or in a link, is redacted whole, where a piece wraps too");
     // A box that shows nothing is walked into on every platform (owner, 2026-10-05; ADR-DESK-054), and
     // Chromium gives the text in it its own unclipped frame here, so a screen-reader-only label is read.
     assert.ok(context.renderedText.includes("Screen-reader-only label"), "a screen-reader-only label is read, as decided");

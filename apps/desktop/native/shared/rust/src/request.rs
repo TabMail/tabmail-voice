@@ -13,6 +13,8 @@ use serde_json::{Value, json};
 const FIELD_MAX_LENGTH: u64 = 20_000;
 /// The most text one paste carries, in UTF-8 bytes.
 const INSERT_TEXT_BYTES: usize = 512 * 1024;
+/// What marks a break between a terminal box's rows in its field read, for the app (U+2029).
+const ROW_BREAK: char = '\u{2029}';
 /// How far past the helper's clock a paste's deadline may be, in milliseconds.
 const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
 /// How long after the paste keys the clipboard as it was is put back, in milliseconds: the target
@@ -28,12 +30,14 @@ const MICROPHONE_SAMPLE_RATES: std::ops::RangeInclusive<u64> = 8_000..=96_000;
 
 /// `{"field": {"maxLength": n}}` → `{"maxLength": n}` when n is 1 to 20,000; with `"text"` (the
 /// field's text as read, or null for none) → `{"value": …}`: null for none or one longer than n
-/// UTF-16 units, or one a break the core added could split a secret in, else the text with
-/// secret-looking text taken out. With `"viewport"` instead (a terminal's, as the screen read sends
-/// it) the field is the box around the terminal's cursor (`terminal_box`), its rows joined by
-/// breaks the core adds, given as U+2029 so the app can tell a row the terminal wrapped from the
-/// user's own line break: a terminal's whole text is its scrollback, and its other panes and
-/// programs' lines are not the text the dictation went into. None without an exact caret.
+/// UTF-16 units, else the text with secret-looking text taken out. With `"viewport"` instead (a
+/// terminal's, as the screen read sends it) the field is the box around the terminal's cursor
+/// (`terminal_box`): its rows are lines as the screen shows them, redacted as one text of lines (ADR-DESK-007,
+/// 2026-10-07; the viewport's runs were redacted before, as the box is cut from them), then each row break given as U+2029 so the app can tell a row the terminal wrapped
+/// from the user's own line break: a terminal's whole text is its scrollback, and its other panes
+/// and programs' lines are not the text the dictation went into. None without an exact caret.
+/// Another field's U+2029 (a Qt editor gives one between its paragraphs) is given as the line break
+/// it is, so U+2029 in the value is only ever a terminal's row break.
 fn field(request: &Value) -> Result<Value, u32> {
     let bound = request
         .get("maxLength")
@@ -48,12 +52,12 @@ fn field(request: &Value) -> Result<Value, u32> {
             let projected: Value =
                 serde_json::from_slice(&crate::viewport::process(&bytes)?).map_err(|_| 3u32)?;
             // The rows were cut from text redacted as it was on screen, between other panes' text;
-            // joined by the core's own breaks, they are checked again with and without them.
+            // joined as the lines they are, they are redacted again as the box shows them.
             boxed = crate::terminal_box::caret_box(&projected).map_or(Value::Null, |caret| {
                 let mut rows = caret.above;
                 rows.push(caret.before + &caret.after);
                 rows.extend(caret.below);
-                Value::String(rows.join(&crate::context::ADDED_BREAK.to_string()))
+                Value::String(rows.join("\n"))
             });
             Some(&boxed)
         }
@@ -66,15 +70,17 @@ fn field(request: &Value) -> Result<Value, u32> {
         Some(Value::String(text)) if text.encode_utf16().count() as u64 > bound => {
             json!({"value": null})
         }
-        // A rich editor's breaks are the core's (`hypertext`): a value one of them could split a
-        // secret in is withheld, as the render withholds it.
         Some(Value::String(text)) => {
-            let (redacted, withheld) = crate::context::redact_added(&vec![vec![text.clone()]])?;
-            if withheld[0] {
-                json!({"value": null})
-            } else if terminal {
-                // A box's rows hold no line break of their own: every one is the core's.
-                json!({"value": redacted[0][0].replace('\n', &crate::context::ADDED_BREAK.to_string())})
+            let text = if terminal {
+                text.clone()
+            } else {
+                text.replace(ROW_BREAK, "\n")
+            };
+            let redacted = crate::privacy::redact(&vec![vec![text]]).map_err(|_| 3u32)?;
+            if terminal {
+                // A box's rows hold no line break of their own: after the redaction, every one
+                // left is a row break.
+                json!({"value": redacted[0][0].replace('\n', &ROW_BREAK.to_string())})
             } else {
                 json!({"value": redacted[0][0]})
             }

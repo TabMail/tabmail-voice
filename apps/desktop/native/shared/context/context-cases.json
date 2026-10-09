@@ -65,6 +65,1506 @@
       }
     },
     {
+      "name": "a key split by a run of bold on one line is redacted whole",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              20,
+              0,
+              92.5,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Fixture1234567890",
+            "frame": [
+              112.5,
+              0,
+              124.5,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": " here",
+            "frame": [
+              237,
+              0,
+              32,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "the pieces of one line keep the screen's spaces, and none where they abut",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Visit ",
+            "frame": [
+              20,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "example",
+            "frame": [
+              50,
+              0,
+              53,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": " now",
+            "frame": [
+              103,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Plain ",
+            "frame": [
+              20,
+              30,
+              35,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "italic",
+            "frame": [
+              55,
+              30,
+              28,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "words",
+            "frame": [
+              83,
+              30,
+              40,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "Visit [example] now\nPlain italicwords"
+      }
+    },
+    {
+      "name": "a piece wrapped onto two lines and the piece after it on its last line are two words",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "The draft is ready for review",
+            "frame": [
+              868,
+              900,
+              590,
+              45
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Let me know what you think",
+            "frame": [
+              940,
+              925,
+              278,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "The draft is ready for review Let me know what you think"
+      }
+    },
+    {
+      "name": "a key split by a link on one line is redacted whole",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              20,
+              0,
+              92.5,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "Fixture1234567890",
+            "frame": [
+              112.5,
+              0,
+              124.5,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": " here",
+            "frame": [
+              237,
+              0,
+              32,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "a link whose box holds the space after it is a word of its own, as the screen shows it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Read ",
+            "frame": [
+              20,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "more",
+            "runs": [
+              [
+                "more",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              60,
+              0,
+              45,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "now",
+            "frame": [
+              105,
+              0,
+              30,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Read [more] now"
+      }
+    },
+    {
+      "name": "a key that is a link's text, after the space its box holds, is redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Paste",
+            "frame": [
+              20,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "sk-ReviewLink1234567890abcd",
+            "runs": [
+              [
+                " ",
+                false
+              ],
+              [
+                "sk-ReviewLink1234567890abcd",
+                true
+              ]
+            ],
+            "frame": [
+              60,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Paste [[redacted]]"
+      }
+    },
+    {
+      "name": "a key right after a link whose box holds the space after it is redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Token",
+            "runs": [
+              [
+                "Token",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              20,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "sk-ReviewLink1234567890abcd here",
+            "frame": [
+              70,
+              0,
+              240,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Token] [redacted] here"
+      }
+    },
+    {
+      "name": "a key body without its header after a link with a hidden line break takes the text back to the read's start, through its end line",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key:",
+            "runs": [
+              [
+                "Key:",
+                true
+              ],
+              [
+                "\n",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==\n-----END OPENSSH PRIVATE KEY-----",
+            "frame": [
+              0,
+              30,
+              400,
+              80
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[[redacted]]"
+      }
+    },
+    {
+      "name": "a key body without its header after a field whose hidden text ends its line takes the text back to the read's start, through its end line",
+      "request": {
+        "blocks": [
+          {
+            "kind": "field",
+            "text": "Key:",
+            "source": [
+              "",
+              "Key:",
+              "\n"
+            ],
+            "frame": [
+              0,
+              0,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==\n-----END OPENSSH PRIVATE KEY-----",
+            "frame": [
+              0,
+              30,
+              400,
+              80
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "> [redacted]"
+      }
+    },
+    {
+      "name": "a key body without its header after the caret's line takes the text back to the read's start, through its end line",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              0,
+              0,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==\n-----END OPENSSH PRIVATE KEY-----",
+            "frame": [
+              0,
+              30,
+              400,
+              80
+            ]
+          }
+        ],
+        "caret": [
+          "notes ",
+          "",
+          "more\n"
+        ]
+      },
+      "expected": {
+        "rendered": "\u00bb [redacted]\u2038"
+      }
+    },
+    {
+      "name": "a key that starts in a field's hidden text shows where its shown rest was redacted, and never the hidden text",
+      "request": {
+        "blocks": [
+          {
+            "kind": "field",
+            "text": "xture1234567890abcd more words",
+            "source": [
+              "prefix sk-ReviewFi",
+              "xture1234567890abcd more words",
+              ""
+            ],
+            "frame": [
+              0,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "> [redacted] more words"
+      }
+    },
+    {
+      "name": "a key that starts in a link's hidden run shows where its shown rest was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "xture1234567890abcd now",
+            "runs": [
+              [
+                "sk-ReviewFi",
+                false
+              ],
+              [
+                "xture1234567890abcd now",
+                true
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[[redacted] now]"
+      }
+    },
+    {
+      "name": "two pieces of one line with a blank field between them in reading order are redacted as joined",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "sk-ReviewFix",
+            "frame": [
+              0,
+              0,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "field",
+            "text": "\n",
+            "source": [
+              "",
+              "\n",
+              ""
+            ],
+            "frame": [
+              0,
+              100,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "ture1234567890abcd",
+            "frame": [
+              100,
+              0,
+              150,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]"
+      }
+    },
+    {
+      "name": "a moved marker goes before what the match left of the part",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key",
+            "runs": [
+              [
+                "Key",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD thanks",
+            "frame": [
+              31,
+              0,
+              400,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key] [redacted] thanks"
+      }
+    },
+    {
+      "name": "a match of hidden text alone marks nothing the read shows",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "notes:",
+            "runs": [
+              [
+                "notes:",
+                true
+              ],
+              [
+                "\n ",
+                false
+              ],
+              [
+                "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "after",
+            "frame": [
+              51,
+              0,
+              60,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[notes:] after"
+      }
+    },
+    {
+      "name": "a blank piece is not admitted",
+      "request": {
+        "admit": "   ",
+        "used": 0
+      },
+      "expected": {
+        "text": "",
+        "used": 0,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "a match of hidden text, then a key at the start of the next piece, marks the key once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "notes:",
+            "runs": [
+              [
+                "notes:",
+                true
+              ],
+              [
+                "\n ",
+                false
+              ],
+              [
+                "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "sk-ReviewLink1234567890abcd after",
+            "frame": [
+              51,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[notes:] [redacted] after"
+      }
+    },
+    {
+      "name": "a block redacted away keeps the line break that went after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----END PRIVATE KEY-----",
+            "frame": [
+              0,
+              60,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "Copy",
+            "frame": [
+              210,
+              60,
+              40,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]\n[Copy]"
+      }
+    },
+    {
+      "name": "the read is not laid out again once a block is redacted away",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----END PRIVATE KEY-----",
+            "frame": [
+              0,
+              60,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "Copy",
+            "frame": [
+              210,
+              0,
+              40,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]\n\n[Copy]"
+      }
+    },
+    {
+      "name": "a match that runs from the screen into the caret's text marks the caret's text too",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "a1B2c3D4e5F6g7H8i9J0",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]",
+        "caret": [
+          "[redacted]",
+          "",
+          ""
+        ],
+        "selectionRedacted": false
+      }
+    },
+    {
+      "name": "a key header cut off takes the words of base64 after it, in the next block too",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "pwd=hunter3y",
+            "frame": [
+              0,
+              20,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]"
+      }
+    },
+    {
+      "name": "a password in an address goes, and the @ after it stays",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "postgres://admin:hunter2@db.example.com:5432/app",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "postgres://admin:[redacted]@db.example.com:5432/app"
+      }
+    },
+    {
+      "name": "a value that starts or ends like the marker is redacted whole",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "token=[review42] more",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "token=[redacted] more"
+      }
+    },
+    {
+      "name": "an address password in brackets is redacted whole",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "postgres://admin:[hunter2]@db.example.com:5432/app",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "postgres://admin:[redacted]@db.example.com:5432/app"
+      }
+    },
+    {
+      "name": "a selected value that starts like the marker is redacted whole and marked",
+      "request": {
+        "blocks": [],
+        "caret": [
+          "token=",
+          "[review42]",
+          " more"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "token=",
+          "[redacted]",
+          " more"
+        ],
+        "selectionRedacted": true
+      }
+    },
+    {
+      "name": "a key that ends inside a piece keeps the space the screen shows after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              0,
+              0,
+              130,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Fixture",
+            "frame": [
+              130,
+              0,
+              70,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "1234567890 here",
+            "frame": [
+              200,
+              0,
+              150,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "a key that ends inside a wrapped piece keeps the line break after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              0,
+              0,
+              130,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Fixture1234567890\nnext line",
+            "frame": [
+              130,
+              0,
+              200,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted]\nnext line"
+      }
+    },
+    {
+      "name": "a field's spaces at its edges are not shown",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Name:",
+            "frame": [
+              0,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "field",
+            "text": "  value  ",
+            "frame": [
+              0,
+              20,
+              100,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Name:\n> value"
+      }
+    },
+    {
+      "name": "a space a piece shows at its end parts it from the piece after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "more ",
+            "runs": [
+              [
+                "more ",
+                true
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "now",
+            "frame": [
+              40,
+              0,
+              30,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[more] now"
+      }
+    },
+    {
+      "name": "a key body right after a link whose box holds the space after it shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key",
+            "runs": [
+              [
+                "Key",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+            "frame": [
+              31,
+              0,
+              400,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key] [redacted]"
+      }
+    },
+    {
+      "name": "a key body after a link whose hidden text ends in a line break and a space shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key:",
+            "runs": [
+              [
+                "Key:",
+                true
+              ],
+              [
+                "\n ",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+            "frame": [
+              31,
+              0,
+              400,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key:] [redacted]"
+      }
+    },
+    {
+      "name": "pieces a tenth of the line's height apart still abut",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Ij",
+            "frame": [
+              0,
+              80,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "kl",
+            "frame": [
+              22,
+              80,
+              20,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Ijkl"
+      }
+    },
+    {
+      "name": "a link whose runs end hidden is not glued to a key after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "(docs)",
+            "runs": [
+              [
+                "(docs)",
+                true
+              ],
+              [
+                "zz",
+                false
+              ]
+            ],
+            "frame": [
+              20,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "sk-ReviewLink1234567890abcd here",
+            "frame": [
+              60,
+              0,
+              240,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[(docs)] [redacted] here"
+      }
+    },
+    {
+      "name": "a link whose runs start hidden is not glued to the key before it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-ReviewLink1234567890abcd",
+            "frame": [
+              20,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "(docs)",
+            "runs": [
+              [
+                "zz",
+                false
+              ],
+              [
+                "(docs)",
+                true
+              ]
+            ],
+            "frame": [
+              220,
+              0,
+              40,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] [(docs)]"
+      }
+    },
+    {
+      "name": "a key's body beside a label on its first line is redacted, its first line too",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key:",
+            "frame": [
+              20,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              55,
+              0,
+              400,
+              60
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key: [redacted]"
+      }
+    },
+    {
+      "name": "a key's body before the caret, its lines separated by U+2029, is redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              20,
+              0,
+              400,
+              60
+            ]
+          }
+        ],
+        "caret": [
+          "Notes:\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029",
+          "",
+          "end"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "Notes:\u2029[redacted]",
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "pieces a pixel apart abut, and three apart are two words",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Ab",
+            "frame": [
+              0,
+              0,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "cd",
+            "frame": [
+              21,
+              0,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Ef",
+            "frame": [
+              0,
+              40,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "gh",
+            "frame": [
+              23,
+              40,
+              20,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "Abcd\nEf gh"
+      }
+    },
+    {
       "name": "sliver overlap",
       "request": {
         "blocks": [
@@ -280,6 +1780,31 @@
       "expected": {
         "text": "",
         "used": 17,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "admission keeps one space at each edge that had any",
+      "request": {
+        "admit": "  Visit\t",
+        "used": 0
+      },
+      "expected": {
+        "text": " Visit ",
+        "used": 7,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "a piece that repeats the one before it, kept with its edge spaces, spends no budget",
+      "request": {
+        "admit": "Inbox",
+        "previous": " Inbox ",
+        "used": 5
+      },
+      "expected": {
+        "text": "",
+        "used": 5,
         "budgetFull": false
       }
     },
@@ -1004,7 +2529,7 @@
       }
     },
     {
-      "name": "a caret starting a paragraph gets the break, wherever it is; the render takes it out where it splits a secret",
+      "name": "a caret starting a paragraph gets the break, wherever it is",
       "request": {
         "caretWindow": {
           "parts": [
@@ -1077,7 +2602,7 @@
       },
       "expected": {
         "parts": [
-          "Synthetic opening line\u2029\nSynthetic line to dictate under.\u2029",
+          "Synthetic opening line\n\nSynthetic line to dictate under.\n",
           "",
           "\n\n--\nSynthetic signature"
         ],
@@ -1105,7 +2630,7 @@
         "parts": [
           "First paragraph\n",
           "Second",
-          "\u2029Third"
+          "\nThird"
         ],
         "selectionUnavailable": false
       }
@@ -1131,7 +2656,7 @@
         "parts": [
           "Line dictated under.",
           "",
-          "\u2029Signature"
+          "\nSignature"
         ],
         "selectionUnavailable": false
       }
@@ -1155,7 +2680,7 @@
       "expected": {
         "parts": [
           "Intro ",
-          "First paragraph\u2029Second",
+          "First paragraph\nSecond",
           " paragraph"
         ],
         "selectionUnavailable": false
@@ -1231,13 +2756,13 @@
         "parts": [
           "First",
           "",
-          "Second\u2029"
+          "Second\n"
         ],
         "selectionUnavailable": false
       }
     },
     {
-      "name": "put-back breaks are shown as line breaks",
+      "name": "put-back breaks reach the render as the line breaks they are",
       "request": {
         "blocks": [
           {
@@ -1250,7 +2775,7 @@
           }
         ],
         "caret": [
-          "Synthetic opening line\u2029\nSynthetic line to dictate under.\u2029",
+          "Synthetic opening line\n\nSynthetic line to dictate under.\n",
           "",
           "\n\n--\nSynthetic signature"
         ]
@@ -1264,54 +2789,7 @@
       }
     },
     {
-      "name": "a caret inside a secret once the break before it is taken out is withheld",
-      "request": {
-        "blocks": [],
-        "caret": [
-          "Reply. password=synthetic\n",
-          "",
-          "Secret123 after"
-        ]
-      },
-      "expected": {
-        "caret": [
-          "",
-          "",
-          ""
-        ],
-        "selectionRedacted": false
-      }
-    },
-    {
-      "name": "a caret inside a secret that starts in the block above, once the break before it is taken out, is withheld",
-      "request": {
-        "blocks": [
-          {
-            "kind": "text",
-            "text": "Authorization: Bearer"
-          },
-          {
-            "kind": "caret",
-            "text": "ignored"
-          }
-        ],
-        "caret": [
-          "a\n",
-          "",
-          "1B2c3D4e5F6g7H8i9J0k1L2 thanks"
-        ]
-      },
-      "expected": {
-        "rendered": "Authorization: Bearer\n» ‸",
-        "caret": [
-          "",
-          "",
-          ""
-        ]
-      }
-    },
-    {
-      "name": "a break of the text's own that two keys would be joined across withholds the caret, so neither key is shown in part",
+      "name": "two keys on lines of their own around the caret are each redacted",
       "request": {
         "blocks": [],
         "caret": [
@@ -1322,14 +2800,14 @@
       },
       "expected": {
         "caret": [
+          "[redacted]\n",
           "",
-          "",
-          ""
+          "[redacted]"
         ]
       }
     },
     {
-      "name": "a selection after a break withheld with the caret is the refusal marker",
+      "name": "a selected key under a key on the line above is redacted on its own",
       "request": {
         "blocks": [],
         "caret": [
@@ -1340,9 +2818,9 @@
       },
       "expected": {
         "caret": [
-          "",
+          "[redacted]\n",
           "[redacted]",
-          ""
+          " after"
         ],
         "selectionRedacted": true
       }
@@ -1376,6 +2854,40 @@
       }
     },
     {
+      "name": "a provider's own paragraph separator ending a rich editor's text is its line break",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "x\u2029\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  2,
+                  1
+                ]
+              ]
+            },
+            {
+              "text": "A",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "x\u2029A",
+        "length": 3,
+        "caret": null,
+        "selection": null
+      }
+    },
+    {
       "name": "a rich editor's text after a paragraph takes one break, with a caret in it",
       "request": {
         "hypertext": {
@@ -1403,7 +2915,7 @@
         }
       },
       "expected": {
-        "text": "para\u2029tail",
+        "text": "para\ntail",
         "length": 9,
         "caret": 7,
         "selection": null
@@ -1451,7 +2963,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029Why",
+        "text": "Hi All,\nWhy",
         "length": 11,
         "caret": null,
         "selection": [
@@ -1532,7 +3044,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 27,
         "selection": null
@@ -1610,7 +3122,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 8,
         "selection": null
@@ -1688,7 +3200,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 26,
         "selection": null
@@ -1755,7 +3267,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 27,
         "selection": null
@@ -1842,7 +3354,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 12,
         "selection": [
@@ -1913,7 +3425,7 @@
         }
       },
       "expected": {
-        "text": "A\u2029B",
+        "text": "A\nB",
         "length": 3,
         "caret": null,
         "selection": null
@@ -1947,7 +3459,7 @@
         }
       },
       "expected": {
-        "text": "A\u2029B",
+        "text": "A\nB",
         "length": 3,
         "caret": 2,
         "selection": null
@@ -2003,7 +3515,7 @@
         }
       },
       "expected": {
-        "text": "A\u2029B",
+        "text": "A\nB",
         "length": 3,
         "caret": null,
         "selection": null
@@ -2070,7 +3582,7 @@
         }
       },
       "expected": {
-        "text": "Gr\u00fc\u00dfe \ud83d\ude00\u2029x",
+        "text": "Gr\u00fc\u00dfe \ud83d\ude00\nx",
         "length": 9,
         "caret": 8,
         "selection": null
@@ -2203,7 +3715,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy",
+        "text": "Hi All,\n\nWhy",
         "length": 12,
         "caret": 8,
         "selection": null
@@ -2259,7 +3771,7 @@
         }
       },
       "expected": {
-        "text": "Visit \ufffc now\u2029Why",
+        "text": "Visit \ufffc now\nWhy",
         "length": 15,
         "caret": null,
         "selection": [
@@ -2325,6 +3837,1015 @@
           2
         ]
       }
-    }
-  ]
+    },
+    {
+      "name": "a key split where the piece before it wraps is one word: the pieces meet where its last line ends",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Wrap words that wrap onto a second line sk-ReviewWrap",
+            "frame": [
+              0,
+              0,
+              200,
+              40
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                142,
+                20,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Glued1234567890ab end",
+            "frame": [
+              150,
+              20,
+              120,
+              20
+            ],
+            "ends": [
+              [
+                150,
+                20,
+                8,
+                20
+              ],
+              [
+                262,
+                20,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Wrap words that wrap onto a second line [redacted] end"
+      }
+    },
+    {
+      "name": "a key split where the piece after it wraps is one word: the pieces meet where its first line starts",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Start sk-ReviewStart",
+            "frame": [
+              0,
+              0,
+              150,
+              20
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                142,
+                0,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Tail1234567890abcd words that wrap onto more lines",
+            "frame": [
+              0,
+              0,
+              200,
+              40
+            ],
+            "ends": [
+              [
+                150,
+                0,
+                8,
+                20
+              ],
+              [
+                0,
+                20,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Start [redacted] words that wrap onto more lines"
+      }
+    },
+    {
+      "name": "a piece wrapped onto two lines and the piece after it, apart from its last line's end, are two words",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "The draft is ready for review",
+            "frame": [
+              868,
+              900,
+              590,
+              45
+            ],
+            "ends": [
+              [
+                868,
+                900,
+                8,
+                20
+              ],
+              [
+                920,
+                925,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Let me know what you think",
+            "frame": [
+              940,
+              925,
+              278,
+              20
+            ],
+            "ends": [
+              [
+                940,
+                925,
+                8,
+                20
+              ],
+              [
+                1210,
+                925,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "The draft is ready for review Let me know what you think"
+      }
+    },
+    {
+      "name": "a piece starting on the line below a wrapped piece's last line is a line of its own",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "A paragraph that wraps",
+            "frame": [
+              0,
+              0,
+              200,
+              40
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                60,
+                20,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "the next one",
+            "frame": [
+              0,
+              40,
+              120,
+              20
+            ],
+            "ends": [
+              [
+                0,
+                40,
+                8,
+                20
+              ],
+              [
+                112,
+                40,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "A paragraph that wraps\nthe next one"
+      }
+    },
+    {
+      "name": "an empty box where a piece ends is no place: its frame is used",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              0,
+              0,
+              130,
+              20
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Fixture1234567890 here",
+            "frame": [
+              130,
+              0,
+              200,
+              20
+            ],
+            "ends": [
+              [
+                130,
+                0,
+                8,
+                20
+              ],
+              [
+                322,
+                0,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "a named value after a key block cut off, in a block of its own, keeps its value redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "id_rsa",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----BEGIN RSA PRIVATE KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              400,
+              60
+            ]
+          },
+          {
+            "kind": "heading",
+            "text": "Database",
+            "frame": [
+              0,
+              90,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "password = a1B2c3.D4e5F6g7H8",
+            "frame": [
+              0,
+              110,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              0,
+              140,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "## id_rsa\n[redacted]\n» ‸"
+      }
+    },
+    {
+      "name": "a bearer token after a key block cut off in the caret's window keeps its value redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Bearer a1B2c3.D4e5F6g7H8",
+            "frame": [
+              0,
+              30,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          "-----BEGIN RSA PRIVATE KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\n"
+        ]
+      },
+      "expected": {
+        "rendered": "» ‸[redacted]",
+        "caret": [
+          "",
+          "",
+          "[redacted]"
+        ]
+      }
+    },
+    {
+      "name": "text taken out by two matches side by side is marked once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "see AK\u0049AB2C3D4E5F6G7H8I9AI\u007aaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6 ok",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "see [redacted] ok"
+      }
+    },
+    {
+      "name": "a key's line ending the read and its next line starting the caret's window are two lines of one key",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Notes a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\nmore",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Notes [redacted]",
+        "caret": [
+          "[redacted]",
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "the marker for what was left out stays whole beside a named value",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "token=abc123",
+            "frame": [
+              0,
+              0,
+              96,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "[hidden for privacy]",
+            "frame": [
+              96,
+              0,
+              160,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "token=[redacted] [hidden for privacy]"
+      }
+    },
+    {
+      "name": "a key's body read one block per line, its header cut off, takes the text back to the read's start, through its end line",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Page 2",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              60,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5==",
+            "frame": [
+              0,
+              80,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----END PRIVATE KEY-----",
+            "frame": [
+              0,
+              100,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]"
+      }
+    },
+    {
+      "name": "a key's body read one block per line, its header cut off, goes and the text after it stays",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Page 2",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              60,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5==",
+            "frame": [
+              0,
+              80,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Thanks.",
+            "frame": [
+              0,
+              100,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Page 2\n[redacted]\nThanks."
+      }
+    },
+    {
+      "name": "a selection inside a key whose header is above the caret's window, with no caret block, is marked in the window only once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+          "\nmore"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "",
+          "[redacted]",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "the marker at a link's start stays whole beside a named value touching it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "token=abc123",
+            "frame": [
+              0,
+              0,
+              96,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "[hidden for privacy] more",
+            "runs": [
+              [
+                "[hidden for privacy] more",
+                true
+              ]
+            ],
+            "frame": [
+              96,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "token=[redacted] [[hidden for privacy] more]"
+      }
+    },
+    {
+      "name": "the marker at a link's end stays whole beside a named value touching it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "more [hidden for privacy]",
+            "runs": [
+              [
+                "more [hidden for privacy]",
+                true
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "token=abc123",
+            "frame": [
+              200,
+              0,
+              96,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[more [hidden for privacy]] token=[redacted]"
+      }
+    },
+    {
+      "name": "a key's body in a piece touching a label piece goes, the label stays",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key:",
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              40,
+              0,
+              400,
+              60
+            ],
+            "ends": [
+              [
+                40,
+                0,
+                400,
+                20
+              ],
+              [
+                0,
+                40,
+                400,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key:[redacted]"
+      }
+    },
+    {
+      "name": "a link starting with a line break, its box at the end of the line before, starts its own line",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+            "frame": [
+              0,
+              0,
+              512,
+              60
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                504,
+                40,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "\nQUJDQUJD== copy",
+            "frame": [
+              512,
+              40,
+              80,
+              20
+            ],
+            "ends": [
+              [
+                512,
+                40,
+                8,
+                20
+              ],
+              [
+                540,
+                60,
+                40,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]\n[copy]"
+      }
+    },
+  {
+   "name": "a text ending in a line break, its box at the end of the line, puts the link after it on its own line",
+   "request": {
+    "blocks": [
+     {
+      "kind": "text",
+      "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\n",
+      "frame": [
+       0,
+       0,
+       512,
+       60
+      ],
+      "ends": [
+       [
+        0,
+        0,
+        8,
+        20
+       ],
+       [
+        504,
+        40,
+        8,
+        20
+       ]
+      ]
+     },
+     {
+      "kind": "link",
+      "text": "QUJDQUJD== copy",
+      "frame": [
+       512,
+       40,
+       80,
+       20
+      ],
+      "ends": [
+       [
+        512,
+        40,
+        8,
+        20
+       ],
+       [
+        540,
+        40,
+        40,
+        20
+       ]
+      ]
+     }
+    ],
+    "caret": [
+     "",
+     "",
+     ""
+    ]
+   },
+   "expected": {
+    "rendered": "[redacted]\n[copy]"
+   }
+  },
+{
+   "name": "a link starting with a line break before the marker for what was left out starts its own line",
+   "request": {
+    "blocks": [
+     {
+      "kind": "text",
+      "text": "alpha beta",
+      "frame": [
+       0,
+       0,
+       80,
+       20
+      ],
+      "ends": [
+       [
+        0,
+        0,
+        8,
+        20
+       ],
+       [
+        72,
+        0,
+        8,
+        20
+       ]
+      ]
+     },
+     {
+      "kind": "link",
+      "text": "\n[hidden for privacy] gamma",
+      "frame": [
+       80,
+       0,
+       200,
+       20
+      ],
+      "ends": [
+       [
+        80,
+        0,
+        8,
+        20
+       ],
+       [
+        240,
+        0,
+        40,
+        20
+       ]
+      ]
+     }
+    ],
+    "caret": [
+     "",
+     "",
+     ""
+    ]
+   },
+   "expected": {
+    "rendered": "alpha beta\n[[hidden for privacy] gamma]"
+   }
+  }
+ ]
 }

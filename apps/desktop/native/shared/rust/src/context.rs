@@ -11,8 +11,21 @@ struct Block {
     kind: String,
     text: String,
     frame: Option<[f64; 4]>,
+    /// Where the block's text starts and ends on screen, when the helper gives it: the box of its
+    /// first line (or character) and of its last. A piece that wraps has one frame over all its
+    /// lines, which says nothing of where it meets the piece before or after it.
+    ends: Option<[[f64; 4]; 2]>,
     source: Option<Vec<String>>,
     runs: Option<Vec<(String, bool)>>,
+    /// What the text the screen shows starts and ends with: a line break, a space, or nothing
+    /// (`admit` keeps one at each edge that had whitespace, a line break if it held one, and
+    /// `SemanticText` gives it as a hidden run); the block's text is read without it. A block whose
+    /// runs start or end hidden is spaced there (a space: what the screen does not show says
+    /// nothing of where its lines break), so that text is never glued to the piece beside it.
+    spaced: [&'static str; 2],
+    /// What the screen shows between the block before and this one (`separator`), set once when
+    /// the read is laid out.
+    before: &'static str,
 }
 impl Block {
     fn read(value: &Value) -> Result<Self, u32> {
@@ -20,7 +33,11 @@ impl Block {
         if !["text", "heading", "link", "row", "field", "caret"].contains(&kind) {
             return Err(1);
         }
-        let text = value["text"].as_str().ok_or(1u32)?.to_owned();
+        let mut text = value["text"].as_str().ok_or(1u32)?.to_owned();
+        let spaced = [
+            edge(&text[..text.len() - text.trim_start_matches(whitespace).len()]),
+            edge(&text[text.trim_end_matches(whitespace).len()..]),
+        ];
         let source = value.get("source").map(read_field).transpose()?;
         if source
             .as_ref()
@@ -41,25 +58,47 @@ impl Block {
         {
             return Err(1);
         }
+        if !matches!(kind, "field" | "caret") && runs.is_none() {
+            text = text.trim_matches(whitespace).to_owned();
+        }
+        let spaced = match &runs {
+            Some(runs) => [runs.first(), runs.last()].map(|run| match run {
+                Some((text, false)) if !text.is_empty() => " ",
+                _ => "",
+            }),
+            None => spaced,
+        };
+        // The marker for what a helper left out is the core's own word, never glued to a piece
+        // beside it, so that no redactor reads it as part of a value: a block that starts or ends
+        // with it (a link whose first or last part was left out) stands apart on that side.
+        let marked = |spaced: &'static str, marked: bool| {
+            if marked { more(spaced, " ") } else { spaced }
+        };
+        let spaced = [
+            marked(spaced[0], text.starts_with(HIDDEN_MARKER)),
+            marked(spaced[1], text.ends_with(HIDDEN_MARKER)),
+        ];
         let frame = if value["frame"].is_null() {
             None
         } else {
-            let array = value["frame"].as_array().ok_or(1u32)?;
-            if array.len() != 4 {
-                return Err(1);
-            }
-            let mut frame = [0.; 4];
-            for (index, coordinate) in array.iter().enumerate() {
-                frame[index] = coordinate.as_f64().filter(|x| x.is_finite()).ok_or(1u32)?;
-            }
-            Some(frame)
+            Some(read_box(&value["frame"])?)
+        };
+        let ends = match value.get("ends") {
+            None | Some(Value::Null) => None,
+            Some(ends) => match ends.as_array().map(Vec::as_slice) {
+                Some([first, last]) => Some([read_box(first)?, read_box(last)?]),
+                _ => return Err(1),
+            },
         };
         Ok(Self {
             kind: kind.into(),
             text,
             frame,
+            ends,
             source,
             runs,
+            spaced,
+            before: "",
         })
     }
     fn source_bytes(&self) -> usize {
@@ -78,26 +117,136 @@ impl Block {
         self.kind == "text" || self.kind == "link"
     }
 }
+/// How far apart, as a share of the smaller box's height, two pieces of one line may be and still be
+/// one word: Chromium lays a bold or linked run against the text before it with no gap at all
+/// (measured 2026-10-07), and the gap between two words is a space's width, about a quarter of
+/// the line. A piece whose box ends well past the next one's start wrapped onto more lines; its
+/// last line's end is not known, so a space goes between.
+const ABUTTING_GAP: f64 = 0.1;
+/// A box the helper gives: four finite numbers, x, y, width and height.
+fn read_box(value: &Value) -> Result<[f64; 4], u32> {
+    let array = value.as_array().ok_or(1u32)?;
+    if array.len() != 4 {
+        return Err(1);
+    }
+    let mut frame = [0.; 4];
+    for (index, coordinate) in array.iter().enumerate() {
+        frame[index] = coordinate.as_f64().filter(|x| x.is_finite()).ok_or(1u32)?;
+    }
+    Ok(frame)
+}
+/// What goes between two blocks as the screen shows them: a line break (two at a jump up to the
+/// next column), or, between two pieces of one line, a space where the screen shows one and
+/// nothing where they abut (a run of bold or a link inside a word).
 fn separator(a: &Block, b: &Block) -> &'static str {
     let (Some(a_frame), Some(b_frame)) = (a.frame, b.frame) else {
         return "\n";
     };
-    let [ax, ay, aw, ah] = a_frame;
-    let [bx, by, bw, bh] = b_frame;
-    if aw <= 0. || ah <= 0. || bw <= 0. || bh <= 0. {
+    if [a_frame, b_frame]
+        .iter()
+        .any(|[_, _, w, h]| *w <= 0. || *h <= 0.)
+    {
         return "\n";
     }
+    let below = b_frame[1] + b_frame[3] <= a_frame[1];
+    // Where a's text ends and b's starts: a's last line and b's first, when the helper gives them
+    // (a piece that wraps meets the next one on its last line, not across its frame).
+    let shown = |ends: Option<[[f64; 4]; 2]>, end: usize, frame: [f64; 4]| {
+        ends.map(|ends| ends[end])
+            .filter(|[_, _, w, h]| *w > 0. && *h > 0.)
+            .unwrap_or(frame)
+    };
+    let [ax, ay, aw, ah] = shown(a.ends, 1, a_frame);
+    let [bx, by, _, bh] = shown(b.ends, 0, b_frame);
     let overlap = (ay + ah).min(by + bh) - ay.max(by);
     if a.inline() && b.inline() && bx >= ax && overlap >= ah.min(bh) * 0.5 {
-        return " ";
+        // The text's own edge says more than the boxes: a piece that starts with a line break goes
+        // on the next line, wherever the box of that break is.
+        let gap = if (bx - (ax + aw)).abs() > ah.min(bh) * ABUTTING_GAP {
+            " "
+        } else {
+            ""
+        };
+        return more(more(a.spaced[1], b.spaced[0]), gap);
     }
-    if by + bh <= ay { "\n\n" } else { "\n" }
+    if below { "\n\n" } else { "\n" }
+}
+/// Lays the blocks out once: what goes between each block and the one before it.
+fn lay_out(blocks: &mut [Block]) {
+    for index in 1..blocks.len() {
+        blocks[index].before = separator(&blocks[index - 1], &blocks[index]);
+    }
+}
+/// How much a separator parts two blocks: nothing, a space, a line break, two.
+fn rank(separator: &str) -> usize {
+    ["", " ", "\n", "\n\n"]
+        .iter()
+        .position(|s| *s == separator)
+        .unwrap_or(0)
+}
+/// The one of two separators that parts more.
+fn more(a: &'static str, b: &'static str) -> &'static str {
+    if rank(a) >= rank(b) { a } else { b }
+}
+/// The separator that stands for a run of whitespace at a part's edge: a line break if it holds
+/// one, a space if it holds any, nothing if it is empty.
+fn edge(run: &str) -> &'static str {
+    if run.contains(line_break) {
+        "\n"
+    } else if run.is_empty() {
+        ""
+    } else {
+        " "
+    }
+}
+/// Drops the blocks that show nothing. What goes between the two blocks either side of one dropped
+/// is the more of what went before and after it (a line break over a space), so the lines stay as
+/// laid out.
+fn drop_empty(blocks: &mut Vec<Block>) {
+    let mut kept: Vec<Block> = Vec::with_capacity(blocks.len());
+    let mut pending: Option<&'static str> = None;
+    for mut block in blocks.drain(..) {
+        if let Some(dropped) = pending.take()
+            && rank(dropped) > rank(block.before)
+        {
+            block.before = dropped;
+        }
+        if block.kind != "caret" && block.text.is_empty() {
+            pending = Some(block.before);
+            continue;
+        }
+        kept.push(block);
+    }
+    *blocks = kept;
+}
+/// The read laid out as the screen shows it: its text, each byte's part and whether the read shows
+/// it.
+#[derive(Default)]
+struct Layout {
+    text: String,
+    owner: Vec<usize>,
+    shown: Vec<bool>,
+    /// Where a piece the screen shows on its own starts (a block, a run of it), for the word edge
+    /// of a key's prefix. A field's text around what it shows and the caret's split are one text.
+    edges: Vec<usize>,
+}
+impl Layout {
+    fn piece(&mut self) {
+        if self.edges.last() != Some(&self.text.len()) {
+            self.edges.push(self.text.len());
+        }
+    }
+    fn push(&mut self, text: &str, part: usize, shown: bool) {
+        self.text.push_str(text);
+        self.owner.extend(std::iter::repeat_n(part, text.len()));
+        self.shown.extend(std::iter::repeat_n(shown, text.len()));
+    }
 }
 fn render(blocks: &[Block]) -> String {
     let mut result = String::new();
     for (index, block) in blocks.iter().enumerate() {
         if index > 0 {
-            result.push_str(separator(&blocks[index - 1], block));
+            result.push_str(block.before);
         }
         match block.kind.as_str() {
             "heading" => {
@@ -142,6 +291,11 @@ pub(crate) const BLOCK_SOURCE_BYTES: usize = 2 * SCREEN_BYTES + 3;
 const FIELD_SOURCE_BYTES: usize = 3 * SOURCE_WINDOW_BYTES;
 pub(crate) const SEMANTIC_SOURCE_BYTES: usize = SCREEN_BYTES + FIELD_SOURCE_BYTES + 3;
 const ALL_BLOCK_SOURCE_BYTES: usize = SCREEN_BYTES + SEMANTIC_SOURCE_BYTES;
+/// A hidden run of spaces only: it hides nothing (`SemanticText` gives a space the screen shows at
+/// a block's edge as one).
+fn edge_space((text, shown): &(String, bool)) -> bool {
+    !shown && !text.is_empty() && text.chars().all(whitespace)
+}
 fn read_runs(value: &Value) -> Result<Vec<(String, bool)>, u32> {
     let input = value
         .as_array()
@@ -193,71 +347,11 @@ const CARET_SIDE_GRAPHEMES: usize = 2_000;
 /// provider's offsets): twice the graphemes a side shows, so the breaks of all the text shown are
 /// put back.
 pub(crate) const PARAGRAPH_START_UNITS: usize = 2 * CARET_SIDE_GRAPHEMES;
-/// A break this core added where the provider's text has none: one the caret window put back, or
-/// one between a rich editor's blocks (`hypertext`). It travels to the render in the text, which
-/// checks it against the redaction (`redact_added`) and shows it as a line break; U+2029 is a
-/// paragraph break itself, so one in the text is checked the same way.
-pub(crate) const ADDED_BREAK: char = '\u{2029}';
+/// The line break the core puts back where the screen starts a line the provider's text leaves
+/// out (a rich editor's block, a paragraph Chromium gives no break): the text is read as it is
+/// laid out, and redacted as it is (ADR-DESK-007, 2026-10-07).
+const LINE_BREAK: char = '\n';
 
-/// Redacts `lines` that may hold added breaks (`ADDED_BREAK`), each shown as `\n`, and says which
-/// lines are withheld. An added break can split a secret the redactor has to see whole (a key over
-/// two blocks, or under its label in the block above), and leaving it out can join two keys into one
-/// match that stops short of the second's body, so the lines are read without them too: where one
-/// falls inside a match there, every line holding one is withheld, and every other line must read
-/// the same either way, or nothing is read (`Err(3)`; ADR-DESK-007, 2026-10-06).
-pub(crate) fn redact_added(lines: &privacy::Lines) -> Result<(privacy::Lines, Vec<bool>), u32> {
-    let shown: privacy::Lines = lines
-        .iter()
-        .map(|line| {
-            line.iter()
-                .map(|part| part.replace(ADDED_BREAK, "\n"))
-                .collect()
-        })
-        .collect();
-    let redacted = privacy::redact(&shown).map_err(|_| 3u32)?;
-    let holds: Vec<bool> = lines
-        .iter()
-        .map(|line| line.iter().any(|part| part.contains(ADDED_BREAK)))
-        .collect();
-    let mut withheld = vec![false; lines.len()];
-    if !holds.contains(&true) {
-        return Ok((redacted, withheld));
-    }
-    // The lines without the added breaks, and where each was, in UTF-16 units of the lines joined
-    // by `\n` (as the redactor joins them).
-    let mut joined = privacy::Lines::with_capacity(lines.len());
-    let mut anchors = Vec::new();
-    let mut at = 0usize;
-    for line in lines {
-        let mut parts = Vec::with_capacity(line.len());
-        for part in line {
-            let mut kept = String::with_capacity(part.len());
-            for character in part.chars() {
-                if character == ADDED_BREAK {
-                    anchors.push(at);
-                } else {
-                    kept.push(character);
-                    at += character.len_utf16();
-                }
-            }
-            parts.push(kept);
-        }
-        at += 1;
-        joined.push(parts);
-    }
-    let (without, kept) = privacy::redact_anchored(&joined, &anchors).map_err(|_| 3u32)?;
-    if kept.iter().all(Option::is_some) {
-        return Ok((redacted, withheld));
-    }
-    for (index, holds) in holds.into_iter().enumerate() {
-        if holds {
-            withheld[index] = true;
-        } else if redacted[index] != without[index] {
-            return Err(3);
-        }
-    }
-    Ok((redacted, withheld))
-}
 fn line_break(character: char) -> bool {
     matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
@@ -295,7 +389,7 @@ fn left_out_breaks(
         };
         breaks[part].push(at);
     }
-    breaks[1].truncate((SELECTION_SOURCE_BYTES - selected) / ADDED_BREAK.len_utf8());
+    breaks[1].truncate((SELECTION_SOURCE_BYTES - selected) / LINE_BREAK.len_utf8());
     Ok(breaks)
 }
 
@@ -339,6 +433,19 @@ fn suffix_start(text: &str, graphemes: usize, bytes: usize) -> usize {
     }
     start
 }
+/// A cut that would split a marker (`[redacted]`, `[hidden for privacy]`) leaves it out whole
+/// instead: a prefix ending inside one ends before it, a suffix starting inside one starts after it.
+/// A part of a marker would no longer say what was taken out, and a reply could repeat it.
+fn outside_markers(text: &str, cut: usize, prefix: bool) -> usize {
+    for marker in [privacy::PLACEHOLDER, HIDDEN_MARKER] {
+        for start in cut.saturating_sub(marker.len() - 1)..cut {
+            if text.as_bytes()[start..].starts_with(marker.as_bytes()) {
+                return if prefix { start } else { start + marker.len() };
+            }
+        }
+    }
+    cut
+}
 fn present_caret(parts: &mut [String]) -> Result<bool, u32> {
     let selection_bytes = parts[1].len() + if parts[1].is_empty() { 3 } else { 6 };
     if selection_bytes > SCREEN_BYTES {
@@ -353,6 +460,8 @@ fn present_caret(parts: &mut [String]) -> Result<bool, u32> {
     );
     // Reuse any allowance the after-side did not need, keeping nearest context.
     let before_start = suffix_start(&parts[0], CARET_SIDE_GRAPHEMES, remaining - after_end);
+    let before_start = outside_markers(&parts[0], before_start, false);
+    let after_end = outside_markers(&parts[2], after_end, true);
     let changed = before_start != 0 || after_end != parts[2].len();
     parts[0] = parts[0][before_start..].to_owned();
     parts[2].truncate(after_end);
@@ -370,7 +479,11 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
         } else {
             usize::MAX
         };
-        let mut end = prefix_end(&block.text, graphemes, remaining);
+        let mut end = outside_markers(
+            &block.text,
+            prefix_end(&block.text, graphemes, remaining),
+            true,
+        );
         if end < block.text.len() && block.kind == "row" {
             // Row text treats ` | ` as a column separator. A prefix must not
             // finish inside that separator, or just after it with no next cell.
@@ -387,7 +500,7 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
         block.text.truncate(end);
         remaining -= end;
     }
-    blocks.retain(|b| b.kind == "caret" || !b.text.is_empty());
+    drop_empty(blocks);
     Ok(changed)
 }
 
@@ -637,9 +750,8 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     // selection are, and where a block element starts and ends. A block starts a line of its own,
     // and text after one starts a new line; the caret is the first reported, the selection runs from
     // the first part's start to the last part's end. Offsets count Unicode scalars, as AT-SPI does.
-    // The breaks between blocks are this core's, not the provider's (`ADDED_BREAK`): the render and
-    // a field read check them against the redaction of the text without them, over everything read
-    // with them (a label in the block before can make a key split across two blocks a secret).
+    // Each block's line starts with a line break, as the screen shows it, and the text is redacted
+    // as it is: a secret the screen shows over two lines is read in two (ADR-DESK-007, 2026-10-07).
     if let Some(hypertext) = request.get("hypertext") {
         let parts = hypertext_parts(
             hypertext
@@ -653,8 +765,8 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         let mut caret = None;
         let mut selection: Option<(usize, usize)> = None;
         let break_line = |text: &mut String, length: &mut usize| {
-            if !text.is_empty() && !text.ends_with(['\n', ADDED_BREAK]) {
-                text.push(ADDED_BREAK);
+            if !text.is_empty() && !text.ends_with(line_break) {
+                text.push(LINE_BREAK);
                 *length += 1;
             }
         };
@@ -722,12 +834,12 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         let mut end_known = window["endKnown"].as_bool().ok_or(1u32)?;
         // Chromium's text leaves out the break before a paragraph that starts right after text
         // (each <div> of a rich editor): the adapter says where its paragraphs start, and each such
-        // break is put back, so the text reads in the lines it is laid out in (ADR-DESK-007,
-        // 2026-10-06). Absent: nothing told, nothing added. `caretEndsLine`: the caret is at the end
-        // of a line, not the start of a paragraph at the same offset (absent: it starts it).
+        // break is put back, so the text reads in the lines it is laid out in, and is redacted so
+        // (ADR-DESK-007, 2026-10-07). Absent: nothing told, nothing added. `caretEndsLine`: the
+        // caret is at the end of a line, not the start of a paragraph at the same offset (absent:
+        // it starts it).
         // A caret source sends the paragraph starts near the caret, or what starts at the caret,
-        // never both: the render checks each kind of break apart, and one of each could split a
-        // secret both checks miss.
+        // never both: the starts already say whether a paragraph starts at the caret.
         if window.get("paragraphStarts").is_some() && window.get("caretStarts").is_some() {
             return Err(1);
         }
@@ -775,7 +887,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 .is_some_and(|last| !line_break(last));
         // Every break counts in its part's budget: a side that would grow past it gives up
         // characters at its far end first, and that edge is no longer known.
-        let grow = breaks[0].len() * ADDED_BREAK.len_utf8() + usize::from(caret_break);
+        let grow = breaks[0].len() * LINE_BREAK.len_utf8() + usize::from(caret_break);
         let mut cut = 0;
         while parts[0].len() + grow > SOURCE_WINDOW_BYTES && !parts[0].is_empty() {
             let first = parts[0].chars().next().map_or(0, char::len_utf8);
@@ -783,7 +895,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             cut += first;
             start_known = false;
         }
-        while parts[2].len() + breaks[2].len() * ADDED_BREAK.len_utf8() > SOURCE_WINDOW_BYTES
+        while parts[2].len() + breaks[2].len() * LINE_BREAK.len_utf8() > SOURCE_WINDOW_BYTES
             && parts[2].pop().is_some()
         {
             end_known = false;
@@ -791,8 +903,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         // An open edge is cut where the provider's text closes a token, so the range is found in
         // that text alone: a break put back first could look like the whitespace after a `.` that
         // closes one, and the cut would take a secret's head off. The breaks go back
-        // only inside the text kept, and the render, which redacts the whole screen, withholds
-        // the caret where one may split a secret.
+        // only inside the text kept.
         let text = parts.concat();
         let range = crate::source_window::recognition_range_with_limit(
             &text,
@@ -826,14 +937,14 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             })
             .collect();
         for &at in breaks[0].iter().rev().filter(|at| **at > cut + range.start) {
-            retained[0].insert(at - cut - range.start, ADDED_BREAK);
+            retained[0].insert(at - cut - range.start, LINE_BREAK);
         }
         for &at in breaks[1].iter().rev() {
-            retained[1].insert(at, ADDED_BREAK);
+            retained[1].insert(at, LINE_BREAK);
         }
         let after = retained[2].len();
         for &at in breaks[2].iter().rev().filter(|at| **at <= after) {
-            retained[2].insert(at, ADDED_BREAK);
+            retained[2].insert(at, LINE_BREAK);
         }
         if caret_break {
             retained[0].push('\n');
@@ -930,23 +1041,22 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .as_u64()
             .filter(|n| *n <= ALL_BLOCK_SOURCE_BYTES as u64)
             .ok_or(1u32)? as usize;
-        let duplicate = if let Some(previous) = request.get("previous").filter(|p| !p.is_null()) {
-            let previous = Block::read(previous)?;
-            previous.kind != "caret"
-                && previous.text.nfd().eq(block.text.nfd())
-                && (previous.runs == block.runs
-                    || (previous.source.is_none()
-                        && previous
-                            .runs
-                            .as_ref()
-                            .is_none_or(|runs| runs.iter().all(|(_, shown)| *shown))
-                        && block
-                            .runs
-                            .as_ref()
-                            .is_some_and(|runs| runs.iter().all(|(_, shown)| *shown))))
-        } else {
-            false
-        };
+        let duplicate =
+            if let Some(previous) = request.get("previous").filter(|p| !p.is_null()) {
+                let previous = Block::read(previous)?;
+                previous.kind != "caret"
+                    && previous.text.nfd().eq(block.text.nfd())
+                    && (previous.runs == block.runs
+                        || (previous.source.is_none()
+                            && previous.runs.as_ref().is_none_or(|runs| {
+                                runs.iter().all(|run| run.1 || edge_space(run))
+                            })
+                            && block.runs.as_ref().is_some_and(|runs| {
+                                runs.iter().all(|run| run.1 || edge_space(run))
+                            })))
+            } else {
+                false
+            };
         if used >= SCREEN_BYTES || block.text.is_empty() || duplicate {
             block.text.clear();
             block.runs = Some(Vec::new());
@@ -984,15 +1094,23 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         if previous.is_some_and(|p| !p.is_null() && !p.is_string()) {
             return Err(1);
         }
-        let text = source.trim_matches(whitespace);
-        let text = if used >= SCREEN_BYTES
+        // Whitespace at either edge is kept as one space, or one line break if it held one, so the
+        // screen read can tell two pieces of one line that abut (a run of bold inside a word) from
+        // two words, and a piece that starts a line from one that goes on with it.
+        let trimmed = source.trim_matches(whitespace);
+        let text = if trimmed.is_empty()
+            || used >= SCREEN_BYTES
             || previous
                 .and_then(Value::as_str)
-                .is_some_and(|p| p.nfd().eq(text.nfd()))
+                .is_some_and(|p| p.trim_matches(whitespace).nfd().eq(trimmed.nfd()))
         {
-            ""
+            String::new()
         } else {
-            text
+            format!(
+                "{}{trimmed}{}",
+                edge(&source[..source.len() - source.trim_start_matches(whitespace).len()]),
+                edge(&source[source.trim_end_matches(whitespace).len()..])
+            )
         };
         let used = used + text.len();
         return serde_json::to_vec(
@@ -1043,13 +1161,6 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     }
     if let Some(caret_value) = request.get("caret").or(projected.then_some(&empty_caret)) {
         let caret = read_caret(caret_value)?;
-        // The breaks this core added (`ADDED_BREAK`) are line breaks in what is shown and redacted,
-        // and are checked against the text without them (`redact_added`).
-        let raw_caret = caret.clone();
-        let caret: Vec<String> = caret
-            .iter()
-            .map(|part| part.replace(ADDED_BREAK, "\n"))
-            .collect();
         let block_source_bytes = blocks
             .iter()
             .filter(|b| b.kind != "caret")
@@ -1063,71 +1174,105 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         {
             return Err(1);
         }
+        // A block that shows nothing but blanks is not read: the screen shows nothing there.
+        blocks.retain(|b| b.kind == "caret" || !b.text.trim_matches(whitespace).is_empty());
+        lay_out(&mut blocks);
         let caret_index = blocks
             .iter()
             .position(|b| b.kind == "caret")
             .unwrap_or(blocks.len());
-        let mut lines: privacy::Lines = blocks
-            .iter()
-            .map(|b| {
-                if b.kind == "caret" {
-                    raw_caret.clone()
-                } else if let Some(runs) = &b.runs {
-                    runs.iter().map(|(text, _)| text.clone()).collect()
-                } else {
-                    b.source.clone().unwrap_or_else(|| vec![b.text.clone()])
+        // The read is laid out once, as the one text the screen shows (ADR-DESK-007, 2026-10-07):
+        // each block's text where it is, with what the screen shows between two blocks (the
+        // separator the render puts there), a hidden run, and a field's text around what it shows,
+        // where they are. That text is redacted once, last, and the read shows only what survived
+        // of the parts it shows: nothing is laid out again after the redaction. `owner` gives each
+        // byte's part (a block, or one of the caret's three), `shown` whether the read shows it.
+        let caret_parts = blocks.len();
+        let mut read = Layout::default();
+        for (index, block) in blocks.iter().enumerate() {
+            if index > 0 {
+                read.push(block.before, index, false);
+            }
+            read.piece();
+            if block.kind == "caret" {
+                for (part, text) in caret.iter().enumerate() {
+                    read.push(text, caret_parts + part, true);
                 }
-            })
-            .collect();
-        if caret_index == blocks.len() {
-            lines.push(raw_caret.clone());
-        }
-        let (redacted, withheld_lines) = redact_added(&lines)?;
-        let mut withheld = withheld_lines[caret_index];
-        let lines: privacy::Lines = lines
-            .iter()
-            .map(|line| {
-                line.iter()
-                    .map(|part| part.replace(ADDED_BREAK, "\n"))
-                    .collect()
-            })
-            .collect();
-        // A break just before the caret is either the left-out one a caret window added or the
-        // text's own, and neither text can be trusted alone where the caret, without the break, is
-        // inside a match: an added break would split a secret the redactor has to see whole (a key
-        // soft-wrapped at the caret, or one in a field under its label's block), and taking out the
-        // text's own can join two keys into one match that hides the second's start. There the
-        // caret's text is withheld, and the rest must read the same either way, or nothing is read
-        // (ADR-DESK-007, 2026-10-06).
-        if !withheld && caret[0].ends_with('\n') {
-            let mut joined = lines.clone();
-            joined[caret_index][0].pop();
-            let anchor = joined[..caret_index]
-                .iter()
-                .map(|line| {
-                    line.iter()
-                        .map(|part| part.encode_utf16().count())
-                        .sum::<usize>()
-                        + 1
-                })
-                .sum::<usize>()
-                + joined[caret_index][0].encode_utf16().count();
-            let (without, anchors) =
-                privacy::redact_anchored(&joined, &[anchor]).map_err(|_| 3u32)?;
-            if anchors.first().is_none_or(Option::is_none) {
-                let differs = (0..redacted.len())
-                    .any(|index| index != caret_index && redacted[index] != without[index]);
-                if differs {
-                    return Err(3);
+                continue;
+            }
+            match (&block.runs, &block.source) {
+                (Some(runs), _) => {
+                    // A run the screen shows right after another it shows starts a piece; a cut
+                    // between shown and hidden text (a field's text around what it shows) does not.
+                    let mut shown = false;
+                    for (text, visible) in runs {
+                        if *visible && shown {
+                            read.piece();
+                        }
+                        read.push(text, index, *visible);
+                        shown = *visible;
+                    }
                 }
-                withheld = true;
+                (None, Some(parts)) => {
+                    for (part, text) in parts.iter().enumerate() {
+                        read.push(text, index, part == 1);
+                    }
+                }
+                (None, None) => read.push(&block.text, index, true),
             }
         }
-        let mut around = if withheld {
-            unread_parts(!caret[1].is_empty()).to_vec()
-        } else {
-            redacted[caret_index].clone()
-        };
+        if caret_index == blocks.len() {
+            if !read.text.is_empty() {
+                read.push(&LINE_BREAK.to_string(), caret_parts, false);
+            }
+            for (part, text) in caret.iter().enumerate() {
+                read.push(text, caret_parts + part, true);
+            }
+        }
+        let Layout {
+            text: source,
+            owner,
+            shown,
+            edges,
+        } = read;
+        let taken = privacy::taken_with_edges(&source, &edges).map_err(|_| 3u32)?;
+        // Each part gets the characters it shows that the redaction did not take. Where it took
+        // text out (one match, or several that overlap or meet), one marker goes in the part that
+        // shows the first character taken; where it took out only what the read does not show,
+        // none goes, so the read never says where hidden text was.
+        let mut parts = vec![Vec::new(); caret_parts + 3];
+        let mut copied = 0;
+        for run in taken
+            .iter()
+            .chain(std::iter::once(&(source.len()..source.len())))
+        {
+            for at in copied..run.start {
+                if shown[at] {
+                    parts[owner[at]].push(source.as_bytes()[at]);
+                }
+            }
+            let first = run.clone().find(|&at| shown[at]);
+            if let Some(at) = first {
+                parts[owner[at]].extend_from_slice(privacy::PLACEHOLDER.as_bytes());
+            }
+            // The caret's window is reported on its own as well: a match that took text it shows
+            // marks it too, once.
+            if first.is_some_and(|at| owner[at] < caret_parts)
+                && let Some(at) = run
+                    .clone()
+                    .find(|&at| shown[at] && owner[at] >= caret_parts)
+            {
+                parts[owner[at]].extend_from_slice(privacy::PLACEHOLDER.as_bytes());
+            }
+            copied = run.end;
+        }
+        // Runs, parts and markers all start and end on character boundaries.
+        let mut parts = parts
+            .into_iter()
+            .map(String::from_utf8)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| 3u32)?;
+        let mut around = parts.split_off(caret_parts);
         let changed = around[1] != caret[1];
         if changed && around[1].trim_matches(whitespace).is_empty() {
             around[1] = privacy::PLACEHOLDER.into();
@@ -1135,51 +1280,37 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         truncated |= present_caret(&mut around)?;
         let formatted_caret = caret_text(&around);
         reserved = formatted_caret.len();
-        for (index, block) in blocks.iter_mut().enumerate() {
+        // A part's text is shown without the whitespace at its edges, which the separators stand
+        // for. Where the redaction left whitespace at an edge (a match that ended inside a piece
+        // that goes on), that whitespace is what the screen shows there, and the separator on that
+        // side becomes at least as much.
+        let mut owed = "";
+        for (block, part) in blocks.iter_mut().zip(parts) {
+            if rank(owed) > rank(block.before) {
+                block.before = owed;
+            }
+            owed = "";
             block.text = if block.kind == "caret" {
                 formatted_caret.clone()
-            } else if withheld_lines[index] {
-                privacy::PLACEHOLDER.to_owned()
-            } else if let Some(runs) = &block.runs {
-                runs.iter()
-                    .zip(&redacted[index])
-                    .filter(|((_, visible), _)| *visible)
-                    .map(|((original, _), value)| {
-                        if value != original
-                            && value.trim_matches(whitespace).is_empty()
-                            && !original.trim_matches(whitespace).is_empty()
-                        {
-                            privacy::PLACEHOLDER.to_owned()
-                        } else {
-                            value.clone()
-                        }
-                    })
-                    .collect::<String>()
-                    .trim_matches(whitespace)
-                    .to_owned()
-            } else if block.source.is_some() {
-                let visible = &redacted[index][1];
-                if visible != &block.text
-                    && visible.trim_matches(whitespace).is_empty()
-                    && !block.text.trim_matches(whitespace).is_empty()
-                {
-                    privacy::PLACEHOLDER.to_owned()
-                } else {
-                    visible.trim_matches(whitespace).to_owned()
-                }
             } else {
-                redacted[index][0].clone()
+                let lead = edge(&part[..part.len() - part.trim_start_matches(whitespace).len()]);
+                if rank(lead) > rank(block.before) {
+                    block.before = lead;
+                }
+                owed = edge(&part[part.trim_end_matches(whitespace).len()..]);
+                part.trim_matches(whitespace).to_owned()
             };
             block.source = None;
             block.runs = None;
         }
-        blocks.retain(|b| b.kind == "caret" || !b.text.is_empty());
+        drop_empty(&mut blocks);
         response["caret"] = json!(around);
         response["selectionRedacted"] = json!(changed);
     } else {
         if blocks.iter().map(|b| b.text.len()).sum::<usize>() > SCREEN_BYTES + BLOCK_SOURCE_BYTES {
             return Err(1);
         }
+        lay_out(&mut blocks);
         reserved = blocks
             .iter()
             .filter(|b| b.kind == "caret")
@@ -1236,6 +1367,10 @@ mod tests {
             json!({"hypertext":{"elements":[{}]}}),
             json!({"blocks":[{"kind":"unknown","text":"x"}]}),
             json!({"blocks":[],"caret":["x"]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":[[0,0,1,1]]}]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":[[0,0,1,1],[0,0,1]]}]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":[[0,0,1,1],[0,"0",1,1]]}]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":{}}]}),
         ] {
             assert_eq!(process(&serde_json::to_vec(&value).unwrap()), Err(1));
         }
@@ -1293,6 +1428,67 @@ mod conformance {
 }
 
 #[cfg(test)]
+mod layout_tests {
+    use super::*;
+    /// However the screen splits a key into pieces of one line (a run of bold, a link), the read
+    /// redacts it whole and says where once: the redaction sees the line as the screen shows it.
+    #[test]
+    fn a_key_split_into_pieces_of_one_line_is_redacted_whole_once() {
+        // A key of each kind that has a word edge, and one of exact length; what stays of it.
+        let body = "abcdefghijklmnopqrst";
+        let keys = [
+            (format!("AKIA{}", "A".repeat(16)), 0),
+            (format!("sk-{body}"), 0),
+            (format!("pk_test_{body}"), 0),
+            (format!("Bearer {body}"), "Bearer ".len()),
+        ];
+        for (key, kept) in keys {
+            for first in 1..key.len() {
+                for second in first + 1..key.len() {
+                    let pieces = [&key[..first], &key[first..second], &key[second..]];
+                    // A piece's own blanks are not read: the screen shows a gap there instead.
+                    if pieces.iter().any(|piece| piece.trim() != *piece) {
+                        continue;
+                    }
+                    let mut x = 0.;
+                    let blocks: Vec<Value> = pieces
+                        .iter()
+                        .enumerate()
+                        .map(|(index, piece)| {
+                            let width = 10. * piece.len() as f64;
+                            let block = json!({"kind":if index == 1 {"link"} else {"text"},"text":piece,"frame":[x,0.,width,20.]});
+                            x += width;
+                            block
+                        })
+                        .collect();
+                    let reply: Value = serde_json::from_slice(
+                        &process(
+                            &serde_json::to_vec(&json!({"blocks":blocks,"caret":["","",""]}))
+                                .unwrap(),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                    let rendered = reply["rendered"].as_str().unwrap();
+                    assert_eq!(
+                        rendered.matches(privacy::PLACEHOLDER).count(),
+                        1,
+                        "{key} {first} {second}"
+                    );
+                    let secret = &key[kept..];
+                    for at in 0..=secret.len() - 4 {
+                        assert!(
+                            !rendered.contains(&secret[at..at + 4]),
+                            "{key} {first} {second}: {rendered}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod budget_tests {
     use super::*;
     const SCREEN: usize = 256 * 1024;
@@ -1312,6 +1508,61 @@ mod budget_tests {
                 "{request}"
             );
         }
+    }
+    /// A budget never cuts a marker in half: every bracket the read shows belongs to a whole marker,
+    /// wherever the cut falls.
+    fn whole_markers_only(text: &str) -> bool {
+        let rest = text
+            .replace(privacy::PLACEHOLDER, "")
+            .replace(HIDDEN_MARKER, "");
+        !rest.contains('[') && !rest.contains(']')
+    }
+    #[test]
+    fn the_caret_window_budget_never_cuts_a_marker() {
+        let (mut kept, mut left_out) = (0, 0);
+        for k in 0..=privacy::PLACEHOLDER.len() + 6 {
+            let after = format!(
+                "{} token=abc123def",
+                "x".repeat(CARET_SIDE_GRAPHEMES - 7 - k)
+            );
+            let before = format!(
+                "token=abc123def {}",
+                "x".repeat(CARET_SIDE_GRAPHEMES - 17 + k)
+            );
+            let reply = call(json!({"blocks":[],"caret":[before,"",after]}));
+            assert_eq!(reply["truncated"], true);
+            for part in [&reply["caret"][0], &reply["caret"][2]] {
+                let part = part.as_str().unwrap();
+                assert!(whole_markers_only(part), "{k}: {part}");
+                // A marker the cut crosses is left out, never kept past the side's budget.
+                assert!(part.chars().count() <= CARET_SIDE_GRAPHEMES, "{k}: {part}");
+                if part.contains(privacy::PLACEHOLDER) {
+                    kept += 1;
+                } else {
+                    left_out += 1;
+                }
+            }
+        }
+        assert!(kept > 0 && left_out > 0);
+    }
+    #[test]
+    fn the_screen_budget_never_cuts_a_marker() {
+        let (mut kept, mut left_out) = (0, 0);
+        for marker_block in ["token=abc123def", HIDDEN_MARKER] {
+            for k in 0..40 {
+                let reply = call(json!({"blocks":[
+                    {"kind":"text","text":"x".repeat(SCREEN - k)},
+                    {"kind":"text","text":marker_block}],"caret":["","",""]}));
+                let rendered = reply["rendered"].as_str().unwrap();
+                assert!(whole_markers_only(rendered), "{marker_block} {k}");
+                if rendered.contains('[') {
+                    kept += 1;
+                } else {
+                    left_out += 1;
+                }
+            }
+        }
+        assert!(kept > 0 && left_out > 0);
     }
     #[test]
     fn caret_window_keeps_complete_selection_and_maps_unicode_source_edges() {
@@ -1353,42 +1604,9 @@ mod budget_tests {
         assert!(reply["caret"][0].as_str().unwrap().ends_with("bbb\n"));
         assert!(!reply.to_string().contains("G7h8I9j0"));
     }
-    /// A key soft-wrapped at a caret said to start a paragraph never reaches the reply in halves:
-    /// without the break the caret is inside it, so the caret's text is withheld.
-    #[test]
-    fn a_secret_wrapped_at_the_caret_is_redacted_whole() {
-        let (head, tail) = (concat!("Key gh", "p_0123456789"), "abcdefghijKLMNOP rest");
-        let window = call(
-            json!({"caretWindow":{"parts":[head,"",tail],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
-        );
-        let reply = call(json!({"blocks":[],"caret":window["parts"]}));
-        let text = reply.to_string();
-        assert!(
-            !text.contains("0123456789") && !text.contains("abcdefghij"),
-            "{text}"
-        );
-        assert_eq!(reply["caret"], json!(["", "", ""]));
-    }
-    /// A key in a field under its label's block, with the caret said to start a paragraph inside
-    /// it: the caret's own text holds no secret, so only the whole screen shows that the break
-    /// would split one, and the render withholds the caret's text.
-    #[test]
-    fn a_secret_under_its_label_block_is_not_split_by_the_break() {
-        let window = call(
-            json!({"caretWindow":{"parts":["a","","1B2c3D4e5F6g7H8i9J0k1L2 thanks"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":false,"lineText":null}}}),
-        );
-        let reply = call(
-            json!({"blocks":[{"kind":"text","text":"Authorization: Bearer"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
-        );
-        let text = reply.to_string();
-        assert!(!text.contains("1B2c3D4"), "{text}");
-        assert_eq!(reply["caret"], json!(["", "", ""]));
-        assert!(text.contains("Authorization: Bearer"), "{text}");
-    }
     /// Two keys on lines of their own, the caret at the second's start, whether the break between
-    /// them is the text's own or one the caret window added: joined, the first key's match would
-    /// take the second's prefix, and split, an added break would cut a key the text holds whole.
-    /// Neither key reaches the reply, whole or in part.
+    /// them is the text's own or one the caret window put back: each is redacted on its own line,
+    /// and neither reaches the reply, whole or in part.
     #[test]
     fn two_keys_at_a_break_are_never_shown_in_part() {
         let (first, second) = (
@@ -1433,64 +1651,6 @@ mod budget_tests {
         assert!(reply["parts"][0].as_str().unwrap().ends_with("x\n"));
         assert_eq!(reply["parts"][1], json!(parts[1]));
     }
-    /// The caret's place in the screen the redactor sees counts the blocks above it in UTF-16
-    /// units, as the redactor does: text above it outside ASCII must not move it off the key.
-    #[test]
-    fn a_key_split_at_the_caret_below_wide_text_is_still_withheld() {
-        let window = call(
-            json!({"caretWindow":{"parts":[concat!("😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀 Key gh", "p_0123456789"),"","abcdef rest"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
-        );
-        let reply = call(
-            json!({"blocks":[{"kind":"text","text":"Notes ☕☕ 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
-        );
-        let text = reply.to_string();
-        assert!(
-            !text.contains("0123456789") && !text.contains("abcdef"),
-            "{text}"
-        );
-        assert_eq!(reply["caret"], json!(["", "", ""]));
-    }
-    /// Key lines whose last line the caret starts a paragraph inside: joined, the block above is a
-    /// key line too and is redacted, split, it is not. A block that reads differently either way
-    /// can't be shown, so nothing is.
-    #[test]
-    fn a_block_the_break_decides_the_redaction_of_refuses_the_read() {
-        let line = "QUJD".repeat(16);
-        let caret = json!([format!("{}\n", &line[..30]), "", &line[30..60]]);
-        let request = json!({"blocks":[{"kind":"text","text":line},{"kind":"caret","text":"ignored"}],"caret":caret});
-        assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(3));
-    }
-    /// A paragraph start a provider gives inside a key would split it into halves the redactor
-    /// misses: the caret's text is withheld, and the rest of the screen still reads.
-    #[test]
-    fn a_put_back_break_inside_a_secret_withholds_the_caret() {
-        let before = concat!("Notes\nKey gh", "p_0123456789abcdefghijKLMNOP and more");
-        let split = before.find("abcdef").unwrap();
-        let window = call(
-            json!({"caretWindow":{"parts":[before,"",""],"startKnown":true,"endKnown":true,"paragraphStarts":[split]}}),
-        );
-        assert!(window["parts"][0].as_str().unwrap().contains('\u{2029}'));
-        let reply = call(
-            json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
-        );
-        let text = reply.to_string();
-        assert!(
-            !text.contains("0123456789") && !text.contains("abcdefghij"),
-            "{text}"
-        );
-        assert_eq!(reply["caret"], json!(["", "", ""]));
-        assert!(text.contains("Inbox"), "{text}");
-    }
-    /// Key lines whose last line a put-back break splits: joined, the block above is a key line
-    /// too and is redacted, split, it is not. A block that reads differently either way can't be
-    /// shown, so nothing is.
-    #[test]
-    fn a_block_a_put_back_break_decides_the_redaction_of_refuses_the_read() {
-        let line = "QUJD".repeat(16);
-        let caret = json!([format!("{}\u{2029}{}", &line[..30], &line[30..60]), "", ""]);
-        let request = json!({"blocks":[{"kind":"text","text":line},{"kind":"caret","text":"ignored"}],"caret":caret});
-        assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(3));
-    }
     /// Put-back breaks count in a part's budget: a before part at its limit gives up its first
     /// characters and its start, an after part its last and its end. One in a selection at its
     /// limit is not added; one in a selection below it is.
@@ -1521,19 +1681,19 @@ mod budget_tests {
                 ])
                 .all(|(length, limit)| length <= limit)
         );
-        assert_eq!(reply[0].matches(ADDED_BREAK).count(), 2);
-        assert!(reply[0].ends_with("x\u{2029}"));
+        assert_eq!(reply[0].matches(LINE_BREAK).count(), 2);
+        assert!(reply[0].ends_with("x\n"));
         assert_eq!(reply[1], parts[1]);
-        assert_eq!(reply[2].matches(ADDED_BREAK).count(), 1);
+        assert_eq!(reply[2].matches(LINE_BREAK).count(), 1);
         // The edges given up are open: each side is cut where the text closes a sentence.
         assert!(reply[0].starts_with(". ") && reply[2].ends_with(". "));
-        let short = words(SELECTION_SOURCE_BYTES - ADDED_BREAK.len_utf8());
+        let short = words(SELECTION_SOURCE_BYTES - LINE_BREAK.len_utf8());
         let reply = call(
             json!({"caretWindow":{"parts":["",short,""],"startKnown":true,"endKnown":true,"paragraphStarts":[18]}}),
         );
         assert_eq!(
             reply["parts"][1],
-            json!(format!("{}\u{2029}{}", &short[..18], &short[18..]))
+            json!(format!("{}\n{}", &short[..18], &short[18..]))
         );
         for bad in [&[0][..], &[5, 5], &[9, 4], &[usize::MAX]] {
             assert_eq!(
@@ -1658,56 +1818,8 @@ mod budget_tests {
         .collect::<Vec<_>>()
         .join("\u{0}")
     }
-    /// A rich editor's block break is this core's own: one inside a secret that runs on into the
-    /// next block would split it into pieces the redactor reads apart, or leave the second piece of
-    /// a token whose label is in the block above. Through the whole screen read, the caret before,
-    /// after or selecting it, or the editor read as a text block, no piece of it is shown, a
-    /// selected one disables Edit, and the rest of the screen is read.
-    #[test]
-    fn a_rich_editors_block_break_never_splits_a_secret() {
-        let token = ["AbcdEfghIjklMnop", "QrstUvwxYz012345"];
-        for (label, opening, secret, hidden) in [
-            (
-                "Notes",
-                "Public words.",
-                &["sk-Review", "Fixture1234567890"][..],
-                "Fixture1234567890",
-            ),
-            (
-                "Notes",
-                "Public words.",
-                &["sk-Rev", "iewFixture", "1234567890"][..],
-                "1234567890",
-            ),
-            // Wide characters above the editor: where each break was is counted in UTF-16 units,
-            // as the redactor counts.
-            (
-                &*"\u{1F642}".repeat(20),
-                "Public words here.",
-                &["sk-Review", "Fixture1234567890"][..],
-                "Fixture1234567890",
-            ),
-            ("Authorization: Bearer", "", &token[..], token[1]),
-            ("token:", "", &token[..], token[1]),
-        ] {
-            for (mode, reply) in rich_editor_screens(label, opening, secret) {
-                let shown = shown_anywhere(&reply);
-                for piece in secret
-                    .iter()
-                    .filter(|piece| piece.len() > 6)
-                    .chain([&hidden])
-                {
-                    assert!(!shown.contains(piece), "{label} {mode} {piece}: {shown:?}");
-                }
-                assert!(shown.contains("Other context."), "{label} {mode}");
-                if mode == "selected" {
-                    assert_eq!(reply["selectionRedacted"], true, "{label}");
-                }
-            }
-        }
-    }
-    /// Left out, the break between two blocks would join a token to the next one, and the first
-    /// match would run on into the second and stop short of its body: neither body is shown.
+    /// Each block is a line of its own: two tokens in two blocks are each redacted, and neither
+    /// body is shown.
     #[test]
     fn a_rich_editors_blocks_never_join_two_tokens() {
         let first = format!("ghp_{}", "Synthetic1".repeat(2));
@@ -1721,10 +1833,7 @@ mod budget_tests {
             assert!(shown.contains("Other context."), "{mode}");
         }
     }
-    /// A key inside a block's line reads the same with the editor's breaks and without them, so
-    /// every break is shown as a line break and the key is redacted. (A key opening a block right
-    /// after a sentence's `.` is not told apart from one the break splits: its match takes the `.`,
-    /// so the editor's broken lines are withheld, never shown.)
+    /// A key inside a block's line is redacted, and every block break is shown as a line break.
     #[test]
     fn a_rich_editors_key_inside_a_line_keeps_the_breaks() {
         let key = "sk-ReviewFixture1234567890";
@@ -1751,6 +1860,83 @@ mod budget_tests {
             }
         }
     }
+    /// A caret's parts are one text with no piece edge between them: a selection starting inside a
+    /// word starts no key there, after a caret block or with none. A real space before it does.
+    #[test]
+    fn a_selection_starting_inside_a_word_starts_no_key_there() {
+        let selection = ["sk", "-assessment-template-v2"].concat();
+        for blocks in [json!([{"kind":"caret","text":""}]), json!([])] {
+            for (before, redacted) in [("ri", false), ("ri ", true)] {
+                let reply = call(json!({"blocks":blocks,"caret":[before,selection,""]}));
+                let caret: String = reply["caret"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|part| part.as_str().unwrap())
+                    .collect();
+                let expected = if redacted {
+                    format!("{before}{}", privacy::PLACEHOLDER)
+                } else {
+                    format!("{before}{selection}")
+                };
+                assert_eq!(caret, expected, "{reply:?}");
+                assert_eq!(reply["selectionRedacted"], redacted, "{reply:?}");
+            }
+        }
+    }
+    /// A field read inside a row, a heading or a link keeps its text around what it shows as
+    /// hidden runs: the cut between them is no piece, so a word the field shows from part-way
+    /// through starts no key there. A key it shows whole still goes.
+    #[test]
+    fn a_field_projected_into_a_container_starts_no_key_inside_its_word() {
+        let whole = ["ri", "sk-assessment-template-v2"].concat();
+        let key = ["sk-", "a1B2c3D4", "e5F6g7H8i9J0"].concat();
+        for (parts, shown) in [
+            (
+                vec![whole[..2].to_owned(), whole[2..].to_owned(), String::new()],
+                whole[2..].to_owned(),
+            ),
+            (
+                vec!["x ".to_owned(), key.clone(), String::new()],
+                privacy::PLACEHOLDER.to_owned(),
+            ),
+        ] {
+            let mut semantic = crate::semantic::SemanticText::new(1).unwrap();
+            semantic.offer_projected(2, parts.clone()).unwrap();
+            semantic.offer(3, "").unwrap();
+            let projection: Value =
+                serde_json::from_slice(&semantic.finish_projected().unwrap()).unwrap();
+            for kind in ["row", "heading", "link"] {
+                let reply = call(json!({"blocks":[{"kind":kind,"text":projection["text"],
+                    "runs":projection["runs"]}],"caret":["","",""]}));
+                let rendered = reply["rendered"].as_str().unwrap();
+                assert!(rendered.contains(&shown), "{kind}: {rendered}");
+                assert!(!rendered.contains(&key), "{kind}: {rendered}");
+            }
+        }
+        // Nor does the cut after what it shows: the field's word is looked at whole (word-like
+        // there), while the same two runs both shown look at the shown piece on its own.
+        let word = ["GHIJa1KLMNb2", "PQRSc3TUVWd4"].concat();
+        let mut semantic = crate::semantic::SemanticText::new(1).unwrap();
+        semantic
+            .offer_projected(2, vec![String::new(), word.clone(), "Bearer".to_owned()])
+            .unwrap();
+        semantic.offer(3, "").unwrap();
+        let projection: Value =
+            serde_json::from_slice(&semantic.finish_projected().unwrap()).unwrap();
+        assert_eq!(projection["runs"], json!([[word, true], ["Bearer", false]]));
+        let reply = call(json!({"blocks":[{"kind":"row","text":projection["text"],
+            "runs":projection["runs"]}],"caret":["","",""]}));
+        assert_eq!(reply["rendered"], format!("| {word}"));
+        let shown = call(
+            json!({"blocks":[{"kind":"row","text":format!("{word}Bearer"),
+            "runs":[[word, true], ["Bearer", true]]}],"caret":["","",""]}),
+        );
+        assert_eq!(
+            shown["rendered"],
+            format!("| {}Bearer", privacy::PLACEHOLDER)
+        );
+    }
     /// The whole screen read with `caret` as a helper sent it, after a text block.
     fn screen_with_caret(blocks: Value, caret: Value) -> Value {
         let input = json!({
@@ -1762,11 +1948,11 @@ mod budget_tests {
         )
         .unwrap()
     }
-    /// A selection over breaks this core added, with nothing redacted in it, is the user's text
-    /// as shown: Edit stays on. Through a rich editor's blocks, and through the breaks a caret
+    /// A selection over line breaks the core puts back, with nothing redacted in it, is the user's
+    /// text as shown: Edit stays on. Through a rich editor's blocks, and through the breaks a caret
     /// window puts back where Chromium's text leaves them out.
     #[test]
-    fn a_clean_selection_over_added_breaks_keeps_edit() {
+    fn a_clean_selection_over_put_back_breaks_keeps_edit() {
         for (mode, reply) in
             rich_editor_screens("Notes", "Public words.", &["Hi All,", "Why does it move?"])
         {
@@ -1785,10 +1971,7 @@ mod budget_tests {
             json!({"caretWindow":{"parts":["Intro ","First lineSecond line",""],
             "startKnown":true,"endKnown":true,"paragraphStarts":[16]}}),
         );
-        assert!(
-            window["parts"][1].as_str().unwrap().contains(ADDED_BREAK),
-            "{window:?}"
-        );
+        assert_eq!(window["parts"][1], "First line\nSecond line", "{window:?}");
         let reply = screen_with_caret(
             json!([{"kind":"text","text":"Notes"},{"kind":"caret","text":""}]),
             window["parts"].clone(),
@@ -1796,118 +1979,21 @@ mod budget_tests {
         assert_eq!(reply["selectionRedacted"], false, "{reply:?}");
         assert_eq!(reply["selectedText"], "First line\nSecond line");
     }
-    /// A caret read the walk placed no block for is still read with the screen, and the breaks in
-    /// it are checked: a key split by one is never shown.
+    /// An open edge is cut where the provider's text closes a sentence, and a break put back
+    /// goes back only inside the text kept, where the provider put the start.
     #[test]
-    fn a_caret_without_its_block_has_its_breaks_checked() {
-        let reply = screen_with_caret(
-            json!([{"kind":"text","text":"Notes"}]),
-            json!([
-                format!("Public words.\nsk-Review{ADDED_BREAK}Fixture1234567890"),
-                "",
-                ""
-            ]),
-        );
-        let shown = shown_anywhere(&reply);
-        assert!(!shown.contains("Fixture1234567890"), "{shown:?}");
-        assert!(shown.contains("Notes"), "{shown:?}");
-    }
-    /// The caret's own break is checked against the screen as shown, every other added break a
-    /// line break: base64 key lines split at the caret are withheld, none of them shown.
-    #[test]
-    fn a_caret_break_in_key_lines_is_checked_as_shown() {
-        let lines = [
-            "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2",
-            "d3h5ejAxMjM0NTY3ODlBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWmFiY2RlZmdo",
-            "aWprbG1ub3BxcnN0dXZ3eHl6MDEyMzQ1Njc4OUFCQ0RFRkdISUpLTE1OT1BRUlNU",
-        ];
-        let (second_start, second_end) = lines[1].split_at(32);
-        let reply = screen_with_caret(
-            json!([{"kind":"text","text":"Notes"}]),
-            json!([
-                format!(
-                    "Public words.{ADDED_BREAK}{}{ADDED_BREAK}{second_start}{ADDED_BREAK}",
-                    lines[0]
-                ),
-                "",
-                format!("{second_end}{ADDED_BREAK}{}", lines[2])
-            ]),
-        );
-        let shown = shown_anywhere(&reply);
-        for piece in [lines[0], second_start, second_end, lines[2]] {
-            assert!(!shown.contains(piece), "{piece} in {shown:?}");
-        }
-        assert!(shown.contains("Notes"), "{shown:?}");
-    }
-    /// A rich editor's break after a `.` is not the text closing a sentence: cut there at an open
-    /// edge, a JWT split between two blocks would lose its header, and its payload and signature
-    /// would no longer read as one.
-    #[test]
-    fn a_rich_editors_break_never_cuts_an_open_edge_into_a_secret() {
-        let header = "eyJhbGciOiJzeW50aGV0aWMifQ";
-        let (payload, signature) = ("eyJzdWIiOiJzeW50aGV0aWMifQ", "c3ludGhldGljU2lnbmF0dXJl");
-        let filler = "words ".repeat(SOURCE_WINDOW_BYTES / 6 + 64);
-        let first = format!("{header}.");
-        let second = format!("{payload}.{signature}");
-        for (mode, reply) in rich_editor_screens("Notes", &filler, &[&first, &second]) {
-            if mode == "before" {
-                let shown = shown_anywhere(&reply);
-                assert!(
-                    !shown.contains(payload) && !shown.contains(signature),
-                    "{}",
-                    &shown[shown.len().saturating_sub(400)..]
-                );
-                assert!(shown.contains("Other context."));
-            }
-        }
-    }
-    /// An open edge is cut where the text closes a sentence. A break put back after a `.` inside
-    /// a token must not make one: cut there, a JWT loses its header, and its payload and signature
-    /// no longer read as one and are shown. The same for the caret's own break.
-    #[test]
-    fn a_put_back_break_never_cuts_an_open_edge_into_a_secret() {
-        let header = "eyJhbGciOiJzeW50aGV0aWMifQ";
-        let (payload, signature) = ("eyJzdWIiOiJzeW50aGV0aWMifQ", "c3ludGhldGljU2lnbmF0dXJl");
-        let cut = &header[6..];
-        let shown = |window: Value| {
-            let reply = call(
-                json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
-            );
-            let text = reply.to_string();
-            assert!(
-                !text.contains(&payload[3..]) && !text.contains(signature),
-                "{text}"
-            );
-        };
-        let before = format!("{cut}.{payload}.{signature}");
-        shown(call(
-            json!({"caretWindow":{"parts":[before,""," and more"],"startKnown":false,"endKnown":true,"paragraphStarts":[cut.len() + 1]}}),
-        ));
-        shown(call(
-            json!({"caretWindow":{"parts":[format!("{cut}."),"",format!("{payload}.{signature} and more")],"startKnown":false,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
-        ));
-        // A break inside the text kept still goes back, where the provider put the start.
+    fn a_put_back_break_goes_back_inside_the_text_kept() {
         let reply = call(
             json!({"caretWindow":{"parts":["Cut words. First line","","Second"],"startKnown":false,"endKnown":true,"paragraphStarts":[4, 21]}}),
         );
-        assert_eq!(
-            reply["parts"],
-            json!([". First line\u{2029}", "", "Second"])
-        );
+        assert_eq!(reply["parts"], json!([". First line\n", "", "Second"]));
     }
-    /// A paragraph start's break and the caret's own, together, split a key in three the render's
-    /// two checks each see whole once: the caret window takes one kind or the other, never both.
+    /// The paragraph starts already say whether one starts at the caret: a caret window takes
+    /// them or what starts at the caret, never both.
     #[test]
-    fn both_kinds_of_break_never_split_a_secret_past_the_render() {
-        let request = json!({"caretWindow":{"parts":["s","","k-a1B2c3D4e5F6g7H8i9J0k1L2"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":false,"lineText":null},"paragraphStarts":[3]}});
-        if let Ok(window) = process(&serde_json::to_vec(&request).unwrap()) {
-            let window: Value = serde_json::from_slice(&window).unwrap();
-            let reply = call(
-                json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
-            );
-            let text = reply.to_string();
-            assert!(!text.contains("a1B2c3D4e5F6g7H8i9J0k1L2"), "{text}");
-        }
+    fn a_caret_window_takes_paragraph_starts_or_caret_starts_never_both() {
+        let request = json!({"caretWindow":{"parts":["Words","","More words"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":false,"lineText":null},"paragraphStarts":[3]}});
+        assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(1));
     }
     #[test]
     fn caret_window_never_returns_a_partial_selection_at_an_open_edge() {
@@ -2054,6 +2140,19 @@ mod budget_tests {
             json!({"text":"","used":17,"budgetFull":false,"stop":null})
         );
     }
+    /// Whitespace at a piece's edge is kept as one space, or one line break if it held one: a
+    /// piece that starts a line is never read as going on with the line before.
+    #[test]
+    fn admission_keeps_a_line_break_at_an_edge_as_a_line_break() {
+        for (source, text) in [
+            ("\n a b\t", "\na b "),
+            ("\t a b \r\n", " a b\n"),
+            ("a\u{2028}", "a\n"),
+            ("a b", "a b"),
+        ] {
+            assert_eq!(call(json!({"admit":source,"used":0}))["text"], text);
+        }
+    }
     #[test]
     fn caret_is_reserved_once_even_when_its_block_is_late() {
         let reply = call(json!({"blocks":[{"kind":"field","text":"x".repeat(SCREEN)},
@@ -2069,6 +2168,28 @@ mod budget_tests {
             SCREEN
         );
         assert_eq!(reply["truncated"], true);
+    }
+    #[test]
+    fn hidden_text_at_a_link_edge_is_never_glued_to_a_key_beside_it() {
+        let key = format!("{}{}", "AKIA", "A".repeat(16));
+        let before = json!([
+            {"kind":"text","text":format!("Key {key}"),"frame":[20,0,200,20]},
+            {"kind":"link","text":"(docs)","runs":[["zz",false],["(docs)",true]],"frame":[220,0,40,20]}
+        ]);
+        let after = json!([
+            {"kind":"link","text":"(docs)","runs":[["(docs)",true],["zz",false]],"frame":[20,0,40,20]},
+            {"kind":"text","text":format!("{key} here"),"frame":[60,0,240,20]}
+        ]);
+        let glued: Vec<_> = [("before", before), ("after", after)]
+            .into_iter()
+            .filter(|(_, blocks)| {
+                let reply = call(json!({"blocks":blocks,"caret":["","",""]}));
+                let rendered = reply["rendered"].as_str().unwrap();
+                rendered.contains("AKIA") || !rendered.contains("[redacted]")
+            })
+            .map(|(side, _)| side)
+            .collect();
+        assert!(glued.is_empty(), "a key shown beside a link: {glued:?}");
     }
     #[test]
     fn final_semantic_prefix_follows_redaction_and_keeps_graphemes_whole() {
@@ -2188,6 +2309,96 @@ mod budget_tests {
         assert!(result["blocks"][0].get("runs").is_none());
     }
     #[test]
+    fn a_key_in_its_own_run_has_its_word_edge_and_one_glued_in_a_run_or_a_field_does_not() {
+        let rendered = |block: Value| -> String {
+            let request = json!({"blocks":[block]});
+            let result: Value =
+                serde_json::from_slice(&process(&serde_json::to_vec(&request).unwrap()).unwrap())
+                    .unwrap();
+            result["rendered"].as_str().unwrap().to_owned()
+        };
+        let body = "abcdefghijklmnopqrst";
+        for prefix in ["sk-", "pk_test_"] {
+            let key = format!("{prefix}{body}");
+            // A run the screen shows on its own starts a piece: the key goes, the word stays.
+            assert_eq!(
+                rendered(json!({"kind":"row","text":format!("Bearer{key}"),
+                    "runs":[["Bearer",true],[key,true]]})),
+                "| Bearer[redacted]",
+                "{prefix}"
+            );
+            // Glued to the word before it in one run, it stays (owner, 2026-10-08).
+            let glued = format!("Bearer{key}");
+            assert_eq!(
+                rendered(json!({"kind":"row","text":glued,"runs":[[glued,true]]})),
+                format!("| {glued}"),
+                "{prefix}"
+            );
+            // A field's shown text starting part-way through a word is no piece of its own.
+            assert_eq!(
+                rendered(json!({"kind":"field","text":key,"source":["Bearer",key,""]})),
+                format!("> {key}"),
+                "{prefix}"
+            );
+            // A block the screen shows on its own (a link right beside a word) starts one too.
+            let request = json!({"blocks":[
+                {"kind":"text","text":"Bearer","frame":[0.,0.,60.,20.]},
+                {"kind":"link","text":key,"frame":[60.,0.,10. * key.len() as f64,20.]}],
+                "caret":["","",""]});
+            let result: Value =
+                serde_json::from_slice(&process(&serde_json::to_vec(&request).unwrap()).unwrap())
+                    .unwrap();
+            let shown = result["rendered"].as_str().unwrap();
+            assert!(
+                shown.contains("Bearer")
+                    && shown.contains(privacy::PLACEHOLDER)
+                    && !shown.contains(body),
+                "{prefix}: {shown}"
+            );
+        }
+    }
+    /// A random word in a piece of its own goes even where the piece before it is glued on (a
+    /// label beside a link): the piece is looked at as a word too. In one run, the glued word as a
+    /// whole is what is looked at.
+    #[test]
+    fn a_random_word_in_its_own_piece_goes_beside_a_glued_word() {
+        let word = ["GHIJa1KLMNb2", "PQRSc3TUVWd4"].concat();
+        let rendered = |request: Value| -> String {
+            let result: Value =
+                serde_json::from_slice(&process(&serde_json::to_vec(&request).unwrap()).unwrap())
+                    .unwrap();
+            result["rendered"].as_str().unwrap().to_owned()
+        };
+        assert_eq!(
+            rendered(
+                json!({"blocks":[{"kind":"row","text":format!("Bearer{word}"),
+                "runs":[["Bearer",true],[word,true]]}]})
+            ),
+            "| Bearer[redacted]"
+        );
+        assert_eq!(
+            rendered(
+                json!({"blocks":[{"kind":"row","text":format!("{word}Bearer"),
+                "runs":[[word,true],["Bearer",true]]}]})
+            ),
+            "| [redacted]Bearer"
+        );
+        let glued = format!("Bearer{word}");
+        assert_eq!(
+            rendered(json!({"blocks":[{"kind":"row","text":glued,"runs":[[glued,true]]}]})),
+            format!("| {glued}")
+        );
+        let shown = rendered(json!({"blocks":[
+            {"kind":"text","text":"Bearer","frame":[0.,0.,60.,20.]},
+            {"kind":"link","text":word,"frame":[60.,0.,240.,20.]}],"caret":["","",""]}));
+        assert!(
+            shown.contains("Bearer")
+                && shown.contains(privacy::PLACEHOLDER)
+                && !shown.contains(&word),
+            "{shown}"
+        );
+    }
+    #[test]
     fn semantic_admission_deduplicates_only_equivalent_recognition_source() {
         let value = json!({"kind":"row","text":"same","runs":[["password: ",false],["same",true]]});
         let admit = |previous| -> Value {
@@ -2211,6 +2422,41 @@ mod budget_tests {
         let plain = json!({"kind":"row","text":"same","runs":[["same",true]]});
         let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":{"kind":"text","text":"same"}})).unwrap()).unwrap()).unwrap();
         assert_eq!(result["text"], "");
+        // A text admitted with the screen's edge spaces, and a link holding them as hidden runs,
+        // still repeat the same words.
+        let spaced =
+            json!({"kind":"link","text":"same","runs":[[" ",false],["same",true],[" ",false]]});
+        for previous in [
+            json!({"kind":"text","text":" same "}),
+            json!({"kind":"text","text":"same"}),
+        ] {
+            let result: Value = serde_json::from_slice(
+                &process(
+                    &serde_json::to_vec(
+                        &json!({"admitSemantic":spaced,"used":10,"previous":previous}),
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(result["text"], "");
+        }
+        let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":{"kind":"text","text":" same "}})).unwrap()).unwrap()).unwrap();
+        assert_eq!(result["text"], "");
+        let result: Value = serde_json::from_slice(
+            &process(
+                &serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":spaced}))
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result["text"], "");
+        // A hidden run that is more than spaces is private source, not a repeat.
+        let private = json!({"kind":"link","text":"same","runs":[[" x",false],["same",true]]});
+        let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":private,"used":10,"previous":{"kind":"text","text":"same"}})).unwrap()).unwrap()).unwrap();
+        assert_eq!(result["text"], "same");
     }
     #[test]
     fn semantic_admission_charges_private_bytes_and_stops_further_sources() {
@@ -2375,7 +2621,7 @@ mod hypertext_tests {
     use super::*;
 
     const OBJECT: &str = "\u{FFFC}";
-    const BREAK: char = ADDED_BREAK;
+    const BREAK: char = LINE_BREAK;
 
     fn element(text: &str, block: bool, links: Value) -> Value {
         json!({"text": text, "caret": null, "selection": null, "block": block, "links": links})

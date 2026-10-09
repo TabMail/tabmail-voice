@@ -32,6 +32,10 @@ pub struct SemanticText {
     source_bytes: usize,
     projected: bool,
     previous_projection: Option<Vec<String>>,
+    /// Whether the first text kept started with a space and the last one ended with one: the
+    /// screen shows them (a link's box holds the space before or after it), so the screen read
+    /// can tell a link from the word it abuts.
+    spaced: [bool; 2],
 }
 impl SemanticText {
     pub fn new(kind: u32) -> Result<Self, u32> {
@@ -54,6 +58,7 @@ impl SemanticText {
             source_bytes: 0,
             projected: false,
             previous_projection: None,
+            spaced: [false; 2],
         })
     }
     pub fn decision(&self) -> Decision {
@@ -102,11 +107,15 @@ impl SemanticText {
         }
         Ok(self.decision)
     }
-    fn append(&mut self, text: &str) {
-        let text = text.trim_matches(crate::context::whitespace);
+    fn append(&mut self, source: &str) {
+        let text = source.trim_matches(crate::context::whitespace);
         if text.is_empty() || self.previous.nfd().eq(text.nfd()) {
             return;
         }
+        if self.text.is_empty() {
+            self.spaced[0] = source.starts_with(crate::context::whitespace);
+        }
+        self.spaced[1] = source.ends_with(crate::context::whitespace);
         let boundary = self.last_grapheme;
         if !self.text.is_empty() {
             let separator = if self.kind == 1 { " | " } else { " " };
@@ -168,15 +177,23 @@ impl SemanticText {
         self.previous_projection = Some(parts);
         Ok(self.decision)
     }
+    /// The text and its runs, with a space the screen shows at either edge as a hidden run.
     pub fn finish_projected(&self) -> Result<Vec<u8>, u32> {
+        let edge = |spaced: bool| spaced.then(|| (" ".to_owned(), false));
+        let runs: Vec<_> = edge(self.spaced[0])
+            .into_iter()
+            .chain(self.runs.iter().cloned())
+            .chain(edge(self.spaced[1]))
+            .collect();
         if self.failed
             || !matches!(self.decision, Decision::Complete | Decision::BudgetFull)
-            || self.source_bytes > crate::context::SEMANTIC_SOURCE_BYTES
-            || self.runs.len() > MAX_RUNS
+            || self.source_bytes + runs.len() - self.runs.len()
+                > crate::context::SEMANTIC_SOURCE_BYTES
+            || runs.len() > MAX_RUNS
         {
             return Err(1);
         }
-        serde_json::to_vec(&serde_json::json!({"text":self.text,"runs":self.runs})).map_err(|_| 3)
+        serde_json::to_vec(&serde_json::json!({"text":self.text,"runs":runs})).map_err(|_| 3)
     }
     pub fn finish(&self) -> Result<&str, u32> {
         if self.failed
@@ -193,6 +210,39 @@ impl SemanticText {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_space_at_the_edge_of_the_text_is_a_hidden_run() {
+        let runs = |offers: &[(u32, &str)]| {
+            let mut link = SemanticText::new(2).unwrap();
+            for (event, text) in offers {
+                link.offer(*event, text).unwrap();
+            }
+            let result: serde_json::Value =
+                serde_json::from_slice(&link.finish_projected().unwrap()).unwrap();
+            result["runs"].clone()
+        };
+        assert_eq!(
+            runs(&[(1, " Read more\t")]),
+            serde_json::json!([[" ", false], ["Read more", true], [" ", false]])
+        );
+        // The first text kept and the last: not one dropped as empty or as a repeat.
+        assert_eq!(
+            runs(&[
+                (1, ""),
+                (2, "  "),
+                (2, " Read"),
+                (2, "more"),
+                (2, "more "),
+                (3, "")
+            ]),
+            serde_json::json!([[" ", false], ["Read", true], [" ", true], ["more", true]])
+        );
+        assert_eq!(
+            runs(&[(1, ""), (2, "Read"), (2, "more "), (3, "")]),
+            serde_json::json!([["Read", true], [" ", true], ["more", true], [" ", false]])
+        );
+        assert_eq!(runs(&[(1, "Read")]), serde_json::json!([["Read", true]]));
+    }
     #[test]
     fn projected_fragments_retain_private_whitespace_and_require_projected_transport() {
         let mut row = SemanticText::new(1).unwrap();

@@ -207,8 +207,7 @@ struct RedactorTests {
     }
 
     /// A run far longer than any real text never stops a redactor short: what follows it is still
-    /// redacted. (The engine gives up on a repeat it runs a stack frame for per character, and
-    /// giving up is fast and silent.)
+    /// redacted.
     @Test func aVeryLongRunDoesNotStopTheRedactionOfWhatFollows() throws {
         let length = 400_000
         let runs = [
@@ -228,7 +227,7 @@ struct RedactorTests {
         ]
         for run in runs {
             let redacted = try Redactor.redact("\(run)\npassword: hunter" + "2x\n")
-            // (A key block cut off takes the letters after it, the name with them.)
+            // (A key block cut off takes the words of base64 after it, but not a name a colon ends.)
             #expect(redacted.hasSuffix(": \(Redactor.placeholder)\n") && !redacted.contains("hunter"), "\(run.prefix(16))")
             var context = ScreenContext(appName: "Example Browser")
             context.textBeforeCaret = "pwd=hunter" + "3y "
@@ -240,20 +239,12 @@ struct RedactorTests {
             // The shared source budget omits the second ordinary block. An
             // unterminated private key therefore reaches the independent caret
             // prefix too; preserving that prefix is not a privacy requirement.
-            let before = run.hasPrefix("-----BEGIN ") ? "\(Redactor.placeholder) " : "pwd=\(Redactor.placeholder) "
+            // The key takes the caret's text and the selection after it, the space between them too.
+            let before = run.hasPrefix("-----BEGIN ") ? Redactor.placeholder : "pwd=\(Redactor.placeholder) "
             #expect(reply["textBeforeCaret"]?.string == before)
             #expect(context.textBudgetFull)
             #expect(reply["selectionRedacted"] == .bool(true))
         }
-    }
-
-    /// A redactor the engine could not finish withholds everything after its last match: nothing it
-    /// did not look at is sent.
-    @Test func aRedactorThatCouldNotFinishWithholdsTheRest() throws {
-        let gone = Redactor.placeholder
-        let run = "password:" + String(repeating: " ", count: 1_000_100) + "x"
-        #expect(try Redactor.redact([["token=" + "abc123def "], [run, "selected"], ["after"]]) == [["token=\(gone)\(gone)"], ["", ""], [""]])
-        #expect(try Redactor.redact([["before ", run], ["after"]]) == [[gone, ""], [""]])
     }
 
     /// A label on screen and the focused field holding its value are one secret: the field's texts
@@ -320,8 +311,8 @@ struct RedactorTests {
         context.selectedText = "i9J0k1L2m3N4o5P6\n-----END " + "PRIVATE KEY-----\n"
         context.textAfterCaret = "next"
         reply = context.json
-        // Without the break before it the caret is inside the key, so the text around it is withheld.
-        #expect(reply["textBeforeCaret"]?.string == "")
+        // The key is matched whole across the text around the caret, its lines read as they are.
+        #expect(reply["textBeforeCaret"]?.string == gone)
         #expect(reply["selectedText"]?.string == gone)
         #expect(reply["selectionRedacted"] == .bool(true))
 
@@ -404,7 +395,7 @@ struct RedactorTests {
     }
 
     /// Text read off the screen has no length limit and may be anyone's, and it is redacted with no
-    /// deadline: each pattern must take time in proportion to the text. A pattern scanned again from
+    /// deadline: each redactor must take time in proportion to the text. A pattern scanned again from
     /// every position took minutes on these.
     /// One text after another, so that the suites running beside this one keep their cores.
     @Test func hostileTextIsRedactedInTimeProportionalToItsLength() throws {
