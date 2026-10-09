@@ -55,7 +55,8 @@ const listening: Phase = { kind: "listening" };
 const transcribing: Phase = { kind: "transcribing" };
 const running = (tool: AgentToolID | null): Phase => ({ kind: "running", tool });
 const failed = (message: string): Phase => ({ kind: "failed", message });
-const notPasted: Phase = { kind: "notPasted", message: notPastedMessage };
+/** The note for a text not pasted, showing the text its click copies. */
+const notPasted = (text: string): Phase => ({ kind: "notPasted", message: notPastedMessage, text });
 const microphoneFailed = failed("Couldn't start the microphone.");
 
 /** Without Answer: most agent tests are about the writing tools and Thunderbird, and Answer would
@@ -727,7 +728,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await holdAndRelease(controller);
       expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
 
-      expect(controller.phase).toEqual({ kind: "notPasted", message: "Switched apps. Click to copy." });
+      expect(controller.phase).toEqual({ kind: "notPasted", message: "Switched apps. Click to copy.", text: cleaned });
       expect(pastes).toEqual([]);
       // The clipboard is the user's until the note is clicked (owner, 2026-10-08).
       expect(copies).toEqual([]);
@@ -874,7 +875,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           controller.handle("finish");
           await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
           for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
-          expect(controller.phase).toEqual(notPasted);
+          expect(controller.phase).toEqual(notPasted(cleaned));
         }
         const ended = clipboardSaves();
         expect(ended).toBeGreaterThan(1);
@@ -948,9 +949,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.handle("finish");
         await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
         for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
-        expect(controller.phase).toEqual(notPasted);
+        expect(controller.phase).toEqual(notPasted(cleaned));
         await vi.advanceTimersByTimeAsync(notPastedSeconds - 1);
-        expect(controller.phase).toEqual(notPasted);
+        expect(controller.phase).toEqual(notPasted(cleaned));
         await vi.advanceTimersByTimeAsync(1);
         expect(controller.phase).toEqual(idle);
         // Gone, it copies nothing.
@@ -1007,7 +1008,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.handle("finish");
         await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
         for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
-        expect(controller.phase).toEqual(notPasted);
+        expect(controller.phase).toEqual(notPasted(cleaned));
 
         controller.dismissNotPasted();
         expect(controller.phase).toEqual(idle);
@@ -1037,7 +1038,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const click = controller.copyNotPasted();
       await sleep(0);
       expect(copies).toEqual([cleaned]);
-      expect(controller.phase).toEqual(notPasted);
+      expect(controller.phase).toEqual(notPasted(cleaned));
 
       write.resolve(taken);
       await click;
@@ -1082,7 +1083,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.handle("finish");
         await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
         for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
-        expect(controller.phase).toEqual(notPasted);
+        expect(controller.phase).toEqual(notPasted(cleaned));
         await vi.advanceTimersByTimeAsync(notPastedSeconds - 1);
         const click = controller.copyNotPasted();
         await vi.advanceTimersByTimeAsync(1);
@@ -1118,24 +1119,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
           return taking;
         },
       });
-      const dictateToAnotherApp = async () => {
+      const dictateToAnotherApp = async (text: string) => {
         controller.handle("start");
         await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
         controller.handle("finish");
         await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
         for (let turn = 0; turn < 10 && controller.phase.kind !== "notPasted"; turn += 1) await vi.advanceTimersByTimeAsync(0);
-        expect(controller.phase).toEqual(notPasted);
+        expect(controller.phase).toEqual(notPasted(text));
       };
       try {
-        await dictateToAnotherApp();
+        await dictateToAnotherApp(cleaned);
         const click = controller.copyNotPasted();
         await vi.advanceTimersByTimeAsync(0);
         expect(copies).toEqual([cleaned]);
-        await dictateToAnotherApp();
+        await dictateToAnotherApp(later);
 
         write.resolve(taken);
         await click;
-        expect(controller.phase).toEqual(notPasted);
+        expect(controller.phase).toEqual(notPasted(later));
         expect(clipboard).toBe(taken ? cleaned : "The user's own copy.");
         await controller.copyNotPasted();
         expect(copies).toEqual([cleaned, later]);
@@ -1204,7 +1205,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await holdAndRelease(controller, "agent");
       expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
 
-      expect(controller.phase).toEqual(notPasted);
+      expect(controller.phase).toEqual(notPasted("We ship on Friday."));
       expect(pastes).toEqual([]);
       expect(copies).toEqual([]);
       expect(history.entries.map((entry) => entry.text)).toEqual(["We ship on Friday."]);
@@ -2612,7 +2613,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases).toContainEqual(running(tool));
       expect(completions.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(notPasted);
+      expect(controller.phase).toEqual(notPasted("Could we ship on Friday?"));
     });
 
     /** Canceled while the paste reads the app in front, the last wait before it, with the next
@@ -2697,7 +2698,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(phases).toContainEqual(running("compose"));
       expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(notPasted);
+      expect(controller.phase).toEqual(notPasted("We ship on Friday."));
     });
 
     /** The app that counts is the one in front at key-down, not at release: a switch made while the
@@ -2715,7 +2716,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("finish");
 
       expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
-      expect(controller.phase).toEqual(notPasted);
+      expect(controller.phase).toEqual(notPasted("We ship on Friday."));
       expect(completions.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
     });
@@ -6967,7 +6968,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([]);
       expect(copies).toEqual([]);
-      expect(controller.phase).toEqual({ kind: "notPasted", message: partlyNotPastedMessage });
+      expect(controller.phase).toEqual({ kind: "notPasted", message: partlyNotPastedMessage, text: "Part 0." });
       await controller.copyNotPasted();
       expect(copies).toEqual(["Part 0."]);
     });

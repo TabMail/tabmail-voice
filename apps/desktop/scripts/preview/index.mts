@@ -107,7 +107,11 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
     ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
-    ["overlay-not-pasted", { phase: { kind: "notPasted", message: "Switched apps. Click to copy." } }],
+    ["overlay-not-pasted", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Let's move the launch review to Friday at ten, and I'll send the agenda tonight." } }],
+    // A long text, cut short after its lines.
+    ["overlay-not-pasted-long", { phase: { kind: "notPasted", message: "Couldn't transcribe the end. Click to copy the rest.", text: "Thanks for the notes on the draft. I went through each of them and agree with most; the two I'd push back on are the timeline for the second phase, which I think is too tight given the holidays, and the budget line for travel, which we can probably cut in half if we do the kickoff remotely." } }],
+    // A word or two.
+    ["overlay-not-pasted-short", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Sounds good." } }],
     ["overlay-agent-failed-long", { phase: { kind: "failed", message: "The selection holds what looks like a password or key, so it wasn't rewritten." }, mode: "agent" }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay/index.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),

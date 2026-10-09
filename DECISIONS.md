@@ -3260,6 +3260,17 @@ the General card. A refusal or failed install logs the platform's own fixed sent
 > write succeeds ends the note at once (no "Copied to clipboard" message; the `copied` phase is gone);
 > a refused write still says "Couldn't copy. It's in the paste history.". An x at the note's end
 > (IPC `dismissNotPasted`) ends it at once, copying nothing; the text stays in the paste history.
+>
+> **Amended (owner, 2026-10-09, same day): the note shows the text it copies.** Owner: the note
+> *"should actually show what was dictated there"*, with *"a typical copy icon properly located"*,
+> so that *"you can click on that word or the box or that icon to copy"*. The note is a card
+> (`noteWidth`): its message by the clipboard and its x on top, and under them a box with the text,
+> in the chat window's colors for the user's words, cut short after `noteTextMaxLines` lines, with a
+> copy sign at its first line's end; the box and the sign turn the brand's blue under the pointer. A
+> click anywhere on the card but the x copies, as before. The `notPasted` phase carries the text
+> (`text`), which the click copies, in place of the controller's own copy of it: what is shown is
+> what is copied. The text reaches the overlay's page, as the chat window's replies do; it is never
+> logged.
 
 > **Amended (owner, 2026-09-30, same day): only the app is checked.** Tested on a dev build in
 > iTerm2, every dictation was copied as "Cursor moved" though nothing had moved: iTerm2's caret is a

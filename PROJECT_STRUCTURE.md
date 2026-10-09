@@ -135,7 +135,7 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    `clipboardSaveInterval` from key-down until the paste writes (`clipboardSave`, `ClipboardKeeper`:
    ADR-DESK-002, amended 2026-10-08 and 2026-10-09); with another app in front
    than at key-down (`focusChanged`), nothing is pasted or copied, and a note at the mouse pointer
-   offers to copy it for 10 s (phase `notPasted`; a click copies it and the note goes, its x dismisses it). Either way the text joins
+   offers to copy it for 10 s (phase `notPasted`, carrying the text: a card showing it in a box with a copy sign; a click anywhere on it copies it and the note goes, its x dismisses it). Either way the text joins
    the paste history. If the cleanup failed for any reason, the transcript
    is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is
    cut into chunks of up to 105 s, each overlapping the one before, as it is recorded (`Chunker`; cuts at pauses are off since 2026-10-07), each sent with its cleanup while the user

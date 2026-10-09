@@ -789,6 +789,17 @@ export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
 /** The not-pasted note's x, which dismisses it. */
 export const noteCloseButtonSize = 18;
+/** The not-pasted note is a card this wide (or the overlay's width, if less), its corners this round,
+ * this far inside its border: its message and x over a box showing the text it copies, as many
+ * lines as `noteTextMaxLines` and cut short after them, with a copy sign in the box's corner (owner,
+ * 2026-10-09: "show what was dictated there", with "a typical copy icon"). */
+export const noteWidth = 320;
+export const noteCornerRadius = 12;
+export const notePadding = 10;
+export const noteTextMaxLines = 3;
+export const noteTextPadding = 8;
+export const noteTextCornerRadius = 8;
+export const noteCopyIconSize = 14;
 /** The spinner beside what a tool the answer's model called is doing, while it runs. */
 export const chatActivitySpinnerRevolutionsPerSecond = 1;
 export const chatActivitySpinnerLineWidth = 1.5;

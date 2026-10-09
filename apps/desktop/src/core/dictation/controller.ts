@@ -50,10 +50,10 @@ export type Phase =
   | { kind: "running"; tool: AgentToolID | null }
   | { kind: "failed"; message: string }
   /** The user went to another app before the paste: nothing is pasted and the clipboard is left as
-   * it is; the text is in the paste history, and a note at the mouse pointer copies it when clicked,
-   * for `notPastedDisplayDuration`, and goes once clicked, or dismissed by its x (ADR-DESK-042,
-   * amended 2026-10-08 and 2026-10-09). */
-  | { kind: "notPasted"; message: string };
+   * it is; the text is in the paste history, and a note at the mouse pointer shows it (`text`) and
+   * copies it when clicked, for `notPastedDisplayDuration`, and goes once clicked, or dismissed by its
+   * x (ADR-DESK-042, amended 2026-10-08 and 2026-10-09). */
+  | { kind: "notPasted"; message: string; text: string };
 
 /** What the pointer's note says when the text was not pasted. */
 export const notPastedMessage = "Switched apps. Click to copy.";
@@ -248,8 +248,6 @@ export class DictationController extends Observable {
   private releaseTailTimer: Timer | null = null;
   private failureResetTimer: Timer | null = null;
   private clipboardSaveTimer: Timer | null = null;
-  /** The text the not-pasted note copies when clicked, while it shows. */
-  private notPastedText: string | null = null;
   /** Tips to show this dictation, in turn, once the pill listens and hears (`showDueTip`). */
   private dueTips: DictationTip[] = [];
   private tipTimer: Timer | null = null;
@@ -835,8 +833,7 @@ export class DictationController extends Observable {
       if (error instanceof NotPastedError) {
         // Not pasted, the missing end is still said.
         if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
-        this.notPastedText = error.text;
-        this.showMessage({ kind: "notPasted", message: lost === null ? error.message : partlyNotPastedMessage }, config.notPastedDisplayDuration);
+        this.showMessage({ kind: "notPasted", message: lost === null ? error.message : partlyNotPastedMessage, text: error.text }, config.notPastedDisplayDuration);
         return;
       }
       log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
@@ -1769,9 +1766,8 @@ export class DictationController extends Observable {
    * there, or says it isn't. A newer hold, or the note's end, while the clipboard is written wins. */
   async copyNotPasted(): Promise<void> {
     const note = this.currentPhase;
-    const text = this.notPastedText;
-    if (note.kind !== "notPasted" || text === null) return;
-    const written = await this.deps.copy(text);
+    if (note.kind !== "notPasted") return;
+    const written = await this.deps.copy(note.text);
     if (this.currentPhase !== note) return;
     log.debug(`DictationController: not-pasted note clicked; ${written ? "copied" : "not copied"}`);
     if (written) this.setPhase({ kind: "idle" });
@@ -1786,8 +1782,6 @@ export class DictationController extends Observable {
   }
 
   private setPhase(phase: Phase): void {
-    // The note's text is held only while the note shows.
-    if (phase.kind !== "notPasted") this.notPastedText = null;
     this.currentPhase = phase;
     this.onPhaseChange?.(phase);
     this.changed();
