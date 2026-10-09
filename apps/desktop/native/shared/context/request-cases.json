@@ -317,7 +317,7 @@
         }
       },
       "expected": {
-        "value": "[redacted]\u2029$ "
+        "value": "[redacted]\u2029[redacted]\u2029$ "
       }
     },
     {

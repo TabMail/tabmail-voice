@@ -406,7 +406,7 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
     // A line's first base64 word, after the same kind of prefix as `prefix` or, with another
     // prefix, a word as long as a full line starting the line: where it starts and ends (running
     // on over padding and base64 alike, a line of two keys glued), and whether it is that long.
-    let lead = |line: &Range<usize>, prefix: &str| -> Option<(usize, bool)> {
+    let lead = |line: &Range<usize>, prefix: &str| -> Option<(Range<usize>, bool)> {
         let line = trim(line);
         let rest = &text[line.clone()];
         let skip = if rest.len() >= prefix.len()
@@ -431,7 +431,7 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
         while end < line.end && (key.base64.has(bytes[end]) || bytes[end] == key.padding) {
             end += 1;
         }
-        (end > at).then_some((end, long))
+        (end > at).then_some((at..end, long))
     };
     let lines = lines(text);
     let first_text_line = lines.iter().position(|line| !blank(line));
@@ -463,27 +463,24 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
             break;
         }
         let last_line = trim(&lines[last]);
-        let mut to = last_line.end;
         let prefix = shape(&text[last_line.start..full(&lines[last]).unwrap_or(last_line.start)]);
         // The line the run stops at, when a word as long as a full line starts it: a key's line
         // that goes on with other text counts as one, and ends the key.
         let stop = lines
             .get(next)
             .and_then(|line| lead(line, &prefix))
-            .filter(|&(_, long)| long);
+            .filter(|(_, long)| *long);
         // Otherwise the first base64 word of the next line that is not blank, after the same kind
         // of prefix as the last full line had, whatever follows it (owner, 2026-10-08).
+        let stopped = stop.is_some();
         let after = stop.or_else(|| {
             lines[last + 1..]
                 .iter()
                 .find(|line| !blank(line))
                 .and_then(|line| lead(line, &prefix))
         });
-        if let Some((end, long)) = after {
-            if long {
-                count += 1;
-            }
-            to = end;
+        if after.as_ref().is_some_and(|(_, long)| *long) {
+            count += 1;
         }
         if count < key.min_lines {
             index += 1;
@@ -505,9 +502,54 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
                 from = line.start;
             }
         }
+        // Each line's base64 goes; on a line after the first, what comes before it up to a blank
+        // (a label, a quote mark, a gutter) stays unless it is all base64 too, and what is glued
+        // to it goes with it when it holds base64 (`h1:`, the end of a key before it), not when it
+        // is only a mark (a pane's border). Lines that only whitespace parts go as one.
+        // Single words after the last full line go up to a line a long word starts.
+        let through = if stopped { next } else { last + 1 };
+        let mut taken = from..trim(&lines[index]).end;
+        let mut pieces = Vec::new();
+        for line in &lines[index + 1..through] {
+            let line = trim(line);
+            if line.is_empty() {
+                continue;
+            }
+            let run = full(&line).unwrap_or(line.start);
+            let before = &text[line.start..run];
+            let start = if before
+                .bytes()
+                .all(|b| key.base64.has(b) || b == key.padding || b.is_ascii_whitespace())
+            {
+                line.start
+            } else {
+                let glued = before
+                    .char_indices()
+                    .rfind(|(_, ch)| ch.is_whitespace())
+                    .map_or(line.start, |(at, ch)| line.start + at + ch.len_utf8());
+                if bytes[glued..run].iter().any(|&b| key.base64.has(b)) {
+                    glued
+                } else {
+                    run
+                }
+            };
+            pieces.push(start..line.end);
+        }
+        pieces.extend(after.map(|(word, _)| word));
+        for piece in pieces {
+            if text[taken.end..piece.start].trim().is_empty() {
+                taken.end = piece.end;
+            } else {
+                found.push(Found {
+                    matched: taken.clone(),
+                    taken,
+                });
+                taken = piece;
+            }
+        }
         found.push(Found {
-            matched: from..to,
-            taken: from..to,
+            matched: taken.clone(),
+            taken,
         });
         index = last + 1;
     }
@@ -757,23 +799,40 @@ fn random_words(text: &str, edges: &[usize], entropy: &Entropy, found: &mut Vec<
         }
     };
     // Cut a word at each separator piece that is itself word-like (a path's `src`, a branch
-    // name's `final`), and look at each part between such pieces.
+    // name's `final`), and at each run of hex pieces at least a random word long (a UUID or a hash
+    // in a path), and look at each part between such cuts.
     let look = |at: usize, end: usize, found: &mut Vec<Found>| {
-        let mut part = at;
+        let mut cuts: Vec<Range<usize>> = Vec::new();
+        let mut hex: Option<Range<usize>> = None;
         let mut piece = at;
         while piece <= end {
             let piece_end = (piece..end)
                 .find(|&i| entropy.separators.has(bytes[i]))
                 .unwrap_or(end);
             let word = &bytes[piece..piece_end];
+            if !word.is_empty() && word.iter().all(|&b| entropy.hex.has(b)) {
+                hex = Some(hex.map_or(piece, |run| run.start)..piece_end);
+            } else if let Some(run) = hex.take()
+                && run.len() >= entropy.min_length
+            {
+                cuts.push(run);
+            }
             // A number reads as a word but cuts nothing (`sha512-…`, an id's leading digits).
             if word.len() >= 3 && word_share(word, None) >= 1.0 {
-                if part < piece {
-                    random(trim(bytes, part..piece, &entropy.separators), found);
-                }
-                part = piece_end;
+                cuts.push(piece..piece_end);
             }
             piece = piece_end + 1;
+        }
+        if let Some(run) = hex.filter(|run| run.len() >= entropy.min_length) {
+            cuts.push(run);
+        }
+        cuts.sort_by_key(|cut| cut.start);
+        let mut part = at;
+        for cut in cuts {
+            if part < cut.start {
+                random(trim(bytes, part..cut.start, &entropy.separators), found);
+            }
+            part = part.max(cut.end);
         }
         if part < end {
             random(trim(bytes, part..end, &entropy.separators), found);

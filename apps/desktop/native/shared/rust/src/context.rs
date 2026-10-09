@@ -17,11 +17,12 @@ struct Block {
     ends: Option<[[f64; 4]; 2]>,
     source: Option<Vec<String>>,
     runs: Option<Vec<(String, bool)>>,
-    /// Whether the text the screen shows starts or ends with a space (`admit` keeps one at each
-    /// edge that had any, and `SemanticText` gives it as a hidden run): the block's text is read
-    /// without them. A block whose runs start or end hidden is spaced there too: text the screen
-    /// does not show is never glued to the piece beside it.
-    spaced: [bool; 2],
+    /// What the text the screen shows starts and ends with: a line break, a space, or nothing
+    /// (`admit` keeps one at each edge that had whitespace, a line break if it held one, and
+    /// `SemanticText` gives it as a hidden run); the block's text is read without it. A block whose
+    /// runs start or end hidden is spaced there (a space: what the screen does not show says
+    /// nothing of where its lines break), so that text is never glued to the piece beside it.
+    spaced: [&'static str; 2],
     /// What the screen shows between the block before and this one (`separator`), set once when
     /// the read is laid out.
     before: &'static str,
@@ -33,7 +34,10 @@ impl Block {
             return Err(1);
         }
         let mut text = value["text"].as_str().ok_or(1u32)?.to_owned();
-        let spaced = [text.starts_with(whitespace), text.ends_with(whitespace)];
+        let spaced = [
+            edge(&text[..text.len() - text.trim_start_matches(whitespace).len()]),
+            edge(&text[text.trim_end_matches(whitespace).len()..]),
+        ];
         let source = value.get("source").map(read_field).transpose()?;
         if source
             .as_ref()
@@ -58,16 +62,21 @@ impl Block {
             text = text.trim_matches(whitespace).to_owned();
         }
         let spaced = match &runs {
-            Some(runs) => [runs.first(), runs.last()]
-                .map(|run| run.is_some_and(|(text, shown)| !shown && !text.is_empty())),
+            Some(runs) => [runs.first(), runs.last()].map(|run| match run {
+                Some((text, false)) if !text.is_empty() => " ",
+                _ => "",
+            }),
             None => spaced,
         };
         // The marker for what a helper left out is the core's own word, never glued to a piece
         // beside it, so that no redactor reads it as part of a value: a block that starts or ends
         // with it (a link whose first or last part was left out) stands apart on that side.
+        let marked = |spaced: &'static str, marked: bool| {
+            if marked { more(spaced, " ") } else { spaced }
+        };
         let spaced = [
-            spaced[0] || text.starts_with(HIDDEN_MARKER),
-            spaced[1] || text.ends_with(HIDDEN_MARKER),
+            marked(spaced[0], text.starts_with(HIDDEN_MARKER)),
+            marked(spaced[1], text.ends_with(HIDDEN_MARKER)),
         ];
         let frame = if value["frame"].is_null() {
             None
@@ -151,11 +160,14 @@ fn separator(a: &Block, b: &Block) -> &'static str {
     let [bx, by, _, bh] = shown(b.ends, 0, b_frame);
     let overlap = (ay + ah).min(by + bh) - ay.max(by);
     if a.inline() && b.inline() && bx >= ax && overlap >= ah.min(bh) * 0.5 {
-        return if a.spaced[1] || b.spaced[0] || (bx - (ax + aw)).abs() > ah.min(bh) * ABUTTING_GAP {
+        // The text's own edge says more than the boxes: a piece that starts with a line break goes
+        // on the next line, wherever the box of that break is.
+        let gap = if (bx - (ax + aw)).abs() > ah.min(bh) * ABUTTING_GAP {
             " "
         } else {
             ""
         };
+        return more(more(a.spaced[1], b.spaced[0]), gap);
     }
     if below { "\n\n" } else { "\n" }
 }
@@ -171,6 +183,10 @@ fn rank(separator: &str) -> usize {
         .iter()
         .position(|s| *s == separator)
         .unwrap_or(0)
+}
+/// The one of two separators that parts more.
+fn more(a: &'static str, b: &'static str) -> &'static str {
+    if rank(a) >= rank(b) { a } else { b }
 }
 /// The separator that stands for a run of whitespace at a part's edge: a line break if it holds
 /// one, a space if it holds any, nothing if it is empty.
@@ -1078,8 +1094,9 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         if previous.is_some_and(|p| !p.is_null() && !p.is_string()) {
             return Err(1);
         }
-        // A space at either edge is kept as one, so the screen read can tell two pieces of one line
-        // that abut (a run of bold inside a word) from two words.
+        // Whitespace at either edge is kept as one space, or one line break if it held one, so the
+        // screen read can tell two pieces of one line that abut (a run of bold inside a word) from
+        // two words, and a piece that starts a line from one that goes on with it.
         let trimmed = source.trim_matches(whitespace);
         let text = if trimmed.is_empty()
             || used >= SCREEN_BYTES
@@ -1089,11 +1106,10 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         {
             String::new()
         } else {
-            let space = |spaced: bool| if spaced { " " } else { "" };
             format!(
                 "{}{trimmed}{}",
-                space(source.starts_with(whitespace)),
-                space(source.ends_with(whitespace))
+                edge(&source[..source.len() - source.trim_start_matches(whitespace).len()]),
+                edge(&source[source.trim_end_matches(whitespace).len()..])
             )
         };
         let used = used + text.len();
@@ -2123,6 +2139,19 @@ mod budget_tests {
             reply,
             json!({"text":"","used":17,"budgetFull":false,"stop":null})
         );
+    }
+    /// Whitespace at a piece's edge is kept as one space, or one line break if it held one: a
+    /// piece that starts a line is never read as going on with the line before.
+    #[test]
+    fn admission_keeps_a_line_break_at_an_edge_as_a_line_break() {
+        for (source, text) in [
+            ("\n a b\t", "\na b "),
+            ("\t a b \r\n", " a b\n"),
+            ("a\u{2028}", "a\n"),
+            ("a b", "a b"),
+        ] {
+            assert_eq!(call(json!({"admit":source,"used":0}))["text"], text);
+        }
     }
     #[test]
     fn caret_is_reserved_once_even_when_its_block_is_late() {

@@ -4657,6 +4657,69 @@
       "expected": {
         "rendered": "Key:[redacted]"
       }
+    },
+    {
+      "name": "a link starting with a line break, its box at the end of the line before, starts its own line",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+            "frame": [
+              0,
+              0,
+              512,
+              60
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                504,
+                40,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "\nQUJDQUJD== copy",
+            "frame": [
+              512,
+              40,
+              80,
+              20
+            ],
+            "ends": [
+              [
+                512,
+                40,
+                8,
+                20
+              ],
+              [
+                540,
+                60,
+                40,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]\n[copy]"
+      }
     }
   ]
 }

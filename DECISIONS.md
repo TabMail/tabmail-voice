@@ -3761,7 +3761,12 @@ well-structured place for the redactors.
     last line, a key's line beside other text), that word goes and ends the key. A run of such lines never goes on past a sentence's end
     (punctuation, then whitespace) after its first line, because a document's text around a field
     starts and ends there (the source window); a test cuts a witness of every redactor there and
-    checks the window still takes all the whole text takes inside it.
+    checks the window still takes all the whole text takes inside it. Each line's base64 goes,
+    not the text between: on a line after the first, what comes before the base64 up to a blank
+    (a module path in `go.sum`, a host in `known_hosts`, a file name in a checksum listing, a
+    gutter, a quote mark) stays, unless it is all base64 too; what is glued to the base64 goes
+    with it when it holds base64 (`h1:`, the end of a key run into the next), not when it is only a
+    mark (a pane's border). Lines that only whitespace parts go as one marker.
   - **An end line with no header.** `-----END … PRIVATE KEY-----` with no header before it takes
     the text back to the start of the read, or to just after the end line before it, through the
     end line: a body read without its header goes whatever comes before it, and other text read
@@ -3770,7 +3775,9 @@ well-structured place for the redactors.
     takes the words of base64 after it up to the first other character, each such header on its own.
     A key cut by a window either side keeps none of its body in the window (its own test).
   - **Words that look random.** A run of `[A-Za-z0-9+/_-]` (padding at its end), cut at a `/`, `_`
-    or `-` piece that is itself word-like, goes when a part is at least 24 characters long, holds a
+    or `-` piece that is itself word-like and at each run of hex pieces at least 24 characters long
+    (a UUID or a hash in a path: an app's container path `…/Application/<UUID>/MyApp.app` stays),
+    goes when a part is at least 24 characters long, holds a
     letter and a digit (a word of letters and `+` with no digit stays, as the tuning below was
     measured; owner, 2026-10-08), is not hex (letters or a `0x` before hex count as hex, so git
     hashes, digests, ids and hex numbers such as an address or a transaction hash stay), has at
@@ -3796,7 +3803,8 @@ well-structured place for the redactors.
     shared document's or file's id, a playlist id, an OAuth client id, a message id, an `sha512-`
     integrity value, a `data:` address's payload (owner, 2026-10-08: keep hiding them; sparing words
     inside addresses would spare keys pasted into one). A key of small letters and digits only is
-    taken about one time in five. Each of the three owner decisions has its shared cases.
+    taken about one time in five. Each of the three owner decisions has its shared cases. Cutting
+    at hex runs changed none of 32,000 random keys' results.
     *(Owner, 2026-10-09: how this rule is judged.)* Telling a random word from a name is a guess,
     and every name a review builds can be met by another, so the rule is judged by what it measures,
     not by whether a counterexample can be built: the share of random words caught and the benign
@@ -3809,13 +3817,19 @@ well-structured place for the redactors.
   characters, not blanks (owner, 2026-10-08: "that gate is artificial … something reasonable and
   robust"): whitespace `main`'s expressions swallowed beside a key (a tab indenting key lines, a line
   break after a cut-off key, a blank between two chained `Bearer` tokens) stays as the screen shows
-  it, and so does a short word ending in padding at the start of a text's first line before a key's
+  it, as do the labels, gutters and quote marks between key lines, and so does a short word ending in padding at the start of a text's first line before a key's
   base64 on that line (`abc=` before it), which holds no key character. An end line with no header
   takes the blanks before the key's body back to where it starts. The regular expressions it
   replaces also took a chain of `Bearer` words as one find; the scanner shows what that chain held
   that is no token (a body shorter than a token's least length) and a token after a `Bearer` glued
   to a word, the kept word edge above. Expectations the owner's rules changed are renamed in the
   shared cases to say what now goes.
+  A piece of the screen whose text starts or ends with a line break is laid out on its own line,
+  whatever the box of that break says (a box at the end of the line before must not glue a key's
+  short last line to its full lines with a space). A piece laid out against `Bearer` with no gap
+  reads as the screen shows it, `Bearer` glued to the body: a body of key lines that look random
+  goes as such, while a body built of one repeated group (`QUJD…`) stays, as `main` showed it only
+  by inventing a space between the two pieces (judgement call, 2026-10-09).
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what

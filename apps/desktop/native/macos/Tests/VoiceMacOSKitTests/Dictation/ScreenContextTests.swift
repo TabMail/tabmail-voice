@@ -18,8 +18,9 @@ struct ScreenContextTests {
         context.append(.text, "Inbox")
         context.append(.text, "  ")
         context.append(.text, " Drafts\n")
-        // An edge that had space keeps one, so the render can tell two words from pieces that abut.
-        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: " Drafts ")])
+        // An edge that had space keeps one, or a line break if it held one, so the render can tell
+        // two words, and two lines, from pieces that abut.
+        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: " Drafts\n")])
     }
 
     @Test func renderedTextMarksStructure() throws {

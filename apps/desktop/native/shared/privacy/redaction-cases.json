@@ -8313,6 +8313,10 @@
   "expected": [
    "10 | ",
    "{redacted}",
+   "\n11 | ",
+   "{redacted}",
+   "\n12 | ",
+   "{redacted}",
    "\nmore"
   ]
  },
@@ -8421,6 +8425,10 @@
   ],
   "expected": [
    "> ",
+   "{redacted}",
+   "\n> ",
+   "{redacted}",
+   "\n>    ",
    "{redacted}",
    " and more"
   ]
@@ -8864,7 +8872,11 @@
    "expected": [
     "> ",
     "{redacted}",
-    "\na\u00e9 word"
+    "\n> ",
+    "{redacted}",
+    "\na",
+    "\u00e9",
+    " word"
    ]
   },
   {
@@ -9004,6 +9016,10 @@
    "expected": [
     "> ",
     "{redacted}",
+    "\n> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
     " and more"
    ]
   },
@@ -9022,7 +9038,10 @@
    "expected": [
     "> ",
     "{redacted}",
-    "\n| Done and more"
+    "\n> ",
+    "{redacted}",
+    "\n| Done and ",
+    "more"
    ]
   },
   {
@@ -9578,7 +9597,454 @@
    "expected": [
     "> ",
     "{redacted}",
+    "\n> ",
+    "{redacted}",
+    "\n> ",
+    "\u00a0",
+    "{redacted}",
     " rest"
+   ]
+  },
+  {
+   "name": "an app's container path holding UUIDs stays",
+   "text": [
+    "/Users/dev/L",
+    "ibrary/Devel",
+    "oper/CoreSim",
+    "ulator/Devic",
+    "es/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/data/Con",
+    "tainers/Bund",
+    "le/Applicati",
+    "on/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/TabMail.",
+    "app"
+   ],
+   "expected": [
+    "/Users/dev/L",
+    "ibrary/Devel",
+    "oper/CoreSim",
+    "ulator/Devic",
+    "es/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/data/Con",
+    "tainers/Bund",
+    "le/Applicati",
+    "on/C4FF64DE-",
+    "BB5D-4B48-BC",
+    "3B-66FA30D0B",
+    "194/TabMail.",
+    "app"
+   ]
+  },
+  {
+   "name": "a bundle path whose UUID comes before a short app name stays",
+   "text": [
+    "/private/var",
+    "/containers/",
+    "Bundle/Appli",
+    "cation/C4FF6",
+    "4DE-BB5D-4B4",
+    "8-BC3B-66FA3",
+    "0D0B194/MyAp",
+    "p.app"
+   ],
+   "expected": [
+    "/private/var",
+    "/containers/",
+    "Bundle/Appli",
+    "cation/C4FF6",
+    "4DE-BB5D-4B4",
+    "8-BC3B-66FA3",
+    "0D0B194/MyAp",
+    "p.app"
+   ]
+  },
+  {
+   "name": "a temporary file named for a UUID and a version stays",
+   "text": [
+    "/tmp/c4ff64d",
+    "e-bb5d-4b48-",
+    "bc3b-66fa30d",
+    "0b194_v2.log"
+   ],
+   "expected": [
+    "/tmp/c4ff64d",
+    "e-bb5d-4b48-",
+    "bc3b-66fa30d",
+    "0b194_v2.log"
+   ]
+  },
+  {
+   "name": "a build folder named for a UUID before an architecture stays",
+   "text": [
+    "build/c4ff64",
+    "de-bb5d-4b48",
+    "-bc3b-66fa30",
+    "d0b194/arm64",
+    "/Release"
+   ],
+   "expected": [
+    "build/c4ff64",
+    "de-bb5d-4b48",
+    "-bc3b-66fa30",
+    "d0b194/arm64",
+    "/Release"
+   ]
+  },
+  {
+   "name": "a system extension's folder named for an upper-case UUID stays",
+   "text": [
+    "/Library/Sys",
+    "temExtension",
+    "s/C4FF64DE-B",
+    "B5D-4B48-BC3",
+    "B-66FA30D0B1",
+    "94/io.exampl",
+    "e.agent.syst",
+    "emextension"
+   ],
+   "expected": [
+    "/Library/Sys",
+    "temExtension",
+    "s/C4FF64DE-B",
+    "B5D-4B48-BC3",
+    "B-66FA30D0B1",
+    "94/io.exampl",
+    "e.agent.syst",
+    "emextension"
+   ]
+  },
+  {
+   "name": "a git object path of a hash and a short name stays",
+   "text": [
+    "repo/.git/ob",
+    "jects/ab/cde",
+    "f0123456789a",
+    "bcdef0123456",
+    "789abcdef01/",
+    "x1"
+   ],
+   "expected": [
+    "repo/.git/ob",
+    "jects/ab/cde",
+    "f0123456789a",
+    "bcdef0123456",
+    "789abcdef01/",
+    "x1"
+   ]
+  },
+  {
+   "name": "a random word glued after a UUID still goes",
+   "text": [
+    "c4ff64de-bb5",
+    "d-4b48-bc3b-",
+    "66fa30d0b194",
+    "-a1B2c3D4e5F",
+    "6g7H8i9J0k1L",
+    "2m3N4"
+   ],
+   "expected": [
+    "c4ff64de-bb5",
+    "d-4b48-bc3b-",
+    "66fa30d0b194",
+    "-",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a go.sum listing keeps its module paths",
+   "text": [
+    "example.com/",
+    "mod0 v1.0.0 ",
+    "h1:QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJ=\n",
+    "example.com/",
+    "mod1 v1.0.1 ",
+    "h1:QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJ=\n",
+    "example.com/",
+    "mod2 v1.0.2 ",
+    "h1:QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJ="
+   ],
+   "expected": [
+    "example.com/",
+    "mod0 v1.0.0 ",
+    "h1:",
+    "{redacted}",
+    "\nexample.com",
+    "/mod1 v1.0.1",
+    " ",
+    "{redacted}",
+    "\nexample.com",
+    "/mod2 v1.0.2",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a known_hosts listing keeps its host names",
+   "text": [
+    "host0.exampl",
+    "e.com ssh-ed",
+    "25519 AAAAC3",
+    "NzaC1lZDI1NT",
+    "E5AAAAIQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJD\nhost1.ex",
+    "ample.com ss",
+    "h-ed25519 AA",
+    "AAC3NzaC1lZD",
+    "I1NTE5AAAAIQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJD\nhost",
+    "2.example.co",
+    "m ssh-ed2551",
+    "9 AAAAC3NzaC",
+    "1lZDI1NTE5AA",
+    "AAIQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJD"
+   ],
+   "expected": [
+    "host0.exampl",
+    "e.com ssh-ed",
+    "25519 ",
+    "{redacted}",
+    "\nhost1.examp",
+    "le.com ssh-e",
+    "d25519 ",
+    "{redacted}",
+    "\nhost2.examp",
+    "le.com ssh-e",
+    "d25519 ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a checksum listing keeps its file names",
+   "text": [
+    "SHA256 (rele",
+    "ase-0.tar.gz",
+    ") = 01234567",
+    "89abcdef0123",
+    "456789abcdef",
+    "0123456789ab",
+    "cdef01234567",
+    "89abcdef\nSHA",
+    "256 (release",
+    "-1.tar.gz) =",
+    " 0123456789a",
+    "bcdef0123456",
+    "789abcdef012",
+    "3456789abcde",
+    "f0123456789a",
+    "bcdef\nSHA256",
+    " (release-2.",
+    "tar.gz) = 01",
+    "23456789abcd",
+    "ef0123456789",
+    "abcdef012345",
+    "6789abcdef01",
+    "23456789abcd",
+    "ef"
+   ],
+   "expected": [
+    "SHA256 (rele",
+    "ase-0.tar.gz",
+    ") = ",
+    "{redacted}",
+    "\nSHA256 (rel",
+    "ease-1.tar.g",
+    "z) = ",
+    "{redacted}",
+    "\nSHA256 (rel",
+    "ease-2.tar.g",
+    "z) = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's last line holding a plus and a slash goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nab",
+    "+/cd== done"
+   ],
+   "expected": [
+    "{redacted}",
+    " done"
+   ]
+  },
+  {
+   "name": "a cut-off private key's short body holding a slash and a plus goes whole",
+   "text": [
+    "-----BEGIN P",
+    "RIVATE KEY--",
+    "---\nab/cd+ef"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word naming a commit glued to its hash stays",
+   "text": [
+    "commit3f9a2b",
+    "7c8d1e4f60a5",
+    "b2c9d8e7f1a3",
+    "b4c5d6e7f8"
+   ],
+   "expected": [
+    "commit3f9a2b",
+    "7c8d1e4f60a5",
+    "b2c9d8e7f1a3",
+    "b4c5d6e7f8"
+   ]
+  },
+  {
+   "name": "an upper-case 0X hex number stays",
+   "text": [
+    "0X3F9A2B7C8D",
+    "1E4F60A5B2C9",
+    "D8E7F1A3B4"
+   ],
+   "expected": [
+    "0X3F9A2B7C8D",
+    "1E4F60A5B2C9",
+    "D8E7F1A3B4"
+   ]
+  },
+  {
+   "name": "a mixed word just under the random-word entropy bar stays",
+   "text": [
+    "Ha5Wc6Hx2Hj6",
+    "Hg6Mj7Ma7Hn2"
+   ],
+   "expected": [
+    "Ha5Wc6Hx2Hj6",
+    "Hg6Mj7Ma7Hn2"
+   ]
+  },
+  {
+   "name": "a Bearer token's body ends before a non-ASCII letter",
+   "text": [
+    "Bearer abcde",
+    "fghijklmnopq",
+    "rst",
+    "\u0141",
+    "\u0141",
+    " end"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    "\u0141",
+    "\u0141",
+    " end"
+   ]
+  },
+  {
+   "name": "a word as long as a full line starting the line after prefixed key lines goes",
+   "text": [
+    "> QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD\n> QUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "D\nQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD rest"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n> ",
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "a temporary file named for a hex id of exactly a random word's length stays",
+   "text": [
+    "/tmp/c4ff64d",
+    "ebb5d4b48bc3",
+    "b66fa_v2.log"
+   ],
+   "expected": [
+    "/tmp/c4ff64d",
+    "ebb5d4b48bc3",
+    "b66fa_v2.log"
+   ]
+  },
+  {
+   "name": "a folder named for a UUID after a name holding a digit stays",
+   "text": [
+    "/var/mobile/",
+    "Data2go/C4FF",
+    "64DE-BB5D-4B",
+    "48-BC3B-66FA",
+    "30D0B194"
+   ],
+   "expected": [
+    "/var/mobile/",
+    "Data2go/C4FF",
+    "64DE-BB5D-4B",
+    "48-BC3B-66FA",
+    "30D0B194"
+   ]
+  },
+  {
+   "name": "a key's line split by a space after its first line goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "D QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
    ]
   }
  ],
@@ -10409,6 +10875,37 @@
      ],
      [
       ""
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a key glued to the item before it on a terminal's line stays, as glued in one piece",
+   "lines": [
+    [
+     [
+      "notes"
+     ],
+     [
+      "sk-abcdefghij",
+      "klmnopqrst"
+     ],
+     [
+      " after"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "notes"
+     ],
+     [
+      "sk-abcdefghij",
+      "klmnopqrst"
+     ],
+     [
+      " after"
      ]
     ]
    ]
