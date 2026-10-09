@@ -3620,13 +3620,15 @@ well-structured place for the redactors.
   glued to the word before it stays shown) holds where the screen shows that word and the key in
   one piece; a piece the screen shows on its own (a block, a styled run; `privacy::taken_with_edges`)
   gives its first character an edge, and a prefix glued to text another redactor takes goes with it
-  (a key glued to a key). An edge only lets a find start; it never ends one. The owner set three
-  rules with it:
+  (a key glued to a key), however short what follows it is. An edge only lets a find start; it never
+  ends one. The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
+  pieces of one text and give no edge. The owner set three rules with it:
   - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
     label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows
     it (`Done and more` loses `Done`; accepted). A word as long as a full line starting the next
     line counts as one, so a key's last full line may go on with other text, and the word runs on
-    over padding and base64 alike. A run of such lines never goes on past a sentence's end
+    over padding and base64 alike. When the run stops at a line such a word starts (after a short
+    last line, a key's line beside other text), that word goes and ends the key. A run of such lines never goes on past a sentence's end
     (punctuation, then whitespace) after its first line, because a document's text around a field
     starts and ends there (the source window); a test cuts a witness of every redactor there and
     checks the window still takes all the whole text takes inside it.
@@ -3655,14 +3657,20 @@ well-structured place for the redactors.
     | 0.55 | 46 | .92/.94/.96 | .94/.97/.99 | .86/.91/.89 |
 
     At 0.5 every benign word taken looks random itself (base64 test blobs, token fixtures, price
-    ids, publishable keys); no ordinary path, address, branch name, dated tag, identifier or
-    `package@version` goes. A key of small letters and digits only is taken about one time in five.
+    ids, publishable keys); no ordinary path, branch name, dated tag, identifier, UUID, git hash or
+    `package@version` goes. A random id inside an address does go, as it is random by nature: a
+    shared document's or file's id, a playlist id, an OAuth client id, a message id, an `sha512-`
+    integrity value, a `data:` address's payload. A key of small letters and digits only is taken
+    about one time in five.
 
   Checked against `main` and the regular-expression redactors this replaces, over the shared cases,
-  59,000 generated glued and paired secrets and 2,538 screen reads: no key character either takes
-  is shown; the only bytes `main` takes that the scanner shows are five single blanks after a key,
-  as the exact-text read already keeps them. Expectations the owner's rules changed are renamed in
-  the shared cases to say what now goes.
+  59,000 generated glued and paired secrets, 2,538 screen reads, and a second generated set of
+  217,000 glued tokens and key lines: no key character `main` takes is shown; the only bytes `main`
+  takes that the scanner shows are five single blanks after a key, as the exact-text read already
+  keeps them. The regular expressions it replaces also took a chain of `Bearer` words as one find;
+  the scanner shows what that chain held that is no token (a body shorter than a token's least
+  length) and a token after a `Bearer` glued to a word, the kept word edge above. Expectations the
+  owner's rules changed are renamed in the shared cases to say what now goes.
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what

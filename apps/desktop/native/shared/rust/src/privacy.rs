@@ -139,8 +139,9 @@ fn redact_with_anchors(
     if requested.peek().is_some() {
         return Err(Error::InvalidBoundary);
     }
-    let edges: Vec<usize> = pieces.iter().map(|piece| piece.start).collect();
-    let found = scan::scan(&text, &edges, redactors);
+    // A line's items are pieces of one text (a terminal's connected runs), not pieces the screen
+    // shows on their own: no item starts a word.
+    let found = scan::scan(&text, &[], redactors);
     let runs = runs(&found);
     let mut output = Vec::with_capacity(pieces.len());
     let mut next = 0;

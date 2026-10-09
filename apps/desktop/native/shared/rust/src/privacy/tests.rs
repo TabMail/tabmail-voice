@@ -130,6 +130,20 @@ fn hostile_text_stays_under_two_seconds() {
             "hostile family {unit:?}"
         );
     }
+    // A text that starts with one word, then a long blank run, then many keys' lines: whether a
+    // key's lines follow the text's first line is looked up once, not per key.
+    let line = "A".repeat(40);
+    let text = format!(
+        "a\n{}{}",
+        "\n".repeat(100_000),
+        format!("{line}\n{line}\nx y\n").repeat(2_500)
+    );
+    let start = Instant::now();
+    scalar(&text);
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "a first line, a long blank run, then many keys' lines"
+    );
 }
 
 #[test]
@@ -239,6 +253,18 @@ fn invalid_definitions_are_refused() {
         .iter()
         .position(|r| r["kind"] == "entropy")
         .unwrap();
+    // A text a redactor looks for is ASCII: a byte offset in it is a character's.
+    let key = original["redactors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|r| r["kind"] == "privateKey")
+        .unwrap();
+    for field in ["begin", "label", "close"] {
+        let mut changed = original.clone();
+        changed["redactors"][key][field] = Value::String("\u{e9}".into());
+        assert!(refused(&changed), "{field}");
+    }
     for (field, value) in [
         ("maxWordShare", Value::from(0.0)),
         ("maxWordShare", Value::from(1.5)),

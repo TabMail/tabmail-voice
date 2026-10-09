@@ -169,9 +169,15 @@ fn tokens(
             body += spaces;
         }
         let run = run_end(bytes, body, |b| token.body.has(b), &mut cache);
+        let edged = !token.word_edge
+            || start == 0
+            || !is_word_byte(bytes[start - 1])
+            || edges.binary_search(&start).is_ok();
         let end = match token.length {
             Length::Min(min) if run - body >= min => run,
             Length::Exact(exact) if run - body >= exact => body + exact,
+            // A prefix glued to a key is part of that key, however short what follows it is.
+            _ if !edged && run > body => run,
             _ => continue,
         };
         let find = Found {
@@ -182,10 +188,6 @@ fn tokens(
                 start..end
             },
         };
-        let edged = !token.word_edge
-            || start == 0
-            || !is_word_byte(bytes[start - 1])
-            || edges.binary_search(&start).is_ok();
         if edged {
             found.push(find);
         } else {
@@ -362,8 +364,43 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
         }
         false
     };
+    // A line's first base64 word, after the same kind of prefix as `prefix` or, with another
+    // prefix, a word as long as a full line starting the line: where it starts and ends (running
+    // on over padding and base64 alike, a line of two keys glued), and whether it is that long.
+    let lead = |line: &Range<usize>, prefix: &str| -> Option<(usize, bool)> {
+        let line = trim(line);
+        let rest = &text[line.clone()];
+        let skip = if rest.len() >= prefix.len()
+            && rest.is_char_boundary(prefix.len())
+            && shape(&rest[..prefix.len()]) == prefix
+        {
+            prefix.len()
+        } else if rest.bytes().take_while(|&b| key.base64.has(b)).count() >= key.full_line {
+            0
+        } else {
+            return None;
+        };
+        if restarts(line.start..line.start + skip) {
+            return None;
+        }
+        let mut at = line.start + skip;
+        while at < line.end && matches!(bytes[at], b' ' | b'\t') {
+            at += 1;
+        }
+        let mut end = at;
+        while end < line.end && key.base64.has(bytes[end]) {
+            end += 1;
+        }
+        let long = end - at >= key.full_line;
+        while end < line.end && (key.base64.has(bytes[end]) || bytes[end] == key.padding) {
+            end += 1;
+        }
+        (end > at).then_some((end, long))
+    };
     let lines = lines(text);
     let first_text_line = lines.iter().position(|line| !blank(line));
+    let second_text_line =
+        first_text_line.and_then(|first| (first + 1..lines.len()).find(|&at| !blank(&lines[at])));
     let mut index = 0;
     while index < lines.len() {
         let Some(start) = full(&lines[index]) else {
@@ -391,43 +428,26 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
         }
         let last_line = trim(&lines[last]);
         let mut to = last_line.end;
-        // The first base64 word of the next line that is not blank, after the same kind of prefix
-        // as the last full line had, whatever follows it (owner, 2026-10-08); or a word as long
-        // as a full line starting the line, which counts as one: a key's last full line may go on
-        // with other text.
         let prefix = shape(&text[last_line.start..full(&lines[last]).unwrap_or(last_line.start)]);
-        if let Some(after) = lines[last + 1..].iter().find(|line| !blank(line)) {
-            let after = trim(after);
-            let rest = &text[after.clone()];
-            let skip = if rest.len() >= prefix.len()
-                && rest.is_char_boundary(prefix.len())
-                && shape(&rest[..prefix.len()]) == prefix
-            {
-                Some(prefix.len())
-            } else {
-                let run = rest.bytes().take_while(|&b| key.base64.has(b)).count();
-                (run >= key.full_line).then_some(0)
-            };
-            if let Some(skip) = skip.filter(|&skip| !restarts(after.start..after.start + skip)) {
-                let mut at = after.start + skip;
-                while at < after.end && matches!(bytes[at], b' ' | b'\t') {
-                    at += 1;
-                }
-                let mut end = at;
-                while end < after.end && key.base64.has(bytes[end]) {
-                    end += 1;
-                }
-                if end - at >= key.full_line {
-                    count += 1;
-                }
-                // The word runs on over padding and base64 alike (a line of two keys glued).
-                while end < after.end && (key.base64.has(bytes[end]) || bytes[end] == key.padding) {
-                    end += 1;
-                }
-                if end > at {
-                    to = end;
-                }
+        // The line the run stops at, when a word as long as a full line starts it: a key's line
+        // that goes on with other text counts as one, and ends the key.
+        let stop = lines
+            .get(next)
+            .and_then(|line| lead(line, &prefix))
+            .filter(|&(_, long)| long);
+        // Otherwise the first base64 word of the next line that is not blank, after the same kind
+        // of prefix as the last full line had, whatever follows it (owner, 2026-10-08).
+        let after = stop.or_else(|| {
+            lines[last + 1..]
+                .iter()
+                .find(|line| !blank(line))
+                .and_then(|line| lead(line, &prefix))
+        });
+        if let Some((end, long)) = after {
+            if long {
+                count += 1;
             }
+            to = end;
         }
         if count < key.min_lines {
             index += 1;
@@ -436,8 +456,7 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
         let mut from = start;
         // A text starting part-way through a key: its first line, one base64 word, goes too.
         if let Some(first) = first_text_line
-            && first < index
-            && (first + 1..index).all(|between| blank(&lines[between]))
+            && second_text_line == Some(index)
             && !restarts(lines[index].start..start)
         {
             let line = trim(&lines[first]);

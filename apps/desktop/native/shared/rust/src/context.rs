@@ -2229,6 +2229,21 @@ mod budget_tests {
                 format!("> {key}"),
                 "{prefix}"
             );
+            // A block the screen shows on its own (a link right beside a word) starts one too.
+            let request = json!({"blocks":[
+                {"kind":"text","text":"Bearer","frame":[0.,0.,60.,20.]},
+                {"kind":"link","text":key,"frame":[60.,0.,10. * key.len() as f64,20.]}],
+                "caret":["","",""]});
+            let result: Value =
+                serde_json::from_slice(&process(&serde_json::to_vec(&request).unwrap()).unwrap())
+                    .unwrap();
+            let shown = result["rendered"].as_str().unwrap();
+            assert!(
+                shown.contains("Bearer")
+                    && shown.contains(privacy::PLACEHOLDER)
+                    && !shown.contains(body),
+                "{prefix}: {shown}"
+            );
         }
     }
     #[test]

@@ -7896,7 +7896,202 @@
     "{redacted}",
     " and more"
    ]
-  }
+  },
+ {
+  "name": "a word line after a key's lines, then a line a word as long as a full line starts, goes through that word",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\nab12==\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   " trailing words"
+  ],
+  "expected": [
+   "{redacted}",
+   " trailing words"
+  ]
+ },
+ {
+  "name": "a test payment key glued to a key goes with it, however short",
+  "text": [
+   "sk_live_abcd",
+   "abcdabcdabcd",
+   "abcdsk_test_",
+   "abc12 after"
+  ],
+  "expected": [
+   "{redacted}",
+   " after"
+  ]
+ },
+ {
+  "name": "a publishable test key glued to a test key goes with it, however short",
+  "text": [
+   "pk_test_abcd",
+   "abcdabcdabcd",
+   "abcdpk_test_",
+   "abc12 after"
+  ],
+  "expected": [
+   "{redacted}",
+   " after"
+  ]
+ },
+ {
+  "name": "a key glued right at the end of an access key id goes with it",
+  "text": [
+   "AKIAABCDABCD",
+   "ABCDABCDsk-a",
+   "bcdabcdabcda",
+   "bcdabcd after"
+  ],
+  "expected": [
+   "{redacted}",
+   " after"
+  ]
+ },
+ {
+  "name": "a key header inside another key's header goes from the first header",
+  "text": [
+   "Intro\n-----BEGIN RSA ",
+   "PRIVATE KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----BEGIN ",
+   "PRIVATE KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----END PRIVATE ",
+   "KEY-----\nafter"
+  ],
+  "expected": [
+   "Intro\n",
+   "{redacted}",
+   "\nafter"
+  ]
+ },
+ {
+  "name": "an end line with no header after a whole key goes back to just after that key, the text before both stays",
+  "text": [
+   "Intro text\n-----BEGIN ",
+   "PRIVATE KEY-----\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----END PRIVATE ",
+   "KEY-----\nmiddle words\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n-----END PRIVATE ",
+   "KEY-----\nafter"
+  ],
+  "expected": [
+   "Intro text\n",
+   "{redacted}",
+   "\n",
+   "{redacted}",
+   "\nafter"
+  ]
+ },
+ {
+  "name": "a random-looking word of letters and a plus sign, with no digit, stays",
+  "text": [
+   "x FMfcgzQX+J",
+   "WDsKmPqLbTNR",
+   "VHXwlqBcdFz y"
+  ],
+  "expected": [
+   "x FMfcgzQX+J",
+   "WDsKmPqLbTNR",
+   "VHXwlqBcdFz y"
+  ]
+ },
+ {
+  "name": "full lines that end in two padding characters are a key's lines, and the next line's first word goes",
+  "text": [
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "==\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "==\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "==\nThe end"
+  ],
+  "expected": [
+   "{redacted}",
+   " end"
+  ]
+ },
+ {
+  "name": "a text's first word stays when the key's first line has a sentence end before its base64",
+  "text": [
+   "QUJD\nSee. ",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJDQUJDQUJD",
+   "QUJD",
+   "\n(end)"
+  ],
+  "expected": [
+   "QUJD\nSee. ",
+   "{redacted}",
+   "\n(end)"
+  ]
+ }
  ],
  "lineCases": [
   {

@@ -316,7 +316,8 @@ fn set(object: &Map<String, Value>, key: &str) -> Result<Set, Error> {
 
 fn byte(object: &Map<String, Value>, key: &str) -> Result<u8, Error> {
     match object.get(key).and_then(Value::as_str).map(str::as_bytes) {
-        Some(&[byte]) if byte.is_ascii() => Ok(byte),
+        // A one-byte string is ASCII.
+        Some(&[byte]) => Ok(byte),
         _ => Err(Error::InvalidDefinitions),
     }
 }
