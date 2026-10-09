@@ -81,6 +81,8 @@ public:
                     active = true;
                     busyUntil = GetTickCount64() + voice::HelperConfig::accessibilityWatchdogMs;
                     activeID = input["id"].get<int64_t>();
+                    activeMethod = input.value("method", std::string());
+                    activeStarted = GetTickCount64();
                     canceled = false;
                 }
                 const auto id = input["id"];
@@ -118,8 +120,16 @@ public:
                         result = automation.caret(window);
                     }
                     this->output.send({{"id", id}, {"result", result}});
+                } catch (const std::exception& error) {
+                    // Our failure reasons are fixed phrases and HRESULT codes, never parameters or captured text.
+                    if (input["method"] == "caretAnchor") std::cerr << "debug caret lookup: provider-call-failed\n";
+                    std::cerr << "debug accessibility request " << input.value("method", std::string()) << " failed after "
+                              << (GetTickCount64() - activeStarted) << "ms: " << error.what() << "\n";
+                    this->output.send({{"id", id}, {"error", {{"message", "Windows accessibility request failed"}}}});
                 } catch (...) {
                     if (input["method"] == "caretAnchor") std::cerr << "debug caret lookup: provider-call-failed\n";
+                    std::cerr << "debug accessibility request " << input.value("method", std::string()) << " failed after "
+                              << (GetTickCount64() - activeStarted) << "ms: unknown exception\n";
                     this->output.send({{"id", id}, {"error", {{"message", "Windows accessibility request failed"}}}});
                 }
                 {
@@ -137,6 +147,8 @@ public:
                     // request must never terminate a newer request after a scheduling delay.
                     std::lock_guard lock(mutex);
                     if (active && busyUntil && GetTickCount64() > busyUntil) {
+                        std::cerr << "debug accessibility watchdog: " << activeMethod << " still running after "
+                                  << (GetTickCount64() - activeStarted) << "ms, " << queue.size() << " queued\n";
                         std::cerr << "error accessibility request: watchdog deadline exceeded\n";
                         ExitProcess(1);
                     }
@@ -150,6 +162,8 @@ public:
         // Starting dictation locates the caret while other requests may still run.
         // Serialize that normal overlap instead of rejecting the overlay lookup.
         if (queue.size() >= 4) {
+            std::cerr << "debug accessibility request " << input.value("method", std::string()) << " refused: queue full behind "
+                      << (active ? activeMethod : std::string("nothing")) << "\n";
             this->output.send({{"id", input["id"]}, {"error", {{"message", "Windows accessibility helper busy"}}}});
             return;
         }
@@ -180,6 +194,8 @@ private:
     ULONGLONG busyUntil = 0; // Protected with active by mutex.
     bool active = false;
     int64_t activeID = 0;
+    std::string activeMethod; // Protected with active by mutex; for the debug log.
+    ULONGLONG activeStarted = 0;
     std::atomic<bool> canceled{false};
 };
 

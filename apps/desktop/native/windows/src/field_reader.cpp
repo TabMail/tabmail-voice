@@ -58,14 +58,19 @@ int main(int argc, char**) {
         if (!input.is_object() || !input.contains("id") || !input["id"].is_number_integer() ||
             !input.contains("method") || !input["method"].is_string()) continue;
         const auto id = input["id"];
+        const auto started = GetTickCount64(); // For the debug log's failure line.
         if (input["method"] != "focusedFieldValue") {
             output.send({{"id", id}, {"error", {{"message", "Windows native request failed"}}}});
             continue;
         }
         try {
             output.send({{"id", id}, {"result", handle(input.value("params", JSON::object()))}});
+        } catch (const std::exception& error) {
+            // Never echo parameters or captured text into logs; our failure reasons are fixed phrases and HRESULT codes.
+            std::cerr << "debug focusedFieldValue failed after " << (GetTickCount64() - started) << "ms: " << error.what() << "\n";
+            output.send({{"id", id}, {"error", {{"message", "Windows accessibility request failed"}}}});
         } catch (...) {
-            // Never echo parameters, captured text, or native exception details into logs.
+            std::cerr << "debug focusedFieldValue failed after " << (GetTickCount64() - started) << "ms: unknown exception\n";
             output.send({{"id", id}, {"error", {{"message", "Windows accessibility request failed"}}}});
         }
     }
