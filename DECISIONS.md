@@ -3626,13 +3626,21 @@ well-structured place for the redactors.
   adds a find, never drops one. An edge only lets a find start; it never ends one. Only a cut
   between two runs the screen shows is an edge: a field's text around what it shows (its hidden runs
   in a row, heading or link) starts no piece, so a word the field shows from part-way through starts
-  no key there. A word starting with an internationalized domain name's label (`xn--`, whatever its
-  case) is a name, not a random word: main showed such hosts, and the bar for the random-word rule
-  is no ordinary address hidden. For the same bar a number of three or more digits counts as
-  word-like when a word is judged (a media file's `3840x2160_60fps_yuv420p10le`, in a path or an
-  address, stays), but cuts no word, so an id's leading digits and `sha512-` still go with it.
-  Measured on uniform random words, the share caught drops from 92.7% to 92.0% at 24 characters
-  of letters, digits, `-` and `_` (and from 39.5% to 28.8% for small letters and digits only). The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
+  no key there. An internationalized domain name's label (`xn--`, whatever its case, through its
+  letters, digits and hyphens) at the start of a part is a name, not a random word: main showed
+  such hosts, and the bar for the random-word rule is no ordinary address hidden. Only the label is
+  spared; what follows it in the part (a path after the host) is judged as any part is. For the same
+  bar a number of three or more digits counts as word-like when a word is judged (a media file's
+  `3840x2160_60fps_yuv420p10le`, in a path or an address, stays), but cuts no word, so an id's
+  leading digits and `sha512-` still go with it. Measured on uniform random words, the share caught
+  drops from 92.7% to 92.0% at 24 characters of letters, digits, `-` and `_` (and from 39.5% to
+  28.8% for small letters and digits only). A name is also built of short pieces (`x264_8bit_60fps`,
+  `en-US_es-MX_pt-BR`, `R2_C3_D4`): in a part of four or more pieces between separators, a piece of
+  at most five characters counts as word-like when the part is judged. A random word seldom has
+  that many separators, so the share caught moves by at most 0.8 points (95.8% to 95.0% for 40
+  characters of letters, digits, `-` and `_`; 24 and 64 characters and base64 by 0.3 or less;
+  words with no separator not at all). These two counts are part of what a word-like run is, as
+  the threes above are, so they are in the code, not the redactor's data. The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
   pieces of one text and give no edge. The owner set three rules with it:
   - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
     label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows
@@ -3661,8 +3669,8 @@ well-structured place for the redactors.
     three or more small letters, three or more capitals not followed by a small one), and carries
     at least 3.5 bits of Shannon entropy per character. A piece the screen shows on its own inside
     a word (a link or a block glued to a label beside it) is looked at as a word too: a find more,
-    never one less. Every number is data in its
-    redactor. It was tuned on every word of 24 or more characters in our own sources (benign) against
+    never one less. Every threshold is data in its
+    redactor (what a word-like run is, is code). It was tuned on every word of 24 or more characters in our own sources (benign) against
     2,000 random keys per alphabet at 24, 40 and 64 characters (recall). Entropy alone does not
     separate them (at 24 characters random base64 averages 3.86 bits; identifiers and paths reach
     4.0–4.4), so the word-like share does the separating:

@@ -199,6 +199,26 @@ fn unicode_boundaries_and_empty_structure() {
     );
 }
 
+/// A case-blind token of an exact length ends where that many characters of the text end, however
+/// many bytes they fold from (a long s is two bytes, its folded `s` one).
+#[test]
+fn a_case_blind_token_of_exact_length_ends_after_that_many_characters() {
+    let mut json = serde_json::json!({"placeholder": "[redacted]", "redactors": [{
+        "name": "folded-exact", "description": "A two-character body after a case-blind prefix",
+        "kind": "token", "prefixes": ["Fx"], "ignoreCase": true, "body": "A-Za-z0-9", "exact": 2}]});
+    let exact = definitions::parse(&json.to_string()).unwrap();
+    let redact = |text: &str, redactors| {
+        redact_with(&vec![vec![text.to_owned()]], redactors).unwrap()[0][0].clone()
+    };
+    assert_eq!(redact("FxK\u{17f}9. End", &exact), "[redacted]9. End");
+    assert_eq!(redact("FxK. End", &exact), "FxK. End");
+    let token = json["redactors"][0].as_object_mut().unwrap();
+    token.remove("exact");
+    token.insert("min".into(), Value::from(2));
+    let min = definitions::parse(&json.to_string()).unwrap();
+    assert_eq!(redact("FxK\u{17f}9. End", &min), "[redacted]. End");
+}
+
 #[test]
 fn invalid_definitions_are_refused() {
     let original: Value = serde_json::from_str(DEFINITIONS).unwrap();
@@ -276,11 +296,24 @@ fn invalid_definitions_are_refused() {
         ("maxWordShare", Value::from(0.0)),
         ("maxWordShare", Value::from(1.5)),
         ("minBits", Value::from(-1.0)),
-        ("padding", Value::String("==".into())),
     ] {
         let mut changed = original.clone();
         changed["redactors"][entropy][field] = value;
         assert!(refused(&changed), "{field}");
+    }
+    // A padding character is one ASCII character, in each kind that has one.
+    for kind in ["keyLines", "entropy"] {
+        let index = original["redactors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|r| r["kind"] == kind)
+            .unwrap();
+        for (value, fine) in [(".", true), ("", false), ("==", false), ("\u{e9}", false)] {
+            let mut changed = original.clone();
+            changed["redactors"][index]["padding"] = Value::String(value.into());
+            assert_eq!(refused(&changed), !fine, "{kind} padding {value:?}");
+        }
     }
     // Every member of a list, after a good one, and every count at and below its least value.
     for (index, redactor) in original["redactors"].as_array().unwrap().iter().enumerate() {

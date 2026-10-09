@@ -637,11 +637,22 @@ fn named_values(text: &str, folded: &Folded, named: &NamedValue, found: &mut Vec
     }
 }
 
+const NAME_PIECES: usize = 4;
+const NAME_PIECE: usize = 5;
+
 /// The share of `word`'s characters in word-like runs: a capital and three or more small
-/// letters, three or more small letters, or three or more capitals not followed by a small one;
-/// with `numbers`, a number of three or more digits too (a size, a year, a rate:
-/// `3840x2160_60fps`).
-fn word_share(word: &[u8], numbers: bool) -> f64 {
+/// letters, three or more small letters, or three or more capitals not followed by a small one.
+/// When a word is judged (`judged` gives its separators), a number of three or more digits too (a
+/// size, a year, a rate: `3840x2160_60fps`), and in a word of `NAME_PIECES` or more pieces between
+/// separators, a piece of at most `NAME_PIECE` characters (`x264_8bit_60fps_CRF23_QP18`,
+/// `en-US_es-MX_pt-BR`): a name is built of short pieces, a random word seldom is.
+fn word_share(word: &[u8], judged: Option<&Set>) -> f64 {
+    let numbers = judged.is_some();
+    let separator = |b: u8| judged.is_some_and(|separators| separators.has(b));
+    let pieces = word
+        .split(|&b| separator(b))
+        .filter(|piece| !piece.is_empty())
+        .count();
     let mut covered = 0;
     let mut at = 0;
     let lower = |from: usize| {
@@ -658,7 +669,18 @@ fn word_share(word: &[u8], numbers: bool) -> f64 {
     };
     while at < word.len() {
         let b = word[at];
-        let run = if b.is_ascii_uppercase() && lower(at + 1) >= 3 {
+        let short = if pieces >= NAME_PIECES && (at == 0 || separator(word[at - 1])) {
+            word[at..]
+                .iter()
+                .take_while(|&&b| !separator(b))
+                .take(NAME_PIECE + 1)
+                .count()
+        } else {
+            0
+        };
+        let run = if (1..=NAME_PIECE).contains(&short) {
+            short
+        } else if b.is_ascii_uppercase() && lower(at + 1) >= 3 {
             1 + lower(at + 1)
         } else if b.is_ascii_lowercase() && lower(at) >= 3 {
             lower(at)
@@ -703,11 +725,20 @@ fn bits(word: &[u8]) -> f64 {
 fn random_words(text: &str, edges: &[usize], entropy: &Entropy, found: &mut Vec<Found>) {
     let bytes = text.as_bytes();
     let random = |part: Range<usize>, found: &mut Vec<Found>| {
-        let word = &bytes[part.clone()];
-        // An internationalized domain name's label (`xn--`, then its letters encoded) is a name.
-        if word.len() >= 4 && word[..4].eq_ignore_ascii_case(b"xn--") {
-            return;
+        // An internationalized domain name's label (`xn--`, then its letters encoded) is a name;
+        // what follows it in the part is looked at.
+        let mut part = part;
+        while bytes[part.clone()]
+            .get(..4)
+            .is_some_and(|start| start.eq_ignore_ascii_case(b"xn--"))
+        {
+            let label = bytes[part.clone()]
+                .iter()
+                .take_while(|b| b.is_ascii_alphanumeric() || **b == b'-')
+                .count();
+            part = trim(bytes, part.start + label..part.end, &entropy.separators);
         }
+        let word = &bytes[part.clone()];
         // What comes before the hex: letters (a name, `commit`), or the `0x` hex numbers start with.
         let letters = if word.starts_with(b"0x") || word.starts_with(b"0X") {
             2
@@ -722,7 +753,7 @@ fn random_words(text: &str, edges: &[usize], entropy: &Entropy, found: &mut Vec<
             && word.iter().any(u8::is_ascii_alphabetic)
             && word.iter().any(u8::is_ascii_digit)
             && !hex
-            && word_share(word, true) <= entropy.max_word_share
+            && word_share(word, Some(&entropy.separators)) <= entropy.max_word_share
             && bits(word) >= entropy.min_bits
         {
             found.push(Found {
@@ -742,7 +773,7 @@ fn random_words(text: &str, edges: &[usize], entropy: &Entropy, found: &mut Vec<
                 .unwrap_or(end);
             let word = &bytes[piece..piece_end];
             // A number reads as a word but cuts nothing (`sha512-…`, an id's leading digits).
-            if word.len() >= 3 && word_share(word, false) >= 1.0 {
+            if word.len() >= 3 && word_share(word, None) >= 1.0 {
                 if part < piece {
                     random(trim(bytes, part..piece, &entropy.separators), found);
                 }

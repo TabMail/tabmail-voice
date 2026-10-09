@@ -9045,6 +9045,259 @@
    "expected": [
     "{redacted}"
    ]
+  },
+  {
+   "name": "a media file's name of short format and rate pieces stays",
+   "text": [
+    "/media/",
+    "x264_8bit_",
+    "60fps_CRF23_",
+    "QP18.mp4"
+   ],
+   "expected": [
+    "/media/x264_8bit_60fps_CRF23_QP18.mp4"
+   ]
+  },
+  {
+   "name": "a page address of locale pieces stays",
+   "text": [
+    "https://",
+    "example.com/",
+    "en-US_es-MX_",
+    "pt-BR_zh-CN_",
+    "ja-JP_v2"
+   ],
+   "expected": [
+    "https://example.com/en-US_es-MX_pt-BR_zh-CN_ja-JP_v2"
+   ]
+  },
+  {
+   "name": "a grid name of two-character pieces stays",
+   "text": [
+    "/media/",
+    "R2_C3_D4_E5_",
+    "F6_G7_H8_I9_",
+    "J0.mp4"
+   ],
+   "expected": [
+    "/media/R2_C3_D4_E5_F6_G7_H8_I9_J0.mp4"
+   ]
+  },
+  {
+   "name": "a word of four pieces, three of them five characters, stays",
+   "text": [
+    "Ab1c2_De3f4_",
+    "Gh5i6_J7k8L9",
+    "m0N1"
+   ],
+   "expected": [
+    "Ab1c2_De3f4_Gh5i6_J7k8L9m0N1"
+   ]
+  },
+  {
+   "name": "a random word of three pieces, two of them short, still goes",
+   "text": [
+    "Ab1c2_De3f4_",
+    "Ghij5Klmn6P7",
+    "q8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word whose short-looking piece is six characters still goes",
+   "text": [
+    "Ab1c2_De3f4_",
+    "Gh5i6j_K7l8M",
+    "9n0P1"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after an internationalized label in an address still goes",
+   "text": [
+    "https://",
+    "example.com/",
+    "xn--fake1/",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "https://example.com/xn--fake1/",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after an internationalized top-level label still goes",
+   "text": [
+    "https://",
+    "example.com.",
+    "XN--p1ai/",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "https://example.com.XN--p1ai/",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word after two internationalized labels in one word still goes",
+   "text": [
+    "xn--a/",
+    "xn--b_",
+    "GHIJa1KLMNb2",
+    "PQRSc3TUVWd4"
+   ],
+   "expected": [
+    "xn--a/xn--b_",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after several kinds of blank still goes",
+   "text": [
+    "Bearer \t",
+    "\u2003",
+    "abcdefghij",
+    "klmnopqrst"
+   ],
+   "expected": [
+    "Bearer \t\u2003",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after one space still goes",
+   "text": [
+    "Bearer ",
+    "abcdefghij",
+    "klmnopqrst"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer word glued to its body stays",
+   "text": [
+    "Bearer",
+    "abcdefghij",
+    "klmnopqrst"
+   ],
+   "expected": [
+    "Bearerabcdefghijklmnopqrst"
+   ]
+  },
+  {
+   "name": "a bearer body shorter than a token after several blanks stays",
+   "text": [
+    "Bearer \t",
+    "\u2003",
+    "abcdefghij",
+    "klmno"
+   ],
+   "expected": [
+    "Bearer \t\u2003abcdefghijklmno"
+   ]
+  },
+  {
+   "name": "a key's next line word exactly a full line long goes with the key",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD rest"
+   ],
+   "expected": [
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "a key's next line word one past a full line goes with the key",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQ rest"
+   ],
+   "expected": [
+    "{redacted}",
+    " rest"
+   ]
+  },
+  {
+   "name": "one full base64 line and a word one short of a full line stay",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJ rest"
+   ],
+   "expected": [
+    "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJ rest"
+   ]
+  },
+  {
+   "name": "a hex number stays",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5D6"
+   ],
+   "expected": [
+    "0xa1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6"
+   ]
+  },
+  {
+   "name": "a hex number with one padding character stays",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5D6="
+   ],
+   "expected": [
+    "0xa1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6="
+   ]
+  },
+  {
+   "name": "a hex number with two padding characters stays",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5D6=="
+   ],
+   "expected": [
+    "0xa1B2c3D4e5F6a7B8c9D0e1F2a3B4c5D6=="
+   ]
+  },
+  {
+   "name": "a padded word with one character that is not hex goes",
+   "text": [
+    "0xa1B2c3D4e5",
+    "F6a7B8c9D0e1",
+    "F2a3B4c5Dg=="
+   ],
+   "expected": [
+    "{redacted}"
+   ]
   }
  ],
  "lineCases": [
