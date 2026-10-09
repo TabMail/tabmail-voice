@@ -8877,6 +8877,174 @@
     "password=hunter",
     "\u0662x"
    ]
+  },
+  {
+   "name": "a media file's name of sizes, rates and formats in a path stays",
+   "text": [
+    "/tmp/video/3840x2160_",
+    "60fps_yuv420p10le.yuv"
+   ],
+   "expected": [
+    "/tmp/video/3840x2160_60fps_yuv420p10le.yuv"
+   ]
+  },
+  {
+   "name": "a media file's name in an address stays, whatever order and separators",
+   "text": [
+    "https://example.com/video/",
+    "1920x1080-60fps-",
+    "yuv420p10le and ",
+    "yuv420p10le_",
+    "1920x1080_60fps"
+   ],
+   "expected": [
+    "https://example.com/video/1920x1080-60fps-yuv420p10le and yuv420p10le_1920x1080_60fps"
+   ]
+  },
+  {
+   "name": "a random file name in the same address still goes",
+   "text": [
+    "https://example.com/video/",
+    "Xk9mQ2vR7pL4",
+    "nT8wZ3bY6cJ1",
+    ".yuv"
+   ],
+   "expected": [
+    "https://example.com/video/",
+    "{redacted}",
+    ".yuv"
+   ]
+  },
+  {
+   "name": "a padded short first line before a key's full lines goes with them",
+   "text": [
+    "QUJDQQ==\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "a padded first word with other words after it stays before a key's full lines",
+   "text": [
+    "QUJDQQ== word\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "QUJDQQ== word\n",
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "three padding characters alone between full lines break the key's lines",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n===\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\n===\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\n(end)"
+   ]
+  },
+  {
+   "name": "two padding characters alone between full lines keep the key's lines together",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n==\n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\n(end)"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n(end)"
+   ]
+  },
+  {
+   "name": "the next line's first word goes after the same quote mark as the key's lines",
+   "text": [
+    "> QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> Done and more"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    " and more"
+   ]
+  },
+  {
+   "name": "the next line's first short word stays after another kind of prefix",
+   "text": [
+    "> QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n| Done and more"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    "\n| Done and more"
+   ]
+  },
+  {
+   "name": "a media file's name whose numbers are three digits long stays",
+   "text": [
+    "/tmp/video/",
+    "yuv420p10le_",
+    "720x480_30fps.yuv"
+   ],
+   "expected": [
+    "/tmp/video/yuv420p10le_720x480_30fps.yuv"
+   ]
+  },
+  {
+   "name": "a random word of two-digit pairs still goes",
+   "text": [
+    "Q12w34E56r78",
+    "T90y13U57i24O"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
   }
  ],
  "lineCases": [

@@ -3628,7 +3628,11 @@ well-structured place for the redactors.
   in a row, heading or link) starts no piece, so a word the field shows from part-way through starts
   no key there. A word starting with an internationalized domain name's label (`xn--`, whatever its
   case) is a name, not a random word: main showed such hosts, and the bar for the random-word rule
-  is no ordinary address hidden. The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
+  is no ordinary address hidden. For the same bar a number of three or more digits counts as
+  word-like when a word is judged (a media file's `3840x2160_60fps_yuv420p10le`, in a path or an
+  address, stays), but cuts no word, so an id's leading digits and `sha512-` still go with it.
+  Measured on uniform random words, the share caught drops from 92.7% to 92.0% at 24 characters
+  of letters, digits, `-` and `_` (and from 39.5% to 28.8% for small letters and digits only). The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
   pieces of one text and give no edge. The owner set three rules with it:
   - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
     label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows
