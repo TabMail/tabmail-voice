@@ -3766,7 +3766,9 @@ well-structured place for the redactors.
     (a module path in `go.sum`, a host in `known_hosts`, a file name in a checksum listing, a
     gutter, a quote mark) stays, unless it is all base64 too; what is glued to the base64 goes
     with it when it holds base64 (`h1:`, the end of a key run into the next), not when it is only a
-    mark (a pane's border). Lines that only whitespace parts go as one marker.
+    mark (a pane's border). A word as long as a full line before it goes from its start, with what
+    lies between (a key's line, then a pane's border or a checksum comment and more base64 on the
+    same row). Lines that only whitespace parts go as one marker.
   - **An end line with no header.** `-----END … PRIVATE KEY-----` with no header before it takes
     the text back to the start of the read, or to just after the end line before it, through the
     end line: a body read without its header goes whatever comes before it, and other text read
@@ -3810,6 +3812,12 @@ well-structured place for the redactors.
     not by whether a counterexample can be built: the share of random words caught and the benign
     words taken in the tables here. A realistic, common name it hides (one people meet in a path,
     an address or a file name) is a defect and gets a case; a name built to defeat it is not.
+    *(Owner, 2026-10-09: random ids in paths.)* A random id a system puts in a path goes like one
+    in an address: a Mac's per-user temporary folder (`/var/folders/<xx>/<id>/T/`, about a third
+    of them), a Nix store hash (about a quarter), a package manager's hashed folder suffix. It is
+    random by nature and tells nothing useful; the rule cannot tell it from a key without special
+    cases for paths, which `main`'s rules did not need as they never hid such words. Both have
+    cases.
 
   Checked against `main` and the regular-expression redactors this replaces, over the shared cases,
   66,000 generated glued and paired secrets, 2,762 screen reads, and a second generated set of

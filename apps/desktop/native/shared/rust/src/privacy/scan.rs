@@ -505,7 +505,9 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
         // Each line's base64 goes; on a line after the first, what comes before it up to a blank
         // (a label, a quote mark, a gutter) stays unless it is all base64 too, and what is glued
         // to it goes with it when it holds base64 (`h1:`, the end of a key before it), not when it
-        // is only a mark (a pane's border). Lines that only whitespace parts go as one.
+        // is only a mark (a pane's border). A word as long as a full line before it goes from its
+        // start (a key's line, then a mark and more on the same row). Lines that only whitespace
+        // parts go as one.
         // Single words after the last full line go up to a line a long word starts.
         let through = if stopped { next } else { last + 1 };
         let mut taken = from..trim(&lines[index]).end;
@@ -527,11 +529,20 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
                     .char_indices()
                     .rfind(|(_, ch)| ch.is_whitespace())
                     .map_or(line.start, |(at, ch)| line.start + at + ch.len_utf8());
-                if bytes[glued..run].iter().any(|&b| key.base64.has(b)) {
+                let mut start = if bytes[glued..run].iter().any(|&b| key.base64.has(b)) {
                     glued
                 } else {
                     run
+                };
+                let mut length = 0;
+                for (at, &b) in bytes[line.start..run].iter().enumerate() {
+                    length = if key.base64.has(b) { length + 1 } else { 0 };
+                    if length == key.full_line {
+                        start = start.min(line.start + at + 1 - length);
+                        break;
+                    }
                 }
+                start
             };
             pieces.push(start..line.end);
         }

@@ -23,7 +23,7 @@
     {
       "name": "key-lines",
       "kind": "keyLines",
-      "description": "A key's body without its header or end line, wherever it is: two or more full lines of base64 (a label, a quote mark or a gutter may come before each, and stays: on a line after the first, what comes before the base64 up to a blank, unless it is all base64 too; what is glued to the base64 goes with it when it holds base64), single base64 words between them, the line before them when it is the first line of the text and one base64 word (a text starting part-way through a key), and the first base64 word of the line after them, whatever follows it (owner, 2026-10-08), after the same kind of prefix as the lines had. Blank lines between them count as nothing. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05).",
+      "description": "A key's body without its header or end line, wherever it is: two or more full lines of base64 (a label, a quote mark or a gutter may come before each, and stays: on a line after the first, what comes before the base64 up to a blank, unless it is all base64 too; what is glued to the base64 goes with it when it holds base64, and a word as long as a full line before it goes from its start), single base64 words between them, the line before them when it is the first line of the text and one base64 word (a text starting part-way through a key), and the first base64 word of the line after them, whatever follows it (owner, 2026-10-08), after the same kind of prefix as the lines had. Blank lines between them count as nothing. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05).",
       "base64": "A-Za-z0-9+/",
       "padding": "=",
       "fullLine": 40,

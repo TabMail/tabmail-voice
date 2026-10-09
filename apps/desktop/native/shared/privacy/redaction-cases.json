@@ -10046,6 +10046,253 @@
    "expected": [
     "{redacted}"
    ]
+  },
+  {
+   "name": "a key's full line before a pane border and more base64 on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD \u2502 ",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before a pipe and more base64 on its row goes after a label",
+   "text": [
+    "Key:\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JD | QUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD"
+   ],
+   "expected": [
+    "Key:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before a checksum comment on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD  #",
+    " sha256 QUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's full line before an arrow and more base64 on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD ->",
+    " QUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's quoted full line before a pane border and more base64 on its row goes",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n> QUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJD ",
+    "\u2502 QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n> ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a padded word before a key's later line goes with the line",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nab",
+    "== QUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a random word ending in an underscore before a hex run goes whole",
+   "text": [
+    "q7Zk2Xw9Lp_0",
+    "a1b2c3d4e5f-",
+    "-6a7b8c9d0e1",
+    "f"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a final hex run of exactly a random word's length is cut off and the rest stays",
+   "text": [
+    "q7Zk2Xw9LpVr",
+    "_0a1b2c3d4e5",
+    "f6a7b8c9d0e1",
+    "f"
+   ],
+   "expected": [
+    "q7Zk2Xw9LpVr",
+    "_0a1b2c3d4e5",
+    "f6a7b8c9d0e1",
+    "f"
+   ]
+  },
+  {
+   "name": "a word cut at word-like pieces and a hex run keeps a short random piece before them shown",
+   "text": [
+    "q7Zk2Xw9LpVr",
+    "8mQ3sT4u-012",
+    "3456789ab-fa",
+    "ce-cdef01234",
+    "567-xyz"
+   ],
+   "expected": [
+    "q7Zk2Xw9LpVr",
+    "8mQ3sT4u-012",
+    "3456789ab-fa",
+    "ce-cdef01234",
+    "567-xyz"
+   ]
+  },
+  {
+   "name": "a word cut at a hex run over a shorter cut keeps a short random piece after it shown",
+   "text": [
+    "q7Zk2-012345",
+    "6789ab-face-",
+    "cdef01234567",
+    "-q7Zk2Xw9LpV",
+    "r8mQ3sT4u"
+   ],
+   "expected": [
+    "q7Zk2-012345",
+    "6789ab-face-",
+    "cdef01234567",
+    "-q7Zk2Xw9LpV",
+    "r8mQ3sT4u"
+   ]
+  },
+  {
+   "name": "the random id of a Mac's temporary folder in a path goes (owner, 2026-10-09)",
+   "text": [
+    "cd /var/fold",
+    "ers/7x/l8m_8",
+    "q9d4xv5q6y1d",
+    "2qdk_gc0000g",
+    "n/T/tmp.abc"
+   ],
+   "expected": [
+    "cd /var/fold",
+    "ers/",
+    "{redacted}",
+    "/tmp.abc"
+   ]
+  },
+  {
+   "name": "a store path's random hash goes and the package name after it stays (owner, 2026-10-09)",
+   "text": [
+    "/nix/store/6",
+    "qaw23sr1af0f",
+    "3w5n1qzc24hx",
+    "cxjd56a-hell",
+    "o-2.12.1/bin",
+    "/hello"
+   ],
+   "expected": [
+    "/nix/store/",
+    "{redacted}",
+    "-hello-2.12.",
+    "1/bin/hello"
+   ]
   }
  ],
  "lineCases": [

@@ -4720,6 +4720,132 @@
       "expected": {
         "rendered": "[redacted]\n[copy]"
       }
-    }
-  ]
+    },
+  {
+   "name": "a text ending in a line break, its box at the end of the line, puts the link after it on its own line",
+   "request": {
+    "blocks": [
+     {
+      "kind": "text",
+      "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\n",
+      "frame": [
+       0,
+       0,
+       512,
+       60
+      ],
+      "ends": [
+       [
+        0,
+        0,
+        8,
+        20
+       ],
+       [
+        504,
+        40,
+        8,
+        20
+       ]
+      ]
+     },
+     {
+      "kind": "link",
+      "text": "QUJDQUJD== copy",
+      "frame": [
+       512,
+       40,
+       80,
+       20
+      ],
+      "ends": [
+       [
+        512,
+        40,
+        8,
+        20
+       ],
+       [
+        540,
+        40,
+        40,
+        20
+       ]
+      ]
+     }
+    ],
+    "caret": [
+     "",
+     "",
+     ""
+    ]
+   },
+   "expected": {
+    "rendered": "[redacted]\n[copy]"
+   }
+  },
+{
+   "name": "a link starting with a line break before the marker for what was left out starts its own line",
+   "request": {
+    "blocks": [
+     {
+      "kind": "text",
+      "text": "alpha beta",
+      "frame": [
+       0,
+       0,
+       80,
+       20
+      ],
+      "ends": [
+       [
+        0,
+        0,
+        8,
+        20
+       ],
+       [
+        72,
+        0,
+        8,
+        20
+       ]
+      ]
+     },
+     {
+      "kind": "link",
+      "text": "\n[hidden for privacy] gamma",
+      "frame": [
+       80,
+       0,
+       200,
+       20
+      ],
+      "ends": [
+       [
+        80,
+        0,
+        8,
+        20
+       ],
+       [
+        240,
+        0,
+        40,
+        20
+       ]
+      ]
+     }
+    ],
+    "caret": [
+     "",
+     "",
+     ""
+    ]
+   },
+   "expected": {
+    "rendered": "alpha beta\n[[hidden for privacy] gamma]"
+   }
+  }
+ ]
 }
