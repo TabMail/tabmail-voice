@@ -223,8 +223,10 @@ export type Command =
   | { type: "answerConfirmation"; confirmed: boolean }
   | { type: "chatHeight"; height: number }
   | { type: "pointerOver"; over: boolean }
-  /** The note for a text not pasted: clicked, to copy the text; measured, at `frame` in the overlay. */
+  /** The note for a text not pasted: clicked, to copy the text; its x, to dismiss it; measured, at
+   * `frame` in the overlay. */
   | { type: "copyNotPasted" }
+  | { type: "dismissNotPasted" }
   | { type: "noteFrame"; frame: { x: number; y: number; width: number; height: number } }
   /** The paste history: an entry clicked, to copy; closed (Escape); its list measured. */
   | { type: "copyHistoryEntry"; id: number }
@@ -287,6 +289,7 @@ export function isCommand(value: unknown): value is Command {
     case "closeHistory":
     case "excludeApp":
     case "copyNotPasted":
+    case "dismissNotPasted":
       return true;
     case "removeExcludedApp":
       return typeof command.bundleIdentifier === "string" && command.bundleIdentifier.length <= config.bundleIdentifierMaxLength;

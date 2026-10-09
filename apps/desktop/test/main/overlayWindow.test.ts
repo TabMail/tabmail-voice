@@ -598,8 +598,8 @@ describe("OverlayWindowController", () => {
   });
 
   /** The not-pasted note takes clicks where the pointer is over it (macOS, Windows), and the rest of
-   * the overlay lets them through; clicked, the note says so where it was, and the overlay lets every
-   * click through again. */
+   * the overlay lets them through; clicked and refused by the clipboard, the note says so where it
+   * was, and the overlay lets every click through again. */
   test("the not-pasted note takes clicks only under the pointer, until it goes", async () => {
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, async () => null);
@@ -622,7 +622,7 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "notPasted", message: "Click to copy." });
     expect(overlay.ignoresMouse()).toBe(false);
 
-    controller.update({ kind: "copied", message: "Copied." });
+    controller.update({ kind: "failed", message: "Couldn't copy." });
     expect(overlay.visible()).toBe(true);
     expect(overlay.bounds()).toEqual(atNote);
     expect(overlay.ignoresMouse()).toBe(true);

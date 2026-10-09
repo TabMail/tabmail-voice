@@ -725,6 +725,10 @@ export const overlayErrorDisplayDuration = 3_000;
 /** How long the note for a text not pasted (the user switched apps) stays at the mouse pointer,
  * copying the text when clicked, with a bar under it showing the time left (owner, 2026-10-08). */
 export const notPastedDisplayDuration = 10_000;
+/** How often a dictation asks its helper to save the clipboard, from key-down until the paste writes
+ * (ADR-DESK-002, amended 2026-10-09): a copy made while the words are transcribed is saved, to be
+ * put back after the paste. The helper reads only a clipboard that changed. */
+export const clipboardSaveInterval = 250;
 
 // MARK: Chat window (the Answer tool's replies, over the pill)
 
@@ -783,6 +787,8 @@ export const chatRevealRise = 4;
 export const chatThinkingLabel = "Thinking…";
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
+/** The not-pasted note's x, which dismisses it. */
+export const noteCloseButtonSize = 18;
 /** The spinner beside what a tool the answer's model called is doing, while it runs. */
 export const chatActivitySpinnerRevolutionsPerSecond = 1;
 export const chatActivitySpinnerLineWidth = 1.5;

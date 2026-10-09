@@ -173,7 +173,7 @@ private:
 //
 // The paste never reads the clipboard: reading it asks its owner for every format's data, which a
 // busy app hands over late. It is saved ahead, on a thread of its own, while the user speaks
-// (`save`, which the app asks for as a dictation starts and as it ends). The clipboard goes back
+// (`save`, which the app asks for from key-down until the paste, every `clipboardSaveInterval`). The clipboard goes back
 // `restoreDelay` after the paste keys, on a thread of its own, and only while it still holds the
 // paste's text (its sequence number) and was saved as it was just before the paste: a copy made in
 // between is never overwritten, and a paste without such a save leaves its text. A password

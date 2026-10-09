@@ -150,8 +150,8 @@ describe("overlay page", () => {
   });
 
   /** A text not pasted (ADR-DESK-042) says so in the pill with a clipboard, not a failure's
-   * exclamation mark, with a bar for the time left; a click on it copies the text. Clicked, it says
-   * so by the clipboard, and takes no more clicks. */
+   * exclamation mark, with a bar for the time left; a click on it copies the text. Replaced, it
+   * takes no more clicks. */
   test("the not-pasted note shows its message by a clipboard and copies when clicked", async () => {
     const page = await overlayPage();
     const message = "Switched apps. Click to copy.";
@@ -171,11 +171,22 @@ describe("overlay page", () => {
     expect(page.commands).toContainEqual({ type: "noteFrame", frame: noteFrame });
     measure.mockRestore();
 
-    await page.show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
-    expect(document.querySelector(".pill.note")).toBeNull();
-    expect(document.querySelector(".pill svg")?.innerHTML).toBe(clipboardIcon);
     await page.show({ ...listening, phase: { kind: "failed", message } });
+    expect(document.querySelector(".pill.note")).toBeNull();
+    expect(document.querySelector(".note-close")).toBeNull();
     expect(document.querySelector(".pill svg")?.innerHTML).not.toBe(clipboardIcon);
+  });
+
+  /** The note's x dismisses it: the click is the x's alone, and copies nothing. */
+  test("the not-pasted note's x dismisses it without copying", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, phase: { kind: "notPasted", message: "Switched apps. Click to copy." } });
+    const close = document.querySelector<HTMLElement>(".pill.note .note-close");
+    expect(close?.getAttribute("aria-label")).toBe("Dismiss");
+
+    await act(async () => close?.click());
+    expect(page.commands).toContainEqual({ type: "dismissNotPasted" });
+    expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
   });
 
   /** The note's bar runs down its ten seconds (the owner's ask, held here rather than read from the
@@ -195,7 +206,7 @@ describe("overlay page", () => {
       expect(width()).toBe(0);
       expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
 
-      await page.show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+      await page.show({ ...listening, phase: { kind: "failed", message: "Couldn't copy. It's in the paste history." } });
       expect(document.querySelector(".chat-timeout")).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -232,9 +243,9 @@ describe("overlay page", () => {
       expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
 
       // Gone before it has sprung, it sends no frame after.
-      await show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+      await show({ ...listening, phase: { kind: "failed", message: "Couldn't copy. It's in the paste history." } });
       await show({ ...listening, phase: { kind: "notPasted", message: "Switched apps. Click to copy." } });
-      await show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+      await show({ ...listening, phase: { kind: "failed", message: "Couldn't copy. It's in the paste history." } });
       await vi.advanceTimersByTimeAsync(config.pillSpringResponseSeconds * 1000);
       expect(frames()).toEqual([entrance, sprung, sprung]);
     } finally {
@@ -263,7 +274,7 @@ describe("overlay page", () => {
       { type: "pointerOver", over: false },
     ]);
 
-    await page.show({ ...listening, phase: { kind: "copied", message: "Copied to clipboard" } });
+    await page.show({ ...listening, phase: { kind: "failed", message: "Couldn't copy. It's in the paste history." } });
     move(document.querySelector(".pill"));
     document.documentElement.dispatchEvent(new Event("pointerleave"));
     expect(pointers()).toHaveLength(4);

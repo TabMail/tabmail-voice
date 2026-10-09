@@ -147,6 +147,24 @@ struct ClipboardKeeperTests {
         #expect(pasteboard.string(forType: .string) == "user text")
     }
 
+    /// The app asks again and again until the paste (ADR-DESK-002, amended 2026-10-09): a copy made
+    /// after the first save, saved by a later ask, is what goes back, every type of it.
+    @Test func putsTheNewestSavedClipboardBack() async {
+        copy("user text", custom: Data([1, 2, 3]))
+        let keeper = keeper()
+        keeper.save()
+        await keeper.saveTask?.value
+        copy("copied while transcribed", custom: Data([7, 8, 9]))
+        keeper.save()
+        await keeper.saveTask?.value
+        var seenAtPaste: String?
+        await paste("Dictated text", with: keeper) { seenAtPaste = self.pasteboard.string(forType: .string) }
+        #expect(seenAtPaste == "Dictated text")
+        await keeper.restoreTask?.value
+        #expect(pasteboard.string(forType: .string) == "copied while transcribed")
+        #expect(pasteboard.data(forType: customType) == Data([7, 8, 9]))
+    }
+
     /// A save older than a copy made before the paste is never put back over it.
     @Test func neverPutsBackASaveOlderThanTheClipboard() async {
         copy("user text")
