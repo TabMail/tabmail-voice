@@ -3001,6 +3001,38 @@ had always retried: the speech model's rate limit, answered as a 502 until the b
 retrying it itself. A recording tries that 429 again as it did the 502 (`isServerError`); only its
 504 is still not retried (`backendTimedOut`). A long dictation's chunk retries both, as before.)*
 
+**Amendment 2026-10-08 — one 10 s deadline from the release (owner).** *"Nobody waits for dictation
+more than 10"* seconds: the app and the backend kept trying for minutes (a 45 s request, then eight
+retries over about a minute, each try up to the backend's 30 s). Now a dictation's whole wait for its
+text, from the release, is `transcriptionDeadline` (10 s): the request, every retry and its waits, a
+long dictation's chunks still out at the release and its polish all fall inside it
+(`DictationController.withinDeadline`). Past it, the requests and waits are called off and the
+dictation fails at once as a request that timed out ("TabMail took too long to answer. Try again.");
+a long dictation pastes the chunks that came in and says the end is missing (`partlyTranscribedMessage`,
+ADR-DESK-049), and is not polished; one whose chunks all came in has its polish get only what is left
+of the 10 s, never more than `chunkPolishTimeout`. A spoken answer to the chat window's question gets the same 10 s from its release.
+Every one of these counts from the release, not from the upload after the release tail. A transcription
+past its deadline may still be in a retry nothing calls off (the sign-in refresh it waits on takes no
+signal); its retry note and late answer no longer change the phase once its signal aborts
+(`retryNotice`), so the failure stands and the next hold starts. `transcriptionRetryDelays`
+is cut to 0.5, 1.5 and 3 s (what fits). `transcriptionRequestTimeout` stays 45 s on purpose: after
+the release the deadline ends the wait anyway, and before it a long dictation's chunk may take longer
+than 10 s while the user goes on (a 10 s request timeout there gave the chunk up for good, losing the
+dictation; found in review). The
+backend answers within about 9.5 s of receiving the upload (the release tail, the screen read's wait
+and the upload come first): 8 s for the speech model, 429 retries for its first 6 s, then the 1.5 s
+cleanup (backend ADR-022, amendment 2026-10-08). Supersedes the 2026-10-03 "about a minute" of
+retries. Agent mode's run after the transcript stays without a deadline (ADR-DESK-055). Tests:
+`controller.test.ts` › gives up at its deadline, however many retries are left; a request unanswered
+at the deadline is called off; a retry still running past the deadline leaves the failure alone, and
+the next hold starts; its deadline counts from the release; the chunks' deadline counts from
+the release; a chunk answering after the deadline's length while the user still
+dictates is kept; a chunk not in by the deadline …; a chunk failing on every try gives up at the
+deadline; no chunk in by the deadline: the dictation fails as timed out; chunks in, the last out of
+time: no polish is sent; chunks all in after the deadline
+passed: no polish is sent; the polish stops at the dictation's
+deadline; an answer that comes to nothing (not transcribed in time; out of time from the release).
+
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
 **Context:** Owner, 2026-09-29, after a speech-to-text comparison (`Scripts/stt-compare`, the 10
@@ -3856,7 +3888,9 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   (429 `transcription_rate_limited`, backend ADR-022; found in review 2026-10-03, where one such 429
   threw away the rest of a dictation) is tried again after each of `chunkRetryDelays`, the last repeating,
   quietly: nobody waits for it yet. From the release, a chunk still failing gets the
-  `transcriptionRetryDelays` tries one recording gets, about a minute of waits (ADR-DESK-039, amendment
+  `transcriptionRetryDelays` tries one recording gets, about a minute of waits *(since 2026-10-08
+  all inside the dictation's 10 s `transcriptionDeadline` from the release; a chunk not in by then
+  gives up, ADR-DESK-039 amendment 2026-10-08)* (ADR-DESK-039, amendment
   2026-10-03; each try the backend holds, up to 30 s for a 504 and about 10 s for that 429, adds that time,
   so a chunk failing that way every time keeps the pill transcribing for up to about 5.5 minutes,
   9 tries × 30 s plus the waits, until the user cancels; found in review, 2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
