@@ -56,7 +56,8 @@ public:
     }
     /** `pid`: the window's process, the identity voice-field-reader shares with this process (window
      * tokens are each process's own); 0 where the bus gives none. `shellWindow`: the Shell's id for the
-     * window the focus came in, where the Shell named one of its process then; else 0. */
+     * window the focus came in, where the Shell named one of its process (or of a sandboxed app, whose
+     * focus comes through its bus proxy) then; else 0. */
     struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; unsigned pid = 0; uint64_t shellWindow = 0; };
     /** What has the focus, in the window in front: by the Shell's window id where it says which that is.
      * The focus is that window's only while it is focused, or, while the Shell holds the keyboard for the
@@ -66,9 +67,15 @@ public:
         if (const auto focus = shellFocus()) return inWindow(*focus);
         return current;
     }
-    /** The window in front and its process: the Shell's, or else the focus's own (`target`, `targets`). */
+    /** The window in front and the process accessibility names for it (`Target::pid`): the Shell's
+     * window, or else the focus's own (`target`, `targets`). */
     std::optional<std::pair<uint64_t, unsigned>> front() const {
-        if (const auto focus = shellFocus()) return focus->first ? focus : std::nullopt;
+        // Past the dictation key's hold, a window whose focus accessibility doesn't name is not the
+        // target (the dictation ends in the not-pasted note); during it, the Shell's window is.
+        if (const auto focus = shellFocus()) {
+            if (const auto target = inWindow(*focus)) return std::make_pair(target->token, target->pid);
+            return focus->first && shellHolds() ? focus : std::nullopt;
+        }
         if (current && targets(current->token)) return std::make_pair(current->token, current->pid);
         return std::nullopt;
     }
@@ -95,7 +102,7 @@ private:
     ShellFocus shellFocus;
     /** `target` in the window the Shell says is in front (`focus`). */
     std::optional<Target> inWindow(const std::pair<uint64_t, unsigned>& focus) const {
-        if (!focus.first || !current || current->pid != focus.second) return std::nullopt;
+        if (!focus.first || !current || (current->pid != focus.second && current->shellWindow != focus.first)) return std::nullopt;
         if (current->shellWindow && current->shellWindow != focus.first) return std::nullopt;
         if (!state(current->focus, ATSPI_STATE_FOCUSED) && !(current->shellWindow == focus.first && shellHolds())) return std::nullopt;
         auto target = *current;
@@ -125,8 +132,11 @@ private:
         const bool terminal = role(focus) == ATSPI_ROLE_TERMINAL ||
             std::any_of(path.begin(), path.end(), [](const Node& node) { return role(node) == ATSPI_ROLE_TERMINAL; });
         // The Shell has given the window the keyboard by the time its app says what in it has the focus.
+        // A sandboxed app's focus comes through its bus proxy, whose process is never its window's: its
+        // window is the one in front as the focus comes.
         const auto shellWindow = shellFocus();
-        current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid, shellWindow && shellWindow->first && shellWindow->second == pid ? shellWindow->first : 0};
+        current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid,
+            shellWindow && shellWindow->first && (shellWindow->second == pid || busProxy(pid)) ? shellWindow->first : 0};
     }
     Node findFocus(const Node& root) {
         std::vector<Node> stack{root};

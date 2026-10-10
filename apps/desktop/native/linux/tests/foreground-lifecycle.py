@@ -21,13 +21,20 @@ portal = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.
 assert portal.stdout.readline() == b'ready\n', 'the synthetic portal starts'
 control_read, control_write = os.pipe()
 ack_read, ack_write = os.pipe()
+# A process named as Flatpak's bus proxy, which accessibility names for a sandboxed app ('P').
+proxy_dir = tempfile.TemporaryDirectory()
+proxy_path = os.path.join(proxy_dir.name, 'xdg-dbus-proxy')
+with open('/bin/sleep', 'rb') as source, open(proxy_path, 'wb') as copy:
+    copy.write(source.read())
+os.chmod(proxy_path, 0o700)
+proxy = subprocess.Popen([proxy_path, '600'])
 with tempfile.TemporaryFile(mode='w+t') as diagnostics:
     reader = sys.argv[2:] == ['reader']
     fields = sys.argv[2:] == ['field']
     assert sys.argv[2:] in ([], ['reader'], ['field'])
     child = subprocess.Popen([sys.argv[1]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=diagnostics, text=True, pass_fds=(control_read, ack_write), env={**os.environ,
-        'VOICE_FIXTURE_CONTROL': str(control_read), 'VOICE_FIXTURE_ACK': str(ack_write)})
+        'VOICE_FIXTURE_CONTROL': str(control_read), 'VOICE_FIXTURE_ACK': str(ack_write), 'VOICE_FIXTURE_PROXY': str(proxy.pid)})
     os.close(control_read)
     os.close(ack_write)
     acknowledgments = os.fdopen(ack_read)
@@ -378,7 +385,10 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             elif fields:
                 assert field() is None, "a field of the app's other window is not read as the window the Shell names"
             else:
-                assert request('frontmostApp') == {'window': 7100, 'pid': first}, 'the window in front is the one the Shell names'
+                # During the hold the Shell's window is the one in front; past it, a window whose focus
+                # the app has not named yet is not the target. Either way a paste for the first one waits.
+                expected = {'window': 7100, 'pid': first} if held else None
+                assert request('frontmostApp') == expected, 'the window in front is the one the Shell names, or none'
                 paste(7000, refused=True)
                 assert portal_events(0.5) == [], 'a paste is not sent to another window of the app'
         command('H')
@@ -402,16 +412,22 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         else:
             assert request('frontmostApp') == {'window': 7000, 'pid': first}, 'the window in front comes back'
         # The Shell names a window of a process accessibility doesn't know (a terminal with no
-        # accessibility): what in it has the focus, and so which keys paste there, is unknown, and
-        # nothing is read from it or pasted into it.
+        # accessibility): what in it has the focus, and so which keys paste there, is unknown. It is not
+        # the target (the app shows its note), and nothing is read from it or pasted into it.
         command('V')
         if reader:
             assert screen() is None, 'a window accessibility does not know is not read'
         elif fields:
             assert field() is None and field(4194399) is None, 'a window accessibility does not know has no field read'
         else:
-            assert request('frontmostApp') == {'window': 7200, 'pid': 4194399}, 'the window in front is the one the Shell names'
+            assert request('frontmostApp') is None, 'a window accessibility does not know is not the target'
             paste(7200, refused=True)
+            # Named at the dictation key's press (the Shell holds the keyboard), it is no target once let go.
+            command('h')
+            holding_reply = request('frontmostApp')
+            command('H')
+            assert holding_reply == {'window': 7200, 'pid': 4194399}, "the Shell's window is the one in front while it holds the keyboard"
+            assert request('frontmostApp') is None, 'once the Shell lets go, a window accessibility does not know is not the target'
             assert portal_events(0.5) == [], 'no key goes to a window whose focus accessibility does not name'
         command('K')
         # The Shell's own interface takes the focus from the window it still names (the overview, when
@@ -429,6 +445,31 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             paste(7000, refused=False)
             assert portal_events(0.5) == ['publish', 'key 65507 1', 'key 118 1', 'key 118 0', 'key 65507 0'], \
                 'with the focus back in the window, the paste goes to it'
+        # The window in front gives up its focus with no hold yet (Firefox, as the dictation key's hold
+        # begins): where the Shell still names it, it stays the target.
+        command('D')
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText'], 'a window the Shell still names is read after it gives up its focus'
+        elif fields:
+            assert field() == {'value': 'Synthetic field content'}, "the field of a window the Shell still names is read after it gives up its focus"
+        else:
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}, 'a window the Shell still names stays the target after it gives up its focus'
+        # A sandboxed app (Flatpak) reaches accessibility through its bus proxy, whose process the Shell
+        # never names: its window is still the target, read and pasted into, by the window in front as its
+        # focus came.
+        command('P')
+        command('b')
+        command('a')
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText'], "a sandboxed app's window is read"
+        elif fields:
+            assert field(proxy.pid) == {'value': 'Synthetic field content'}, "a sandboxed app's field is read"
+        else:
+            assert request('frontmostApp') == {'window': 7000, 'pid': proxy.pid}, "a sandboxed app's window is the target"
+            paste(7000, refused=False)
+            assert portal_events(0.5) == ['publish', 'key 65507 1', 'key 118 1', 'key 118 0', 'key 65507 0'], \
+                "the paste goes to a sandboxed app's window"
+        command('R')
         command('N')
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
@@ -442,6 +483,9 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         acknowledgments.close()
         portal.stdin.close()
         portal.wait(timeout=2)
+        proxy.kill()
+        proxy.wait()
+        proxy_dir.cleanup()
         if child.returncode:
             diagnostics.seek(0)
             sys.stderr.write(diagnostics.read())

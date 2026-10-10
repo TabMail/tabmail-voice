@@ -29,6 +29,9 @@ bool shellFocus = false;
 // app ('k'), a window of a process accessibility doesn't know ('V', a terminal with no accessibility),
 // or none, as on a locked screen ('L'); 'K' goes back to the window in front.
 enum class ShellSays { front, otherWindow, unseen, none } shellSays = ShellSays::front;
+// The first app sandboxed ('P'; 'R' undoes it): accessibility names its bus proxy's process
+// (VOICE_FIXTURE_PROXY, a process the test runs as xdg-dbus-proxy), the Shell the app's own.
+bool sandboxed = false;
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
 bool mutateSelectionOnText = false, containerFocused = false;
@@ -143,6 +146,10 @@ gboolean command(gint fd, GIOCondition, gpointer) {
     if (value == 'L') shellSays = ShellSays::none;
     if (value == 'V') shellSays = ShellSays::unseen;
     if (value == 'K') shellSays = ShellSays::front;
+    if (value == 'P') sandboxed = true;
+    if (value == 'R') sandboxed = false;
+    // The window in front gives up its focus with no hold yet (Firefox, as the dictation key's hold begins).
+    if (value == 'D' && active >= 0) event("window:deactivate", windows[active]);
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
     if (::write(acknowledgments, reply.data(), reply.size()) != static_cast<ssize_t>(reply.size())) std::abort();
     return G_SOURCE_CONTINUE;
@@ -213,7 +220,7 @@ extern "C" AtspiAccessible* __wrap_atspi_accessible_get_parent(AtspiAccessible* 
 // process's launcher identity is looked up: the first app 4194305, the second 4194306.
 extern "C" guint __wrap_atspi_accessible_get_process_id(AtspiAccessible* value, GError**) {
     for (auto node = value; node; node = items.at(node).parent)
-        for (int i = 0; i < 2; ++i) if (node == apps[i]) return 4194305 + i;
+        for (int i = 0; i < 2; ++i) if (node == apps[i]) return i == 0 && sandboxed ? std::stoul(g_getenv("VOICE_FIXTURE_PROXY")) : 4194305 + i;
     return 0;
 }
 extern "C" AtspiCollection* __wrap_atspi_accessible_get_collection_iface(AtspiAccessible*) { return nullptr; }

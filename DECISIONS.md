@@ -4977,14 +4977,17 @@ these things."
 **Decision:** The extension (version 3) answers `Focus`: the Meta window with the keyboard focus, by
 its id, and its process (none while the screen is locked). Where it answers, the helpers name the
 target window by that id (`Foreground::target`, `front`, `matches`, `targets`), and the AT-SPI focus is
-taken only as the element in it, and only when it is that window's process's. A window's deactivation
+taken only as the element in it, and only when it is that window's process's, or, for a sandboxed app,
+came while that window was in front: a Flatpak app reaches the accessibility bus through its bus proxy
+(xdg-dbus-proxy), so the bus names the proxy's process, never the one the Shell names. A window's deactivation
 no longer drops the target, and an element read while the Shell holds the key over the same window and
 focus counts as focused (`LiveScreenTree::focusKept`). Without the extension (another desktop, a GNOME
 it does not support, or before the log-in that loads it) the AT-SPI path stays, with one fix of its
 own: the target's own window activated again keeps the target, the walk for its focus waiting for the
 focus to come back by itself. A paste still needs accessibility to name what has the focus in the
 window the Shell names (`Foreground::matches`): a window it can't see (a terminal without it) has no
-known paste keys, and the Shell's own interface over the window (the overview, the window switcher, a
+known paste keys, and is not the target (`front` names none, so the dictation ends in the not-pasted
+note, ADR-DESK-042), and the Shell's own interface over the window (the overview, the window switcher, a
 menu or a dialog) leaves the Shell's focus window as it was; there `Focus` answers none too. Direction: further probing (which field has the focus, the caret, the selection)
 moves to the extension as it can answer it.
 
