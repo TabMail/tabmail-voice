@@ -197,9 +197,9 @@ export const completionsPath = "completions/chat";
 /** The key-down warm-up's request (`TranscriptionClient.warmUp`), and the longest it may take. */
 export const warmUpPath = "whoami";
 export const warmUpRequestTimeout = 10_000;
-/** Sent as `X-Client-Type` to identify this client to the backend. Usage is recorded under it, and
- * the admin panel shows it as the macOS device. */
-export const clientType = "macos";
+/** Sent as `X-Client-Type` to identify this client to the backend, on every platform (ADR-DESK-009).
+ * Usage is recorded under it, and the admin panel shows it as the Voice device. */
+export const clientType = "voice";
 /** Longest a dictation waits for its text after the release, every request and retry included, and
  * a long dictation's polish (owner, 2026-10-08: "nobody waits for dictation more than 10" seconds;
  * ADR-DESK-039). The backend gives the speech model 8 s and the cleanup 1.5 s inside it. */

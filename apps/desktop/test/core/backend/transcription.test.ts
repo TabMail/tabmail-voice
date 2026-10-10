@@ -47,7 +47,7 @@ describe("TranscriptionClient", () => {
     expect(request?.url).toBe("https://api.example.com/dictation/transcribe");
     expect(request?.method).toBe("POST");
     expect(request?.headers.Authorization).toBe("Bearer token-abc");
-    expect(request?.headers["X-Client-Type"]).toBe("macos");
+    expect(request?.headers["X-Client-Type"]).toBe("voice");
     expect(request?.headers["X-Client-Version"]).toBe("0.1.0");
     expect(stub.body(0)).toEqual({ format: "flac", audio: Buffer.from(flac).toString("base64") });
   });
@@ -63,7 +63,7 @@ describe("TranscriptionClient", () => {
     expect(request?.method).toBe("GET");
     expect(request?.url).toBe("https://api.example.com/whoami");
     expect(request?.headers.Authorization).toBe("Bearer token-abc");
-    expect(request?.headers["X-Client-Type"]).toBe("macos");
+    expect(request?.headers["X-Client-Type"]).toBe("voice");
     expect(request?.body).toBe("");
   });
 
