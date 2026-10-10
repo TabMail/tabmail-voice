@@ -597,6 +597,23 @@ describe("OverlayWindowController", () => {
     }
   });
 
+  /** At the pointer near the bottom of the display, the not-pasted note keeps room under the pill's
+   * top for all of it, as tall as it gets (`noteMaxHeight`): it shows the text it copies, taller than
+   * the pill and its tip, for which a failure there keeps room (owner, 2026-10-09). */
+  test.each([1, 20, 60, 120])("the not-pasted note is all on screen with the pointer %i pt over the bottom", (above) => {
+    const bottom = workArea.y + workArea.height;
+    screenNow.pointer = { x: 700, y: bottom - above };
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => null);
+      controller.update({ kind: "transcribing" });
+      controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
+      expect(pillOnScreen(overlay.bounds()).y + config.noteMaxHeight).toBeLessThanOrEqual(bottom);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+  });
+
   /** The not-pasted note takes clicks where the pointer is over it (macOS, Windows), and the rest of
    * the overlay lets them through; clicked and refused by the clipboard, the note says so where it
    * was, and the overlay lets every click through again. */

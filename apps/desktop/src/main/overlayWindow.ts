@@ -299,7 +299,8 @@ export class OverlayWindowController {
     // Where it was placed, for the chat window to open there even if the pointer moves meanwhile.
     this.anchor = anchor;
     const workArea = this.workArea(anchor);
-    const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
+    // The not-pasted note keeps room under the pill's top for all of it, as tall as it gets.
+    const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea, this.note ? config.noteMaxHeight : undefined);
     this.window.setBounds({ x: Math.round(origin.x), y: Math.round(origin.y), ...config.overlayCanvasSize });
     this.placedUpward = opensUpward(anchor, config.pillHeight, workArea);
     this.placedBubblesFitUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);

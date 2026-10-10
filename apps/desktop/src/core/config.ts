@@ -704,6 +704,10 @@ export const overlayCanvasSize = {
   width: 440,
   height: pillHeight + 2 * (listeningPillHeight - pillHeight + agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY),
 };
+/** The not-pasted note is never taller than this, whatever the fonts make of its lines: placed, it
+ * keeps this much of the work area under the pill's top (`overlayOrigin`), and it fits the canvas
+ * under the pill's top (owner, 2026-10-09: the note shows the text it copies). */
+export const noteMaxHeight = 130;
 /** Agent mode's sparkles in the pill while it rests, fainter, under the chat window and nothing runs;
  * a working pill shows none. */
 export const agentRestingSymbolSize = 12;
@@ -796,6 +800,7 @@ export const noteCloseButtonSize = 18;
 export const noteWidth = 320;
 export const noteCornerRadius = 12;
 export const notePadding = 10;
+export const noteMessageMaxLines = 2;
 export const noteTextMaxLines = 3;
 export const noteTextPadding = 8;
 export const noteTextCornerRadius = 8;

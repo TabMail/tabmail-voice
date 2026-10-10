@@ -54,7 +54,7 @@ const app = vi.hoisted(() => ({
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
   overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; notes: Rect[]; hitTest?: string } | null,
-  controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
+  controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[]; phase: object } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
   savesFail: false,
@@ -1012,6 +1012,27 @@ describe("main process wiring", () => {
 
     expect(app.controller?.calls).toEqual(["copyNotPasted", "dismissNotPasted"]);
     expect(app.overlay?.notes).toEqual([{ x: 10, y: 20, width: 180, height: 32 }]);
+  });
+
+  /** The note for a text not pasted reaches the overlay's page with the whole text it shows and a
+   * click copies, under the message; showing it copies nothing, and the copy writes that whole text. */
+  test("the not-pasted note's text reaches the overlay", async () => {
+    await launch("darwin");
+    const states: unknown[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        if (name === "overlay") states.push(state);
+      },
+    ]);
+    const text = "Move the review to Friday.\nAnd send the agenda tonight.";
+    const note = { kind: "notPasted", message: "Switched apps. Click to copy.", text };
+    if (app.controller) app.controller.phase = note;
+
+    app.overlay?.onPlace?.();
+    expect(states).toEqual([expect.objectContaining({ phase: note })]);
+    expect(app.clipboard).toEqual([]);
+    expect(await app.copy?.(text)).toBe(true);
+    expect(app.clipboard).toEqual([text]);
   });
 
   /** An agent tool's switch is stored and shows in the Settings and welcome windows; a name that is

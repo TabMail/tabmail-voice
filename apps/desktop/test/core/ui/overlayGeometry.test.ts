@@ -116,6 +116,22 @@ describe("overlay geometry", () => {
     expect(openedAbove).toBeGreaterThan(0);
   });
 
+  /** The not-pasted note, at the pointer, as tall as it ever gets (`noteMaxHeight`, whatever its text
+   * and the fonts), is on screen and inside the canvas near the bottom of a display: it shows the
+   * text it copies, taller than the pill (owner, 2026-10-09). */
+  test("the not-pasted note at its tallest is on screen and in the canvas", () => {
+    const canvas = config.overlayCanvasSize;
+    for (const area of [display, rect(0, 0, 1000, 730), rect(0, 800, 1000, 800)]) {
+      for (let y = maxY(area) - 1; y >= maxY(area) - 200; y -= 1) {
+        const origin = overlayOrigin(rect(500, y, 1, 1), canvas, config.pillHeight, area, config.noteMaxHeight);
+        const pillTop = origin.y + (canvas.height - config.pillHeight) / 2;
+        expect(pillTop + config.noteMaxHeight, `note off screen with the pointer at ${y}`).toBeLessThanOrEqual(maxY(area));
+        expect(pillTop + config.noteMaxHeight, `note out of the canvas with the pointer at ${y}`).toBeLessThanOrEqual(origin.y + canvas.height);
+        expect(pillTop).toBeGreaterThanOrEqual(area.y);
+      }
+    }
+  });
+
   test("the pill stays on screen at the edges", () => {
     for (const caret of [rect(2, 380, 1, 20), rect(998, -10, 1, 20)]) {
       expect(contains(display, pillFrame(overlayOrigin(caret, canvas, pillHeight, display)))).toBe(true);

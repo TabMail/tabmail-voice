@@ -701,7 +701,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
         <>
           <div className="note-header" style={{ gap: config.pillContentSpacing }}>
             <ClipboardIcon size={config.overlayFontSize} />
-            <span className="message" style={{ fontSize: config.overlayFontSize, WebkitLineClamp: config.pillMaxTextLines }}>
+            <span className="message" style={{ fontSize: config.overlayFontSize, WebkitLineClamp: config.noteMessageMaxLines }}>
               {mode.message}
             </span>
             <button
@@ -752,7 +752,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
     <div
       ref={ref}
       className={isNote ? "pill note" : "pill"}
-      style={isNote ? { ...style, width: Math.min(config.noteWidth, maxWidth), padding: config.notePadding, gap: config.pillContentSpacing, borderRadius: config.noteCornerRadius, overflow: "hidden", cursor: "pointer" } : style}
+      style={isNote ? { ...style, width: Math.min(config.noteWidth, maxWidth), maxHeight: config.noteMaxHeight, padding: config.notePadding, gap: config.pillContentSpacing, borderRadius: config.noteCornerRadius, overflow: "hidden", cursor: "pointer" } : style}
       role={isNote ? "button" : undefined}
       aria-label={isNote ? "Copy" : undefined}
       onPointerEnter={isNote ? () => setNoteHovered(true) : undefined}

@@ -3270,7 +3270,9 @@ the General card. A refusal or failed install logs the platform's own fixed sent
 > click anywhere on the card but the x copies, as before. The `notPasted` phase carries the text
 > (`text`), which the click copies, in place of the controller's own copy of it: what is shown is
 > what is copied. The text reaches the overlay's page, as the chat window's replies do; it is never
-> logged.
+> logged. Taller than the pill, the card is never taller than `noteMaxHeight` (its message cut after
+> `noteMessageMaxLines`), and placed at the pointer it keeps that much of the work area under the
+> pill's top (`overlayOrigin`'s `roomBelow`), so near the bottom of a display it shows whole.
 
 > **Amended (owner, 2026-09-30, same day): only the app is checked.** Tested on a dev build in
 > iTerm2, every dictation was copied as "Cursor moved" though nothing had moved: iTerm2's caret is a

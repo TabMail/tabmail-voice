@@ -193,6 +193,40 @@ describe("overlay page", () => {
     expect(page.commands).not.toContainEqual({ type: "dismissNotPasted" });
   });
 
+  /** However long its text, the note is no taller than `noteMaxHeight`, which its placement keeps on
+   * screen, and holds the whole text, which a click copies. */
+  test("the not-pasted note is no taller than its placement keeps room for", async () => {
+    const page = await overlayPage();
+    const long = `${"word ".repeat(400)}${"x".repeat(2_000)}\nand a last line`;
+    await page.show({ ...listening, phase: { ...note, text: long } });
+
+    const card = document.querySelector<HTMLElement>(".pill.note");
+    expect(card?.style.maxHeight).toBe(`${config.noteMaxHeight}px`);
+    expect(card?.style.overflow).toBe("hidden");
+    const text = document.querySelector<HTMLElement>(".note-text-content");
+    expect(text?.textContent).toBe(long);
+  });
+
+  /** Under the pointer, the text's box and its copy sign take the brand's blue, and give it back when
+   * the pointer leaves. */
+  test("the not-pasted note's box turns blue under the pointer", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, phase: note });
+    const card = document.querySelector<HTMLElement>(".pill.note");
+    const box = () => document.querySelector<HTMLElement>(".pill.note .note-text");
+    const resting = { border: box()?.style.borderColor, color: box()?.style.color };
+    expect(resting.color).toBe("");
+
+    await act(async () => card?.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+    expect(box()?.style.borderColor).not.toBe(resting.border);
+    expect(box()?.style.borderColor).toBe(box()?.style.color);
+    expect(box()?.style.color).not.toBe("");
+
+    await act(async () => card?.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, relatedTarget: document.body })));
+    expect({ border: box()?.style.borderColor, color: box()?.style.color }).toEqual(resting);
+    expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
+  });
+
   /** The note's x dismisses it: the click is the x's alone, and copies nothing. */
   test("the not-pasted note's x dismisses it without copying", async () => {
     const page = await overlayPage();
