@@ -27,10 +27,10 @@ voice::Gesture gesture;
 voice::ModifierChoice modifier;
 std::array<bool, 256> pressed{};
 std::array<bool, 256> swallowed{};
-// An unassigned virtual key: the app in front ignores it, but after it Windows counts the Alt
-// release as Alt used with another key, not a lone Alt press (which opens the menu bar).
+// An unassigned virtual key, which apps normally ignore: after it Windows counts the Alt release as
+// Alt used with another key, not a lone Alt press (which opens the menu bar). Best effort.
 constexpr WORD menuMaskKey = 0xE8;
-bool altMasked = false; // menuMaskKey was sent during this Right Alt hold
+bool altMasked = false; // menuMaskKey was sent since the last physical Right Alt release
 
 // A blocked/broken parent must not leave a helper owning keys. Windows bounds the message
 // queue; exhaustion ends this process and removes its hook instead of dropping an action.
@@ -49,14 +49,16 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
     const bool down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
     const bool up = message == WM_KEYUP || message == WM_SYSKEYUP;
     if (!down && !up) return CallNextHookEx(hook, code, message, data);
+    // Whichever hotkey is selected now, a physical Right Alt release ends the hold altMasked is for.
+    if (up && key == voice::ModifierChoice::rightAlt && (event.flags & LLKHF_INJECTED) == 0) altMasked = false;
     if (modifier.bypass(key, down, (event.flags & LLKHF_INJECTED) != 0)) return CallNextHookEx(hook, code, message, data);
     bool owns = false;
     std::optional<voice::Action> action;
-    // Windows passes on the key event of a hook that answers too late (under heavy load; current
-    // Windows may also remove the hook), so the key-down reaches the system anyway. Swallowing its
-    // key-up then leaves the system holding the key, and every paste after it sees a modifier held.
-    // So a key-up goes through when GetAsyncKeyState, which here gives the state from before this
-    // event, says the system holds the key.
+    // Windows passes on the key event of a hook that answers too late (under heavy load), so the
+    // key-down reaches the system anyway; it may also remove the hook, which this does not repair.
+    // Swallowing the key-up then leaves the system holding the key, and every paste after it sees a
+    // modifier held. So a key-up goes through when GetAsyncKeyState, which here gives the state from
+    // before this event, says the system holds the key.
     const bool systemHolds = (GetAsyncKeyState(static_cast<int>(key)) & 0x8000) != 0;
     const bool leaked = up && systemHolds;
     if (key == modifier.selected) {
@@ -69,7 +71,6 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
             mask[1].ki.dwFlags = KEYEVENTF_KEYUP;
             altMasked = SendInput(2, mask, sizeof(INPUT)) == 2; // Injected keys pass this hook.
         }
-        if (up) altMasked = false;
         owns = down || (swallowed[key] && !leaked);
         if (down) swallowed[key] = true;
         else swallowed[key] = false;
