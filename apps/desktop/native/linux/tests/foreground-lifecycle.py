@@ -355,10 +355,20 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert screen() is None, "another app's focus is not read as the window the Shell names"
         elif fields:
             assert field(second) is None and field() is None, "another app's field is not read as the window the Shell names"
-        command('a')
-        # The focus came in the window the Shell names now (7000). While the Shell holds the keyboard
-        # over it, the field is still read (GTK 4 drops its focus meanwhile), and nothing is pasted; once
-        # the Shell lets go, the paste goes through.
+        # Nor while the Shell holds the keyboard, when a field the hold took the focus from is still read.
+        command('h')
+        if reader:
+            assert screen() is None, "another app's focus is not read as the window the Shell names during the hold"
+        elif fields:
+            assert field(second) is None and field() is None, "another app's field is not read as the window the Shell names during the hold"
+        else:
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}, "another app is not the window the Shell names during the hold"
+            paste(7000, refused=True)
+            assert portal_events(0.5) == [], "nothing is pasted for another app's focus during the hold"
+        command('H')
+        # The Shell gives the focus back to the field in the window it names now (7000). While the Shell
+        # holds the keyboard over it, the field is still read (GTK 4 drops its focus meanwhile), and
+        # nothing is pasted; once the Shell lets go, the paste goes through.
         command('h')
         if reader:
             assert 'First synthetic app' in screen()['renderedText'], 'the screen is read while the Shell holds the keyboard over its window'
