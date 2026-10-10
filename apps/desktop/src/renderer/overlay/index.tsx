@@ -16,7 +16,7 @@ import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/t
 import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
 import { brandBlue, brandColor, brandGradient, rgba } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { ClipboardIcon, ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
+import { ClipboardIcon, ConnectorIcon, CopyIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
 import { applyPalette } from "../shared/theme.js";
 import "./index.css";
 
@@ -39,9 +39,10 @@ type Mode =
   | { kind: "transcribing" }
   | { kind: "running"; tool: AgentToolID | null }
   | { kind: "message"; text: string }
-  /** The text was not pasted: the note beside a clipboard, which copies it when clicked, with an x
-   * that dismisses it and a bar under it showing the time left. */
-  | { kind: "notPasted"; text: string }
+  /** The text was not pasted: a card with the message beside a clipboard and an x that dismisses it,
+   * over a box showing the text with a copy sign, which copies it when clicked anywhere, and a bar
+   * along its bottom showing the time left. */
+  | { kind: "notPasted"; message: string; text: string }
   /** A server error, while the transcription is tried again: the note alone, no warning sign. */
   | { kind: "retrying"; text: string }
   /** Under the open chat window while nothing runs. */
@@ -64,7 +65,7 @@ function modeOf(state: OverlayState): Mode {
     case "failed":
       return { kind: "message", text: phase.message };
     case "notPasted":
-      return { kind: "notPasted", text: phase.message };
+      return { kind: "notPasted", message: phase.message, text: phase.text };
   }
 }
 
@@ -637,9 +638,11 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
 function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }: { mode: Mode; level: number; hasVoice: boolean; isRetrying: boolean; language: string | null; isAgent: boolean; maxWidth: number }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
   const isNote = mode.kind === "notPasted";
-  const leadingPadding = isCircle ? 0 : mode.kind === "message" || isNote || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
+  const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
   useNoteHitArea(ref, isNote);
+  // Over the note, its box and copy sign take the brand's blue: a click copies.
+  const [isNoteHovered, setNoteHovered] = useState(false);
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
     paddingLeft: leadingPadding,
@@ -684,14 +687,23 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
       );
       break;
     case "message":
-    case "notPasted":
       content = (
         <>
-          {mode.kind === "message" ? <ExclamationIcon size={config.overlayFontSize} /> : <ClipboardIcon size={config.overlayFontSize} />}
+          <ExclamationIcon size={config.overlayFontSize} />
           <span className="message" style={{ fontSize: config.overlayFontSize, maxWidth: config.pillMaxTextWidth, WebkitLineClamp: config.pillMaxTextLines }}>
             {mode.text}
           </span>
-          {isNote && (
+        </>
+      );
+      break;
+    case "notPasted":
+      content = (
+        <>
+          <div className="note-header" style={{ gap: config.pillContentSpacing }}>
+            <ClipboardIcon size={config.overlayFontSize} />
+            <span className="message" style={{ fontSize: config.overlayFontSize, WebkitLineClamp: config.noteMessageMaxLines }}>
+              {mode.message}
+            </span>
             <button
               type="button"
               className="note-close"
@@ -705,7 +717,25 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
             >
               ✕
             </button>
-          )}
+          </div>
+          {/* The text the click copies, in the chat window's colors for the user's words. */}
+          <div
+            className="note-text"
+            style={{
+              gap: config.pillContentSpacing,
+              padding: config.noteTextPadding,
+              borderRadius: config.noteTextCornerRadius,
+              borderWidth: config.pillBorderWidth,
+              background: palette.chatRequestFill,
+              borderColor: isNoteHovered ? brandBlue : palette.chatRequestBorder,
+              ...(isNoteHovered ? { color: brandBlue } : {}),
+            }}
+          >
+            <span className="note-text-content" style={{ fontSize: config.overlayFontSize, WebkitLineClamp: config.noteTextMaxLines }}>
+              {mode.text}
+            </span>
+            <CopyIcon size={config.noteCopyIconSize} />
+          </div>
         </>
       );
       break;
@@ -722,8 +752,11 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
     <div
       ref={ref}
       className={isNote ? "pill note" : "pill"}
-      style={isNote ? { ...style, overflow: "hidden", cursor: "pointer" } : style}
+      style={isNote ? { ...style, width: Math.min(config.noteWidth, maxWidth), maxHeight: config.noteMaxHeight, padding: config.notePadding, gap: config.pillContentSpacing, borderRadius: config.noteCornerRadius, overflow: "hidden", cursor: "pointer" } : style}
       role={isNote ? "button" : undefined}
+      aria-label={isNote ? "Copy" : undefined}
+      onPointerEnter={isNote ? () => setNoteHovered(true) : undefined}
+      onPointerLeave={isNote ? () => setNoteHovered(false) : undefined}
       onClick={isNote ? () => void send({ type: "copyNotPasted" }) : undefined}
     >
       {content}

@@ -167,6 +167,16 @@ export function ClipboardIcon({ size }: { size: number }) {
   );
 }
 
+/** Copy: two overlapping pages, the usual sign of copying; in the text's color. */
+export function CopyIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <rect x="8.5" y="8.5" width="12.5" height="12.5" rx="2.5" />
+      <path d="M15.5 5.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8.5a2 2 0 0 0 2 2h.5" />
+    </PlainIcon>
+  );
+}
+
 /** A line icon in the text's color. */
 function PlainIcon({ size, children }: { size: number; children: ReactNode }) {
   return (

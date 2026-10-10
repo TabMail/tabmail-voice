@@ -567,7 +567,7 @@ describe("OverlayWindowController", () => {
   /** A text not pasted (ADR-DESK-042) says so where the user is now, at the mouse pointer, not at the
    * caret they left; a failure stays where the pill was. */
   test.each<[string, Phase, boolean]>([
-    ["not-pasted", { kind: "notPasted", message: "Click to copy." }, true],
+    ["not-pasted", { kind: "notPasted", message: "Click to copy.", text: "Hello there." }, true],
     ["failed", { kind: "failed", message: "Failed." }, false],
   ])("a %s note shows at the pointer only when not pasted", async (_, end, atPointer) => {
     const caret: Rect = { x: 200, y: 200, width: 1, height: 16 };
@@ -597,6 +597,23 @@ describe("OverlayWindowController", () => {
     }
   });
 
+  /** At the pointer near the bottom of the display, the not-pasted note keeps room under the pill's
+   * top for all of it, as tall as it gets (`noteMaxHeight`): it shows the text it copies, taller than
+   * the pill and its tip, for which a failure there keeps room (owner, 2026-10-09). */
+  test.each([1, 20, 60, 120])("the not-pasted note is all on screen with the pointer %i pt over the bottom", (above) => {
+    const bottom = workArea.y + workArea.height;
+    screenNow.pointer = { x: 700, y: bottom - above };
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => null);
+      controller.update({ kind: "transcribing" });
+      controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
+      expect(pillOnScreen(overlay.bounds()).y + config.noteMaxHeight).toBeLessThanOrEqual(bottom);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+  });
+
   /** The not-pasted note takes clicks where the pointer is over it (macOS, Windows), and the rest of
    * the overlay lets them through; clicked and refused by the clipboard, the note says so where it
    * was, and the overlay lets every click through again. */
@@ -604,7 +621,7 @@ describe("OverlayWindowController", () => {
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, async () => null);
     controller.update({ kind: "transcribing" });
-    controller.update({ kind: "notPasted", message: "Click to copy." });
+    controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
     const atNote = overlay.bounds();
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
@@ -619,7 +636,7 @@ describe("OverlayWindowController", () => {
     expect(overlay.shape()).toEqual([]);
     controller.pointerOver(true);
     // The same note again (a state push) changes nothing.
-    controller.update({ kind: "notPasted", message: "Click to copy." });
+    controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
     expect(overlay.ignoresMouse()).toBe(false);
 
     controller.update({ kind: "failed", message: "Couldn't copy." });
@@ -637,7 +654,7 @@ describe("OverlayWindowController", () => {
   test("the not-pasted note is the shape-cut overlay's only shape while it shows", () => {
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
-    controller.update({ kind: "notPasted", message: "Click to copy." });
+    controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
     controller.fitNote({ x: 10.4, y: 20.6, width: 180.2, height: 32 });
     expect(overlay.shape()).toEqual([{ x: 10, y: 21, width: 180, height: 32 }]);
     expect(overlay.ignoresMouse()).toBe(false);

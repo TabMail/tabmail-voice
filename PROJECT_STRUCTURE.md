@@ -26,7 +26,7 @@ apps/desktop/
 │   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries; `test` runs the shared Rust core's `cargo test` first
-│   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
+│   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs; exits 1 when a shot fails its checks (a page error, something cut off, the not-pasted note's layout as Chromium lays it out)
 ├── native/shared/rust/      Shared static library, the ONE home of logic the helpers share (ADR-DESK-054; native code is thin OS adapters): redaction, context normalization/rendering, exclusion/address policy, terminal viewport (and the box around its cursor, `terminal_box`), gesture transitions and the microphone's sessions; Swift/C++ C ABI adapters; locked toolchain and conformance tests
 ├── native/shared/context/   Screen context types and cross-platform context fixtures; `screen-cases.json` (the screen read's whole reply, built by the Rust `screen` op) `request-cases.json` (a field read's bound and reply and a paste's text and deadline, the Rust `request` op) `surface-cases.json` (a terminal surface's runs, selection and caret, the Rust `viewport` op's `surface` request; macOS and Linux) and `walk-cases.json` (the screen walk's steps, the Rust `walk` op; `walk.h` is its C++ wrapper, Swift `SharedWalk`), run by Rust and the helpers (`windows/tests/screen-reply.cpp` and `core-cases.cpp`, built on Linux too; Swift `RedactorTests`): ADR-DESK-054
 ├── native/shared/microphone/ `voice-microphone`'s shared parts on every platform: `session-cases.json` (which session runs and when the process ends, the Rust `microphone` state; `sessions.h` is its C++ wrapper, Swift `MicrophoneSessions`), run by Rust, Swift and `session-test.cpp` (Windows, Linux); `protocol.mjs`, the Windows and Linux helpers' wire checks: ADR-DESK-032
@@ -135,7 +135,7 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    `clipboardSaveInterval` from key-down until the paste writes (`clipboardSave`, `ClipboardKeeper`:
    ADR-DESK-002, amended 2026-10-08 and 2026-10-09); with another app in front
    than at key-down (`focusChanged`), nothing is pasted or copied, and a note at the mouse pointer
-   offers to copy it for 10 s (phase `notPasted`; a click copies it and the note goes, its x dismisses it). Either way the text joins
+   offers to copy it for 10 s (phase `notPasted`, carrying the text: a card showing it in a box with a copy sign; a click anywhere on it copies it and the note goes, its x dismisses it). Either way the text joins
    the paste history. If the cleanup failed for any reason, the transcript
    is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is
    cut into chunks of up to 105 s, each overlapping the one before, as it is recorded (`Chunker`; cuts at pauses are off since 2026-10-07), each sent with its cleanup while the user

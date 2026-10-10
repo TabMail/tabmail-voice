@@ -31,15 +31,16 @@ export const midY = (rect: Rect): number => rect.y + rect.height / 2;
 /**
  * Window origin that puts the pill's top edge just below the caret's line (the pill just above the
  * line when there's no room below), centered horizontally on the caret and kept inside the display's
- * work area with a tip under it. The canvas is larger than the pill (room for the swirl); the
- * one-line pill sits vertically centered in it and taller pills grow downward.
+ * work area with a tip under it, or `roomBelow` under the pill's top (the not-pasted note's
+ * `noteMaxHeight`). The canvas is larger than the pill (room for the swirl); the one-line pill sits
+ * vertically centered in it and taller pills grow downward.
  */
-export function overlayOrigin(anchor: Rect, canvas: Size, pillHeight: number, workArea: Rect): Point {
+export function overlayOrigin(anchor: Rect, canvas: Size, pillHeight: number, workArea: Rect, roomBelow = heightUnderPillTop(pillHeight)): Point {
   const gap = config.overlayCaretGap;
   const pillTopInset = (canvas.height - pillHeight) / 2;
   let pillTop = maxY(anchor) + gap;
   if (opensUpward(anchor, pillHeight, workArea)) pillTop = anchor.y - gap - pillHeight;
-  pillTop = Math.min(Math.max(pillTop, workArea.y), maxY(workArea) - heightUnderPillTop(pillHeight));
+  pillTop = Math.min(Math.max(pillTop, workArea.y), maxY(workArea) - roomBelow);
   const footprint = Math.min(canvas.width, workArea.width);
   const center = Math.min(Math.max(midX(anchor), workArea.x + footprint / 2), maxX(workArea) - footprint / 2);
   const x = center - canvas.width / 2;

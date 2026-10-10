@@ -85,10 +85,58 @@ const settingsWindowSize = { width: 700, height: 500 };
 /** `config.welcomeWindowSize`. */
 const welcomeWindowSize = { width: 560, height: 660 };
 
+/** `config.noteTextMaxLines`. */
+const noteTextMaxLines = 3;
+/** The not-pasted note's shots, each checked as laid out (`noteLayoutProblem`), with the lines its
+ * text must render as, where they are known whatever the fonts (null: up to `noteTextMaxLines`). */
+const noteLines: Record<string, number | null> = {
+  "overlay-not-pasted": null,
+  "overlay-not-pasted-long": noteTextMaxLines,
+  "overlay-not-pasted-short": 1,
+  "overlay-not-pasted-unbroken": noteTextMaxLines,
+  "overlay-not-pasted-lines": noteTextMaxLines,
+};
+
+/** What is wrong with the not-pasted note as the page laid it out, or null: it shows whole in the
+ * window, its message and x over the box with the text, the text inside its box in `exactLines`
+ * lines (or up to `maxLines`), and the copy sign drawn at the box's end. Run in the page, as
+ * `(maxLines, exactLines) => …`. */
+const noteLayoutProblem = `(maxLines, exactLines) => {
+  const element = (selector) => document.querySelector(selector);
+  const card = element(".pill.note")?.getBoundingClientRect();
+  const header = element(".note-header")?.getBoundingClientRect();
+  const close = element(".note-close")?.getBoundingClientRect();
+  const box = element(".note-text")?.getBoundingClientRect();
+  const text = element(".note-text-content");
+  const icon = element(".note-text svg");
+  if (!card || !header || !close || !box || !(text instanceof HTMLElement) || !(icon instanceof SVGSVGElement)) return "a part of the note is missing";
+  const inside = (inner, outer) => inner.left >= outer.left - 0.5 && inner.right <= outer.right + 0.5 && inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
+  if (!inside(card, new DOMRect(0, 0, innerWidth, innerHeight))) return "the note is cut off by the window";
+  if (!inside(header, card) || !inside(close, card) || !inside(box, card)) return "the note cuts off its message, its x or the text's box";
+  if (box.top < header.bottom) return "the text's box is not under the message";
+  const content = text.getBoundingClientRect();
+  if (!inside(content, box)) return "the text spills out of its box";
+  // One line's height, in the text's own font.
+  const probe = text.cloneNode();
+  probe.textContent = "X";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  text.parentElement.append(probe);
+  const lineHeight = probe.getBoundingClientRect().height;
+  probe.remove();
+  const lines = Math.round(content.height / lineHeight);
+  if (exactLines !== null ? lines !== exactLines : lines < 1 || lines > maxLines) return "the text shows as " + lines + " lines";
+  const sign = icon.getBoundingClientRect();
+  const drawn = icon.getBBox();
+  if (drawn.width <= 0 || drawn.height <= 0) return "the copy sign draws nothing";
+  if (!inside(sign, box) || sign.left < content.right - 0.5) return "the copy sign is not at the end of the text's box";
+  return null;
+}`;
+
 /** A shot of `page` with `state`; `whole` names what must show whole in it (the welcome window's
  * buttons, below everything else; a question's buttons in a chat long enough to scroll): inside the
  * window and inside every box above it in the page that clips. */
-const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; whole?: string }[] = [
+const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; whole?: string; noteLines?: number | null }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
@@ -107,10 +155,18 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
     ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
-    ["overlay-not-pasted", { phase: { kind: "notPasted", message: "Switched apps. Click to copy." } }],
+    ["overlay-not-pasted", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Let's move the launch review to Friday at ten, and I'll send the agenda tonight." } }],
+    // A long text, cut short after its lines.
+    ["overlay-not-pasted-long", { phase: { kind: "notPasted", message: "Couldn't transcribe the end. Click to copy the rest.", text: "Thanks for the notes on the draft. I went through each of them and agree with most; the two I'd push back on are the timeline for the second phase, which I think is too tight given the holidays, and the budget line for travel, which we can probably cut in half if we do the kickoff remotely." } }],
+    // A word or two.
+    ["overlay-not-pasted-short", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Sounds good." } }],
+    // One unbroken word, wrapped inside the box.
+    ["overlay-not-pasted-unbroken", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: `https://example.com/${"a".repeat(400)}` } }],
+    // Five lines, kept as lines and cut short after three.
+    ["overlay-not-pasted-lines", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Line one\nLine two\nLine three\nLine four\nLine five" } }],
     ["overlay-agent-failed-long", { phase: { kind: "failed", message: "The selection holds what looks like a password or key, so it wasn't rewritten." }, mode: "agent" }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
-  ].map(([name, change]) => ({ name: name as string, page: "overlay/index.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),
+  ].map(([name, change]) => ({ name: name as string, page: "overlay/index.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true, ...(typeof name === "string" && name in noteLines ? { noteLines: noteLines[name] } : {}) })),
   ...(
     [
     // Resting between follow-ups, the last request's bubbles kept, the latest to run first.
@@ -189,6 +245,8 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
   const rendered = (await window.webContents.executeJavaScript(`(document.getElementById("root")?.childElementCount ?? 0) > 0`)) as boolean;
   const whole = shot.whole === undefined || ((await window.webContents.executeJavaScript(`(() => { const element = document.querySelector(${JSON.stringify(shot.whole)}); const box = element?.getBoundingClientRect(); if (box === undefined || box.top < 0 || box.bottom > innerHeight) return false; for (let above = element.parentElement; above !== null && above !== document.body; above = above.parentElement) { const clip = above.getBoundingClientRect(); if (getComputedStyle(above).overflowY !== "visible" && (box.top < clip.top || box.bottom > clip.bottom)) return false; } return true; })()`)) as boolean);
   if (errors > 0 || !rendered || !whole) throw new Error(`the page ${errors > 0 ? "logged errors" : !rendered ? "rendered nothing" : `cut off ${shot.whole}`}`);
+  const noteProblem = shot.noteLines === undefined ? null : ((await window.webContents.executeJavaScript(`(${noteLayoutProblem})(${noteTextMaxLines}, ${JSON.stringify(shot.noteLines)})`)) as string | null);
+  if (noteProblem !== null) throw new Error(`the not-pasted note is wrong: ${noteProblem}`);
   const image = await window.webContents.capturePage();
   writeFileSync(join(output, `${shot.name}.png`), image.toPNG());
   window.close();
@@ -204,5 +262,6 @@ void app.whenReady().then(async () => {
     });
   }
   process.stdout.write(`${process.exitCode === 1 ? "Some previews failed; saved the others" : `Saved ${shots.length} previews`} to ${output}\n`);
-  app.quit();
+  // With its status: `app.quit` ends Electron with 0 whatever `process.exitCode` says.
+  app.exit(process.exitCode === 1 ? 1 : 0);
 });

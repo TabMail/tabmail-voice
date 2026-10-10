@@ -308,6 +308,44 @@ body {
   pointer-events: none;
 }
 
+/* The not-pasted note: a card, its message and x over the box showing the text it copies. */
+.pill.note {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.note-header {
+  display: flex;
+  align-items: center;
+}
+
+.note-header .message {
+  flex: 1;
+}
+
+.note-text {
+  display: flex;
+  align-items: flex-start;
+  border-style: solid;
+  color: var(--secondary);
+  transition: border-color 0.15s ease-out, color 0.15s ease-out;
+}
+
+.note-text-content {
+  flex: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+/* The copy sign on the first line's center. */
+.note-text svg {
+  margin-top: 1px;
+}
+
 .note-close {
   flex-shrink: 0;
   display: flex;
