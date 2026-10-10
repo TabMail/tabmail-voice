@@ -48,3 +48,26 @@ test("the network is off in the worker", async () => {
   await reply(async () => ({ totalPages: 1, pages: [], nextPage: null, truncated: false, before: "", after: "" }));
   await expect(globalThis.fetch("https://example.com/")).rejects.toThrow("disabled");
 });
+
+test("keeps the process running until it replies", async () => {
+  // A pending WebAssembly compile holds no handle of the event loop: something else must, or the
+  // process ends mid-read with no reply. Waited on with immediates, which are no timers.
+  const timers = () => process.getActiveResourcesInfo().filter((kind) => kind === "Timeout").length;
+  const settle = async () => { for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve)); };
+  vi.resetModules();
+  port.removeAllListeners();
+  port.postMessage.mockReset();
+  let release: (value: unknown) => void = () => {};
+  realm.extract.mockReset().mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+  (process as { parentPort?: unknown }).parentPort = port;
+  await import("../../../src/main/documents/pdfWorker.js");
+  const idle = timers();
+  port.emit("message", { data: { bytes: new Uint8Array([1]), range: { startPage: 1, pageCount: 1 } } });
+  await settle();
+  expect(realm.extract).toHaveBeenCalledOnce();
+  expect(timers()).toBeGreaterThan(idle);
+  release({ totalPages: 1, pages: [], nextPage: null, truncated: false, before: "", after: "" });
+  await settle();
+  expect(port.postMessage).toHaveBeenCalledOnce();
+  expect(timers()).toBe(idle);
+});
