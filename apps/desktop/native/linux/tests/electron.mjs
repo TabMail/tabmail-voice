@@ -26,8 +26,6 @@ if (!process.env.GIO_LAUNCHED_DESKTOP_FILE) {
   child.on("exit", (code) => process.exit(code ?? 1));
 } else {
   app.commandLine.appendSwitch("force-renderer-accessibility");
-  // GNOME activates a new Wayland window, not a new X11 one, and reads only the active window.
-  app.commandLine.appendSwitch("ozone-platform", "wayland");
   main();
 }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

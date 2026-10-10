@@ -16,7 +16,7 @@ vi.mock("electron", () => ({
   nativeImage: {
     // Each image names its file; on Linux its pixels say which one it was (the marked one is fainter).
     createFromPath: (path: string) => ({
-      file: path.split("/").at(-1),
+      file: path.split(/[\\/]/).at(-1),
       template: false,
       setTemplateImage(template: boolean) { this.template = template; },
       toBitmap: () => Buffer.from([10, 20, 30, path.endsWith("Marked.png") ? 64 : 128]),
