@@ -96,6 +96,11 @@
       {
         "from": "native/windows/vendor/ia2/LICENSE.txt",
         "to": "helpers/IAccessible2-LICENSE.txt"
+      },
+      {
+        "from": "dist/runtime",
+        "to": "app.asar.unpacked/node_modules/@napi-rs/keyring-win32-${arch}-msvc",
+        "filter": ["vcruntime140.dll"]
       }
     ],
     "publish": [

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Builds for the current Windows guest's architecture with Visual Studio Build Tools, the newest
@@ -17,20 +17,28 @@ export function buildNative(root: string): void {
   execFileSync("cmake", ["--build", build, "--config", "Release", "--parallel", "2"], { stdio: "inherit" });
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });
-  // The linker CMake found dumps each helper's imports (`link /dump` is dumpbin).
-  const linker = /^CMAKE_LINKER:FILEPATH=(.+)$/m.exec(readFileSync(join(build, "CMakeCache.txt"), "utf8"))?.[1];
-  if (!linker) throw new Error("CMake recorded no linker to check the helpers' imports with");
   for (const helper of ["voice-hotkey.exe", "voice-windows.exe", "voice-microphone.exe", "voice-screen-reader.exe", "voice-field-reader.exe", "voice-productivity.exe"]) {
-    const imports = runtimeImports(execFileSync(linker, ["/dump", "/dependents", join(build, "Release", helper)], { encoding: "utf8" }));
-    if (imports.length > 0) throw new Error(`${helper} imports ${imports.join(", ")}, which Windows does not ship`);
     copyFileSync(join(build, "Release", helper), join(destination, helper));
   }
   process.stdout.write(`Copied Windows helpers to ${destination}\n`);
+  const runtime = join(root, "dist/runtime");
+  mkdirSync(runtime, { recursive: true });
+  copyFileSync(redistributableRuntime(build), join(runtime, "vcruntime140.dll"));
+  process.stdout.write(`Copied the Visual C++ runtime to ${runtime}\n`);
 }
 
-/** The Visual C++ runtime DLLs a helper imports, from `link /dump /dependents`: Windows does not
- * ship them and neither does the installer, so a helper that imports one does not start without
- * them (the helpers link the runtime statically). */
-export function runtimeImports(dependents: string): string[] {
-  return [...dependents.matchAll(/^\s*((?:msvcp|vcruntime|concrt)\d[\w.]*\.dll)\s*$/gim)].map(match => match[1]!);
+/** The newest Visual C++ runtime this build's Visual Studio redistributes for its architecture.
+ * The keyring addon (`@napi-rs/keyring`) imports `vcruntime140.dll`, which Windows does not ship;
+ * the app ships it beside the addon (electron-builder.json), where Windows looks for an addon's
+ * DLLs. The helpers link the runtime statically. */
+export function redistributableRuntime(build: string): string {
+  const linker = /^CMAKE_LINKER:FILEPATH=(.+)$/m.exec(readFileSync(join(build, "CMakeCache.txt"), "utf8"))?.[1];
+  const tools = linker?.lastIndexOf("/Tools/MSVC/") ?? -1;
+  if (!linker || tools < 0) throw new Error("CMake recorded no Visual Studio linker to find the C++ runtime by");
+  const redist = join(linker.slice(0, tools), "Redist/MSVC");
+  const newest = readdirSync(redist).filter(name => /^\d+(\.\d+)+$/.test(name)).sort((a, b) => b.localeCompare(a, "en", { numeric: true }))[0];
+  const folder = newest === undefined ? undefined : join(redist, newest, process.arch);
+  const crt = folder !== undefined && existsSync(folder) ? readdirSync(folder).find(name => /^Microsoft\.VC\d+\.CRT$/.test(name)) : undefined;
+  if (folder === undefined || crt === undefined) throw new Error(`No Visual C++ runtime for ${process.arch} in ${redist}`);
+  return join(folder, crt, "vcruntime140.dll");
 }

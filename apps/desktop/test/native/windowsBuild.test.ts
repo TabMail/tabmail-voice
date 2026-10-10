@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { buildNative, runtimeImports } from "../../scripts/windows/build-native.mts";
+import { buildNative, redistributableRuntime } from "../../scripts/windows/build-native.mts";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -15,65 +15,63 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 const helpers = ["voice-field-reader.exe", "voice-hotkey.exe", "voice-microphone.exe", "voice-productivity.exe", "voice-screen-reader.exe", "voice-windows.exe"];
-const linker = "C:/Synthetic Build Tools/bin/link.exe";
-
-/** What `link /dump /dependents` prints for a helper importing these DLLs. */
-function dependents(dlls: string[]): string {
-  return ["Microsoft (R) COFF/PE Dumper", "", "Dump of file helper.exe", "", "File Type: EXECUTABLE IMAGE", "",
-    "  Image has the following dependencies:", "", ...dlls.map(dll => `    ${dll}`), "", "  Summary"].join("\r\n");
-}
-const statically = ["KERNEL32.dll", "USER32.dll", "ole32.dll", "OLEAUT32.dll"];
-
-describe("which Visual C++ runtime DLLs a helper imports", () => {
-  test("a helper that links the runtime statically imports none", () => {
-    expect(runtimeImports(dependents(statically))).toEqual([]);
-  });
-
-  test("every runtime DLL a dynamically linked helper imports is named", () => {
-    expect(runtimeImports(dependents([...statically, "MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "concrt140.dll"])))
-      .toEqual(["MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "concrt140.dll"]);
-  });
-});
+const otherArch = process.arch === "arm64" ? "x64" : "arm64";
 
 describe("the Windows helper build", () => {
   const roots: string[] = [];
   afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-  /** A built tree for this machine's architecture, and helpers that import what `imports` says. */
-  function built(cache: string, imports: (helper: string) => string[]): string {
+  function file(path: string, contents: string): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, contents);
+  }
+
+  /** A built tree for this machine's architecture, by a Visual Studio whose redistributable folder
+   *  holds `redist` (version folder → architecture → its runtime). */
+  function built(redist: Record<string, Record<string, string>>, cache?: string): { root: string; build: string } {
     const root = mkdtempSync(join(tmpdir(), "voice-windows-build-"));
     roots.push(root);
+    const vc = join(root, "Synthetic Visual Studio/VC");
     const build = join(root, "native/windows/build", process.arch);
-    mkdirSync(join(build, "Release"), { recursive: true });
-    writeFileSync(join(build, "CMakeCache.txt"), cache);
-    for (const helper of helpers) writeFileSync(join(build, "Release", helper), helper);
-    vi.mocked(execFileSync).mockImplementation(((file: string, args: readonly string[]) => {
-      if (file === "cmake") return Buffer.alloc(0);
-      if (file === linker && args[0] === "/dump" && args[1] === "/dependents") return dependents(imports(basename(args[2]!)));
-      throw new Error(`unexpected command ${file}`);
+    file(join(build, "CMakeCache.txt"), cache ?? `CMAKE_GENERATOR:INTERNAL=Visual Studio\r\nCMAKE_LINKER:FILEPATH=${vc}/Tools/MSVC/14.50.35717/bin/Hostx64/${process.arch}/link.exe\r\nCMAKE_AR:FILEPATH=lib.exe\r\n`);
+    for (const helper of helpers) file(join(build, "Release", helper), helper);
+    for (const [version, arches] of Object.entries(redist)) {
+      for (const [arch, contents] of Object.entries(arches)) file(join(vc, "Redist/MSVC", version, arch, "Microsoft.VC145.CRT/vcruntime140.dll"), contents);
+    }
+    mkdirSync(join(vc, "Redist/MSVC/v145"), { recursive: true });
+    vi.mocked(execFileSync).mockImplementation(((command: string) => {
+      if (command === "cmake") return Buffer.alloc(0);
+      throw new Error(`unexpected command ${command}`);
     }) as typeof execFileSync);
-    return root;
+    return { root, build };
   }
-  const shipped = (root: string) => (existsSync(join(root, "dist/helpers")) ? readdirSync(join(root, "dist/helpers")).sort() : []);
-  const cache = `CMAKE_GENERATOR:INTERNAL=Visual Studio\r\nCMAKE_LINKER:FILEPATH=${linker}\r\nCMAKE_AR:FILEPATH=lib.exe\r\n`;
 
-  test("ships every helper once none imports the runtime", () => {
-    const root = built(cache, () => statically);
+  test("ships every helper, and the newest runtime of this architecture for the keyring addon", () => {
+    // Numbered, not lettered: 14.9 is older than 14.50.
+    const { root } = built({
+      "14.44.35112": { [process.arch]: "14.44 runtime" },
+      "14.50.35710": { [process.arch]: "14.50 runtime", [otherArch]: "14.50 runtime of the other architecture" },
+      "14.9.99999": { [process.arch]: "14.9 runtime" },
+    });
     buildNative(root);
-    expect(shipped(root)).toEqual(helpers);
-    const checked = vi.mocked(execFileSync).mock.calls.filter(([file]) => file === linker).map(([, args]) => basename(args![2]!)).sort();
-    expect(checked).toEqual(helpers);
+    expect(readdirSync(join(root, "dist/helpers")).sort()).toEqual(helpers);
+    expect(readFileSync(join(root, "dist/runtime/vcruntime140.dll"), "utf8")).toBe("14.50 runtime");
   });
 
-  test("ships no helper that imports the runtime, and fails", () => {
-    const root = built(cache, helper => (helper === "voice-microphone.exe" ? [...statically, "VCRUNTIME140.dll"] : statically));
-    expect(() => buildNative(root)).toThrow("voice-microphone.exe imports VCRUNTIME140.dll, which Windows does not ship");
-    expect(shipped(root)).not.toContain("voice-microphone.exe");
+  test("fails where the build's Visual Studio redistributes no runtime for this architecture", () => {
+    const { root } = built({ "14.50.35710": { [otherArch]: "14.50 runtime of the other architecture" } });
+    expect(() => buildNative(root)).toThrow(`No Visual C++ runtime for ${process.arch}`);
+    expect(existsSync(join(root, "dist/runtime/vcruntime140.dll"))).toBe(false);
+    const { build } = built({});
+    expect(() => redistributableRuntime(build)).toThrow(`No Visual C++ runtime for ${process.arch}`);
   });
 
-  test("fails, shipping nothing, where CMake recorded no linker to check with", () => {
-    const root = built("CMAKE_GENERATOR:INTERNAL=Visual Studio\n", () => statically);
-    expect(() => buildNative(root)).toThrow("CMake recorded no linker");
-    expect(shipped(root)).toEqual([]);
+  test("fails where CMake recorded no Visual Studio linker", () => {
+    for (const cache of ["CMAKE_GENERATOR:INTERNAL=Visual Studio\n", "CMAKE_LINKER:FILEPATH=C:/Synthetic Tools/bin/link.exe\n"]) {
+      const { root, build } = built({ "14.50.35710": { [process.arch]: "14.50 runtime" } }, cache);
+      expect(() => redistributableRuntime(build)).toThrow("CMake recorded no Visual Studio linker");
+      expect(() => buildNative(root)).toThrow("CMake recorded no Visual Studio linker");
+      expect(existsSync(join(root, "dist/runtime/vcruntime140.dll"))).toBe(false);
+    }
   });
 });

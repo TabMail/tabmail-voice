@@ -17,6 +17,19 @@ test("Windows packages every helper the main process can launch", () => {
   expect(builder.win.extraResources.find(resource => resource.from === "dist/helpers")?.filter?.slice().sort()).toEqual(launched);
 });
 
+/** The keyring addon imports the Visual C++ runtime, which Windows does not ship: the runtime the
+ * Windows build copies goes beside the addon of the architecture being packaged, the folder Windows
+ * looks in for an addon's DLLs. */
+test("Windows ships the C++ runtime beside the keyring addon", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { extraResources: { from: string; to: string; filter?: string[] }[] } };
+  const runtime = builder.win.extraResources.filter(resource => resource.from === "dist/runtime");
+  expect(runtime).toEqual([{ from: "dist/runtime", to: "app.asar.unpacked/node_modules/@napi-rs/keyring-win32-${arch}-msvc", filter: ["vcruntime140.dll"] }]);
+  const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")) as { packages: Record<string, { os?: string[]; cpu?: string[] }> };
+  for (const arch of ["x64", "arm64"]) {
+    expect(lock.packages[`node_modules/@napi-rs/keyring-win32-${arch}-msvc`]).toMatchObject({ os: ["win32"], cpu: [arch] });
+  }
+});
+
 /** What the packaged Mac app declares for the access it asks for (`voice-macos` for Calendar,
  * Reminders and Contacts, osascript for Notes and Messages): macOS ends a process that asks for
  * Calendar, Reminders or Contacts without the app's usage string, and the hardened runtime refuses
