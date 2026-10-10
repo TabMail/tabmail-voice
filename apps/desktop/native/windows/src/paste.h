@@ -45,10 +45,11 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     };
     stage("focus-check");
     Automation automation;
-    auto field = automation.focused(window);
+    const char* refusal = nullptr;
+    auto field = automation.focused(window, &refusal);
     // Send the ordinary paste command; the target decides whether to consume it.
     // Editable-value patterns govern field reading, not keyboard input.
-    if (!field) throw std::runtime_error("target focus unavailable or protected");
+    if (!field) throw std::runtime_error(std::string("target focus unavailable or protected: ") + (refusal ? refusal : "unknown"));
     DWORD pid = 0;
     GetWindowThreadProcessId(window, &pid);
     if (!pid || integrity(pid) > integrity(GetCurrentProcessId())) throw std::runtime_error("target integrity refused");
