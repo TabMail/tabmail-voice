@@ -4997,3 +4997,49 @@ during which the helper reports GNOME integration not ready and Settings asks fo
 (the existing `restart` state). Two paths now name the target, the Shell's and AT-SPI's, until the
 extension can answer everything the helpers ask.
 
+
+## ADR-DESK-057: On Windows, the Visual C++ runtime is installed system-wide by the installer
+
+**Context:** The Windows helpers, the Rust core and the keyring addon (`@napi-rs/keyring`, prebuilt
+by its maintainers) import the Visual C++ runtime (`vcruntime140.dll`, `msvcp140.dll`), which
+Windows does not ship; only the Universal CRT is part of Windows. The first hosted-runner builds
+found every helper and the addon would fail to load on a machine without Visual Studio. A first fix
+linked the runtime into the helpers and the core statically and shipped `vcruntime140.dll` beside
+the addon. Owner, 2026-10-10: rely on the DLL, "the proper commercial software way". Microsoft's
+guidance (Learn, "Choose a deployment method" and "Deployment in Visual C++") prefers the
+Redistributable installed centrally over a local copy or static linking, because Windows Update can
+service a central runtime and neither of the others; and the runtime must be at least as new as the
+newest toolset that built any binary using it (the first fix shipped runtime 14.44 beside an addon
+built with 14.51).
+
+**Decision:**
+- Nothing links the runtime in (`CMAKE_MSVC_RUNTIME_LIBRARY` and `+crt-static` are unset: the
+  defaults, the DLL runtime) and the app ships no copy of it.
+- The Windows build copies Microsoft's installer of the runtime for its architecture
+  (`vc_redist.<arch>.exe`, signed by Microsoft) from the newest version its Visual Studio
+  redistributes, to `dist/runtime/vc_redist.exe` (`runtimeInstaller` in
+  `scripts/windows/build-native.mts`).
+- The installer (`resources/windows/installer.nsh`, electron-builder's `customInit`) carries it and,
+  before anything is installed or replaced, reads the installed runtime of its architecture where
+  Microsoft records it (`HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\<arch>`: `Installed`,
+  `Major`, `Minor`). When it is missing or its major and minor version is older than the carried
+  installer's (read from that file when the installer is built), it runs Microsoft's installer
+  (`/install /passive /norestart`, `/quiet` in a silent install such as the update the app runs as
+  it quits), which asks for an administrator, and reads the version again. Still missing or older,
+  TabMail Voice says so and is not installed (exit 2): the version already installed stays as it was,
+  and an update reports it didn't install (ADR-DESK-050). Exit 3010 asks for a Windows restart to
+  finish.
+- The release (`tabmail-release-helpers`) checks that the runtime installer is signed by Microsoft,
+  that no installed file was built with a newer Visual C++ (its linker version) than that installer,
+  and that no copy of the runtime is installed with the app.
+
+**Consequences:**
+- A user without the runtime, or with an older one, sees Windows' administrator prompt once when
+  installing, or when an update needs a newer runtime than they have; one without an administrator
+  can't install TabMail Voice until someone installs the runtime. Everyone else installs for
+  themselves with no prompt, as before.
+- The installer is larger by Microsoft's installer (about 25 MB on x64).
+- Electron itself links its runtime statically; that is Electron's choice, not ours.
+- A runner whose Visual Studio redistributes an older runtime than a prebuilt addon was built with
+  fails the release rather than shipping it; the x64 Windows build runs on a runner with Visual
+  Studio 2026.

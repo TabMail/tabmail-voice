@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { buildNative, redistributableRuntime } from "../../scripts/windows/build-native.mts";
+import { buildNative, runtimeInstaller } from "../../scripts/windows/build-native.mts";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -27,7 +27,7 @@ describe("the Windows helper build", () => {
   }
 
   /** A built tree for this machine's architecture, by a Visual Studio whose redistributable folder
-   *  holds `redist` (version folder → architecture → its runtime). */
+   *  holds `redist` (version folder → architecture → its runtime installer). */
   function built(redist: Record<string, Record<string, string>>, cache?: string): { root: string; build: string } {
     const root = mkdtempSync(join(tmpdir(), "voice-windows-build-"));
     roots.push(root);
@@ -36,7 +36,7 @@ describe("the Windows helper build", () => {
     file(join(build, "CMakeCache.txt"), cache ?? `CMAKE_GENERATOR:INTERNAL=Visual Studio\r\nCMAKE_LINKER:FILEPATH=${vc}/Tools/MSVC/14.50.35717/bin/Hostx64/${process.arch}/link.exe\r\nCMAKE_AR:FILEPATH=lib.exe\r\n`);
     for (const helper of helpers) file(join(build, "Release", helper), helper);
     for (const [version, arches] of Object.entries(redist)) {
-      for (const [arch, contents] of Object.entries(arches)) file(join(vc, "Redist/MSVC", version, arch, "Microsoft.VC145.CRT/vcruntime140.dll"), contents);
+      for (const [arch, contents] of Object.entries(arches)) file(join(vc, "Redist/MSVC", version, `vc_redist.${arch}.exe`), contents);
     }
     mkdirSync(join(vc, "Redist/MSVC/v145"), { recursive: true });
     vi.mocked(execFileSync).mockImplementation(((command: string) => {
@@ -46,7 +46,7 @@ describe("the Windows helper build", () => {
     return { root, build };
   }
 
-  test("ships every helper, and the newest runtime of this architecture for the keyring addon", () => {
+  test("ships every helper, and the newest runtime installer of this architecture for the app's installer", () => {
     // Numbered, not lettered: 14.9 is older than 14.50.
     const { root } = built({
       "14.44.35112": { [process.arch]: "14.44 runtime" },
@@ -55,23 +55,25 @@ describe("the Windows helper build", () => {
     });
     buildNative(root);
     expect(readdirSync(join(root, "dist/helpers")).sort()).toEqual(helpers);
-    expect(readFileSync(join(root, "dist/runtime/vcruntime140.dll"), "utf8")).toBe("14.50 runtime");
+    expect(readFileSync(join(root, "dist/runtime/vc_redist.exe"), "utf8")).toBe("14.50 runtime");
+    expect(readdirSync(join(root, "dist/runtime"))).toEqual(["vc_redist.exe"]);
   });
 
-  test("fails where the build's Visual Studio redistributes no runtime for this architecture", () => {
-    const { root } = built({ "14.50.35710": { [otherArch]: "14.50 runtime of the other architecture" } });
-    expect(() => buildNative(root)).toThrow(`No Visual C++ runtime for ${process.arch}`);
-    expect(existsSync(join(root, "dist/runtime/vcruntime140.dll"))).toBe(false);
+  test("fails where the build's newest redistributable has no runtime installer for this architecture", () => {
+    // An older version's installer is not taken instead: the newest is the one this build's tools need.
+    const { root } = built({ "14.44.35112": { [process.arch]: "14.44 runtime" }, "14.50.35710": { [otherArch]: "14.50 runtime of the other architecture" } });
+    expect(() => buildNative(root)).toThrow(`No Visual C++ runtime installer for ${process.arch}`);
+    expect(existsSync(join(root, "dist/runtime/vc_redist.exe"))).toBe(false);
     const { build } = built({});
-    expect(() => redistributableRuntime(build)).toThrow(`No Visual C++ runtime for ${process.arch}`);
+    expect(() => runtimeInstaller(build)).toThrow(`No Visual C++ runtime installer for ${process.arch}`);
   });
 
   test("fails where CMake recorded no Visual Studio linker", () => {
     for (const cache of ["CMAKE_GENERATOR:INTERNAL=Visual Studio\n", "CMAKE_LINKER:FILEPATH=C:/Synthetic Tools/bin/link.exe\n"]) {
       const { root, build } = built({ "14.50.35710": { [process.arch]: "14.50 runtime" } }, cache);
-      expect(() => redistributableRuntime(build)).toThrow("CMake recorded no Visual Studio linker");
+      expect(() => runtimeInstaller(build)).toThrow("CMake recorded no Visual Studio linker");
       expect(() => buildNative(root)).toThrow("CMake recorded no Visual Studio linker");
-      expect(existsSync(join(root, "dist/runtime/vcruntime140.dll"))).toBe(false);
+      expect(existsSync(join(root, "dist/runtime/vc_redist.exe"))).toBe(false);
     }
   });
 });
