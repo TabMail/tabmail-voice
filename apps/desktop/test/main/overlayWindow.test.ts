@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { deferred } from "../support/stubs.js";
 import type { BrowserWindow } from "electron";
 import * as config from "../../src/core/config.js";
@@ -40,6 +40,15 @@ function overlayWindow(): BrowserWindow {
   } as unknown as BrowserWindow;
 }
 
+/** Every shape any overlay window was cut to. Cutting the window (`setShape`) crashed Xwayland on
+ * Ubuntu, so no overlay, in any mode or state, ever cuts it. */
+let shapesTaken: unknown[] = [];
+afterEach(() => {
+  const taken = shapesTaken;
+  shapesTaken = [];
+  expect(taken).toEqual([]);
+});
+
 /** An overlay window that keeps its bounds and whether it lets the mouse through. */
 function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[] } {
   let visible = false;
@@ -69,6 +78,9 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
     setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
       ignoresMouse = ignore;
       forwardsMouse = options?.forward === true;
+    },
+    setShape: (rects: Rect[]) => {
+      shapesTaken.push(rects);
     },
   } as unknown as BrowserWindow;
   return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames };
