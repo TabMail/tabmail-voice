@@ -14,30 +14,48 @@ import * as config from "../config.js";
  * the floor down for seconds). Each weight is therefore at least 1/n for the n-th reading, making
  * the envelopes plain running averages while few readings exist; the window grows until the EMA's
  * own weight takes over (n = 1/alpha, ≈ 4 s for the slow side).
+ *
+ * A voice is told in the voice band (`LevelSampler`'s second reading), against the room's noise
+ * there, which starts from the noise the last dictation left (`room`): a voice from the first
+ * reading on is heard at once instead of being taken for the room.
  */
 export class LevelEnvelope {
   private floor: number | undefined;
   private peak: number | undefined;
   private count = 0;
-  /** The room's noise for telling a voice: a floor of its own, left without the first
-   * `waveformVoiceWarmupReadings` readings, where a start-up blip or a reading part digital silence
-   * would hold it below the room. */
+  /** The room's noise in the voice band, for telling a voice: a floor of its own (down fast, up
+   * slowly), from `room` or else the first reading it takes, left without the first
+   * `waveformVoiceWarmupReadings` readings and any of digital silence, where a start-up blip or a
+   * reading part digital silence would hold it below the room. */
   private noise: number | undefined;
   private voiced = false;
 
-  /** True once a reading stood `waveformVoiceAboveNoiseDecibels` above the room's noise as it stood
-   * before that reading: a voice, by loudness alone (a loud noise counts too). Once true, true for
-   * this envelope's life (one dictation, or one spoken answer). */
+  /** `room`: the room's noise the last dictation or spoken answer left (`room`), if any. */
+  constructor(room?: number) {
+    this.noise = room;
+  }
+
+  /** True once a voice-band reading stood `waveformVoiceAboveNoiseDecibels` above the room's noise
+   * as it stood before that reading: a voice, by loudness alone (a loud noise counts too). Once
+   * true, true for this envelope's life (one dictation, or one spoken answer). */
   get hasVoice(): boolean {
     return this.voiced;
   }
 
-  level(decibels: number): number {
+  /** The room's noise in the voice band as it stands, for the next envelope to start from. */
+  get room(): number | undefined {
+    return this.noise;
+  }
+
+  /** `decibels` moves the waveform; `voiceDecibels`, the same interval's voice band, tells a voice. */
+  level(decibels: number, voiceDecibels: number): number {
     this.count += 1;
-    const sinceWarmup = this.count - config.waveformVoiceWarmupReadings;
-    if (sinceWarmup > 0) {
-      if (this.noise !== undefined && decibels - this.noise >= config.waveformVoiceAboveNoiseDecibels) this.voiced = true;
-      this.noise = LevelEnvelope.follow(this.noise ?? decibels, decibels, true, sinceWarmup);
+    if (this.count > config.waveformVoiceWarmupReadings && voiceDecibels > config.silenceDecibels) {
+      if (this.noise === undefined) this.noise = voiceDecibels;
+      else {
+        if (voiceDecibels - this.noise >= config.waveformVoiceAboveNoiseDecibels) this.voiced = true;
+        this.noise += (voiceDecibels - this.noise) * (voiceDecibels < this.noise ? config.envelopeFastAlpha : config.envelopeSlowAlpha);
+      }
     }
     const floor = LevelEnvelope.follow(this.floor ?? decibels, decibels, true, this.count);
     const peak = LevelEnvelope.follow(this.peak ?? decibels, decibels, false, this.count);

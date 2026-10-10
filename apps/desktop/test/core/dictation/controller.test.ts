@@ -5471,6 +5471,58 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("cancel");
     });
 
+    /** The microphone starts about half a second after the key, so a voice often comes with its first
+     * audio: the next dictation hears it as the warm-up ends, against the room the last one left,
+     * and that room alone stays no voice (owner, 2026-10-09: "the waveform turns blue often quite
+     * late"). */
+    test("a voice from a dictation's first audio takes the recording colour at once", async () => {
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      const noise = 0.01;
+      const listen = async () => {
+        const starts = capture.starts;
+        controller.handle("start");
+        expect(await eventually(() => capture.starts === starts + 1)).toBe(true);
+      };
+
+      await listen();
+      for (let reading = 0; reading < 20; reading += 1) capture.hearWindow(noise);
+      controller.handle("cancel");
+
+      await listen();
+      for (let reading = 0; reading <= config.waveformVoiceWarmupReadings; reading += 1) capture.hearWindow(noise * 10);
+      expect(controller.hasVoice).toBe(true);
+      controller.handle("cancel");
+
+      await listen();
+      for (let reading = 0; reading < 20; reading += 1) capture.hearWindow(noise);
+      expect(controller.hasVoice).toBe(false);
+      controller.handle("cancel");
+    });
+
+    /** A quiet voice under a room's louder mains hum (the full band barely louder) is heard, and the
+     * hum alone is not: the voice is told in its band (`VoiceBand`). */
+    test("a voice under a room's louder hum takes the recording colour, and the hum alone does not", async () => {
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      // One continuous stream (a restarted sine would click, and a click is in the voice band).
+      let frame = 0;
+      const sound = (hum: number, voice: number) => {
+        const samples = new Float32Array(config.audioChunkFrames * 10);
+        for (let index = 0; index < samples.length; index += 1, frame += 1) samples[index] = hum * Math.sin((2 * Math.PI * 50 * frame) / config.recordingSampleRate) + voice * Math.sin((2 * Math.PI * 1_000 * frame) / config.recordingSampleRate);
+        return samples;
+      };
+      controller.handle("start");
+      expect(await eventually(() => capture.starts === 1)).toBe(true);
+      capture.feed(sound(0.02, 0));
+      capture.feed(sound(0.02, 0));
+      expect(controller.isHearing).toBe(true);
+      expect(controller.hasVoice).toBe(false);
+      capture.feed(sound(0.02, 0.003));
+      expect(controller.hasVoice).toBe(true);
+      controller.handle("cancel");
+    });
+
     /** With no name set, switching to agent mode shows the tip inviting one, until it switches back;
      * with a name, it never shows. It is never used up: every switch shows it again. */
     test("the name tip shows in agent mode while no name is set", async () => {

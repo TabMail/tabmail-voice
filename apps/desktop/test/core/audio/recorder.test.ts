@@ -233,9 +233,15 @@ describe("loudness", () => {
 /** Levels measured on a quiet display microphone: room noise ≈ −45 dB, short utterances peak
  * ≈ −42.5 dB, longer speech −35 to −40 dB. */
 describe("LevelEnvelope", () => {
+  /** A reading whose sound is all in the voice band: the same loudness for the waveform and for
+   * telling a voice. */
+  function hear(envelope: LevelEnvelope, dB: number): number {
+    return envelope.level(dB, dB);
+  }
+
   function run(envelope: LevelEnvelope, dB: number, times: number): number {
     let result = 0;
-    for (let index = 0; index < times; index += 1) result = envelope.level(dB);
+    for (let index = 0; index < times; index += 1) result = hear(envelope, dB);
     return result;
   }
 
@@ -243,7 +249,7 @@ describe("LevelEnvelope", () => {
   test("quiet mic speech barely above the room moves", () => {
     const envelope = new LevelEnvelope();
     run(envelope, -45, 30);
-    expect(envelope.level(-42.5)).toBeGreaterThan(0.4);
+    expect(hear(envelope, -42.5)).toBeGreaterThan(0.4);
   });
 
   /** Adapts to the range coming in: after speech, the loud end sits near the speech, so louder
@@ -254,8 +260,8 @@ describe("LevelEnvelope", () => {
       run(envelope, -60, 3);
       run(envelope, -20, 3);
     }
-    const loud = envelope.level(-20);
-    const medium = envelope.level(-35);
+    const loud = hear(envelope, -20);
+    const medium = hear(envelope, -35);
     expect(loud).toBeGreaterThan(0.9);
     expect(medium).toBeGreaterThan(0.2);
     expect(medium).toBeLessThan(loud - 0.2);
@@ -267,11 +273,11 @@ describe("LevelEnvelope", () => {
     const envelope = new LevelEnvelope();
     run(envelope, -70, 3);
     for (let index = 0; index < 6; index += 1) {
-      envelope.level(-45);
-      envelope.level(-38);
+      hear(envelope, -45);
+      hear(envelope, -38);
     }
-    expect(envelope.level(-45)).toBeLessThan(0.4);
-    expect(envelope.level(-38)).toBeGreaterThan(0.6);
+    expect(hear(envelope, -45)).toBeLessThan(0.4);
+    expect(hear(envelope, -38)).toBeGreaterThan(0.6);
   });
 
   /** A steady hum settles low rather than holding the bars up. */
@@ -284,13 +290,13 @@ describe("LevelEnvelope", () => {
   test("hears a voice above the room's noise", () => {
     const under = new LevelEnvelope();
     run(under, -45, 20);
-    under.level(-45 + config.waveformVoiceAboveNoiseDecibels - 0.2);
+    hear(under, -45 + config.waveformVoiceAboveNoiseDecibels - 0.2);
     expect(under.hasVoice).toBe(false);
 
     const over = new LevelEnvelope();
     run(over, -45, 20);
     expect(over.hasVoice).toBe(false);
-    over.level(-45 + config.waveformVoiceAboveNoiseDecibels + 0.2);
+    hear(over, -45 + config.waveformVoiceAboveNoiseDecibels + 0.2);
     expect(over.hasVoice).toBe(true);
     run(over, -45, 20);
     expect(over.hasVoice).toBe(true);
@@ -301,20 +307,56 @@ describe("LevelEnvelope", () => {
   test("hears no voice in room noise after a start-up blip", () => {
     for (const start of [[-70, -70, -70], [-52]]) {
       const envelope = new LevelEnvelope();
-      for (const reading of start) envelope.level(reading);
+      for (const reading of start) hear(envelope, reading);
       run(envelope, -45, 30);
       expect(envelope.hasVoice).toBe(false);
     }
   });
 
-  /** Speech from the first reading on is heard at its first pause and the word after it. */
+  /** With no room to start from (the first dictation), speech from the first reading on is heard
+   * at its first pause and the word after it. */
   test("hears a voice that starts at once", () => {
     const envelope = new LevelEnvelope();
     run(envelope, -35, 8);
     run(envelope, -45, 2);
     expect(envelope.hasVoice).toBe(false);
-    envelope.level(-35);
+    hear(envelope, -35);
     expect(envelope.hasVoice).toBe(true);
+  });
+
+  /** The microphone starts about half a second after the key, so speech often comes with its first
+   * reading: against the room the last dictation left, it is heard as the warm-up ends, and that
+   * room alone is still no voice (owner, 2026-10-09: the waveform turned blue late). */
+  test("hears a voice that starts at once against the room the last dictation left", () => {
+    const last = new LevelEnvelope();
+    run(last, -45, 30);
+    const speaking = new LevelEnvelope(last.room);
+    run(speaking, -35, config.waveformVoiceWarmupReadings + 1);
+    expect(speaking.hasVoice).toBe(true);
+
+    const quiet = new LevelEnvelope(last.room);
+    run(quiet, -45, 30);
+    expect(quiet.hasVoice).toBe(false);
+  });
+
+  /** Digital silence (a dropout) is not the room: it leaves the room's noise where it was, so the
+   * room after it is no voice, in this dictation or the next. */
+  test("digital silence leaves the room's noise as it was", () => {
+    const envelope = new LevelEnvelope(-45);
+    run(envelope, config.silenceDecibels, 10);
+    run(envelope, -45, 5);
+    expect(envelope.hasVoice).toBe(false);
+    expect(envelope.room).toBeCloseTo(-45, 5);
+  });
+
+  /** A voice is told in the voice band: a quiet voice over a room's louder hum lifts the voice band
+   * well past the room there while the full band barely moves. */
+  test("tells a voice in the voice band, under a room's louder hum", () => {
+    const humming = new LevelEnvelope();
+    for (let index = 0; index < 20; index += 1) humming.level(-30, -60);
+    expect(humming.hasVoice).toBe(false);
+    humming.level(-29.8, -50);
+    expect(humming.hasVoice).toBe(true);
   });
 });
 
