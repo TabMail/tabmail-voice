@@ -32,10 +32,8 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
             if (method == "focusedFieldValue" &&
                 (!target->pid || !params.contains("pid") || !params["pid"].is_number_unsigned() || params["pid"] != target->pid)) return nullptr;
             const auto path = voice::ancestors(target->focus);
-            const auto window = std::find_if(path.begin(), path.end(), [](const auto& node) {
-                const auto role = voice::role(node); return role == ATSPI_ROLE_FRAME || role == ATSPI_ROLE_DIALOG || role == ATSPI_ROLE_WINDOW;
-            });
-            if (window == path.end()) { std::cerr << "debug screen: focused window unavailable\n"; return nullptr; }
+            const auto window = voice::windowOf(path);
+            if (!window) { std::cerr << "debug screen: focused window unavailable\n"; return nullptr; }
             if (method == "readScreen") {
                 voice::LiveScreenTree tree(*window);
                 tree.focusKept = [&](const voice::Node& node) {

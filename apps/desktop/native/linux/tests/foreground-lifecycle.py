@@ -180,6 +180,21 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert field() == {'value': 'Synthetic field content'}
         elif not reader:
             assert request('frontmostApp') == {'window': window, 'pid': first}
+        # Gmail's compose box is a dialog in the page, not a window: the focus moving into it keeps the
+        # window in front the target, by its token, and the screen read is the whole window's.
+        command('w')
+        if reader:
+            read = screen()['renderedText']
+            assert 'First synthetic app' in read and 'Synthetic compose content' in read, 'a web dialog is read with its window'
+        elif fields:
+            assert field() == {'value': 'Synthetic compose content'}, "the dialog's field is read"
+        else:
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'a web dialog keeps its window as the target'
+        command('W')
+        if fields:
+            assert field() == {'value': 'Synthetic field content'}
+        elif not reader:
+            assert request('frontmostApp') == {'window': window, 'pid': first}
         # A GTK 4 window drops its field's focus while the Shell holds the keyboard (GNOME Text
         # Editor): the selection read at the key's press is still the field's, not withheld.
         command('l')

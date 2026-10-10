@@ -102,11 +102,8 @@ private:
     void remember(const Node& focus) {
         if (current && same(current->focus, focus)) return;
         const auto path = ancestors(focus);
-        const auto window = std::find_if(path.begin(), path.end(), [](const Node& node) {
-            const auto kind = role(node);
-            return kind == ATSPI_ROLE_FRAME || kind == ATSPI_ROLE_DIALOG || kind == ATSPI_ROLE_WINDOW;
-        });
-        if (window == path.end()) { current.reset(); return; }
+        const auto window = windowOf(path);
+        if (!window) { current.reset(); return; }
         // The dictation target is the original app/window, not the original field
         // or caret. Moving between fields in that window must keep its identity.
         if (!same(tokenWindow, *window)) {

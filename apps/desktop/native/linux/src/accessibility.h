@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <atspi/atspi.h>
@@ -87,6 +88,17 @@ inline std::vector<Node> ancestors(const Node& focus) {
         path.push_back(node);
     }
     return path;
+}
+// The window an element is in: the outermost frame, dialog or window on its path (`ancestors`, nearest
+// first), the app's own; null where there is none. A web page's dialog (Gmail's compose box) is a
+// dialog inside that window, not a window of its own: taken as one, the screen read saw only the
+// dialog, and the focus moving into it named another window (2026-10-10).
+inline const Node* windowOf(const std::vector<Node>& path) {
+    const auto window = std::find_if(path.rbegin(), path.rend(), [](const Node& node) {
+        const auto kind = role(node);
+        return kind == ATSPI_ROLE_FRAME || kind == ATSPI_ROLE_DIALOG || kind == ATSPI_ROLE_WINDOW;
+    });
+    return window == path.rend() ? nullptr : &*window;
 }
 inline bool password(const Node& node) { return role(node) == ATSPI_ROLE_PASSWORD_TEXT; }
 // The focused element's caret in its window's coordinates: geometry only, one

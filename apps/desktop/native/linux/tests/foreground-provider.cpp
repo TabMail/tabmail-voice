@@ -17,6 +17,10 @@ AtspiAccessible *desktop, *apps[2], *windows[2], *documents[2], *fields[2], *sec
 // The Shell's own window and the actor that holds the keyboard for the dictation key.
 AtspiAccessible *shellWindow, *shellPanel;
 bool holding = false;
+// Gmail's compose box: a dialog in the page with a field of its own, which takes the focus ('w') and
+// gives it back ('W').
+AtspiAccessible *dialogs[2], *dialogFields[2];
+bool inDialog = false;
 // Whether the Shell says which window has the focus (the extension's `Focus`, from version 3): each
 // synthetic window by an id of its own, with its app's process.
 bool shellFocus = false;
@@ -108,6 +112,16 @@ gboolean command(gint fd, GIOCondition, gpointer) {
         focusLost = true; event("object:state-changed:focused", fields[active], 0);
     }
     if (value == 'u') items.at(fields[active]).live.clear();
+    if ((value == 'w' || value == 'W') && active >= 0) {
+        if (!dialogs[active]) {
+            dialogs[active] = node(ATSPI_ROLE_DIALOG, documents[active]);
+            dialogFields[active] = node(ATSPI_ROLE_ENTRY, dialogs[active], "Synthetic compose content");
+            clear(windows[active]);
+        }
+        inDialog = value == 'w';
+        event("object:state-changed:focused", inDialog ? fields[active] : dialogFields[active], 0);
+        event("object:state-changed:focused", inDialog ? dialogFields[active] : fields[active], 1);
+    }
     if (value == 'F') shellFocus = true;
     if (value == 'N') shellFocus = false;
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
@@ -165,7 +179,7 @@ extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*
     atspi_state_set_add(states, ATSPI_STATE_SHOWING);
     if (active >= 0 && value == windows[active]) atspi_state_set_add(states, ATSPI_STATE_ACTIVE);
     if (active >= 0 && containerFocused && value == documents[active]) atspi_state_set_add(states, ATSPI_STATE_FOCUSED);
-    if (active >= 0 && exposed && !focusLost && value == fields[active]) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
+    if (active >= 0 && exposed && !focusLost && value == (inDialog ? dialogFields[active] : fields[active])) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
     return states;
 }
 extern "C" gint __wrap_atspi_accessible_get_child_count(AtspiAccessible* root, GError**) { return children(root).size(); }
