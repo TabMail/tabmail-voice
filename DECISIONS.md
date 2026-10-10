@@ -4808,3 +4808,14 @@ question. So:
 - The working pill is an empty circle in agent mode as in dictation, its rim or arc circling, no
   icon; the sparkles stay only on the resting pill under the chat window (`agentRestingSymbolSize`,
   was `agentRunningSymbolSize`).
+
+**Amendment 2026-10-09 (owner): the chat window always shows what is going on.** The owner: *"in
+agent mode always show what's going on … even when the agent doesn't answer, just show the searching
+the web or whatever thing, the tool that's running and the user request … it's better to show user
+inputs being accepted there, and then as tools run, just showing what's going on."* So the chat
+window opens as an agent request is heard, with the request in it and "Thinking" under it, then each
+tool's progress label while it runs (a tool here, or the backend's, such as the web search). This
+replaces the 2026-10-07 rule above that only a reply or a question opens it. Unchanged: a write
+still closes the window before the text is pasted, a failed or canceled request closes a window
+with nothing else in it, the loop thinks under no bubble, and Answer's bubble runs only once the
+agent replies. The window opens inactive (`showInactive`), so the app the text goes to keeps focus.

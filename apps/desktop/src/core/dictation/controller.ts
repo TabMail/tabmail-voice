@@ -761,6 +761,11 @@ export class DictationController extends Observable {
           if (target !== null && isCurrent()) corrections.watch(target, text, { apps: settings.excludedApps, sites: settings.excludedSites });
         }
       } else {
+        // The request shows in the chat window as soon as it is heard, and under it what the agent
+        // does as it runs, whether it then answers or writes (owner, 2026-10-09: "always show what's
+        // going on").
+        const chat = this.currentChat;
+        this.setChat({ ...(chat ?? this.newChat()), pendingRequest: transcript });
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
         const waiting = performance.now();
         const screen = read ? await withTimeout(this.agentScreenWait, () => read).catch(() => null) : null;
@@ -776,9 +781,7 @@ export class DictationController extends Observable {
         // The tools the bubbles show: the same read and settings.
         const offered = DesktopAgent.tools(context, settings.enabledTools);
         if (offered.length === 0) throw new AgentError("noToolEnabled");
-        const chat = this.currentChat;
         const conversation = chat ? chatTranscript(chat) : "";
-        if (chat) this.setChat({ ...chat, pendingRequest: transcript });
         // The loop thinks under no tool's bubble: only an app whose tool runs, until the agent answers
         // or writes.
         this.setPhase({ kind: "running", tool: null });
@@ -795,7 +798,7 @@ export class DictationController extends Observable {
           client,
           account,
           userID,
-          (call, round) => this.runConnectorTool(call, round, connectorTools, transcript, isCurrent, signal),
+          (call, round) => this.runConnectorTool(call, round, connectorTools, isCurrent, signal),
           (event) => this.serverToolRan(event, isCurrent),
           signal,
         );
@@ -1071,13 +1074,13 @@ export class DictationController extends Observable {
 
   /** Runs a tool agent mode's model called, and returns what the model reads next: the tool's
    * result, that the user declined, what the user answered aloud, or why it could not run. The chat
-   * window opens (if the request was not a follow-up) only for a tool that sends or creates, to ask
-   * first; an open one shows which tool runs. An answer spoken to the question goes to the model, which reads
+   * window, open since the request was heard, shows which tool runs, and asks first for a tool that
+   * sends or creates. An answer spoken to the question goes to the model, which reads
    * whether it agrees and answers the question for the user (`config.confirmationTool`): confirmed,
    * the call that asked runs as the user was shown it. The confirmation names the question it answers
    * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
    * about as usual. */
-  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     const waiting = this.answeredAloud;
     if (call.function.name === config.confirmationTool) {
       const answer = parsedJSON(call.function.arguments);
@@ -1127,10 +1130,9 @@ export class DictationController extends Observable {
     // Preparing a confirmation may resolve a local file path asynchronously. A canceled or
     // superseded request must never reopen its question or run the tool after that lookup.
     if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
-    // Closing the window or ending the request declines the question (`teardown`). Only a question
-    // opens the chat window; a tool that just looks something up runs without it (owner, 2026-10-07).
+    // Closing the window or ending the request declines the question (`teardown`); the window is
+    // open from the request's start.
     if (question !== null) {
-      this.setChat({ ...(this.currentChat ?? this.newChat()), pendingRequest: request });
       const answer = await this.confirm(question);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
@@ -1633,8 +1635,7 @@ export class DictationController extends Observable {
     this.setChat({ ...chat, closesAt: Date.now() + this.chatTimeout });
   }
 
-  /** The chat window as it opens, empty and untouched: for an answer, or a tool the answer's model
-   * calls. */
+  /** The chat window as it opens, empty and untouched: for an agent request, as soon as it is heard. */
   private newChat(): AgentChat {
     log.debug("DictationController: chat window opened");
     return emptyChat;
