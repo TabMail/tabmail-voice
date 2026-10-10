@@ -231,6 +231,10 @@ try {
     .replace(/^debug clipboard keeper: (clipboard (saved|not to be saved|put back) after \d+ms|clipboard unchanged since it was saved|no save of the clipboard as it was; it won't be put back|clipboard changed since the paste; not put back|clipboard couldn't be put back|nothing saved to put back; the paste's text stays)\n/gmu, ""),
   "", "only categorical, timed insertion diagnostics are emitted");
   process.stdout.write("Windows insertion, clipboard save and put-back, cancellation, privacy and refusal checks passed\n");
+} catch (error) {
+  // The helpers' own lines say why a request failed: fixed phrases and timings, never text.
+  process.stderr.write(`${errors.slice(-2000)}\n`);
+  throw error;
 } finally {
   clearTimeout(timeout); helper.kill(); fixture.kill(); helperLines.close(); fixtureLines.close();
 }

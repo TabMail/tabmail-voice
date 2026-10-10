@@ -406,7 +406,7 @@ async function main() {
     process.stderr.write(stderr);
     process.stderr.write(readerErrors);
     process.stderr.write(fieldReaderErrors);
-    process.stderr.write(`${error.stack}\n`);
+    process.stderr.write(`failed at ${stage}\n${error.stack}\n`);
     app.exit(1);
   } finally {
     clearTimeout(timeout); activator?.kill(); helper?.kill(); reader?.kill(); fieldReader?.kill(); lines?.close();
