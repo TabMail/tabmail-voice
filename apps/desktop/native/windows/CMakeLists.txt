@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.24)
 project(TabMailVoiceWindows LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# The C++ runtime is linked into each helper (the Rust core links it the same way, in its
+# .cargo/config.toml): Windows does not ship it, and the installer does not either.
+set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
 include(CTest)
 
 include(../shared/rust/VoiceCore.cmake)
