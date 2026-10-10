@@ -22,7 +22,7 @@ int main() {
     // While the Shell holds the keyboard for the dictation key, the window in front keeps no focus
     // yet stays the target: the reader asks the extension, as the helper does (ADR-DESK-052).
     voice::GnomeCaret gnomeCaret;
-    voice::Foreground foreground([&] { return gnomeCaret.holding(); });
+    voice::Foreground foreground([&] { return gnomeCaret.holding(); }, [&] { return gnomeCaret.focus(); });
     const auto serve = [&](const std::string& method, const nlohmann::json& params, voice::Channel::Reply reply, int64_t) {
         if (method != "readScreen") throw std::runtime_error("unknown method");
         reply(voice::focusedRead(method, params, foreground), true);

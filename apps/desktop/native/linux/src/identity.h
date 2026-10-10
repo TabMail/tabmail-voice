@@ -10,6 +10,14 @@
 
 namespace voice {
 struct AppIdentity { std::string id, name; };
+// Whether `pid` is a sandbox's bus proxy (Flatpak's xdg-dbus-proxy): a sandboxed app reaches the
+// accessibility bus through it, so the bus names the proxy's process, never the app's own.
+inline bool busProxy(unsigned pid) {
+    if (!pid) return false;
+    std::ifstream name(std::filesystem::path("/proc") / std::to_string(pid) / "comm");
+    std::string value;
+    return std::getline(name, value) && value == "xdg-dbus-proxy";
+}
 // Resolve local launcher metadata, never the remote app's accessible name/title.
 // Ambiguous executables are unknown rather than an identity that bypasses exclusions.
 inline std::optional<AppIdentity> desktopIdentity(unsigned pid) {

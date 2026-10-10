@@ -20,6 +20,9 @@ struct Element {
     std::string display = "block";
     bool editable = true;
     AtspiRole role = ATSPI_ROLE_PARAGRAPH;
+    // Whether its state says it has the focus (a GTK 4 window gives its up while the Shell holds
+    // the keyboard).
+    bool focused = true;
 };
 std::map<const void*, Element> elements;
 std::map<const void*, std::pair<int, AtspiAccessible*>> hyperlinks;
@@ -71,7 +74,8 @@ extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* v
 extern "C" AtspiRole __wrap_atspi_accessible_get_role(AtspiAccessible* value, GError**) { return at(value).role; }
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto result = atspi_state_set_new(nullptr);
-    atspi_state_set_add(result, ATSPI_STATE_SHOWING); atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
+    atspi_state_set_add(result, ATSPI_STATE_SHOWING);
+    if (!elements.count(value) || at(value).focused) atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
     if (elements.count(value) && at(value).editable) atspi_state_set_add(result, ATSPI_STATE_EDITABLE);
     return result;
 }
@@ -109,6 +113,28 @@ int main() {
             voice::LiveScreenTree tree(root);
             const auto caret = tree.caret(root);
             expect(caret && caret->parts[1] == "All," + blockBreak + "\nWhy", "a selection across paragraphs is read as selected");
+        }
+        {
+            // While the Shell holds the keyboard for the dictation key, the field's window gives up
+            // its focus: a selection in the field it kept (`focusKept`) is read whole, and one in a
+            // field it doesn't keep, or with no hold, is withheld.
+            auto [root, lines] = editor(2, 3);
+            at(root.get()).selection = std::array{0, 3};
+            at(lines[0]).selection = std::array{3, 7};
+            at(lines[1]).selection = std::array{0, 1};
+            at(lines[2]).selection = std::array{0, 3};
+            at(root.get()).focused = false;
+            voice::LiveScreenTree tree(root);
+            const auto unheld = tree.caret(root);
+            expect(unheld && unheld->selectionUnavailable, "a selection in a field without the focus is withheld");
+            const auto field = root.get();
+            tree.focusKept = [field](const voice::Node& node) { return node.get() == field; };
+            const auto held = tree.caret(root);
+            expect(held && !held->selectionUnavailable && held->parts[1] == "All," + blockBreak + "\nWhy",
+                "a selection in the field the Shell's hold keeps is read");
+            tree.focusKept = [](const voice::Node&) { return false; };
+            const auto other = tree.caret(root);
+            expect(other && other->selectionUnavailable, "a selection in a field the Shell's hold doesn't keep is withheld");
         }
         {
             // A rich editor whose caret moves while it is read: a caret selects nothing, so the

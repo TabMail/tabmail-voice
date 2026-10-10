@@ -19,6 +19,7 @@ const IFACE = `<node><interface name="ai.tabmail.Voice.Caret">
 <method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="Holding"><arg type="b" direction="out"/></method>
+<method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal>
 </interface></node>`;
 
@@ -163,7 +164,19 @@ export default class VoiceCaret extends Extension {
         return JSON.stringify({...rect, source: 'accessibility'});
     }
 
-    Version() { return 2; }
+    Version() { return 3; }
+
+    /** The window with the keyboard focus, as the Shell knows it: its id, which stays the window's for
+     * as long as it lives, and its process. Unchanged while the dictation key holds the keyboard (the
+     * focus window stays; only the keys come here), and the same whatever the app tells accessibility
+     * as the hold begins and ends. 0, 0: none, the screen is locked, or the Shell's own interface has
+     * the keyboard (the overview, the window switcher, a menu or a dialog), which leaves the focus
+     * window as it was. */
+    Focus() {
+        const window = global.display.focus_window;
+        if (!window || Main.sessionMode.isLocked || Main.modalCount > (this._hold ? 1 : 0)) return [0, 0];
+        return [window.get_id(), Math.max(0, window.get_pid())];
+    }
 
     /** Space and Escape while dictating. */
     SetRecordingAsync([active], invocation) {

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { deferred } from "../support/stubs.js";
 import type { BrowserWindow } from "electron";
 import * as config from "../../src/core/config.js";
@@ -40,11 +40,18 @@ function overlayWindow(): BrowserWindow {
   } as unknown as BrowserWindow;
 }
 
+/** Every shape any overlay window was cut to. Cutting the window (`setShape`) crashed Xwayland on
+ * Ubuntu, so no overlay, in any mode or state, ever cuts it. */
+let shapesTaken: unknown[] = [];
+afterEach(() => {
+  const taken = shapesTaken;
+  shapesTaken = [];
+  expect(taken).toEqual([]);
+});
+
 /** An overlay window that keeps its bounds and whether it lets the mouse through. */
-function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[]; shape: () => Rect[] } {
+function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[] } {
   let visible = false;
-  /** The window's shape (`setShape`): the whole window when empty. */
-  let shape: Rect[] = [];
   let opacity = 1;
   /** Every frame the window took while it showed at full opacity. */
   const opaqueFrames: Rect[] = [];
@@ -68,15 +75,15 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
       opacity = value;
     },
     getBounds: () => bounds,
-    setShape: (rects: Rect[]) => {
-      shape = rects;
-    },
     setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
       ignoresMouse = ignore;
       forwardsMouse = options?.forward === true;
     },
+    setShape: (rects: Rect[]) => {
+      shapesTaken.push(rects);
+    },
   } as unknown as BrowserWindow;
-  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames, shape: () => shape };
+  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames };
 }
 
 /** A closed chat window's page shrinks it into its pill meanwhile (real timers). */
@@ -366,46 +373,101 @@ describe("OverlayWindowController", () => {
     }
   });
 
-  /** Where a click-through window gets no pointer moves (Linux), the overlay at the chat's tallest is
-   * cut to the chat as measured, with its shadow and the pill's strip, the edge by the pill staying
-   * put: only that takes clicks, as a window that size did. Closed, it is whole and click-through. */
+  /** Where a click-through window gets no pointer moves (Linux), and the app can't learn where the
+   * pointer is over another app's window either, the overlay at the chat's tallest takes clicks over
+   * its whole frame from the moment the chat window opens, whatever the page says, and never takes a
+   * shape (that crashed Xwayland). Closed, it lets clicks through while its page shrinks it into its
+   * pill, and after. */
   test.each([
     ["over", 500],
     ["under", 40],
-  ])("cut to its shape, the chat window %s the pill takes clicks only where it is", (_, y) => {
+  ])("over its whole frame, the chat window %s the pill takes clicks while it shows", (_, y) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const overlay = recordingWindow();
-    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "frame");
     screenNow.pointer = { x: 400, y };
     try {
       controller.update({ kind: "running", tool: "answer" }, true);
+      const tallest = overlay.bounds();
+      expect(tallest.height).toBe(2 * config.chatShadowMargin + config.chatMaxHeight + config.chatPillGap + config.chatStripHeight);
+      expect(controller.chatPlacement?.below).toBe(y < 100);
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.fitChat(120);
+      expect(overlay.bounds()).toEqual(tallest);
+      expect(overlay.ignoresMouse()).toBe(false);
+      // The page's word on the pointer is not taken.
+      controller.pointerOver(false);
+      expect(overlay.ignoresMouse()).toBe(false);
+      // Placed afresh, it still takes them.
+      controller.refreshPlacement();
+      expect(overlay.ignoresMouse()).toBe(false);
+
+      controller.update({ kind: "idle" }, false);
+      expect(controller.chatPlacement).not.toBeNull();
+      expect(overlay.ignoresMouse()).toBe(true);
+      controller.pointerOver(true);
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.visible()).toBe(false);
+      expect(overlay.ignoresMouse()).toBe(true);
+
+      // Opened again, it takes clicks again.
+      controller.update({ kind: "running", tool: "answer" }, true);
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.update({ kind: "idle" }, false);
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.useRealTimers();
+    }
+  });
+
+  /** Over its whole frame, a follow-up as the chat window shrinks takes clicks again, as before it
+   * closed, and still does once the shrink would have ended. */
+  test("over its whole frame, a follow-up as the chat window shrinks takes clicks again", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "frame");
+    screenNow.pointer = { x: 400, y: 500 };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      controller.update({ kind: "idle" }, false);
+      expect(overlay.ignoresMouse()).toBe(true);
+      controller.update({ kind: "arming" }, true);
+      expect(overlay.ignoresMouse()).toBe(false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
+      expect(controller.chatPlacement).not.toBeNull();
+      expect(overlay.ignoresMouse()).toBe(false);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  /** Where the page says where the pointer is (macOS, Windows), it alone decides the clicks: the chat
+   * window opened takes none until the pointer is over it. */
+  test("where the page says where the pointer is, the chat window takes clicks only under it", () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    screenNow.pointer = { x: 400, y: 500 };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+      // The pointer elsewhere as the chat measures itself.
+      screenNow.pointer = { x: workArea.width - 1, y: workArea.height - 1 };
+      controller.fitChat(120);
+      expect(overlay.ignoresMouse()).toBe(true);
+      controller.pointerOver(true);
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.pointerOver(false);
+      expect(overlay.ignoresMouse()).toBe(true);
     } finally {
       screenNow.pointer = pointerAtRest;
     }
-    expect(overlay.ignoresMouse()).toBe(false);
-    const tallest = overlay.bounds();
-    expect(tallest.height).toBe(2 * config.chatShadowMargin + config.chatMaxHeight + config.chatPillGap + config.chatStripHeight);
-    const below = controller.chatPlacement?.below === true;
-    expect(below).toBe(y < 100);
-    const unmeasured = overlay.shape();
-    expect(unmeasured).toHaveLength(1);
-    expect(unmeasured[0]?.height).toBe(tallest.height - config.chatMaxHeight);
-
-    controller.fitChat(120);
-    const height = tallest.height - config.chatMaxHeight + 120;
-    expect(overlay.shape()).toEqual([{ x: 0, y: below ? 0 : tallest.height - height, width: tallest.width, height }]);
-    expect(overlay.bounds()).toEqual(tallest);
-    // The page says where the pointer is on every platform; cut to shape, the window keeps taking
-    // clicks whatever it says (ignoring them here would leave no move to undo it).
-    const shaped = overlay.shape();
-    for (const over of [true, false, true, false]) {
-      controller.pointerOver(over);
-      expect(overlay.ignoresMouse()).toBe(false);
-      expect(overlay.shape()).toEqual(shaped);
-    }
-
-    controller.update({ kind: "idle" }, false);
-    expect(overlay.shape()).toEqual([]);
-    expect(overlay.ignoresMouse()).toBe(true);
   });
 
   /** Hidden as the chat window closes, the overlay's last frame would still be the chat, which then
@@ -680,9 +742,6 @@ describe("OverlayWindowController", () => {
     controller.pointerOver(false);
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
-    // A measured frame is the shape-cut overlay's (Linux) only.
-    controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
-    expect(overlay.shape()).toEqual([]);
     controller.pointerOver(true);
     // The same note again (a state push) changes nothing.
     controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
@@ -698,21 +757,28 @@ describe("OverlayWindowController", () => {
     expect(overlay.ignoresMouse()).toBe(true);
   });
 
-  /** Where the overlay is cut to a shape (Linux), the note takes clicks over its measured frame only,
-   * and the next hold gets the whole, click-through overlay back. */
-  test("the not-pasted note is the shape-cut overlay's only shape while it shows", () => {
+  /** Where the page can't say where the pointer is (Linux), the whole overlay takes clicks while the
+   * note shows, whatever the page says, and lets them through again once it goes. */
+  test("over its whole frame, the not-pasted note takes clicks while it shows", () => {
     const overlay = recordingWindow();
-    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "frame");
     controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
-    controller.fitNote({ x: 10.4, y: 20.6, width: 180.2, height: 32 });
-    expect(overlay.shape()).toEqual([{ x: 10, y: 21, width: 180, height: 32 }]);
+    expect(overlay.visible()).toBe(true);
     expect(overlay.ignoresMouse()).toBe(false);
-
+    controller.pointerOver(false);
+    expect(overlay.ignoresMouse()).toBe(false);
+    // The same note again (a state push) changes nothing.
+    controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
+    expect(overlay.ignoresMouse()).toBe(false);
     controller.update({ kind: "arming" });
-    expect(overlay.shape()).toEqual([]);
     expect(overlay.ignoresMouse()).toBe(true);
-    controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
-    expect(overlay.shape()).toEqual([]);
+    controller.pointerOver(true);
+    expect(overlay.ignoresMouse()).toBe(true);
+    // The next note takes clicks again.
+    controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello again." });
+    expect(overlay.ignoresMouse()).toBe(false);
+    controller.update({ kind: "failed", message: "Couldn't copy." });
+    expect(overlay.ignoresMouse()).toBe(true);
   });
 
   /** A caret found after the chat window opened doesn't move it back to where the pill would be. */

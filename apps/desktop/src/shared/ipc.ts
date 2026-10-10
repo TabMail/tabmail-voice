@@ -223,11 +223,9 @@ export type Command =
   | { type: "answerConfirmation"; confirmed: boolean }
   | { type: "chatHeight"; height: number }
   | { type: "pointerOver"; over: boolean }
-  /** The note for a text not pasted: clicked, to copy the text; its x, to dismiss it; measured, at
-   * `frame` in the overlay. */
+  /** The note for a text not pasted: clicked, to copy the text; its x, to dismiss it. */
   | { type: "copyNotPasted" }
   | { type: "dismissNotPasted" }
-  | { type: "noteFrame"; frame: { x: number; y: number; width: number; height: number } }
   /** The paste history: an entry clicked, to copy; closed (Escape); its list measured. */
   | { type: "copyHistoryEntry"; id: number }
   | { type: "closeHistory" }
@@ -332,11 +330,6 @@ export function isCommand(value: unknown): value is Command {
       return isConnectorID(command.connector) && typeof command.value === "boolean";
     case "pointerOver":
       return typeof command.over === "boolean";
-    case "noteFrame": {
-      const frame = command.frame as Record<string, unknown> | null;
-      return typeof frame === "object" && frame !== null &&
-        [frame.x, frame.y, frame.width, frame.height].every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0);
-    }
     case "chatHeight":
     case "historyHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;

@@ -2807,6 +2807,20 @@ the overlay is cut to the chat's shape (`setShape`) instead (`ChatHitTest`). Pla
 (`refreshPlacement`), it lets clicks through until the page's next move, unless the resting pointer
 is already over the chat as first measured (`fitChat`), so a click with no move since still reaches it.
 
+*Amendment (2026-10-10): on Linux the overlay takes clicks over its whole frame while the chat window
+or the note shows, not cut to a shape.* On Ubuntu's X11 (Xwayland) an empty shape is no window at all,
+not the whole window as Electron documents it, so every pill after the first chat window or note showed
+nothing; and any `setShape` on the transparent overlay crashed Xwayland in the VM, taking every X11
+window, the app's among them, with it (reproduced with a bare Electron window). Nor can the app look
+where the pointer is: an X11 client learns of the pointer only over its own windows, and the overlay
+letting clicks through is not one (VM, 2026-10-10: polled every 50 ms, the pointer brought onto the
+chat from a GNOME Text Editor window was never seen, and the click went through). So while the chat
+window or the not-pasted note shows, the whole overlay takes clicks (`ChatHitTest` "frame"); from the
+moment they close (while the closed chat shrinks into its pill too) it lets them through again. macOS
+and Windows keep the page's pointer moves. Trade-off: while either shows, a click on the overlay's
+transparent part beside it (at most the chat's tallest frame, `chatMaxHeight`, or the pill's canvas)
+does not reach the app under it.
+
 **Amendment 2026-10-05: one bubble runs, the first in the row.** Owner: with Answer running, a
 calendar tool's bubble "shows up on the left but it's not spinning". "The only one that circles is the
 one on the far left, and the only one that's enlarged". When the calendar result is back, "the answer
@@ -3298,7 +3312,7 @@ the General card. A refusal or failed install logs the platform's own fixed sent
 > writes the text to the clipboard either. The note at the mouse pointer says "Switched apps. Click
 > to copy." (a dictation whose end was lost: "Couldn't transcribe the end. Click to copy the rest.")
 > for `notPastedDisplayDuration` (10 s), with a bar running down the time, and takes clicks (pointer
-> mode on the Mac and Windows, the note's own shape on Linux). A click copies the text (IPC
+> mode on the Mac and Windows, the whole overlay on Linux: ADR-DESK-036's 2026-10-10 amendment). A click copies the text (IPC
 > `copyNotPasted`) and shows "Copied to clipboard" once the clipboard has taken it, or "Couldn't
 > copy. It's in the paste history." when it refused it; the note expiring, or the next hold, drops
 > the text, and wins over a click's write still under way. It still goes into the paste history
@@ -4943,3 +4957,43 @@ replaces the 2026-10-07 rule above that only a reply or a question opens it. Unc
 still closes the window before the text is pasted, a failed or canceled request closes a window
 with nothing else in it, the loop thinks under no bubble, and Answer's bubble runs only once the
 agent replies. The window opens inactive (`showInactive`), so the app the text goes to keeps focus.
+
+## ADR-DESK-056: On GNOME, the extension says which window is in front
+
+**Context:** The Linux helpers named the dictation's target window from AT-SPI focus events, and each
+dictation on Ubuntu kept tripping over them (2026-10-09 to 10 smoke): Firefox's snap shows as two
+accessible apps and moves the focus through the second and back as the Shell lets the keyboard go, so
+the window got a new token and every paste was "another app is in front"; activating a large page's
+window (Gmail) walked the page for its focused element, ran out of its budget and dropped the target
+just as the paste asked for it; the extension's `Holding` call, which says the Shell holds the keyboard
+for the dictation key, timed out under load and the focus events of the hold then moved the target;
+and GTK 4 apps (GNOME Text Editor) deactivate their window and drop their field's focused state for
+the whole hold, so the screen read, made during the hold, found the field unfocused and withheld it:
+the selection came back as the placeholder, which agent mode took for a secret. The Shell knows all of
+this directly: its focus window does not change while it holds the keyboard. Owner: "we should
+definitely move almost all the probing things to the extension, honestly, because it knows exactly all
+these things."
+
+**Decision:** The extension (version 3) answers `Focus`: the Meta window with the keyboard focus, by
+its id, and its process (none while the screen is locked). Where it answers, the helpers name the
+target window by that id (`Foreground::target`, `front`, `matches`, `targets`), and the AT-SPI focus is
+taken only as the element in it, and only when it is that window's process's, or, for a sandboxed app,
+came while that window was in front: a Flatpak app reaches the accessibility bus through its bus proxy
+(xdg-dbus-proxy), so the bus names the proxy's process, never the one the Shell names. A window's deactivation
+no longer drops the target, and an element read while the Shell holds the key over the same window and
+focus counts as focused (`LiveScreenTree::focusKept`). Without the extension (another desktop, a GNOME
+it does not support, or before the log-in that loads it) the AT-SPI path stays, with one fix of its
+own: the target's own window activated again keeps the target, the walk for its focus waiting for the
+focus to come back by itself. A paste still needs accessibility to name what has the focus in the
+window the Shell names (`Foreground::matches`): a window it can't see (a terminal without it) has no
+known paste keys, and is not the target (`front` names none, so the dictation ends in the not-pasted
+note, ADR-DESK-042), and the Shell's own interface over the window (the overview, the window switcher, a
+menu or a dialog) leaves the Shell's focus window as it was; there `Focus` answers none too. Direction: further probing (which field has the focus, the caret, the selection)
+moves to the extension as it can answer it.
+
+**Consequences:** each check is a synchronous D-Bus call to the Shell, bounded at 250 ms
+(`focusTimeoutMilliseconds`); an extension updated in place runs its old version until the next log-in,
+during which the helper reports GNOME integration not ready and Settings asks for a log-out and back in
+(the existing `restart` state). Two paths now name the target, the Shell's and AT-SPI's, until the
+extension can answer everything the helpers ask.
+

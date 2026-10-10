@@ -157,11 +157,6 @@ describe("overlay page", () => {
   test("the not-pasted note shows its message by a clipboard, and the text it copies when clicked", async () => {
     const page = await overlayPage();
     const message = "Switched apps. Click to copy.";
-    const noteFrame = { x: 17, y: 23, width: 180, height: 30 };
-    const measured = HTMLElement.prototype.getBoundingClientRect;
-    const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains("note") ? ({ ...noteFrame, top: noteFrame.y, left: noteFrame.x, right: noteFrame.x + noteFrame.width, bottom: noteFrame.y + noteFrame.height, toJSON: () => noteFrame } as DOMRect) : measured.call(this);
-    });
     await page.show({ ...listening, phase: { ...note, message } });
     expect(document.querySelector(".pill .message")?.textContent).toBe(message);
     // The text itself, then a Copy link with its copy sign.
@@ -173,9 +168,6 @@ describe("overlay page", () => {
     expect(clipboardIcon).toContain("rect");
     await act(async () => document.querySelector<HTMLElement>(".pill.note")?.click());
     expect(page.commands).toContainEqual({ type: "copyNotPasted" });
-    // Its frame, as laid out, is sent, for an overlay cut to its shape to take clicks over it (Linux).
-    expect(page.commands).toContainEqual({ type: "noteFrame", frame: noteFrame });
-    measure.mockRestore();
 
     await page.show({ ...listening, phase: { kind: "failed", message } });
     expect(document.querySelector(".pill.note")).toBeNull();
@@ -259,46 +251,6 @@ describe("overlay page", () => {
       expect(document.querySelector(".chat-timeout")).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  /** The note appears scaled down and springs to its size, which no resize reports: its frame is
-   * sent again once it has, so an overlay cut to it (Linux) takes clicks over all of it. */
-  test("the not-pasted note's frame is sent again once it has sprung to its size", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const entrance = { x: 30, y: 26, width: 150, height: 24 };
-    const sprung = { x: 17, y: 23, width: 180, height: 30 };
-    let frame = entrance;
-    const measured = HTMLElement.prototype.getBoundingClientRect;
-    const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains("note") ? ({ ...frame, top: frame.y, left: frame.x, right: frame.x + frame.width, bottom: frame.y + frame.height, toJSON: () => frame } as DOMRect) : measured.call(this);
-    });
-    try {
-      const page = await overlayPage();
-      // `show` lets the page settle on a timer: run it.
-      const show = async (state: OverlayState) => {
-        const shown = page.show(state);
-        await vi.advanceTimersByTimeAsync(0);
-        await shown;
-      };
-      await show({ ...listening, phase: note });
-      const frames = () => page.commands.filter((command) => command.type === "noteFrame").map((command) => command.frame);
-      expect(frames()).toEqual([entrance]);
-
-      frame = sprung;
-      await vi.advanceTimersByTimeAsync(config.pillSpringResponseSeconds * 1000);
-      expect(frames()).toEqual([entrance, sprung]);
-      expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
-
-      // Gone before it has sprung, it sends no frame after.
-      await show({ ...listening, phase: { kind: "failed", message: "Couldn't copy. It's in the paste history." } });
-      await show({ ...listening, phase: note });
-      await show({ ...listening, phase: { kind: "failed", message: "Couldn't copy. It's in the paste history." } });
-      await vi.advanceTimersByTimeAsync(config.pillSpringResponseSeconds * 1000);
-      expect(frames()).toEqual([entrance, sprung, sprung]);
-    } finally {
-      measure.mockRestore();
       vi.useRealTimers();
     }
   });
