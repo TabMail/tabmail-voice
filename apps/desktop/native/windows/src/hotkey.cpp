@@ -57,8 +57,8 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
     // Windows passes on the key event of a hook that answers too late (under heavy load), so the
     // key-down reaches the system anyway; it may also remove the hook, which this does not repair.
     // Swallowing the key-up then leaves the system holding the key, and every paste after it sees a
-    // modifier held. So a key-up goes through when GetAsyncKeyState, which here gives the state from
-    // before this event, says the system holds the key.
+    // modifier held. So a key-up goes through when GetAsyncKeyState, which in a callback answered in
+    // time gives the state from before this event, says the system holds the key.
     const bool systemHolds = (GetAsyncKeyState(static_cast<int>(key)) & 0x8000) != 0;
     const bool leaked = up && systemHolds;
     if (key == modifier.selected) {
