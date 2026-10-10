@@ -122,6 +122,8 @@ gboolean command(gint fd, GIOCondition, gpointer) {
         event("object:state-changed:focused", inDialog ? fields[active] : dialogFields[active], 0);
         event("object:state-changed:focused", inDialog ? dialogFields[active] : fields[active], 1);
     }
+    // The other app announces a focus while this one stays in front, as the Shell says.
+    if (value == 'x' && active >= 0) event("object:state-changed:focused", fields[1 - active], 1);
     if (value == 'F') shellFocus = true;
     if (value == 'N') shellFocus = false;
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";

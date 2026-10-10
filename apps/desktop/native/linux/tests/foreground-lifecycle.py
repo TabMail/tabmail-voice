@@ -327,6 +327,21 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             command('a')
             assert request('frontmostApp') == {'window': 7000, 'pid': first}
             command('N')
+        # Where the Shell says which window is in front, a focus another app announces meanwhile is not
+        # taken for it: nothing is read until the focus is that window's process's again.
+        command('a')
+        command('F')
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText']
+        elif fields:
+            assert field() == {'value': 'Synthetic field content'}
+        command('x')
+        if reader:
+            assert screen() is None, "another app's focus is not read as the window the Shell names"
+        elif fields:
+            assert field(second) is None and field() is None, "another app's field is not read as the window the Shell names"
+        command('a')
+        command('N')
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
         child.stdin.close()
