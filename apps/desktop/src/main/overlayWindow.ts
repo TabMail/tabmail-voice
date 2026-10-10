@@ -53,6 +53,10 @@ export class OverlayWindowController {
    * show for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
    * blinks"). Meanwhile the page draws it closed (on Linux, with no window opacity, only that). */
   private chatClosing = false;
+  /** The chat window closed and its page shrinks it into its pill (`chatCloseDurationSeconds`): the
+   * overlay keeps the chat's frame, letting clicks through, until it has, then follows `phase`. */
+  private chatShrinkTimer: ReturnType<typeof setTimeout> | null = null;
+  private phase: Phase = { kind: "idle" };
   /** The overlay takes clicks: the pointer is over the chat window, or the note (`ChatHitTest`
    * "pointer"). */
   private takesClicks = false;
@@ -104,13 +108,19 @@ export class OverlayWindowController {
   update(phase: Phase, chatOpen = false): void {
     this.requestedChat = chatOpen;
     this.requestedPill = phase.kind !== "idle" && phase.kind !== "arming";
+    this.phase = phase;
     if (this.note && phase.kind !== "notPasted") this.endNote();
     if (chatOpen) {
+      this.cancelChatShrink();
       this.cancelHide();
       if (this.chat === null) this.showChat();
       return;
     }
-    if (this.chat !== null) this.hideChat();
+    if (this.chat !== null) {
+      // Never shown yet (not measured, the overlay transparent): nothing to shrink.
+      if (!this.chatUnmeasured) return this.shrinkChat();
+      this.hideChat();
+    }
     switch (phase.kind) {
       case "idle":
         this.cancelHide();
@@ -156,6 +166,8 @@ export class OverlayWindowController {
   /** Recompute after a platform exclusion or display changes, including recovery when a shell
    * surface previously left no usable space. Never reveals an idle or still-arming hold. */
   refreshPlacement(): void {
+    // Placed once the closing chat has shrunk.
+    if (this.chatShrinkTimer !== null) return;
     if (this.requestedChat) {
       if (this.chat !== null) this.hideChat();
       this.showChat();
@@ -172,7 +184,7 @@ export class OverlayWindowController {
    * it showed each frame a moment out of place, before the page drew the next (owner, 2026-10-04:
    * "the animation is super clunky"). */
   fitChat(height: number): void {
-    if (this.chat === null) return;
+    if (this.chat === null || this.chatShrinkTimer !== null) return;
     this.measuredChatHeight = height;
     if (this.chatHitTest === "shape") this.window.setShape([this.chatShape(height)]);
     if (!this.chatUnmeasured) return;
@@ -187,7 +199,7 @@ export class OverlayWindowController {
   /** The pointer went over the chat window or the note, or off it (`ChatHitTest`): the overlay takes
    * clicks only over it, letting the rest through to the app under it. */
   pointerOver(over: boolean): void {
-    if ((this.chat === null && !this.note) || this.chatHitTest !== "pointer" || over === this.takesClicks) return;
+    if ((this.chat === null && !this.note) || this.chatShrinkTimer !== null || this.chatHitTest !== "pointer" || over === this.takesClicks) return;
     this.takesClicks = over;
     this.window.setIgnoreMouseEvents(!over, { forward: true });
   }
@@ -253,6 +265,29 @@ export class OverlayWindowController {
     const tallest = rounded(this.chatFrame(side.maxHeight));
     const frame = rounded(this.chatFrame(height));
     return { x: frame.x - tallest.x, y: frame.y - tallest.y, width: frame.width, height: frame.height };
+  }
+
+  /** The chat window closed: its page shrinks it into its pill, letting clicks through meanwhile, and
+   * then the overlay leaves its frame and follows the phase of that moment. Once, however often told. */
+  private shrinkChat(): void {
+    if (this.chatShrinkTimer !== null) return;
+    this.takesClicks = false;
+    if (this.chatHitTest === "shape") this.window.setShape([]);
+    this.window.setIgnoreMouseEvents(true, { forward: true });
+    this.chatShrinkTimer = setTimeout(() => {
+      this.chatShrinkTimer = null;
+      this.hideChat();
+      this.update(this.phase, false);
+      this.onPlace?.();
+    }, config.chatCloseDurationSeconds * 1000);
+  }
+
+  private cancelChatShrink(): void {
+    if (this.chatShrinkTimer === null) return;
+    clearTimeout(this.chatShrinkTimer);
+    this.chatShrinkTimer = null;
+    // Reopened as it shrank (a follow-up): it takes clicks again where it is.
+    if (this.chat !== null && this.chatHitTest === "shape" && this.measuredChatHeight !== null) this.window.setShape([this.chatShape(this.measuredChatHeight)]);
   }
 
   private hideChat(): void {

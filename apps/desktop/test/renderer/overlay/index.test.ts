@@ -761,6 +761,43 @@ describe("the chat window", () => {
 
   const texts = (selector: string) => [...document.querySelectorAll(selector)].map((element) => element.textContent);
 
+  /** Owner, 2026-10-09: the chat window "should seem like it's growing out of the pill", and closing,
+   * shrink, "sucked back into the agent pill": both about the pill's center, over it or under it;
+   * the last chat stays drawn, shrinking, while the overlay keeps its place. */
+  test("the chat window grows out of its pill and shrinks back into it as it closes", async () => {
+    const page = await overlayPage();
+    const moves: { keyframes: Keyframe[]; fill: unknown }[] = [];
+    const animate = vi.spyOn(HTMLElement.prototype, "animate").mockImplementation(function (this: HTMLElement, keyframes, options) {
+      if (this.classList.contains("chat")) moves.push({ keyframes: keyframes as Keyframe[], fill: (options as KeyframeAnimationOptions).fill });
+      return { cancel: () => {} } as Animation;
+    });
+    try {
+      const margin = config.chatShadowMargin;
+      const atPill = { opacity: 0, transform: `scale(${config.chatPillScale})` };
+      const full = { opacity: 1, transform: "none" };
+      await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+      const box = document.querySelector<HTMLElement>(".chat");
+      // Over the pill: its center under the chat's bottom edge, at the pill's x.
+      expect(box?.style.transformOrigin).toBe(`${above.pillX - margin}px calc(100% + ${config.chatPillGap + config.pillHeight / 2}px)`);
+      expect(moves).toEqual([{ keyframes: [atPill, full], fill: "backwards" }]);
+
+      await page.show({ ...idle, chatPlacement: above, chat: null });
+      expect(document.querySelector(".chat")).toBe(box);
+      expect(texts(".chat-request")).toContain("Say it shorter");
+      expect(moves.at(-1)).toEqual({ keyframes: [full, atPill], fill: "forwards" });
+
+      await page.show({ ...idle, chatPlacement: null, chat: null });
+      expect(document.querySelector(".chat")).toBeNull();
+
+      // Under the pill and its bubbles: the pill's center over the chat's top edge.
+      const below: ChatPlacement = { ...above, below: true };
+      await page.show({ ...idle, chatPlacement: below, chat: chat(null) });
+      expect(document.querySelector<HTMLElement>(".chat")?.style.transformOrigin).toBe(`${above.pillX - margin}px ${config.pillHeight / 2 - config.chatStripHeight - config.chatPillGap}px`);
+    } finally {
+      animate.mockRestore();
+    }
+  });
+
   /** A long message under the chat window wraps before the pill's glow reaches the window's edge,
    * where it was cut off (owner, 2026-10-06): the pill, centered in the window, is no wider than
    * the window less the glow on each side; and so is it with the chat window closed. */
