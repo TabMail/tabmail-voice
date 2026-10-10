@@ -449,9 +449,12 @@ vi.mock("../../src/main/windows.js", () => ({
 
 /** Launches the main process on `platform`. */
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+const execPathDescriptor = Object.getOwnPropertyDescriptor(process, "execPath")!;
 
 async function launch(platform: NodeJS.Platform): Promise<void> {
   Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  // A Linux app runs from a POSIX path, whatever machine runs the tests (the Windows release build too).
+  if (platform === "linux") Object.defineProperty(process, "execPath", { value: "/opt/TabMail Voice/tabmail-voice", configurable: true });
   vi.resetModules();
   await import("../../src/main/index.js");
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -459,6 +462,7 @@ async function launch(platform: NodeJS.Platform): Promise<void> {
 
 afterEach(() => {
   if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
+  Object.defineProperty(process, "execPath", execPathDescriptor);
   app.handlers.clear();
   app.listeners.clear();
   app.appEvents.clear();

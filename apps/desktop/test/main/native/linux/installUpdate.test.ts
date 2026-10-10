@@ -18,7 +18,7 @@ const hasDebianTools = process.platform === "linux" && spawnSync("dpkg", ["--ver
  * by anyone else until the package is proven ours, the copy's permissions opened only once every
  * check has passed, for apt-get. Read from the script itself, so it holds on every platform. */
 test("install-update opens its copy to others only once it is proven", () => {
-  const lines = readFileSync(join(__dirname, "../../../../resources/linux/install-update"), "utf8").split("\n");
+  const lines = readFileSync(join(__dirname, "../../../../resources/linux/install-update"), "utf8").split(/\r?\n/u);
   const proven = lines.indexOf('[ "$mode" = install ] || exit 0');
   const opened = lines.flatMap((line, index) => (/^\s*chmod\b/.test(line) ? [index] : []));
   expect(proven).toBeGreaterThan(0);
