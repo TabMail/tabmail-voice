@@ -2,29 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type ReactNode, useId } from "react";
+import type { ReactNode } from "react";
 import type { ConnectorID } from "../../core/agent/connectors/index.js";
 import type { AgentToolID } from "../../core/agent/tools.js";
 import { palette } from "../../core/palette.js";
-import { brandBlue, brandPurple } from "./brand.js";
 
-/** An id usable in an SVG `url(#…)` reference. */
-function useGradientID(): string {
-  return `gradient-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
-}
-
-/** Line icons in the brand gradient, drawn on a 24-point grid (the Swift app's SF Symbols). */
-function GradientIcon({ size, children, filled = false }: { size: number; children: ReactNode; filled?: boolean }) {
-  const id = useGradientID();
-  const paint = `url(#${id})`;
+/** Line icons in one color, the theme's accent (owner, 2026-10-09: "a single color", no longer the
+ * brand gradient), drawn on a 24-point grid (the Swift app's SF Symbols). */
+function AccentIcon({ size, children, filled = false }: { size: number; children: ReactNode; filled?: boolean }) {
+  const paint = "var(--accent)";
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill={filled ? paint : "none"} stroke={filled ? "none" : paint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor={brandBlue} />
-          <stop offset="1" stopColor={brandPurple} />
-        </linearGradient>
-      </defs>
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={filled ? { fill: paint, stroke: "none" } : { fill: "none", stroke: paint }} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       {children}
     </svg>
   );
@@ -57,7 +45,7 @@ const toolPaths: Record<AgentToolID, ReactNode> = {
 };
 
 export function ToolIcon({ tool, size }: { tool: AgentToolID; size: number }) {
-  return <GradientIcon size={size}>{toolPaths[tool]}</GradientIcon>;
+  return <AccentIcon size={size}>{toolPaths[tool]}</AccentIcon>;
 }
 
 const connectorPaths: Record<ConnectorID, ReactNode> = {
@@ -118,52 +106,43 @@ const connectorPaths: Record<ConnectorID, ReactNode> = {
   web: (
     <>
       <circle cx="12" cy="12" r="9" />
-      {/* One path: a lone horizontal line has no height, and the gradient, sized to its box, paints nothing. */}
       <path d="M3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z" />
     </>
   ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: ConnectorID; size: number }) {
-  return <GradientIcon size={size}>{connectorPaths[connector]}</GradientIcon>;
+  return <AccentIcon size={size}>{connectorPaths[connector]}</AccentIcon>;
 }
 
 /** Sparkles: an agent tool is at work. */
 export function SparklesIcon({ size }: { size: number }) {
   return (
-    <GradientIcon size={size} filled>
+    <AccentIcon size={size} filled>
       <path d="M10 3.5 11.8 8.2 16.5 10 11.8 11.8 10 16.5 8.2 11.8 3.5 10 8.2 8.2Z" />
       <path d="M18 13.5 18.9 15.6 21 16.5 18.9 17.4 18 19.5 17.1 17.4 15 16.5 17.1 15.6Z" />
-    </GradientIcon>
+    </AccentIcon>
   );
 }
 
 /** An exclamation mark in a filled circle: a failure. */
 export function ExclamationIcon({ size }: { size: number }) {
-  const id = useGradientID();
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor={brandBlue} />
-          <stop offset="1" stopColor={brandPurple} />
-        </linearGradient>
-      </defs>
-      <circle cx="12" cy="12" r="10" fill={`url(#${id})`} />
+      <circle cx="12" cy="12" r="10" style={{ fill: "var(--accent)" }} />
       <path d="M12 7v6" stroke={palette.light.onAccent} strokeWidth={2.4} strokeLinecap="round" />
       <circle cx="12" cy="16.8" r="1.4" fill={palette.light.onAccent} />
     </svg>
   );
 }
 
-/** A clipboard: the text was copied instead of pasted. */
+/** A clipboard: the text was copied instead of pasted; in the text's color, beside the note's caption. */
 export function ClipboardIcon({ size }: { size: number }) {
   return (
-    <GradientIcon size={size}>
+    <PlainIcon size={size}>
       <rect x="5" y="4.5" width="14" height="17" rx="2" />
       <rect x="9" y="2.5" width="6" height="4" rx="1" />
-      <path d="M9 12h6M9 16h4" />
-    </GradientIcon>
+    </PlainIcon>
   );
 }
 

@@ -111,7 +111,8 @@ describe("Windows", () => {
     let blurs = 0;
     const first = { x: 10, y: 20, width: config.pasteHistoryWindowWidth, height: 200 };
     windows.showHistory(first, () => (blurs += 1));
-    expect(electron.BrowserWindow.made).toEqual([expect.objectContaining({ ...first, type: "panel", frame: false, alwaysOnTop: true, show: false })]);
+    // Transparent on every platform, without the system's shadow: its page draws the glass card and its glow.
+    expect(electron.BrowserWindow.made).toEqual([expect.objectContaining({ ...first, type: "panel", frame: false, alwaysOnTop: true, show: false, transparent: true, hasShadow: false })]);
     const window = electron.BrowserWindow.instances[0];
     if (!window) throw new Error("no window");
     expect(window.calls).toEqual([]);

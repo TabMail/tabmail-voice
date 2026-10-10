@@ -24,12 +24,11 @@ function block(selector: string, variables: Record<string, string>): string {
     .join("\n")}\n}`;
 }
 
-/** The palette as a stylesheet: the brand and the light theme, and with `followsSystem` the dark
- * theme while the system is dark. The overlay doesn't follow it: it is light in light and dark mode
- * alike. */
-export function paletteStylesheet(followsSystem: boolean): string {
+/** The palette as a stylesheet: the brand and the light theme, and the dark theme while the system
+ * is dark. Every page follows it, the overlay too (owner, 2026-10-09; it was light in both). */
+export function paletteStylesheet(): string {
   const base = block(":root", { ...brandVariables, ...themeVariables(palette.light) });
-  return followsSystem ? `${base}\n@media (prefers-color-scheme: dark) {\n${block(":root", themeVariables(palette.dark))}\n}` : base;
+  return `${base}\n@media (prefers-color-scheme: dark) {\n${block(":root", themeVariables(palette.dark))}\n}`;
 }
 
 /** Where a page keeps its palette sheet, so giving it the colors again replaces it. */
@@ -38,10 +37,10 @@ const paletteSheet = Symbol.for("ai.tabmail.voice.paletteSheet");
 /** Gives the page the palette's colors, before it renders: one constructed stylesheet, however often
  * it is given them. Constructed, not a `<style>` element, which the pages' Content Security Policy
  * (`style-src 'self'`) refuses. */
-export function applyPalette(page: Document, followsSystem = true): void {
+export function applyPalette(page: Document): void {
   const holder = page as Document & { [paletteSheet]?: CSSStyleSheet };
   const sheet = holder[paletteSheet] ?? new (page.defaultView ?? window).CSSStyleSheet();
-  sheet.replaceSync(paletteStylesheet(followsSystem));
+  sheet.replaceSync(paletteStylesheet());
   if (!page.adoptedStyleSheets.includes(sheet)) page.adoptedStyleSheets = [...page.adoptedStyleSheets, sheet];
   holder[paletteSheet] = sheet;
 }

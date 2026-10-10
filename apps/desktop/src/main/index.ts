@@ -574,10 +574,13 @@ function launch(): void {
     windows.push("history");
   }
 
+  /** The window for a card `height` tall: the card where the chat window opens, the window around
+   * it larger by `pasteHistoryShadowMargin` on each side, for its glow. */
   function historyBounds(height: number): Rect {
     const size = { width: config.pasteHistoryWindowWidth, height: Math.round(Math.min(height, config.pasteHistoryMaxHeight)) };
     const frame = historyPlace ? historyWindowFrame(historyPlace.pill, size, historyPlace.workArea, historyPlace.bubblesUnder) : { x: 0, y: 0, ...size };
-    return { x: Math.round(frame.x), y: Math.round(frame.y), width: frame.width, height: Math.round(frame.height) };
+    const margin = config.pasteHistoryShadowMargin;
+    return { x: Math.round(frame.x) - margin, y: Math.round(frame.y) - margin, width: frame.width + 2 * margin, height: Math.round(frame.height) + 2 * margin };
   }
 
   /** Puts `text` on the clipboard (a promise since Electron 44): true once written, false, logged,

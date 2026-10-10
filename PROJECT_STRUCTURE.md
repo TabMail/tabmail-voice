@@ -91,7 +91,7 @@ apps/desktop/
 │       ├── overlay/                 The pill, waveform, swirl, tips, bubbles and chat window
 │       ├── settings/, welcome/, history/ (the paste history), contextDebug/
 │       ├── audio/                   The microphone off macOS: getUserMedia → captureWorklet
-│       └── shared/                  The bridge to `window.voice`, the brand, the palette's theme as CSS variables (`theme.ts`), icons, the name field, form.css
+│       └── shared/                  The bridge to `window.voice`, the brand, the palette's theme as CSS variables (`theme.ts`), the glass every floating surface is made of (`glass.ts`), icons, the name field, form.css
 └── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper); packaging.test.ts
 ```
 

@@ -90,13 +90,12 @@ export class Windows {
 
   /** The paste history (ADR-DESK-043) at `bounds`: a small frameless window over every other, on
    * the Space in front, brought forward with the app so Escape reaches it; `onBlur` as it loses
-   * focus (the user clicked elsewhere). Made hidden: it shows once its list has measured itself
-   * (`fitHistory`), so it never opens at another height. Open already, it moves to `bounds`. */
+   * focus (the user clicked elsewhere). Transparent, without the system's shadow, on every platform:
+   * its page draws a card of the overlay's glass, with its glow, inside it. Made hidden: it shows once
+   * its list has measured itself (`fitHistory`), so it never opens at another height. Open already, it
+   * moves to `bounds`. */
   showHistory(bounds: Rect, onBlur: () => void): void {
-    const look: BrowserWindowConstructorOptions =
-      process.platform === "darwin"
-        ? { vibrancy: "popover", visualEffectState: "active", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.dark.window : palette.light.window };
+    const look: BrowserWindowConstructorOptions = { transparent: true, hasShadow: false, backgroundColor: "#00000000" };
     const existing = this.open.get("history");
     if (existing && !existing.isDestroyed()) {
       existing.setBounds(bounds);

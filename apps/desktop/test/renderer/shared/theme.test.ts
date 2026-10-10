@@ -78,7 +78,7 @@ describe("the palette", () => {
   test("every color a stylesheet reads is given", () => {
     const components = [...sources([".ts", ".tsx"]).values()].join("\n");
     const setByComponent = new Set([...components.matchAll(/\["(--[\w-]+)" as string\]/g)].map(([, name = ""]) => name));
-    const given = new Set([...paletteStylesheet(true).matchAll(/(--[\w-]+):/g)].map(([, name = ""]) => name));
+    const given = new Set([...paletteStylesheet().matchAll(/(--[\w-]+):/g)].map(([, name = ""]) => name));
     expect(setByComponent).toEqual(new Set(["--reveal-rise"]));
     for (const [path, text] of sources([".css"])) {
       const declared = new Set([...text.matchAll(/(--[\w-]+)\s*:/g)].map(([, name = ""]) => name));
@@ -86,9 +86,9 @@ describe("the palette", () => {
     }
   });
 
-  /** The windows follow the system's light and dark, each theme in full; the overlay, light in light
-   * and dark mode alike, has the light theme alone. */
-  test("the windows follow light and dark, the overlay stays light", () => {
+  /** Every page follows the system's light and dark, each theme in full: the windows, and the overlay
+   * since 2026-10-09 (owner: the glass "should obey the theme of the system"). */
+  test("every page follows light and dark, the overlay too", () => {
     expect(Object.keys(palette.dark).sort()).toEqual(Object.keys(palette.light).sort());
     const light = themeVariables(palette.light);
     expect(light["--control-border"]).toBe(palette.light.controlBorder);
@@ -103,10 +103,8 @@ describe("the palette", () => {
     for (const [name, color] of Object.entries(light)) expect(text.slice(0, dark)).toContain(`${name}: ${color};`);
     for (const [name, color] of Object.entries(themeVariables(palette.dark))) expect(text.slice(dark)).toContain(`${name}: ${color};`);
 
-    applyPalette(document, false);
-    expect(document.adoptedStyleSheets).toHaveLength(1);
-    const overlay = adoptedColors();
-    expect(overlay).not.toContain("prefers-color-scheme");
-    expect(overlay).toContain(`--text: ${palette.light.text};`);
+    // The overlay's page reads the theme as every page does: no other way in.
+    const overlay = readFileSync(join(renderer, "overlay", "index.tsx"), "utf8");
+    expect(overlay).toContain("applyPalette(document);");
   });
 });
