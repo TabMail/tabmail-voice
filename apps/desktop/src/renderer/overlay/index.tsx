@@ -14,7 +14,8 @@ import type { DictationHotkey } from "../../core/hotkey/bindings.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCenter, grownBubble, hintCenter, hintCenterOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/tips.js";
 import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
-import { brandBlue, brandColor, brandGradient, rgba } from "../shared/brand.js";
+import { brandBlue, brandColor, rgba } from "../shared/brand.js";
+import { brandGlow, glassStyle } from "../shared/glass.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { ClipboardIcon, ConnectorIcon, CopyIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
 import { applyPalette } from "../shared/theme.js";
@@ -401,8 +402,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
         transition: `height ${config.chatGrowDurationSeconds}s ease-out`,
         borderRadius: config.chatCornerRadius,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
-        boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
+        ...glassStyle(brandGlow),
       }}
     >
       <div
@@ -424,7 +424,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
         {status !== null && <Activity label={status} />}
         {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} expiresAt={chat.confirmationExpiresAt} />}
       </div>
-      {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} timeout={config.chatTimeout} />}
+      {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} timeout={config.chatTimeout} inset={config.chatCornerRadius} />}
       <button
         type="button"
         className="chat-close"
@@ -478,13 +478,13 @@ function ConfirmationCard({ question, expiresAt }: { question: string; expiresAt
         {button("Cancel", false)}
         {button("Confirm", true)}
       </div>
-      {expiresAt !== null && <TimeoutBar closesAt={expiresAt} timeout={config.chatConfirmationTimeout} />}
+      {expiresAt !== null && <TimeoutBar closesAt={expiresAt} timeout={config.chatConfirmationTimeout} inset={config.chatBubbleCornerRadius} />}
     </div>
   );
 }
 
 /** The user's words on the right, laid out as Thunderbird's chat shows them, in one flat pale blue
- * with a hairline border (`palette.chatRequestFill`). */
+ * with a hairline border (the theme's `chatRequestFill`). */
 function RequestBubble({ text }: { text: string }) {
   return (
     <div
@@ -495,8 +495,10 @@ function RequestBubble({ text }: { text: string }) {
         padding: `${config.chatBubblePadding}px ${config.chatBubblePadding + 2}px`,
         borderRadius: config.chatBubbleCornerRadius,
         maxWidth: config.chatWidth * config.chatRequestMaxWidthFraction,
-        background: palette.chatRequestFill,
-        border: `${config.pillBorderWidth}px solid ${palette.chatRequestBorder}`,
+        background: "var(--chat-request-fill)",
+        borderWidth: config.pillBorderWidth,
+        borderStyle: "solid",
+        borderColor: "var(--chat-request-border)",
       }}
     >
       {text}
@@ -618,19 +620,17 @@ function FormattedLine({ text }: { text: string }) {
   );
 }
 
-/** A thin gradient line pinned to the bottom-left edge of what holds it (the chat, or its question), as
- * wide as the share of `timeout` left. */
-function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }) {
+/** A faint line along the bottom of what holds it (the chat, its question, the note), in a track
+ * `inset` from its sides (their corners' radius), as long as the share of `timeout` left of it. */
+function TimeoutBar({ closesAt, timeout, inset }: { closesAt: number; timeout: number; inset: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useAnimationFrame(() => {
     if (ref.current) ref.current.style.width = `${remainingFraction(closesAt, Date.now(), timeout) * 100}%`;
   });
   return (
-    <div
-      ref={ref}
-      className="chat-timeout"
-      style={{ height: config.chatTimeoutBarHeight, width: `${remainingFraction(closesAt, Date.now(), timeout) * 100}%`, backgroundImage: brandGradient, opacity: config.chatTimeoutBarOpacity }}
-    />
+    <div className="chat-timeout-track" style={{ left: inset, right: inset, bottom: config.timeoutBarBottomInset, height: config.chatTimeoutBarHeight }}>
+      <div ref={ref} className="chat-timeout" style={{ width: `${remainingFraction(closesAt, Date.now(), timeout) * 100}%` }} />
+    </div>
   );
 }
 
@@ -641,7 +641,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
   const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
   useNoteHitArea(ref, isNote);
-  // Over the note, its box and copy sign take the brand's blue: a click copies.
+  // Over the note, its Copy takes a wash of the accent: a click copies.
   const [isNoteHovered, setNoteHovered] = useState(false);
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
@@ -653,12 +653,12 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
     maxWidth,
     borderRadius: config.pillHeight / 2,
     borderWidth: config.pillBorderWidth,
-    // A light pill in light and dark mode alike, in a gradient border.
-    background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
-    // Neon red-pink in agent mode, a sign of the mode.
-    boxShadow: isAgent
-      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(palette.agentPillGlowInner, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(palette.agentPillGlowOuter, config.agentPillGlowOuterOpacity)}`
-      : `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
+    // The glass, glowing neon red-pink in agent mode, a sign of the mode.
+    ...glassStyle(
+      isAgent
+        ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(palette.agentPillGlowInner, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(palette.agentPillGlowOuter, config.agentPillGlowOuterOpacity)}`
+        : brandGlow,
+    ),
     transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponseSeconds}s ease-out`,
   };
 
@@ -699,9 +699,9 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
     case "notPasted":
       content = (
         <>
-          <div className="note-header" style={{ gap: config.pillContentSpacing }}>
-            <ClipboardIcon size={config.overlayFontSize} />
-            <span className="message" style={{ fontSize: config.overlayFontSize, WebkitLineClamp: config.noteMessageMaxLines }}>
+          <div className="note-header" style={{ gap: config.noteSpacing }}>
+            <ClipboardIcon size={config.noteCaptionFontSize} />
+            <span className="message" style={{ fontSize: config.noteCaptionFontSize, WebkitLineClamp: config.noteMessageMaxLines }}>
               {mode.message}
             </span>
             <button
@@ -713,28 +713,29 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
                 event.stopPropagation();
                 void send({ type: "dismissNotPasted" });
               }}
-              style={{ width: config.noteCloseButtonSize, height: config.noteCloseButtonSize, fontSize: config.chatCaptionFontSize }}
+              style={{ width: config.noteCloseButtonSize, height: config.noteCloseButtonSize, fontSize: config.noteCloseFontSize }}
             >
               ✕
             </button>
           </div>
-          {/* The text the click copies, in the chat window's colors for the user's words. */}
-          <div
-            className="note-text"
-            style={{
-              gap: config.pillContentSpacing,
-              padding: config.noteTextPadding,
-              borderRadius: config.noteTextCornerRadius,
-              borderWidth: config.pillBorderWidth,
-              background: palette.chatRequestFill,
-              borderColor: isNoteHovered ? brandBlue : palette.chatRequestBorder,
-              ...(isNoteHovered ? { color: brandBlue } : {}),
-            }}
-          >
-            <span className="note-text-content" style={{ fontSize: config.overlayFontSize, WebkitLineClamp: config.noteTextMaxLines }}>
-              {mode.text}
+          {/* The text the click copies, the note's content. */}
+          <span className="note-text" style={{ fontSize: config.noteTextFontSize, lineHeight: config.noteTextLineHeight, WebkitLineClamp: config.noteTextMaxLines }}>
+            {mode.text}
+          </span>
+          <div className="note-foot">
+            <span
+              className="note-copy"
+              style={{
+                gap: config.noteSpacing / 2,
+                fontSize: config.noteCaptionFontSize + 1,
+                padding: `${config.noteSpacing / 3}px ${config.noteSpacing}px`,
+                margin: `${-config.noteSpacing / 3}px ${-config.noteSpacing}px`,
+                backgroundColor: isNoteHovered ? "var(--accent-wash)" : "transparent",
+              }}
+            >
+              <CopyIcon size={config.noteCopyIconSize} />
+              Copy
             </span>
-            <CopyIcon size={config.noteCopyIconSize} />
           </div>
         </>
       );
@@ -752,7 +753,11 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
     <div
       ref={ref}
       className={isNote ? "pill note" : "pill"}
-      style={isNote ? { ...style, width: Math.min(config.noteWidth, maxWidth), maxHeight: config.noteMaxHeight, padding: config.notePadding, gap: config.pillContentSpacing, borderRadius: config.noteCornerRadius, overflow: "hidden", cursor: "pointer" } : style}
+      style={
+        isNote
+          ? { ...style, width: Math.min(config.noteWidth, maxWidth), maxHeight: config.noteMaxHeight, padding: `${config.noteVerticalPadding}px ${config.noteHorizontalPadding}px`, gap: config.noteSpacing, borderRadius: config.noteCornerRadius, overflow: "hidden", cursor: "pointer" }
+          : style
+      }
       role={isNote ? "button" : undefined}
       aria-label={isNote ? "Copy" : undefined}
       onPointerEnter={isNote ? () => setNoteHovered(true) : undefined}
@@ -771,7 +776,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
 /** The note's time left, from when it shows (`notPastedDisplayDuration`). */
 function NoteTimeoutBar() {
   const [closesAt] = useState(() => Date.now() + config.notPastedDisplayDuration);
-  return <TimeoutBar closesAt={closesAt} timeout={config.notPastedDisplayDuration} />;
+  return <TimeoutBar closesAt={closesAt} timeout={config.notPastedDisplayDuration} inset={config.noteCornerRadius} />;
 }
 
 /** While the note for a text not pasted shows, the overlay takes clicks over it: the page says when
@@ -813,10 +818,10 @@ function LanguageBadge({ code }: { code: string }) {
         width: diameter,
         height: diameter,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
+        borderColor: "var(--accent)",
       }}
     >
-      <span className="gradient-text" style={{ fontSize: config.languageBadgeFontSize, backgroundImage: brandGradient }}>
+      <span className="badge-text" style={{ fontSize: config.languageBadgeFontSize }}>
         {new Intl.Locale(code).language.toUpperCase()}
       </span>
     </div>
@@ -967,8 +972,7 @@ function Bubble({
           width: diameter,
           height: diameter,
           borderWidth: config.pillBorderWidth,
-          background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
-          boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
+          ...glassStyle(brandGlow),
           transform: `scale(${isRunning ? config.agentBubbleRunningScale : isHovered ? config.agentBubbleHoverScale : 1})`,
           opacity: isHovered ? 1 : opacity * (isDimmed ? config.agentBubbleIdleOpacity : 1),
           transition: `transform ${config.agentBubbleRunningSpringResponseSeconds}s ${config.agentBubbleRunningSpringEasing}, opacity ${config.pillSpringResponseSeconds}s ease-out`,
@@ -981,8 +985,8 @@ function Bubble({
   );
 }
 
-/** What the hovered bubble is: its name over what it does (its Settings description), in a dark
- * tooltip as the tips are, over the bubble or under it when there is no room (`bubbleTooltipCenter`).
+/** What the hovered bubble is: its name over what it does (its Settings description), on the glass
+ * as the tips are, over the bubble or under it when there is no room (`bubbleTooltipCenter`).
  * The pointer passes through it, so it never takes the hover from the bubble under it. */
 function BubbleTooltip({ name, description, bubble, canvas }: { name: string; description: string; bubble: Rect; canvas: Size }) {
   const [ref, size] = useSize<HTMLDivElement>();
@@ -999,17 +1003,15 @@ function BubbleTooltip({ name, description, bubble, canvas }: { name: string; de
         padding: config.bubbleTooltipPadding,
         gap: config.bubbleTooltipLineSpacing,
         borderRadius: config.tipCornerRadius,
-        background: palette.tip.fill,
-        border: `${config.pillBorderWidth}px solid ${palette.tip.border}`,
-        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${palette.tip.shadow}`,
+        ...glassStyle(brandGlow),
         // Hidden until measured, so it never shows for a frame where it doesn't belong.
         visibility: size.width > 0 ? "visible" : "hidden",
       }}
     >
-      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: palette.tip.keyText }}>
+      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: "var(--text)" }}>
         {name}
       </span>
-      <span style={{ fontSize: config.bubbleTooltipFontSize, color: palette.tip.text }}>{description}</span>
+      <span style={{ fontSize: config.bubbleTooltipFontSize, color: "var(--secondary)" }}>{description}</span>
     </div>
   );
 }
@@ -1037,17 +1039,17 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward, gnomeRecordingKeys }
   );
 }
 
-/** A tip in a tooltip by the listening pill, under it or over it (`tipGoesAbove`): a dark rounded
- * box with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. Hidden until
+/** A tip in a tooltip by the listening pill, under it or over it (`tipGoesAbove`): a rounded box of
+ * the glass, with its rim and glow, with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. Hidden until
  * measured, as its outline is drawn to its size: never its words for a frame without their box. */
 function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeRecordingKeys: boolean; tip: DictationTip; hotkey: DictationHotkey; pointsDown: boolean }) {
   const [ref, size] = useSize<HTMLDivElement>();
   const lines = tipLines(tip, hotkey, gnomeRecordingKeys);
   return (
     <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
-      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${palette.tip.shadow})` }}>
-        {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
-        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={palette.tip.fill} stroke={palette.tip.border} strokeWidth={config.pillBorderWidth} />
+      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 0 ${config.pillGlowRadius}px var(--glow)) drop-shadow(0 ${config.glassLiftOffsetY}px ${config.glassLiftRadius}px var(--lift))` }}>
+        {/* The outline mirrored top to bottom, its arrow at the pill under it; the lift still falls down. */}
+        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} style={{ fill: "var(--glass)", stroke: "var(--rim)" }} strokeWidth={config.glassHairlineWidth} />
       </svg>
       <div
         className="tip-lines"
@@ -1057,7 +1059,7 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
           <div key={index} className="tip-line" style={{ gap: config.tipSpacing, height: config.tipLineHeight }}>
             {line.map((part, partIndex) =>
               "words" in part ? (
-                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: palette.tip.text }}>
+                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: "var(--text)" }}>
                   {part.words}
                 </span>
               ) : (
@@ -1066,13 +1068,13 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
                   className="keycap"
                   style={{
                     fontSize: config.tipKeyFontSize,
-                    color: palette.tip.keyText,
+                    color: "var(--text)",
                     padding: `0 ${config.tipKeyPadding}px`,
                     height: config.tipKeyHeight,
                     borderRadius: config.tipKeyCornerRadius,
                     borderWidth: config.pillBorderWidth,
-                    borderColor: palette.tip.keyBorder,
-                    background: palette.tip.keyFill,
+                    borderColor: "var(--separator)",
+                    background: "var(--fill-subtle)",
                   }}
                 >
                   {part.key}
@@ -1153,5 +1155,5 @@ function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; 
 
 const root = document.getElementById("root");
 // The overlay is light in light and dark mode alike.
-applyPalette(document, false);
+applyPalette(document);
 if (root) createRoot(root).render(<Overlay />);

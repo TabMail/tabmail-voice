@@ -2,15 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-/* The paste history (ADR-DESK-043): a popover of the texts pasted, each a row to click. */
-html,
-body {
+/* The paste history (ADR-DESK-043): a card of the overlay's glass listing the texts pasted, each a row to click. */
+/* Above `form.css`'s `html, body` whichever loads last (the build links the shared `form.css` after
+ * this): the window is transparent round the card, for its glow. */
+:root,
+:root > body {
   background: transparent;
   overflow: hidden;
 }
 
 .history {
   padding: 6px;
+  color: var(--text);
 }
 
 .history-title {

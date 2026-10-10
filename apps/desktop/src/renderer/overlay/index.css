@@ -83,10 +83,9 @@ body {
   transform-origin: center;
 }
 
-.gradient-text {
+.badge-text {
   font-weight: 600;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent);
 }
 
 .waveform {
@@ -301,14 +300,18 @@ body {
   color: var(--on-accent);
 }
 
-.chat-timeout {
+.chat-timeout-track {
   position: absolute;
-  left: 0;
-  bottom: 0;
   pointer-events: none;
 }
 
-/* The not-pasted note: a card, its message and x over the box showing the text it copies. */
+.chat-timeout {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--countdown);
+}
+
+/* The not-pasted note: a card, its message as a caption with the x, the text it copies, and a Copy link. */
 .pill.note {
   flex-direction: column;
   align-items: stretch;
@@ -317,22 +320,15 @@ body {
 .note-header {
   display: flex;
   align-items: center;
+  color: var(--secondary);
 }
 
 .note-header .message {
   flex: 1;
+  color: var(--secondary);
 }
 
 .note-text {
-  display: flex;
-  align-items: flex-start;
-  border-style: solid;
-  color: var(--secondary);
-  transition: border-color 0.15s ease-out, color 0.15s ease-out;
-}
-
-.note-text-content {
-  flex: 1;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -341,12 +337,23 @@ body {
   color: var(--text);
 }
 
-/* The copy sign on the first line's center. */
-.note-text svg {
-  margin-top: 1px;
+.note-foot {
+  display: flex;
+  justify-content: flex-end;
 }
 
-.note-close {
+.note-copy {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  color: var(--accent);
+  font-weight: 500;
+  transition: background 0.15s ease-out;
+}
+
+/* The note's and the chat window's x: a faint glyph, a disc under the pointer. */
+.note-close,
+.chat-close {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -354,22 +361,19 @@ body {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--hover);
-  color: var(--secondary);
+  background: transparent;
+  color: var(--tertiary);
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease-out, color 0.15s ease-out;
+}
+
+.note-close:hover,
+.chat-close:hover {
+  background: var(--hover);
+  color: var(--secondary);
 }
 
 .chat-close {
   position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--hover);
-  color: var(--secondary);
-  font-weight: 600;
-  cursor: pointer;
 }

@@ -732,12 +732,15 @@ describe("main process wiring", () => {
     expect(states).toEqual([{ entries: [expect.objectContaining({ text: "Hello there." })] }]);
 
     app.controller?.onShowHistory?.();
-    // Over the pill (its top edge's center at 700,600, the bubbles under it), the pill's gap clear.
+    // Its card over the pill (its top edge's center at 700,600, the bubbles under it), the pill's gap
+    // clear; the window around it larger on each side by the margin its glow takes.
+    const margin = config.pasteHistoryShadowMargin;
+    const around = (x: number, y: number, height: number) => `show ${x - margin},${y - margin} ${config.pasteHistoryWindowWidth + 2 * margin}x${height + 2 * margin}`;
     const top = 600 - config.chatPillGap - config.pasteHistoryMaxHeight;
-    expect(app.historyWindow).toEqual([`show ${700 - config.pasteHistoryWindowWidth / 2},${top} ${config.pasteHistoryWindowWidth}x${config.pasteHistoryMaxHeight}`]);
+    expect(app.historyWindow).toEqual([around(700 - config.pasteHistoryWindowWidth / 2, top, config.pasteHistoryMaxHeight)]);
     await send({ type: "historyHeight", height: 120 });
     await send({ type: "historyHeight", height: config.pasteHistoryMaxHeight + 100 });
-    expect(app.historyWindow.slice(1)).toEqual(["history height 120", `history height ${config.pasteHistoryMaxHeight}`]);
+    expect(app.historyWindow.slice(1)).toEqual([`history height ${120 + 2 * margin}`, `history height ${config.pasteHistoryMaxHeight + 2 * margin}`]);
 
     const id = app.history?.entries[0]?.id;
     await send({ type: "copyHistoryEntry", id });
@@ -757,14 +760,14 @@ describe("main process wiring", () => {
     // It keeps the height its list last measured, never first its tallest (red-verified).
     await send({ type: "historyHeight", height: 150 });
     app.controller?.onShowHistory?.();
-    expect(app.historyWindow.at(-1)).toMatch(/ \d+x150$/);
+    expect(app.historyWindow.at(-1)).toMatch(new RegExp(` \\d+x${150 + 2 * margin}$`));
 
     // With the bubbles over the pill (by the bottom of the screen), it opens over them, as the chat
     // would, never over the pill alone where it would cover them (red-verified).
     (app.overlay as unknown as { pillPlace: { bubblesUnder: boolean } }).pillPlace.bubblesUnder = false;
     app.controller?.onShowHistory?.();
     const overBubbles = 600 - config.agentBubbleGap - config.agentBubbleDiameter - config.chatPillGap - 150;
-    expect(app.historyWindow.at(-1)).toBe(`show ${700 - config.pasteHistoryWindowWidth / 2},${overBubbles} ${config.pasteHistoryWindowWidth}x150`);
+    expect(app.historyWindow.at(-1)).toBe(around(700 - config.pasteHistoryWindowWidth / 2, overBubbles, 150));
 
     // A click elsewhere closes it, the focus already gone where the user clicked.
     app.controller?.onShowHistory?.();

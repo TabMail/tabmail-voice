@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { overlayGlassOpacity } from "./config.js";
+
 /**
  * Every color the app draws with lives here, so a color is changed in one place and the windows keep
  * one look (as Thunderbird's `theme/palette/palette.data.json` and iOS's `Palette.swift`): the brand
@@ -11,8 +13,8 @@
  * where it is drawn, and how long a color takes to change, are tunable numbers in `config.ts`.
  */
 
-/** The windows' light theme: Settings, the welcome wizard, the paste history, the screen-read
- * window, and the overlay, which is light in light and dark mode alike. */
+/** The light theme: Settings, the welcome wizard, the paste history, the screen-read window and the
+ * overlay, each following the system's light and dark (the overlay too since 2026-10-09). */
 const light = {
   /** The window's own color (on macOS Settings shows the frosted material instead). */
   window: "#F4F3F8",
@@ -38,16 +40,38 @@ const light = {
   /** The chat window's question box. */
   fillSubtle: "rgba(0, 0, 0, 0.04)",
   sidebarTint: "rgba(0, 0, 0, 0.02)",
+  /** The faintest text: the note's and the chat's close glyph. */
+  tertiary: "rgba(0, 0, 0, 0.36)",
+  /** Under a link the pointer is over: the note's Copy. */
+  accentWash: "rgba(0, 122, 255, 0.09)",
+  /** The glass every floating surface is made of (owner, 2026-10-09: minimal, glassy as macOS 26,
+   * the same on every platform, so no blur): the overlay's pill, bubbles, notes, tips and chat, and
+   * the paste history. Its fill, `overlayGlassOpacity` opaque; the light on its top edge and its
+   * inner hairline; its rim, a hairline a breath of the brand's blue-purple (not the gradient); the
+   * brand's purple glow; and a soft lift under it. */
+  glass: `rgba(250, 250, 252, ${overlayGlassOpacity})`,
+  glassHighlight: "rgba(255, 255, 255, 0.95)",
+  glassEdge: "rgba(255, 255, 255, 0.55)",
+  rim: "rgba(72, 56, 255, 0.28)",
+  glow: "rgba(123, 0, 255, 0.35)",
+  lift: "rgba(0, 0, 0, 0.1)",
+  /** The user's words in the chat window: one flat pale blue from the brand's hue, with a hairline
+   * border a shade deeper (owner, 2026-10-04: one flat color, not a gradient; gray "looks bad",
+   * 2026-09-28). */
+  chatRequestFill: "#E8F0FE",
+  chatRequestBorder: "#C6DAFC",
+  /** A countdown: a faint hairline inset from its surface's edges, never across it. */
+  countdown: "rgba(0, 0, 0, 0.14)",
   /** An off switch's track: opaque, so its white thumb stands 3:1 from it. */
   switchOff: "#8E8E93",
   switchThumbShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
   cardShadow: "0 1px 2px rgba(0, 0, 0, 0.06)",
 };
 
-/** The windows' theme, one color for each of `light`'s. */
+/** A theme, one color for each of `light`'s. */
 export type Theme = Record<keyof typeof light, string>;
 
-/** The windows' dark theme. */
+/** The dark theme. */
 const dark: Theme = {
   window: "#1F1E24",
   group: "#2A2A2A",
@@ -64,6 +88,17 @@ const dark: Theme = {
   hover: "rgba(255, 255, 255, 0.07)",
   fillSubtle: "rgba(255, 255, 255, 0.04)",
   sidebarTint: "rgba(255, 255, 255, 0.02)",
+  tertiary: "rgba(255, 255, 255, 0.36)",
+  accentWash: "rgba(10, 132, 255, 0.18)",
+  glass: `rgba(40, 40, 44, ${overlayGlassOpacity})`,
+  glassHighlight: "rgba(255, 255, 255, 0.16)",
+  glassEdge: "rgba(255, 255, 255, 0.07)",
+  rim: "rgba(150, 125, 255, 0.42)",
+  glow: "rgba(140, 80, 255, 0.55)",
+  lift: "rgba(0, 0, 0, 0.4)",
+  chatRequestFill: "rgba(10, 132, 255, 0.2)",
+  chatRequestBorder: "rgba(10, 132, 255, 0.38)",
+  countdown: "rgba(255, 255, 255, 0.22)",
   switchOff: "rgba(120, 120, 128, 0.36)",
   switchThumbShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
   cardShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
@@ -74,8 +109,6 @@ export const palette = {
    * accents. */
   brandBlue: "#0091FF",
   brandPurple: "#7B00FF",
-  /** The overlay's pill, its circle and the bubbles: a soft off-white (pure white glared). */
-  pillFill: "#F5F5F5",
   /** The waveform's bars: a washed-out grey-blue until a voice is heard, then a vivid iOS system
    * blue, a sign the dictation is recording (owner, 2026-10-02, chosen from a page of candidates;
    * was the brand blue, then purple, then a muted crimson). */
@@ -91,22 +124,6 @@ export const palette = {
    * from eight colors tried). */
   agentPillGlowInner: "#FF2D55",
   agentPillGlowOuter: "#FF006E",
-  /** The user's words in the chat window: one flat pale blue from the brand's hue, with a hairline
-   * border a shade deeper (owner, 2026-10-04: one flat color, not a gradient; gray "looks bad",
-   * 2026-09-28). */
-  chatRequestFill: "#E8F0FE",
-  chatRequestBorder: "#C6DAFC",
-  /** The overlay's tips and a bubble's tooltip: dark glass with white text, its keycaps a lighter
-   * glass. */
-  tip: {
-    fill: "rgba(28, 28, 28, 0.94)",
-    border: "rgba(255, 255, 255, 0.12)",
-    shadow: "rgba(0, 0, 0, 0.3)",
-    text: "rgba(255, 255, 255, 0.78)",
-    keyText: "rgba(255, 255, 255, 0.95)",
-    keyFill: "rgba(255, 255, 255, 0.14)",
-    keyBorder: "rgba(255, 255, 255, 0.22)",
-  },
   light,
   dark,
 } as const;

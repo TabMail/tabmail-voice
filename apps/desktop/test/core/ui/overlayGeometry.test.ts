@@ -147,7 +147,7 @@ describe("overlay geometry", () => {
   test.each([true, false])("bubbles go in a row under the pill and the tip under them (under fits: %s)", (underFits) => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
-    const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
+    const shadow = config.glassShadowReach;
     const visible = config.agentBubbleRowVisibleCount;
     const showing = visible + config.agentBubbleRowFadeCount;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
@@ -230,7 +230,7 @@ describe("overlay geometry", () => {
   test("a tip over the pill clears the bubbles and stays in the canvas", () => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
-    const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
+    const shadow = config.glassShadowReach;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
       for (let count = 0; count <= config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount; count += 1) {

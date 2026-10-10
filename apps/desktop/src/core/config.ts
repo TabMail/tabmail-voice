@@ -159,6 +159,11 @@ export const pasteHistoryMaxHeight = 440;
 export const pasteHistoryEntryLines = 3;
 /** The window's padding and title, over its list: the list scrolls within the rest. */
 export const pasteHistoryChromeHeight = 44;
+/** The paste history is a card of the overlay's glass (owner, 2026-10-09: with "the same glow"), its
+ * corners as round as the chat window's, in a transparent window this much larger on each side for
+ * its glow and lift: `pasteHistoryWindowWidth` and `pasteHistoryMaxHeight` are the card's. */
+export const pasteHistoryShadowMargin = 16;
+export const pasteHistoryCornerRadius = 20;
 
 // MARK: Screen context
 
@@ -499,8 +504,17 @@ export const pillContentSpacing = 8;
 export const pillMaxTextWidth = 360;
 export const pillMaxTextLines = 3;
 export const pillBorderWidth = 1;
-export const pillGlowOpacity = 0.35;
-export const pillGlowRadius = 8;
+/** The glass every floating surface is made of (owner, 2026-10-09; its colors are `palette`'s
+ * `glass…`, `rim`, `glow` and `lift`): its fill this opaque ("95%", chosen on a page of the theme with
+ * a slider), no blur (the overlay is one transparent window, which a native blur would fill whole,
+ * and Linux has none), a hairline edge, the brand's glow and a soft lift under it. */
+export const overlayGlassOpacity = 0.95;
+export const glassHairlineWidth = 0.5;
+export const pillGlowRadius = 10;
+export const glassLiftOffsetY = 3;
+export const glassLiftRadius = 10;
+/** How far the glass's glow and lift reach under a surface: room a tip leaves under itself. */
+export const glassShadowReach = Math.max(pillGlowRadius, glassLiftOffsetY + glassLiftRadius);
 /** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
  * neon glow very apparent for the pills"): a tight bright glow in a wide one, in `palette`'s
  * `agentPillGlowInner` and `agentPillGlowOuter` (owner, 2026-09-29: "right now it's not as
@@ -666,8 +680,8 @@ export const userNameMaxLength = 100;
 export const doubleTapTipHoldDuration = 20_000;
 
 /** The tooltip a tip is drawn in: centered under the listening pill (or over it, `tipGoesAbove`), a
- * few words around keycaps. Dark, as macOS HUDs are, so it reads as the system's hint rather than
- * part of the pill. */
+ * few words around keycaps, on the overlay's glass (owner, 2026-10-09; it was dark in light and dark
+ * mode alike, as macOS HUDs are). */
 export const tipFontSize = 13;
 /** A tip is at most `tipLineCount` centered lines of a few words, each `tipLineHeight` tall; its box is
  * as tall as its lines (`tipBoxHeight`), and the overlay leaves room for the tallest (`tipHeight`). */
@@ -681,11 +695,8 @@ export function tipBoxHeight(lines: number): number {
 export const tipHeight = tipBoxHeight(tipLineCount);
 export const tipHorizontalPadding = 10;
 export const tipSpacing = 5;
-export const tipCornerRadius = 8;
-/** A soft drop shadow, in `palette.tip.shadow`; the tip's colors are `palette.tip`'s. */
-export const tipShadowRadius = 5;
-export const tipShadowOffsetY = 2;
-/** The keycap: a raised key, a lighter fill with a light border. */
+export const tipCornerRadius = 12;
+/** The keycap: a faint inset key with a hairline border. */
 export const tipKeyFontSize = 12;
 export const tipKeyPadding = 5;
 export const tipKeyHeight = 17;
@@ -699,15 +710,15 @@ export const tipGap = 4;
 export const tipFootprint = tipGap + tipArrowHeight + tipHeight;
 /** Transparent canvas the overlay draws in; the pill sizes itself inside it. The one-line pill sits
  * vertically centered, with room on each side for the listening pill's growth downward, agent mode's
- * row of bubbles (under the pill or over it, `bubblesFitUnder`) and a tip (and its shadow) past it. */
+ * row of bubbles (under the pill or over it, `bubblesFitUnder`) and a tip (and its glow) past it. */
 export const overlayCanvasSize = {
   width: 440,
-  height: pillHeight + 2 * (listeningPillHeight - pillHeight + agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY),
+  height: pillHeight + 2 * (listeningPillHeight - pillHeight + agentBubbleGap + agentBubbleDiameter + tipFootprint + glassShadowReach),
 };
 /** The not-pasted note is never taller than this, whatever the fonts make of its lines: placed, it
  * keeps this much of the work area under the pill's top (`overlayOrigin`), and it fits the canvas
  * under the pill's top (owner, 2026-10-09: the note shows the text it copies). */
-export const noteMaxHeight = 130;
+export const noteMaxHeight = 140;
 /** Agent mode's sparkles in the pill while it rests, fainter, under the chat window and nothing runs;
  * a working pill shows none. */
 export const agentRestingSymbolSize = 12;
@@ -767,11 +778,12 @@ export const chatAppearRise = 8;
 export const chatAppearScale = 0.98;
 /** The chat window grows to its new height over this long as a line or turn joins it. */
 export const chatGrowDurationSeconds = 0.2;
-export const chatCornerRadius = 14;
+/** Rounder, as macOS 26's surfaces (owner, 2026-10-09); what sits inside rounder too. */
+export const chatCornerRadius = 20;
 export const chatPadding = 12;
 export const chatTurnSpacing = 10;
 export const chatBubblePadding = 8;
-export const chatBubbleCornerRadius = 8;
+export const chatBubbleCornerRadius = 12;
 /** The user's words, in a flat pale bubble with a hairline border on the right (its colors are
  * `palette.chatRequestFill` and `chatRequestBorder`), as far as this share of the chat's width; the
  * reply in plain text under it, as TabMail's chat in Thunderbird shows them (`chat.css`:
@@ -791,27 +803,33 @@ export const chatRevealRise = 4;
 export const chatThinkingLabel = "Thinking…";
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
-/** The not-pasted note's x, which dismisses it. */
-export const noteCloseButtonSize = 18;
+/** The not-pasted note's x, which dismisses it: a faint glyph until the pointer is over it. */
+export const noteCloseButtonSize = 16;
+export const noteCloseFontSize = 10;
 /** The not-pasted note is a card this wide (or the overlay's width, if less), its corners this round,
- * this far inside its border: its message and x over a box showing the text it copies, as many
- * lines as `noteTextMaxLines` and cut short after them, with a copy sign in the box's corner (owner,
- * 2026-10-09: "show what was dictated there", with "a typical copy icon"). */
+ * this far inside its edge: its message as a small caption with the x, then the text it copies, as
+ * many lines as `noteTextMaxLines` and cut short after them, then a "Copy" link (owner, 2026-10-09:
+ * "show what was dictated there"; then, from pages of candidates, minimal and rounder, no box). */
 export const noteWidth = 320;
-export const noteCornerRadius = 12;
-export const notePadding = 10;
+export const noteCornerRadius = 20;
+export const noteVerticalPadding = 12;
+export const noteHorizontalPadding = 16;
+export const noteSpacing = 6;
+export const noteCaptionFontSize = 11;
 export const noteMessageMaxLines = 2;
+export const noteTextFontSize = 14;
+export const noteTextLineHeight = 1.35;
 export const noteTextMaxLines = 3;
-export const noteTextPadding = 8;
-export const noteTextCornerRadius = 8;
-export const noteCopyIconSize = 14;
+export const noteCopyIconSize = 12;
 /** The spinner beside what a tool the answer's model called is doing, while it runs. */
 export const chatActivitySpinnerRevolutionsPerSecond = 1;
 export const chatActivitySpinnerLineWidth = 1.5;
-/** The timeout bar along the chat's bottom edge, shrinking from right to left as the time runs out
- * (like the iOS app's `PendingSendToast`). */
+/** The timeout bar along the bottom of the chat, its question or the note, shrinking from right to
+ * left as the time runs out (like the iOS app's `PendingSendToast`): a faint hairline this far over
+ * the bottom edge, inset from the sides by the corner's radius, never across the surface (owner,
+ * 2026-10-09). */
 export const chatTimeoutBarHeight = 2;
-export const chatTimeoutBarOpacity = 0.7;
+export const timeoutBarBottomInset = 4;
 
 // MARK: Local PDF reading (`file_read_pdf`)
 

@@ -19,7 +19,7 @@ const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
 const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
-const overlayCanvasSize = { width: 440, height: 258 };
+const overlayCanvasSize = { width: 440, height: 270 };
 /** The overlay window with the chat window at its tallest (`chatWindowFrame`), and where the pill is
  * in it, over it or under it. */
 const chatWindowSize = { width: 412, height: 420 };
@@ -77,8 +77,9 @@ const history = {
     { id: 1, text: "Can we move the review to Thursday?", at: Date.now() - 3 * 3_600_000 },
   ],
 };
-/** `config.pasteHistoryWindowWidth` by `config.pasteHistoryMaxHeight`. */
-const historyWindowSize = { width: 380, height: 440 };
+/** `config.pasteHistoryWindowWidth` by `config.pasteHistoryMaxHeight`, and `pasteHistoryShadowMargin`
+ * round it for the card's glow. */
+const historyWindowSize = { width: 380 + 2 * 16, height: 440 + 2 * 16 };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
@@ -98,24 +99,25 @@ const noteLines: Record<string, number | null> = {
 };
 
 /** What is wrong with the not-pasted note as the page laid it out, or null: it shows whole in the
- * window, its message and x over the box with the text, the text inside its box in `exactLines`
- * lines (or up to `maxLines`), and the copy sign drawn at the box's end. Run in the page, as
+ * window, its message and x over the text, the text in `exactLines` lines (or up to `maxLines`), and
+ * under it the Copy, its copy sign drawn, at the card's right. Run in the page, as
  * `(maxLines, exactLines) => …`. */
 const noteLayoutProblem = `(maxLines, exactLines) => {
   const element = (selector) => document.querySelector(selector);
   const card = element(".pill.note")?.getBoundingClientRect();
   const header = element(".note-header")?.getBoundingClientRect();
   const close = element(".note-close")?.getBoundingClientRect();
-  const box = element(".note-text")?.getBoundingClientRect();
-  const text = element(".note-text-content");
-  const icon = element(".note-text svg");
-  if (!card || !header || !close || !box || !(text instanceof HTMLElement) || !(icon instanceof SVGSVGElement)) return "a part of the note is missing";
+  const text = element(".note-text");
+  const copy = element(".note-copy")?.getBoundingClientRect();
+  const icon = element(".note-copy svg");
+  if (!card || !header || !close || !copy || !(text instanceof HTMLElement) || !(icon instanceof SVGSVGElement)) return "a part of the note is missing";
   const inside = (inner, outer) => inner.left >= outer.left - 0.5 && inner.right <= outer.right + 0.5 && inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
   if (!inside(card, new DOMRect(0, 0, innerWidth, innerHeight))) return "the note is cut off by the window";
-  if (!inside(header, card) || !inside(close, card) || !inside(box, card)) return "the note cuts off its message, its x or the text's box";
-  if (box.top < header.bottom) return "the text's box is not under the message";
   const content = text.getBoundingClientRect();
-  if (!inside(content, box)) return "the text spills out of its box";
+  if (!inside(header, card) || !inside(close, card) || !inside(content, card) || !inside(copy, card)) return "the note cuts off its message, its x, the text or its Copy";
+  if (content.top < header.bottom) return "the text is not under the message";
+  if (copy.top < content.bottom - 0.5) return "the Copy is not under the text";
+  if (card.right - copy.right > card.width / 4) return "the Copy is not at the card's right";
   // One line's height, in the text's own font.
   const probe = text.cloneNode();
   probe.textContent = "X";
@@ -126,10 +128,9 @@ const noteLayoutProblem = `(maxLines, exactLines) => {
   probe.remove();
   const lines = Math.round(content.height / lineHeight);
   if (exactLines !== null ? lines !== exactLines : lines < 1 || lines > maxLines) return "the text shows as " + lines + " lines";
-  const sign = icon.getBoundingClientRect();
   const drawn = icon.getBBox();
   if (drawn.width <= 0 || drawn.height <= 0) return "the copy sign draws nothing";
-  if (!inside(sign, box) || sign.left < content.right - 0.5) return "the copy sign is not at the end of the text's box";
+  if (!inside(icon.getBoundingClientRect(), copy)) return "the copy sign is not in the Copy";
   return null;
 }`;
 
@@ -182,9 +183,9 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-chat-confirmation-long", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [{ id: 0, request: "Can you add this to my calendar?", tool: "answer", reply: "Happy to add it. Which item on the screen do you mean: the date and time, the title, and any other details? What is on screen does not give me the specifics I need yet." }, { id: 1, request: "The launch review, tomorrow at ten.", tool: "answer", reply: "Here is the entry:\n\n- Title: Launch review\n- When: tomorrow at 10:00\n- No location given\n\nShall I go ahead?" }], pendingRequest: "Yes.", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar tomorrow at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }],
     ] as [string, Record<string, unknown> & { whole?: string }][]
   ).map(([name, { whole, ...change }]) => ({ name, page: "overlay/index.html", size: chatWindowSize, state: { ...overlay, ...change }, transparent: true, ...(whole === undefined ? {} : { whole }) })),
-  { name: "history", page: "history/index.html", size: historyWindowSize, state: history },
-  { name: "history-dark", page: "history/index.html", size: historyWindowSize, dark: true, state: history },
-  { name: "history-empty", page: "history/index.html", size: historyWindowSize, state: { entries: [] } },
+  { name: "history", page: "history/index.html", size: historyWindowSize, state: history, transparent: true },
+  { name: "history-dark", page: "history/index.html", size: historyWindowSize, dark: true, state: history, transparent: true },
+  { name: "history-empty", page: "history/index.html", size: historyWindowSize, state: { entries: [] }, transparent: true },
   { name: "settings", page: "settings/index.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings/index.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
@@ -206,6 +207,9 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "welcome-accessibility", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true } },
   { name: "welcome-accessibility-vscode", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true, vscodeFix: "needed" } },
 ];
+/** The overlay follows the system's light and dark (owner, 2026-10-09): these again, dark. */
+const darkOverlayShots = new Set(["overlay-listening", "overlay-tip-switch", "overlay-not-pasted", "overlay-failed-long", "overlay-agent-apps-running", "overlay-chat-answer", "overlay-chat-confirmation"]);
+shots.push(...shots.filter((shot) => darkOverlayShots.has(shot.name)).map((shot) => ({ ...shot, name: `${shot.name}-dark`, dark: true })));
 
 async function capture(shot: (typeof shots)[number]): Promise<void> {
   nativeTheme.themeSource = shot.dark ? "dark" : "light";

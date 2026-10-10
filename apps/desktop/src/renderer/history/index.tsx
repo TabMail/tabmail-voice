@@ -7,13 +7,15 @@ import { createRoot } from "react-dom/client";
 import * as config from "../../core/config.js";
 import { pastedAgo } from "../../core/dictation/pasteHistory.js";
 import { send, useWindowState } from "../shared/bridge.js";
+import { brandGlow, glassStyle } from "../shared/glass.js";
 import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
 /** The paste history a triple tap opens (ADR-DESK-043): the texts pasted, or copied instead, the
- * newest first; a click copies one and closes the window, as Escape does. The window takes the
- * list's height, up to its tallest, then the list scrolls. */
+ * newest first; a click copies one and closes the window, as Escape does. A card of the overlay's
+ * glass, `pasteHistoryShadowMargin` inside its transparent window for its glow; the window takes the
+ * card's height, up to its tallest, then the list scrolls. */
 function History() {
   const state = useWindowState("history");
   const ref = useRef<HTMLDivElement>(null);
@@ -34,7 +36,7 @@ function History() {
   if (!state) return null;
   const now = Date.now();
   return (
-    <div ref={ref} className="history">
+    <div ref={ref} className="history" style={{ margin: config.pasteHistoryShadowMargin, borderRadius: config.pasteHistoryCornerRadius, ...glassStyle(brandGlow) }}>
       <div className="history-title">
         Paste history
         {state.entries.length > 0 && <span className="history-hint">Click to copy</span>}

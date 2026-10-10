@@ -164,9 +164,10 @@ describe("overlay page", () => {
     });
     await page.show({ ...listening, phase: { ...note, message } });
     expect(document.querySelector(".pill .message")?.textContent).toBe(message);
-    // The text itself, in a box with a copy sign.
-    expect(document.querySelector(".pill.note .note-text-content")?.textContent).toBe(note.text);
-    expect(document.querySelector(".pill.note .note-text svg")).not.toBeNull();
+    // The text itself, then a Copy link with its copy sign.
+    expect(document.querySelector(".pill.note .note-text")?.textContent).toBe(note.text);
+    expect(document.querySelector(".pill.note .note-copy")?.textContent).toBe("Copy");
+    expect(document.querySelector(".pill.note .note-copy svg")).not.toBeNull();
     expect(document.querySelector(".pill.note .chat-timeout")).not.toBeNull();
     const clipboardIcon = document.querySelector(".pill svg")?.innerHTML;
     expect(clipboardIcon).toContain("rect");
@@ -182,9 +183,9 @@ describe("overlay page", () => {
     expect(document.querySelector(".pill svg")?.innerHTML).not.toBe(clipboardIcon);
   });
 
-  /** Anywhere on the note copies its text, the text, its box and its copy sign among them (owner,
+  /** Anywhere on the note copies its text, the text, its Copy and its copy sign among them (owner,
    * 2026-10-09: "click on that word or the box or that icon to copy"). */
-  test.each([".note-text-content", ".note-text", ".note-text svg", ".note-header .message"])("a click on the not-pasted note's %s copies it", async (part) => {
+  test.each([".note-text", ".note-copy", ".note-copy svg", ".note-header .message"])("a click on the not-pasted note's %s copies it", async (part) => {
     const page = await overlayPage();
     await page.show({ ...listening, phase: note });
 
@@ -203,27 +204,25 @@ describe("overlay page", () => {
     const card = document.querySelector<HTMLElement>(".pill.note");
     expect(card?.style.maxHeight).toBe(`${config.noteMaxHeight}px`);
     expect(card?.style.overflow).toBe("hidden");
-    const text = document.querySelector<HTMLElement>(".note-text-content");
+    const text = document.querySelector<HTMLElement>(".note-text");
     expect(text?.textContent).toBe(long);
   });
 
-  /** Under the pointer, the text's box and its copy sign take the brand's blue, and give it back when
-   * the pointer leaves. */
-  test("the not-pasted note's box turns blue under the pointer", async () => {
+  /** Under the pointer, the note's Copy takes a wash of the accent, and gives it back when the pointer
+   * leaves. */
+  test("the not-pasted note's Copy lights up under the pointer", async () => {
     const page = await overlayPage();
     await page.show({ ...listening, phase: note });
     const card = document.querySelector<HTMLElement>(".pill.note");
-    const box = () => document.querySelector<HTMLElement>(".pill.note .note-text");
-    const resting = { border: box()?.style.borderColor, color: box()?.style.color };
-    expect(resting.color).toBe("");
+    const copy = () => document.querySelector<HTMLElement>(".pill.note .note-copy");
+    const resting = copy()?.style.backgroundColor;
+    expect(resting).toBe("transparent");
 
     await act(async () => card?.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
-    expect(box()?.style.borderColor).not.toBe(resting.border);
-    expect(box()?.style.borderColor).toBe(box()?.style.color);
-    expect(box()?.style.color).not.toBe("");
+    expect(copy()?.style.backgroundColor).toBe("var(--accent-wash)");
 
     await act(async () => card?.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, relatedTarget: document.body })));
-    expect({ border: box()?.style.borderColor, color: box()?.style.color }).toEqual(resting);
+    expect(copy()?.style.backgroundColor).toBe(resting);
     expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
   });
 
@@ -803,8 +802,8 @@ describe("the chat window", () => {
     expect(document.querySelector(".chat-canvas .pill")).not.toBeNull();
   });
 
-  /** The request as Thunderbird's chat shows one: one flat pale color (no gradient) and a hairline
-   * border, at most most of the window's width. */
+  /** The request as Thunderbird's chat shows one: one flat pale color (no gradient), the theme's in
+   * light and dark, and a hairline border, at most most of the window's width. */
   test("a request shows as Thunderbird's chat shows one", async () => {
     const page = await overlayPage();
     await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
@@ -812,9 +811,9 @@ describe("the chat window", () => {
     const request = document.querySelector<HTMLElement>(".chat-request");
     expect(request?.style.maxWidth).toBe(`${config.chatWidth * config.chatRequestMaxWidthFraction}px`);
     expect(request?.style.borderRadius).toBe(`${config.chatBubbleCornerRadius}px`);
-    expect(request?.style.backgroundColor).toBe(palette.chatRequestFill);
-    expect(request?.style.backgroundImage).not.toContain("gradient");
-    expect(request?.style.border).toBe(`${config.pillBorderWidth}px solid ${palette.chatRequestBorder}`);
+    expect(request?.style.background).toBe("var(--chat-request-fill)");
+    expect(request?.style.borderWidth).toBe(`${config.pillBorderWidth}px`);
+    expect(request?.style.borderColor).toBe("var(--chat-request-border)");
   });
 
   /** A reply is revealed a line or list item at a time, `chatRevealStepInterval` apart, each fading in:
@@ -1067,14 +1066,24 @@ describe("the chat window", () => {
     expect(shownColors()).not.toContain(retryStart);
   });
 
-  /** The pill and the chat window are light in light and dark mode alike, so their text keeps the
-   * light theme's dark ink when the system is dark: the page takes the palette's light theme alone. */
-  test("the overlay keeps the light theme in dark mode", async () => {
-    await overlayPage();
+  /** The overlay follows the system's light and dark (owner, 2026-10-09): the page takes both
+   * themes, and the pill and the chat window are the theme's glass, with its rim and glow, never a
+   * color of their own, so they turn dark with it. */
+  test("the overlay follows light and dark, its surfaces the theme's glass", async () => {
+    const page = await overlayPage();
     const colors = document.adoptedStyleSheets.flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join("\n");
     expect(colors).toContain(`--text: ${palette.light.text};`);
-    expect(colors).not.toContain("prefers-color-scheme");
-    expect(colors).not.toContain(palette.dark.text);
+    expect(colors).toContain("prefers-color-scheme: dark");
+    expect(colors).toContain(`--glass: ${palette.dark.glass};`);
+
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    for (const surface of [".chat", ".pill"]) {
+      const style = document.querySelector<HTMLElement>(surface)?.style;
+      expect(style?.background, surface).toBe("var(--glass)");
+      expect(style?.boxShadow, surface).toContain("var(--rim)");
+    }
+    // The brand's glow on the chat; the pill beside it glows agent mode's red-pink.
+    expect(document.querySelector<HTMLElement>(".chat")?.style.boxShadow).toContain("var(--glow)");
   });
 
   /** A new turn scrolls the conversation to it. */
@@ -1233,7 +1242,7 @@ describe("the chat window", () => {
       const width = () => parseFloat(bars()[0]?.style.width ?? "");
 
       expect(bars()).toHaveLength(1);
-      expect(bars()[0]?.parentElement?.className).toBe("chat-confirmation");
+      expect(bars()[0]?.closest(".chat-timeout-track")?.parentElement?.className).toBe("chat-confirmation");
       expect(width()).toBeCloseTo(100, 0);
       vi.advanceTimersByTime(config.chatConfirmationTimeout / 2);
       expect(width()).toBeCloseTo(50, 0);
