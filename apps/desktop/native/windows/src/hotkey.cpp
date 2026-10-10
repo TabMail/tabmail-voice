@@ -27,6 +27,10 @@ voice::Gesture gesture;
 voice::ModifierChoice modifier;
 std::array<bool, 256> pressed{};
 std::array<bool, 256> swallowed{};
+// An unassigned virtual key: the app in front ignores it, but after it Windows counts the Alt
+// release as Alt used with another key, not a lone Alt press (which opens the menu bar).
+constexpr WORD menuMaskKey = 0xE8;
+bool altMasked = false; // menuMaskKey was sent during this Right Alt hold
 
 // A blocked/broken parent must not leave a helper owning keys. Windows bounds the message
 // queue; exhaustion ends this process and removes its hook instead of dropping an action.
@@ -48,11 +52,24 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
     if (modifier.bypass(key, down, (event.flags & LLKHF_INJECTED) != 0)) return CallNextHookEx(hook, code, message, data);
     bool owns = false;
     std::optional<voice::Action> action;
-    // Windows passes on the key event of a hook that answers too late (under heavy load; it may
-    // also remove the hook), so the key-down reaches the system anyway. Swallowing its key-up then leaves the system holding the key, and every paste
-    // after it sees a modifier held. A key-up always goes through when the system saw its key-down.
-    const bool leaked = up && (GetAsyncKeyState(static_cast<int>(key)) & 0x8000) != 0;
+    // Windows passes on the key event of a hook that answers too late (under heavy load; current
+    // Windows may also remove the hook), so the key-down reaches the system anyway. Swallowing its
+    // key-up then leaves the system holding the key, and every paste after it sees a modifier held.
+    // So a key-up goes through when GetAsyncKeyState, which here gives the state from before this
+    // event, says the system holds the key.
+    const bool systemHolds = (GetAsyncKeyState(static_cast<int>(key)) & 0x8000) != 0;
+    const bool leaked = up && systemHolds;
     if (key == modifier.selected) {
+        // The system holds Right Alt from a leaked key-down: its release alone would open the menu
+        // bar of the app in front. Pressing menuMaskKey now makes it Alt used with another key. The
+        // real release still goes through below; if the mask is lost, the worst is that menu bar.
+        if (down && systemHolds && key == voice::ModifierChoice::rightAlt && !altMasked) {
+            INPUT mask[2]{};
+            for (auto& input : mask) { input.type = INPUT_KEYBOARD; input.ki.wVk = menuMaskKey; }
+            mask[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            altMasked = SendInput(2, mask, sizeof(INPUT)) == 2; // Injected keys pass this hook.
+        }
+        if (up) altMasked = false;
         owns = down || (swallowed[key] && !leaked);
         if (down) swallowed[key] = true;
         else swallowed[key] = false;
