@@ -7,8 +7,10 @@
 namespace voice {
 // Windows AltGr arrives as Control + right Alt, including a synthesized Control
 // event on some layouts. Track those events even when injected input is otherwise
-// passed through. Do not use GetAsyncKeyState inside the low-level callback: its
-// state has not yet been updated for that event.
+// passed through. Inside the low-level callback GetAsyncKeyState gives the state
+// from before that event, so it cannot track these; the hook reads it only to
+// learn whether the system already holds the key (to let a key-up through, and to
+// mask a leaked Right Alt).
 class ModifierChoice {
 public:
     static constexpr unsigned rightControl = 0xa3;

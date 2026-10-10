@@ -62,7 +62,7 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
             throw std::runtime_error("focused field changed");
         }
         for (const int key : {VK_LCONTROL, VK_RCONTROL, VK_LSHIFT, VK_RSHIFT, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN}) {
-            if (GetAsyncKeyState(key) & 0x8000) throw std::runtime_error("modifier held");
+            if (GetAsyncKeyState(key) & 0x8000) throw std::runtime_error("modifier held: virtual key " + std::to_string(key));
         }
         // A provider call may have blocked; these checks must also follow the final UIA call.
         if (canceled() || unixMilliseconds() >= deadline || GetForegroundWindow() != window) {
@@ -99,7 +99,7 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
         throw std::runtime_error("paste is no longer current");
     }
     for (const int key : {VK_LCONTROL, VK_RCONTROL, VK_LSHIFT, VK_RSHIFT, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN}) {
-        if (GetAsyncKeyState(key) & 0x8000) throw std::runtime_error("modifier held");
+        if (GetAsyncKeyState(key) & 0x8000) throw std::runtime_error("modifier held: virtual key " + std::to_string(key));
     }
     INPUT keys[4]{};
     for (auto& key : keys) key.type = INPUT_KEYBOARD;
