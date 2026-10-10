@@ -19,7 +19,7 @@ const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
 const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
-const overlayCanvasSize = { width: 440, height: 270 };
+const overlayCanvasSize = { width: 440, height: 292 };
 /** The overlay window with the chat window at its tallest (`chatWindowFrame`), and where the pill is
  * in it, over it or under it. */
 const chatWindowSize = { width: 412, height: 420 };
@@ -79,7 +79,7 @@ const history = {
 };
 /** `config.pasteHistoryWindowWidth` by `config.pasteHistoryMaxHeight`, and `pasteHistoryShadowMargin`
  * round it for the card's glow. */
-const historyWindowSize = { width: 380 + 2 * 16, height: 440 + 2 * 16 };
+const historyWindowSize = { width: 380 + 2 * 24, height: 440 + 2 * 24 };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };

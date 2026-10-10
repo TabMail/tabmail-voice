@@ -1082,6 +1082,10 @@ describe("the chat window", () => {
       expect(style?.background, surface).toBe("var(--glass)");
       expect(style?.boxShadow, surface).toContain("var(--rim)");
     }
+    // The crisp shadow, a Mac window's (owner, 2026-10-09), with room for it round the chat window.
+    expect(document.querySelector<HTMLElement>(".chat")?.style.boxShadow).toContain("var(--contact)");
+    expect(document.querySelector<HTMLElement>(".chat")?.style.boxShadow).toContain("var(--ambient)");
+    expect(config.chatShadowMargin).toBeGreaterThanOrEqual(config.glassShadowReach);
     // The brand's glow on the chat; the pill beside it glows agent mode's red-pink.
     expect(document.querySelector<HTMLElement>(".chat")?.style.boxShadow).toContain("var(--glow)");
   });

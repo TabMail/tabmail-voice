@@ -161,8 +161,9 @@ export const pasteHistoryEntryLines = 3;
 export const pasteHistoryChromeHeight = 44;
 /** The paste history is a card of the overlay's glass (owner, 2026-10-09: with "the same glow"), its
  * corners as round as the chat window's, in a transparent window this much larger on each side for
- * its glow and lift: `pasteHistoryWindowWidth` and `pasteHistoryMaxHeight` are the card's. */
-export const pasteHistoryShadowMargin = 16;
+ * its glow and shadow (`glassShadowReach`, which comes later in this file): `pasteHistoryWindowWidth`
+ * and `pasteHistoryMaxHeight` are the card's. */
+export const pasteHistoryShadowMargin = 24;
 export const pasteHistoryCornerRadius = 20;
 
 // MARK: Screen context
@@ -505,16 +506,23 @@ export const pillMaxTextWidth = 360;
 export const pillMaxTextLines = 3;
 export const pillBorderWidth = 1;
 /** The glass every floating surface is made of (owner, 2026-10-09; its colors are `palette`'s
- * `glass…`, `rim`, `glow` and `lift`): its fill this opaque ("95%", chosen on a page of the theme with
- * a slider), no blur (the overlay is one transparent window, which a native blur would fill whole,
- * and Linux has none), a hairline edge, the brand's glow and a soft lift under it. */
-export const overlayGlassOpacity = 0.95;
+ * `glass…`, `rim`, `glow`, `contact` and `ambient`): its fill this opaque (97%, chosen on a page of
+ * the theme with a slider, first 95%, then "only subtle things showing up in the back"), no blur
+ * (the overlay is one transparent window, which a native blur would fill whole, and Linux has none),
+ * a hairline edge, the brand's glow, and a crisp shadow as a Mac window's: a tight contact shadow at
+ * its edge, which gives it a defined border, under a wide, faint ambient one (owner, 2026-10-09: the
+ * soft one alone made the edge "slightly too soft"). */
+export const overlayGlassOpacity = 0.97;
 export const glassHairlineWidth = 0.5;
 export const pillGlowRadius = 10;
-export const glassLiftOffsetY = 3;
-export const glassLiftRadius = 10;
-/** How far the glass's glow and lift reach under a surface: room a tip leaves under itself. */
-export const glassShadowReach = Math.max(pillGlowRadius, glassLiftOffsetY + glassLiftRadius);
+export const glassContactEdgeRadius = 1;
+export const glassContactOffsetY = 1;
+export const glassContactRadius = 2;
+export const glassAmbientOffsetY = 6;
+export const glassAmbientRadius = 18;
+/** How far the glass's glow and shadow reach past a surface: room a tip leaves under itself, and the
+ * chat window and paste history around themselves. */
+export const glassShadowReach = Math.max(pillGlowRadius, glassAmbientOffsetY + glassAmbientRadius);
 /** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
  * neon glow very apparent for the pills"): a tight bright glow in a wide one, in `palette`'s
  * `agentPillGlowInner` and `agentPillGlowOuter` (owner, 2026-09-29: "right now it's not as
@@ -762,8 +770,8 @@ export const chatConfirmationTimeout = 30_000;
 export const chatWidth = 380;
 /** The chat grows with its conversation up to this height, then scrolls. */
 export const chatMaxHeight = 320;
-/** Room around the chat window in the overlay window, for its shadow. */
-export const chatShadowMargin = 16;
+/** Room around the chat window in the overlay window, for its glow and shadow. */
+export const chatShadowMargin = glassShadowReach;
 /** The chat window sits this far over the pill (or under its bubbles, `chatSide`), which stays
  * where it was (owner, 2026-09-28: the answer box "appears smoothly above in a subtle way"). */
 export const chatPillGap = 10;

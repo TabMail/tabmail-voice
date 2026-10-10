@@ -15,7 +15,7 @@ import { bubbleRow, bubbleRowOpacity, bubbleTooltipCenter, grownBubble, hintCent
 import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/tips.js";
 import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
 import { brandBlue, brandColor, rgba } from "../shared/brand.js";
-import { brandGlow, glassStyle } from "../shared/glass.js";
+import { brandGlow, glassShadow, glassStyle } from "../shared/glass.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { ClipboardIcon, ConnectorIcon, CopyIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
 import { applyPalette } from "../shared/theme.js";
@@ -1047,8 +1047,8 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
   const lines = tipLines(tip, hotkey, gnomeRecordingKeys);
   return (
     <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
-      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 0 ${config.pillGlowRadius}px var(--glow)) drop-shadow(0 ${config.glassLiftOffsetY}px ${config.glassLiftRadius}px var(--lift))` }}>
-        {/* The outline mirrored top to bottom, its arrow at the pill under it; the lift still falls down. */}
+      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: [glassShadow[0], glassShadow[1], brandGlow, glassShadow[2]].map((shadow) => `drop-shadow(${shadow})`).join(" ") }}>
+        {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
         <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} style={{ fill: "var(--glass)", stroke: "var(--rim)" }} strokeWidth={config.glassHairlineWidth} />
       </svg>
       <div

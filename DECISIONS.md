@@ -4066,13 +4066,16 @@ window's) and `renderer/shared/brand.ts` (the brand blue and purple).
 > and dark.** From pages of candidates (the not-pasted note's look, then the whole theme on one page
 > with light, dark and a slider), the owner chose a minimal, rounder glass after macOS 26's: *"no
 > gradients"*, *"it should still have our glow"*, the rim *"should be hairline"*, *"for the dark glass,
-> I think we should obey the theme of the system"*, the glass *"95%"* opaque, and *"consistency is
+> I think we should obey the theme of the system"*, the glass 97% opaque (first 95%, then 97%, so *"only subtle things showing up in the back"*), its
+> shadow crisp as a Mac window's (the soft one left the edge *"slightly too soft"*), and *"consistency is
 > king"*: what the owner had already chosen (the pill's size and glow, the waveform's colors, the
 > fuchsia retry, agent mode's red-pink glow, the pale-blue request) stays. So:
 > - **The glass** is the palette's, in its light and dark themes: `glass` (`overlayGlassOpacity`,
->   0.95), `glassHighlight` and `glassEdge` (the light on its top edge, its inner hairline), `rim` (a
+>   0.97), `glassHighlight` and `glassEdge` (the light on its top edge, its inner hairline), `rim` (a
 >   hairline a breath of the brand's blue-purple, in place of the gradient border), `glow` (the brand's
->   purple) and `lift` (a soft shadow under it). `renderer/shared/glass.ts`'s `glassStyle` composes
+>   purple), and `contact` and `ambient`, the crisp shadow: a tight contact shadow at the edge, which
+>   gives it a defined border, under a wide, faint ambient one (`glassShadow`; `chatShadowMargin` and
+>   `pasteHistoryShadowMargin` leave room for its `glassShadowReach`). `renderer/shared/glass.ts`'s `glassStyle` composes
 >   them, with `config`'s widths and radii, for every surface: the pill and its circle, the bubbles and
 >   their tooltip, messages, the not-pasted note, the tips, the chat window, and the paste history.
 >   Agent mode's pill keeps its red-pink glow in the brand glow's place. A surface's border stays

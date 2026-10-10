@@ -48,13 +48,15 @@ const light = {
    * the same on every platform, so no blur): the overlay's pill, bubbles, notes, tips and chat, and
    * the paste history. Its fill, `overlayGlassOpacity` opaque; the light on its top edge and its
    * inner hairline; its rim, a hairline a breath of the brand's blue-purple (not the gradient); the
-   * brand's purple glow; and a soft lift under it. */
+   * brand's purple glow; and a crisp shadow, a tight `contact` one at its edge under a wide, faint
+   * `ambient` one, as a Mac window's. */
   glass: `rgba(250, 250, 252, ${overlayGlassOpacity})`,
   glassHighlight: "rgba(255, 255, 255, 0.95)",
   glassEdge: "rgba(255, 255, 255, 0.55)",
   rim: "rgba(72, 56, 255, 0.28)",
   glow: "rgba(123, 0, 255, 0.35)",
-  lift: "rgba(0, 0, 0, 0.1)",
+  contact: "rgba(0, 0, 0, 0.22)",
+  ambient: "rgba(0, 0, 0, 0.12)",
   /** The user's words in the chat window: one flat pale blue from the brand's hue, with a hairline
    * border a shade deeper (owner, 2026-10-04: one flat color, not a gradient; gray "looks bad",
    * 2026-09-28). */
@@ -95,7 +97,8 @@ const dark: Theme = {
   glassEdge: "rgba(255, 255, 255, 0.07)",
   rim: "rgba(150, 125, 255, 0.42)",
   glow: "rgba(140, 80, 255, 0.55)",
-  lift: "rgba(0, 0, 0, 0.4)",
+  contact: "rgba(0, 0, 0, 0.65)",
+  ambient: "rgba(0, 0, 0, 0.45)",
   chatRequestFill: "rgba(10, 132, 255, 0.2)",
   chatRequestBorder: "rgba(10, 132, 255, 0.38)",
   countdown: "rgba(255, 255, 255, 0.22)",

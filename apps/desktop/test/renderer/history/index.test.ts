@@ -69,6 +69,10 @@ describe("paste history page", () => {
     expect(card?.background).toBe("var(--glass)");
     expect(card?.boxShadow).toContain("var(--rim)");
     expect(card?.boxShadow).toContain("var(--glow)");
+    // The crisp shadow, and room in the window for all of it.
+    expect(card?.boxShadow).toContain("var(--contact)");
+    expect(card?.boxShadow).toContain("var(--ambient)");
+    expect(config.pasteHistoryShadowMargin).toBeGreaterThanOrEqual(config.glassShadowReach);
     expect(card?.margin).toBe(`${config.pasteHistoryShadowMargin}px`);
     expect(card?.borderRadius).toBe(`${config.pasteHistoryCornerRadius}px`);
   });
