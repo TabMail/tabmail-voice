@@ -92,7 +92,8 @@ describe("the Mac app's packaging", () => {
 
     expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/install-update", to: "linux/install-update" });
     expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/update-keys", to: "linux/update-keys", filter: ["*.pem"] });
-    expect(statSync(join(root, "resources/linux/install-update")).mode & 0o111).toBe(0o111);
+    // Windows has no executable bit to check (its release build runs these tests too).
+    if (process.platform !== "win32") expect(statSync(join(root, "resources/linux/install-update")).mode & 0o111).toBe(0o111);
     expect(builder.deb.depends).toEqual(expect.arrayContaining(["openssl", "pkexec"]));
   });
 

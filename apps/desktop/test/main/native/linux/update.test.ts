@@ -114,7 +114,8 @@ describe("Linux updates (ADR-DESK-050)", () => {
  * unable to run its helper or pkexec), and only once the old app is gone: before, its single-instance
  * lock would close the new one at once. Run for real, with Node standing in for both apps. */
 describe("opening the updated app", () => {
-  test("it starts after the old app has quit, with its arguments as given", async () => {
+  // `/bin/sh` waits for it: not on a Windows machine running the tests.
+  test.skipIf(process.platform === "win32")("it starts after the old app has quit, with its arguments as given", async () => {
     const folder = mkdtempSync(join(tmpdir(), "voice-relaunch-"));
     try {
       const marker = join(folder, "opened");

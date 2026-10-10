@@ -34,7 +34,8 @@ test('the window in front maps to its process for the field reader, from the las
   expect(await system.frontmostApp()).toBe(45);
   expect(system.appOf(45)).toBeNull();
 });
-test('search results cross the actual child-process protocol', async () => {
+// A `#!` script runs only where there is a POSIX kernel: not on a Windows machine running the tests.
+test.skipIf(process.platform === 'win32')('search results cross the actual child-process protocol', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tabmail-file-wire-'));
   try {
     const exe = join(dir, 'synthetic-helper');
