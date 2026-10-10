@@ -333,8 +333,8 @@ export class DictationController extends Observable {
   }
 
   /** True once a voice stood above the room's noise this dictation (`LevelEnvelope.hasVoice`; each
-   * dictation and spoken answer starts a new envelope): the overlay's waveform turns from blue to
-   * purple, a sign it is listening (owner, 2026-10-02). */
+   * dictation and spoken answer starts a new envelope, from the room's noise the last one left):
+   * the overlay's waveform takes its recording colour, a sign it is listening (owner, 2026-10-02). */
   get hasVoice(): boolean {
     return this.envelope.hasVoice;
   }
@@ -461,7 +461,7 @@ export class DictationController extends Observable {
     this.currentTools = [];
     this.currentLevel = 0;
     this.peakMeterLevel = 0;
-    this.envelope = new LevelEnvelope();
+    this.envelope = new LevelEnvelope(this.envelope.room);
     this.hearing = false;
     this.startedAt = performance.now();
     this.releasedAt = null;
@@ -492,7 +492,7 @@ export class DictationController extends Observable {
           this.silenceTimer = after(config.silentMicrophoneDuration, () => this.microphoneSilent(current));
         }
         recorder.append(samples);
-        meter.append(samples, (level) => this.updateLevel(level));
+        meter.append(samples, (level, voiceLevel) => this.updateLevel(level, voiceLevel));
       },
       (error) => {
         if (error) this.microphoneFailed(error, current);
@@ -1250,14 +1250,14 @@ export class DictationController extends Observable {
     const meter = new LevelSampler();
     this.spokenAnswer = { id, recorder, abort: new AbortController(), startedAt: performance.now(), handsFree, resume: this.currentPhase };
     this.currentLevel = 0;
-    this.envelope = new LevelEnvelope();
+    this.envelope = new LevelEnvelope(this.envelope.room);
     this.hearing = false;
     const isCurrent = () => this.spokenAnswer?.id === id;
     this.deps.capture.start(
       (samples) => {
         if (!isCurrent()) return;
         recorder.append(samples);
-        meter.append(samples, (level) => this.updateLevel(level));
+        meter.append(samples, (level, voiceLevel) => this.updateLevel(level, voiceLevel));
       },
       (error) => {
         if (error && isCurrent()) this.abandonSpokenAnswer("the microphone failed to start");
@@ -1494,7 +1494,7 @@ export class DictationController extends Observable {
     await this.transcribe(recording.flac, current, releasedAt);
   }
 
-  private updateLevel(level: number): void {
+  private updateLevel(level: number, voiceLevel: number): void {
     const kind = this.currentPhase.kind;
     if (kind !== "arming" && kind !== "listening") return;
     // The device delivers digital silence while it starts; the waveform appears with the first
@@ -1504,7 +1504,7 @@ export class DictationController extends Observable {
       this.showDueTip();
     }
     if (!this.hearing) return;
-    const next = this.envelope.level(level);
+    const next = this.envelope.level(level, voiceLevel);
     const rate = next > this.currentLevel ? config.levelAttack : config.levelRelease;
     this.currentLevel += (next - this.currentLevel) * rate;
     this.peakMeterLevel = Math.max(this.peakMeterLevel, this.currentLevel);

@@ -572,11 +572,18 @@ export const waveformIdleLevel = 0.05;
  * variable configured globally"). */
 export const colorTransitionSeconds = 0.4;
 /** The bars take their recording color (`palette.waveformVoiced`) once a voice is heard: a reading
- * this many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
- * this many readings, ≈ 0.34 s, where a start-up blip would hold it low); loudness only, so a loud
- * noise counts too, and a very quiet mic's speech (2–5 dB above its noise) may not. */
+ * of the voice band this many dB above the room's noise there (a floor of its own in
+ * `LevelEnvelope`, carried from one dictation to the next, left without the first this many
+ * readings, ≈ 0.34 s, where a start-up blip would hold it low); loudness only, so a loud noise in
+ * the band counts too. */
 export const waveformVoiceAboveNoiseDecibels = 6;
 export const waveformVoiceWarmupReadings = 4;
+/** The voice band (`VoiceBand`, telephone speech's), in which a voice is told from the room: a room's
+ * hum and rumble sit below it. On `Scripts/stt-compare`'s ten recordings (2026-10-09) speech stands
+ * 5–10 dB above the room over the full band (the 10th to the 90th percentile of the readings), and
+ * 8–14 dB in this band. */
+export const voiceBandLowHertz = 300;
+export const voiceBandHighHertz = 3_400;
 /** Each bar's ripple speed differs by up to this fraction, so the motion looks organic. */
 export const waveformSpeedVariance = 0.2;
 /** Outer bars reach this fraction of the center bar's height. */

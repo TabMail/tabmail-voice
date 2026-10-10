@@ -14,9 +14,9 @@ function waveform(samples: Float32Array, packetFrames: number): { readings: numb
   const levels: number[] = [];
   let level = 0;
   for (let offset = 0; offset < samples.length; offset += packetFrames) {
-    meter.append(samples.subarray(offset, offset + packetFrames), (reading) => {
+    meter.append(samples.subarray(offset, offset + packetFrames), (reading, voiceReading) => {
       readings.push(reading);
-      const next = envelope.level(reading);
+      const next = envelope.level(reading, voiceReading);
       level += (next - level) * (next > level ? config.levelAttack : config.levelRelease);
       levels.push(level);
     });
@@ -66,4 +66,23 @@ test("meter intervals have exact boundaries and independent RMS", () => {
   meter.append(new Float32Array(config.audioChunkFrames).fill(0.5), emit);
   expect(readings).toHaveLength(3);
   expect(readings[2]).toBeCloseTo(20 * Math.log10(0.5), 10);
+});
+
+/** Each interval's voice band leaves out a room's mains hum: a quiet voice over a louder hum barely
+ * moves the full band's reading but lifts the voice band's well past `waveformVoiceAboveNoiseDecibels`. */
+test("the voice band leaves out a room's hum", () => {
+  const rate = config.recordingSampleRate;
+  const read = (voice: number) => {
+    const meter = new LevelSampler();
+    const samples = new Float32Array(config.audioChunkFrames * 6);
+    for (let index = 0; index < samples.length; index += 1) samples[index] = 0.05 * Math.sin((2 * Math.PI * 50 * index) / rate) + voice * Math.sin((2 * Math.PI * 1_000 * index) / rate);
+    const readings: [number, number][] = [];
+    meter.append(samples, (reading, voiceReading) => readings.push([reading, voiceReading]));
+    // The last interval: the filters settled.
+    return readings.at(-1) ?? [0, 0];
+  };
+  const [hum, humVoice] = read(0);
+  const [voice, voiceBand] = read(0.005);
+  expect(voice - hum).toBeLessThan(0.5);
+  expect(voiceBand - humVoice).toBeGreaterThan(config.waveformVoiceAboveNoiseDecibels);
 });

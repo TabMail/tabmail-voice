@@ -363,6 +363,29 @@ the owner chose "the gray to iOS system blue". The bars are now a washed-out gre
 `waveformVoicedColor` #0A84FF: a washed-out colour while not recording that becomes vibrant once it
 is. Nothing else changes; the retry circle keeps its shift toward purple.)*
 
+**Amendment 2026-10-09 — a voice is told in its band, against the room the last dictation left
+(owner).** "Even when the audio seems to be recording in the voice app, the waveform turns blue often
+quite late." Measured on `Scripts/stt-compare`'s ten recordings and the last dictation kept: the old
+detector never turned four of them blue and took about 5 s on two. Two causes: the microphone's first
+audio comes about 0.58 s after the key (the app log, every dictation), so speech often comes with it,
+and the room's noise (a running average over its first seconds) was learned from the voice and
+heard only after the first pause; and over the full band a room's low hum leaves speech only 2–5 dB
+above the room, under the 6 dB. The owner chose, of three options, both fixes:
+- A voice is told in the voice band (`VoiceBand`: second-order Butterworth high-pass at
+  `voiceBandLowHertz` 300 Hz and low-pass at `voiceBandHighHertz` 3,400 Hz, telephone speech's
+  band); `LevelSampler` reports each interval's loudness and its voice band's. The bars still move
+  with the full band. In the band, speech stands 8–14 dB above the room (10th to 90th percentile of
+  the readings) against 5–10 dB over the full band.
+- The room's noise in that band is a floor (down fast, up slowly, `envelopeFastAlpha` and
+  `envelopeSlowAlpha`), no longer a running average at first, skipping digital silence, and each
+  dictation or spoken answer's envelope starts from the room the last one left (`LevelEnvelope.room`,
+  in memory only, a single number; the app forgets it when it quits). The warm-up readings are still
+  skipped.
+- Measured, the same recordings in a row: all turn blue 0.43–0.68 s after audio starts; the first
+  dictation after launch, with no room yet, 0.68–3.3 s.
+- Trade-off the owner accepted: right after a switch to a much louder microphone or room, the next
+  dictation can turn blue on the room's noise, until the floor moves down to it.
+
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
 **Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the
