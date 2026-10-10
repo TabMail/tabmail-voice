@@ -90,6 +90,11 @@ describe("the registry generator", () => {
     expect(connectorRegistry(folder)).toContain("export const connectors: readonly Connector[] = [earlierConnector, laterConnector];");
   });
 
+  test("reads declarations checked out with Windows line endings", () => {
+    const folder = folderWith({ "a.ts": declaration("crlfConnector", "crlf", 10).replaceAll("\n", "\r\n") });
+    expect(connectorDeclarations(folder).map(({ id, file }) => [id, file])).toEqual([["crlf", "a.ts"]]);
+  });
+
   test("discovers platform connectors and checks their ids against shared connectors", () => {
     const folder = folderWith({ "shared.ts": declaration("sharedConnector", "shared", 10), "macos/notes.ts": declaration("notesConnector", "notes", 20) });
     expect(connectorRegistry(folder)).toContain('from "./macos/notes.js";');

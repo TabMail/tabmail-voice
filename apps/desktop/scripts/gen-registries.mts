@@ -32,7 +32,8 @@ export function connectorDeclarations(directory = folder): Declaration[] {
     .filter((name) => name !== registryFile)
     .sort();
   for (const file of files) {
-    const source = readFileSync(join(directory, file), "utf8");
+    // A Windows checkout can carry CRLF line endings; the declaration shape is read line by line.
+    const source = readFileSync(join(directory, file), "utf8").replaceAll("\r\n", "\n");
     const calls = source.split("defineConnector({").length - 1;
     const found = [...source.matchAll(/^export const (\w+) = defineConnector\(\{\n {2}id: "([a-z]+)",\n {2}order: (\d+),$/gm)];
     if (found.length !== calls) {
