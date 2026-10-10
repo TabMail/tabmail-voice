@@ -12,8 +12,10 @@
 #include <iostream>
 
 namespace voice {
+// The precise clock: the coarse one (`GetSystemTimeAsFileTime`) moves only at the timer tick, up to
+// ~16 ms behind, so a deadline already past would still be met.
 inline uint64_t unixMilliseconds() {
-    FILETIME value{}; GetSystemTimeAsFileTime(&value);
+    FILETIME value{}; GetSystemTimePreciseAsFileTime(&value);
     ULARGE_INTEGER ticks{}; ticks.LowPart = value.dwLowDateTime; ticks.HighPart = value.dwHighDateTime;
     return ticks.QuadPart / 10000 - 11644473600000ULL;
 }

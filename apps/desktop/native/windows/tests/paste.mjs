@@ -156,8 +156,12 @@ try {
   }
   await command("editable");
   await command("seed");
-  for (const extra of [{ window: 0 }, { window: window + 1 }, { window: -1 }, { deadline: Date.now() - 1 }, { text: "" }, { text: "bad\0text" }]) {
-    assert.ok((await request("insert", params(extra)).result).error, "invalid or stale request refused");
+  for (const extra of [{ window: 0 }, { window: window + 1 }, { window: -1 }, { text: "" }, { text: "bad\0text" }]) {
+    assert.ok((await request("insert", params(extra)).result).error, `invalid request refused: ${JSON.stringify(extra)}`);
+  }
+  // A deadline just past is refused every time, not only once the helper's clock next moves on.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    assert.ok((await request("insert", params({ deadline: Date.now() - 1 })).result).error, `stale request refused (attempt ${attempt})`);
   }
   assert.equal((await command("value")).text, "Before selected after.");
   assert.deepEqual(await command("clipboard"), original);
