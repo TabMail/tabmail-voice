@@ -108,18 +108,44 @@ public:
         Error error;
         const auto count = atspi_text_get_character_count(text.get(), &error.value);
         if (error.value || count <= 0) return {};
-        const auto box = [&](int offset) -> std::optional<ContextFrame> {
-            Error error;
-            auto rectangle = atspi_text_get_character_extents(text.get(), offset, ATSPI_COORD_TYPE_WINDOW, &error.value);
-            std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rectangle, &g_free);
-            if (error.value || !rectangle || rectangle->width <= 0 || rectangle->height <= 0) return {};
-            return ContextFrame{static_cast<double>(rectangle->x), static_cast<double>(rectangle->y),
-                static_cast<double>(rectangle->width), static_cast<double>(rectangle->height)};
+        return endsOf(text, 0, count);
+    }
+    // A piece of an element's text as the screen shows it: a run of the element's own text, with
+    // where it is, or the element one of its embedded objects stands for.
+    struct Piece { std::string text; std::optional<ContextFrame> frame; std::optional<std::array<ContextFrame, 2>> ends; std::optional<Node> element; };
+    // A paragraph's text with links in it, in order. Chromium gives each link as an embedded object
+    // (U+FFFC) in its paragraph's text, where macOS and Windows give the paragraph's runs and its
+    // links as pieces of their own; read as those pieces, the shared core joins them into one line
+    // and marks the links, as there (ADR-DESK-054). None where the text holds no embedded object,
+    // holds a link given inline (GTK's labels) or more than a screen read takes: the element is then
+    // read whole (`screenText`).
+    std::optional<std::vector<Piece>> pieces(const Node& node) {
+        if (!hasLinks(node)) return {};
+        auto text = own(atspi_accessible_get_text_iface(node.get()));
+        if (!text) return {};
+        HypertextSource source{*this};
+        const auto links = source.links(node, walk::limits().nodeBudget);
+        if (!links) return {};
+        check(); Error error;
+        const auto count = atspi_text_get_character_count(text.get(), &error.value);
+        error.check();
+        if (count < 0 || static_cast<size_t>(count) > VisibleContext::sourceLimit()) return {};
+        const auto whole = range(text, 0, count);
+        std::vector<gunichar> scalars;
+        for (const char* at = whole.c_str(); *at; at = g_utf8_next_char(at)) scalars.push_back(g_utf8_get_char(at));
+        std::vector<Piece> result;
+        const auto run = [&](int from, int to) {
+            if (from < to) result.push_back({scalarSlice(whole, static_cast<size_t>(from), static_cast<size_t>(to)), rangeFrame(text, from, to), endsOf(text, from, to), std::nullopt});
         };
-        const auto first = box(0), last = box(count - 1);
-        check();
-        if (!first || !last) return {};
-        return std::array<ContextFrame, 2>{*first, *last};
+        int at = 0;
+        for (const auto& [offset, child] : *links) {
+            if (offset < at || static_cast<size_t>(offset) >= scalars.size() || scalars[static_cast<size_t>(offset)] != 0xFFFC) return {};
+            run(at, offset);
+            result.push_back({{}, {}, {}, child});
+            at = offset + 1;
+        }
+        run(at, count);
+        return result;
     }
     std::string label(const Node& node) {
         check(); Error error;
@@ -476,6 +502,30 @@ public:
     }
 
 private:
+    // The boxes of the first and last characters of [from, to); none when either has no box.
+    std::optional<std::array<ContextFrame, 2>> endsOf(const Object<AtspiText>& text, int from, int to) {
+        const auto box = [&](int offset) -> std::optional<ContextFrame> {
+            check(); Error error;
+            auto rectangle = atspi_text_get_character_extents(text.get(), offset, ATSPI_COORD_TYPE_WINDOW, &error.value);
+            std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rectangle, &g_free);
+            if (error.value || !rectangle || rectangle->width <= 0 || rectangle->height <= 0) return {};
+            return ContextFrame{static_cast<double>(rectangle->x), static_cast<double>(rectangle->y),
+                static_cast<double>(rectangle->width), static_cast<double>(rectangle->height)};
+        };
+        const auto first = box(from), last = box(to - 1);
+        check();
+        if (!first || !last) return {};
+        return std::array<ContextFrame, 2>{*first, *last};
+    }
+    // Where [from, to) of an element's text is on screen, over all its lines.
+    std::optional<ContextFrame> rangeFrame(const Object<AtspiText>& text, int from, int to) {
+        check(); Error error;
+        auto rectangle = atspi_text_get_range_extents(text.get(), from, to, ATSPI_COORD_TYPE_WINDOW, &error.value);
+        std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rectangle, &g_free);
+        if (error.value || !rectangle || rectangle->width <= 0 || rectangle->height <= 0) return {};
+        return ContextFrame{static_cast<double>(rectangle->x), static_cast<double>(rectangle->y),
+            static_cast<double>(rectangle->width), static_cast<double>(rectangle->height)};
+    }
     // An element whose text holds embedded objects (a rich editor's paragraphs and links).
     bool hasLinks(const Node& node) {
         check();
@@ -871,11 +921,20 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     const auto windowFrame = tree.frame(window);
     VisibleContext context(around);
     const auto& limits = walk::limits();
-    std::vector<std::pair<typename Tree::Node, bool>> stack{{window, false}};
+    // An element to walk, or a run of a paragraph's own text, read with it (`pieces`).
+    struct Entry {
+        std::optional<typename Tree::Node> node; bool inPage = false;
+        std::string text = {}; std::optional<ContextFrame> frame = {}; std::optional<std::array<ContextFrame, 2>> ends = {};
+    };
+    std::vector<Entry> stack{{window, false}};
     while (!stack.empty()) {
         // What to do with each element is the shared core's (`walk::node`, ADR-DESK-054).
         if (const auto stopped = walk::stop(context.nodes, context.textBudgetFull)) { context.stopped = *stopped; break; }
-        auto [node, inPage] = std::move(stack.back()); stack.pop_back(); ++context.nodes;
+        auto entry = std::move(stack.back()); stack.pop_back();
+        if (!entry.node) { context.append(ContextKind::text, std::move(entry.text), entry.frame, entry.ends); continue; }
+        auto node = std::move(*entry.node);
+        const bool inPage = entry.inPage;
+        ++context.nodes;
         const bool isFocus = tree.same(node, focus);
         const bool ancestor = !isFocus && std::any_of(path.begin(), path.end(), [&](const auto& parent) { return tree.same(parent, node); });
         std::optional<PageHost> page;
@@ -909,6 +968,15 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
                 continue;
             }
             if (step.action == "text") {
+                // A paragraph with links in it is read as its pieces, in order (onto the stack in
+                // reverse): its runs of text, and each link walked as one.
+                if constexpr (requires { tree.pieces(node); })
+                    if (auto pieces = tree.pieces(node)) {
+                        for (auto it = pieces->rbegin(); it != pieces->rend(); ++it)
+                            if (it->element) stack.push_back({std::move(*it->element), step.childrenInPage});
+                            else stack.push_back({std::nullopt, false, std::move(it->text), it->frame, it->ends});
+                        continue;
+                    }
                 const auto field = screenText(tree, node);
                 std::optional<std::array<ContextFrame, 2>> ends;
                 if constexpr (requires { tree.ends(node); }) if (frame) ends = tree.ends(node);
@@ -931,7 +999,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             continue;
         }
         auto children = tree.children(node, limits.nodeBudget - std::min(limits.nodeBudget, context.nodes + stack.size()));
-        for (auto it = children.rbegin(); it != children.rend(); ++it) stack.emplace_back(*it, step.childrenInPage);
+        for (auto it = children.rbegin(); it != children.rend(); ++it) stack.push_back({*it, step.childrenInPage});
     }
     return context.reply({{"appName", app.name}, {"bundleID", app.id}, {"windowTitle", title},
         {"host", host ? JSON(*host) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", std::to_string(focusRole)}},

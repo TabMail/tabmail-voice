@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/screen.h"
 #include <iostream>
+#include <map>
 using JSON = nlohmann::json;
 struct Element {
     AtspiRole role;
@@ -62,6 +63,16 @@ struct ProjectedTree : Tree {
         context.appendField({"password: ", node->label, ""}, frame);
     }
 };
+// Chromium's paragraphs give their links as embedded objects: the live tree reads such a paragraph
+// as its pieces (`LiveScreenTree::pieces`).
+struct PiecesTree : Tree {
+    struct Piece { std::string text; std::optional<voice::ContextFrame> frame; std::optional<std::array<voice::ContextFrame, 2>> ends; std::optional<Node> element; };
+    std::map<Node, std::vector<Piece>> split;
+    std::optional<std::vector<Piece>> pieces(Node node) {
+        if (const auto found = split.find(node); found != split.end()) return found->second;
+        return {};
+    }
+};
 struct CollectionTree : Tree {
     std::optional<std::vector<Node>> census;
     unsigned childQueries = 0;
@@ -113,6 +124,23 @@ int main() {
     }
     const voice::AppIdentity app{"synthetic.desktop", "Synthetic"};
     const voice::ScreenExclusions policy(JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", {"secret.example"}}});
+    {
+        // A paragraph with links in it reads as one line of its pieces, each link marked as one,
+        // and a key in a link redacted whole; a paragraph with none is read whole.
+        Element link{ATSPI_ROLE_LINK, "example", {}, {}, false, voice::ContextFrame{50, 0, 53, 20}};
+        Element key{ATSPI_ROLE_LINK, " sk-ReviewLink1234567890abcd", {}, {}, false, voice::ContextFrame{56, 30, 200, 20}};
+        Element visit{ATSPI_ROLE_PARAGRAPH, "Visit \uFFFC now", {}, {&link}, false, voice::ContextFrame{20, 0, 113, 20}};
+        Element paste{ATSPI_ROLE_PARAGRAPH, "Paste\uFFFC", {}, {&key}, false, voice::ContextFrame{20, 30, 236, 20}};
+        Element plain{ATSPI_ROLE_PARAGRAPH, "Read whole", {}, {}, false, voice::ContextFrame{20, 60, 80, 20}};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&visit, &paste, &plain}};
+        Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
+        PiecesTree tree;
+        tree.split[&visit] = {{"Visit ", voice::ContextFrame{20, 0, 30, 20}, {}, {}}, {{}, {}, {}, &link}, {" now", voice::ContextFrame{103, 0, 30, 20}, {}, {}}};
+        tree.split[&paste] = {{"Paste", voice::ContextFrame{20, 30, 36, 20}, {}, {}}, {{}, {}, {}, &key}};
+        const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        expect(screen["renderedText"] == "Visit [example] now\nPaste [[redacted]]\nRead whole", "a paragraph's links read as pieces of its line");
+        expect(screen.dump().find("sk-Review") == std::string::npos, "a key in a link is not read");
+    }
     {
         Element field{ATSPI_ROLE_ENTRY, "syntheticSecret123", {}, {}};
         Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&field}};
