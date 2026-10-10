@@ -53,7 +53,7 @@ const app = vi.hoisted(() => ({
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
-  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; notes: Rect[]; hitTest?: string } | null,
+  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; hitTest?: string } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[]; phase: object } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
@@ -385,7 +385,6 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
     readonly pointers: boolean[] = [];
-    readonly notes: Rect[] = [];
     constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null, _fallback?: unknown, readonly hitTest?: string) {
       app.overlay = this;
     }
@@ -400,9 +399,6 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     }
     pointerOver(over: boolean) {
       this.pointers.push(over);
-    }
-    fitNote(frame: Rect) {
-      this.notes.push(frame);
     }
   },
 }));
@@ -640,9 +636,10 @@ describe("main process wiring", () => {
     expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
   });
 
-  /** The chat window takes clicks only where it is: by the pointer's moves where a click-through
-   * window still gets them (macOS, Windows), cut to its shape on Linux, where it doesn't. */
-  test.each([["darwin", "pointer"], ["win32", "pointer"], ["linux", "shape"]] as const)("on %s the chat window takes clicks by its %s", async (platform, hitTest) => {
+  /** The chat window takes clicks only where it is, by the pointer's moves where a click-through
+   * window still gets them (macOS, Windows); over the overlay's whole frame on Linux, where it
+   * doesn't. */
+  test.each([["darwin", "pointer"], ["win32", "pointer"], ["linux", "frame"]] as const)("on %s the chat window takes clicks by its %s", async (platform, hitTest) => {
     await launch(platform);
     expect(app.overlay?.hitTest).toBe(hitTest);
   });
@@ -1006,19 +1003,14 @@ describe("main process wiring", () => {
   });
 
   /** The note for a text not pasted: a click reaches the controller, which copies the text, and its
-   * x, which dismisses it; its frame reaches the overlay, and one that is no frame is refused. */
+   * x, which dismisses it. */
   test("the not-pasted note's commands", async () => {
     await launch("darwin");
 
     await send({ type: "copyNotPasted" });
     await send({ type: "dismissNotPasted" });
-    await send({ type: "noteFrame", frame: { x: 10, y: 20, width: 180, height: 32 } });
-    for (const frame of [null, { x: 10, y: 20, width: -1, height: 32 }, { x: 10, y: 20, width: Number.NaN, height: 32 }, { x: 10, y: 20, width: 180 }]) {
-      expect(await send({ type: "noteFrame", frame } as never)).toEqual({ error: expect.any(String) });
-    }
 
     expect(app.controller?.calls).toEqual(["copyNotPasted", "dismissNotPasted"]);
-    expect(app.overlay?.notes).toEqual([{ x: 10, y: 20, width: 180, height: 32 }]);
   });
 
   /** The note for a text not pasted reaches the overlay's page with the whole text it shows and a

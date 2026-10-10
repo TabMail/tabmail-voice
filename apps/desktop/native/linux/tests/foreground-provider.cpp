@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/accessibility.h"
+#include <gio/gio.h>
 #include <glib-unix.h>
 #include <map>
 #include <optional>
@@ -17,6 +18,17 @@ AtspiAccessible *desktop, *apps[2], *windows[2], *documents[2], *fields[2], *sec
 // The Shell's own window and the actor that holds the keyboard for the dictation key.
 AtspiAccessible *shellWindow, *shellPanel;
 bool holding = false;
+// Gmail's compose box: a dialog in the page with a field of its own, which takes the focus ('w') and
+// gives it back ('W').
+AtspiAccessible *dialogs[2], *dialogFields[2];
+bool inDialog = false;
+// Whether the Shell says which window has the focus (the extension's `Focus`, from version 3): each
+// synthetic window by an id of its own, with its app's process. Otherwise no Shell answers.
+bool shellFocus = false;
+// What the Shell names, with no accessibility event: the window in front, another window of the same
+// app ('k'), a window of a process accessibility doesn't know ('V', a terminal with no accessibility),
+// or none, as on a locked screen ('L'); 'K' goes back to the window in front.
+enum class ShellSays { front, otherWindow, unseen, none } shellSays = ShellSays::front;
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
 bool mutateSelectionOnText = false, containerFocused = false;
@@ -99,12 +111,38 @@ gboolean command(gint fd, GIOCondition, gpointer) {
         event("object:state-changed:focused", shellPanel, 0); event("window:deactivate", shellWindow);
         focusLost = false; event("object:state-changed:focused", fields[active], 1); event("window:activate", windows[active]);
     }
+    // The Shell lets the keyboard go, and the window is announced before its field has the focus back
+    // (Firefox); 'G' gives the field its focus back.
+    if (value == 'J' && active >= 0) {
+        holding = false;
+        event("object:state-changed:focused", shellPanel, 0); event("window:deactivate", shellWindow);
+        event("window:activate", windows[active]);
+    }
+    if (value == 'G' && active >= 0) { focusLost = false; event("object:state-changed:focused", fields[active], 1); }
     // The focus moves to the Shell's own window with no hold (its overview).
     if (value == 'S' && active >= 0) {
         event("window:activate", shellWindow); event("object:state-changed:focused", shellPanel, 1);
         focusLost = true; event("object:state-changed:focused", fields[active], 0);
     }
     if (value == 'u') items.at(fields[active]).live.clear();
+    if ((value == 'w' || value == 'W') && active >= 0) {
+        if (!dialogs[active]) {
+            dialogs[active] = node(ATSPI_ROLE_DIALOG, documents[active]);
+            dialogFields[active] = node(ATSPI_ROLE_ENTRY, dialogs[active], "Synthetic compose content");
+            clear(windows[active]);
+        }
+        inDialog = value == 'w';
+        event("object:state-changed:focused", inDialog ? fields[active] : dialogFields[active], 0);
+        event("object:state-changed:focused", inDialog ? dialogFields[active] : fields[active], 1);
+    }
+    // The other app announces a focus while this one stays in front, as the Shell says.
+    if (value == 'x' && active >= 0) event("object:state-changed:focused", fields[1 - active], 1);
+    if (value == 'F') shellFocus = true;
+    if (value == 'N') shellFocus = false;
+    if (value == 'k') shellSays = ShellSays::otherWindow;
+    if (value == 'L') shellSays = ShellSays::none;
+    if (value == 'V') shellSays = ShellSays::unseen;
+    if (value == 'K') shellSays = ShellSays::front;
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
     if (::write(acknowledgments, reply.data(), reply.size()) != static_cast<ssize_t>(reply.size())) std::abort();
     return G_SOURCE_CONTINUE;
@@ -131,12 +169,20 @@ extern "C" AtspiEventListener* __real_atspi_event_listener_new(AtspiEventListene
 extern "C" AtspiEventListener* __wrap_atspi_event_listener_new(AtspiEventListenerCB cb, gpointer data, GDestroyNotify destroy) {
     callback = cb; callbackData = data; return __real_atspi_event_listener_new(cb, data, destroy);
 }
-// The Shell answers whether it holds the keyboard; the helper's other Shell calls get no Shell.
+// The Shell answers whether it holds the keyboard, and, once the fixture says so, which window has the
+// focus (else no Shell answers it, whatever Shell runs where the test does); the helper's other Shell
+// calls get no Shell.
 extern "C" GVariant* __real_g_dbus_connection_call_sync(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*,
     GVariant*, const GVariantType*, GDBusCallFlags, gint, GCancellable*, GError**);
 extern "C" GVariant* __wrap_g_dbus_connection_call_sync(GDBusConnection* bus, const gchar* name, const gchar* path, const gchar* interface,
     const gchar* method, GVariant* args, const GVariantType* type, GDBusCallFlags flags, gint timeout, GCancellable* cancel, GError** error) {
     if (std::string(method) == "Holding") return g_variant_ref_sink(g_variant_new("(b)", holding));
+    if (std::string(method) == "Focus") {
+        if (!shellFocus) { g_set_error_literal(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN, "no Shell"); return nullptr; }
+        if (active < 0 || shellSays == ShellSays::none) return g_variant_ref_sink(g_variant_new("(tu)", guint64{0}, 0u));
+        if (shellSays == ShellSays::unseen) return g_variant_ref_sink(g_variant_new("(tu)", guint64{7200}, 4194399u));
+        return g_variant_ref_sink(g_variant_new("(tu)", static_cast<guint64>(shellSays == ShellSays::otherWindow ? 7100 + active : 7000 + active), 4194305u + active));
+    }
     return __real_g_dbus_connection_call_sync(bus, name, path, interface, method, args, type, flags, timeout, cancel, error);
 }
 extern "C" gboolean __wrap_atspi_event_listener_register(AtspiEventListener*, const gchar*, GError**) { return TRUE; }
@@ -157,7 +203,7 @@ extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*
     atspi_state_set_add(states, ATSPI_STATE_SHOWING);
     if (active >= 0 && value == windows[active]) atspi_state_set_add(states, ATSPI_STATE_ACTIVE);
     if (active >= 0 && containerFocused && value == documents[active]) atspi_state_set_add(states, ATSPI_STATE_FOCUSED);
-    if (active >= 0 && exposed && !focusLost && value == fields[active]) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
+    if (active >= 0 && exposed && !focusLost && value == (inDialog ? dialogFields[active] : fields[active])) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
     return states;
 }
 extern "C" gint __wrap_atspi_accessible_get_child_count(AtspiAccessible* root, GError**) { return children(root).size(); }

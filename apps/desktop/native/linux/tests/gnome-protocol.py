@@ -30,7 +30,7 @@ info = Gio.DBusNodeInfo.new_for_xml('''<node><interface name="ai.tabmail.Voice.C
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal></interface></node>''')
-state = {'version': 2, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
+state = {'version': 3, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
          'recording': False, 'owner': None, 'language': 'ko', 'language_calls': 0, 'hotkey': []}
 
 
@@ -124,7 +124,7 @@ try:
     assert hotkey.request('gnomeIntegration')['result'] is True
     assert hotkey.request('caretAnchor')['result'] == state['rect']
     # An extension loaded before an upgrade keeps running until the next login: not ready.
-    for version in (1, 99):
+    for version in (1, 2, 99):
         state['version'] = version
         assert hotkey.request('gnomeIntegration')['result'] is False
     state['rect'] = {'x': 1, 'y': 1, 'width': -1, 'height': 20}

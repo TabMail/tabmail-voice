@@ -30,8 +30,10 @@ async function fixture(failExport = false) {
     let lostOwner = null, failKey = null, nextGrab = 100;
     // The key event an accelerator fires on: Right Alt, named Alt_R, unless a test says otherwise.
     let pressed = {get_key_symbol: () => KEY.Alt_R, get_key_code: () => CODE.rightAlt};
-    // The Shell's modal stack: the keyboard hold pushes one, and nothing else does here.
+    // The Shell's modal stack: the keyboard hold pushes one; a test may push the Shell's own (`shellModal`).
     const modals = [], added = [];
+    let shellModals = 0, main = null;
+    const modalCount = () => main?.setExport('modalCount', modals.length + shellModals);
     class Actor extends Signals {
         constructor(props) { super(); Object.assign(this, props); this.destroyed = false; }
         destroy() { this.destroyed = true; }
@@ -57,23 +59,26 @@ async function fixture(failExport = false) {
             export(_bus, path) { exportPath = path; if (failExport) throw new Error("synthetic export failure"); exported = true; }, unexport() { exported = false; },
         }); }}}},
         'resource:///org/gnome/shell/extensions/extension.js': {Extension: class {}},
-        'resource:///org/gnome/shell/ui/main.js': {inputMethod, overview, sessionMode, wm: {allowKeybinding: (id, mode) => allowed.set(id, mode)},
+        'resource:///org/gnome/shell/ui/main.js': {inputMethod, overview, sessionMode, modalCount: 0, wm: {allowKeybinding: (id, mode) => allowed.set(id, mode)},
             layoutManager: {uiGroup: {add_child: actor => added.push(actor)}},
             pushModal(actor, params) {
                 const grab = new Signals();
                 modals.push({actor, params, grab});
+                modalCount();
                 return grab;
             },
-            popModal(grab) { assert.equal(modals.pop()?.grab, grab, 'the hold pops its own modal'); }},
+            popModal(grab) { assert.equal(modals.pop()?.grab, grab, 'the hold pops its own modal'); modalCount(); }},
         'resource:///org/gnome/shell/misc/ibusManager.js': {getIBusManager: () => ibus},
     };
     const module = new vm.SourceTextModule(source, {context});
     await module.link(name => {
         const exports = dependencies[name];
         assert.ok(exports, name);
-        return new vm.SyntheticModule(Object.keys(exports), function () {
+        const linked = new vm.SyntheticModule(Object.keys(exports), function () {
             for (const [key, value] of Object.entries(exports)) this.setExport(key, value);
         }, {context});
+        if (name === 'resource:///org/gnome/shell/ui/main.js') main = linked;
+        return linked;
     });
     await module.evaluate();
     const extension = new module.namespace.default();
@@ -105,7 +110,8 @@ async function fixture(failExport = false) {
         extension.SetChatOpenAsync([open], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    return {theme, recording, chat, hotkey, key, pressing, modals, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    const shellModal = open => { shellModals += open ? 1 : -1; modalCount(); };
+    return {theme, recording, chat, hotkey, key, pressing, modals, shellModal, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -274,12 +280,42 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<signal name="Action"><arg type="s"\/><\/signal>/);
     assert.match(xml, /<method name="SetHotkey"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Holding"><arg type="b" direction="out"\/><\/method>/);
-    assert.equal(f.extension.Version(), 2);
+    assert.match(xml, /<method name="Focus"><arg type="t" direction="out"\/><arg type="u" direction="out"\/><\/method>/);
+    assert.equal(f.extension.Version(), 3);
     assert.equal(f.recording(true), true);
     f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
     assert.deepEqual(f.actions[0].slice(0, 4), [':1.42', path, 'ai.tabmail.Voice.Caret', 'Action']);
     assert.equal(f.actions[0][4].type, '(s)');
     assert.equal(f.actions[0][4].value[0], 'toggleMode');
+    f.extension.disable();
+});
+
+test('Focus names the Shell\'s focus window by id and process, through the dictation hold, and none when locked or the Shell has the keyboard', async () => {
+    const f = await fixture();
+    Object.assign(f.window, {get_id: () => 7000, get_pid: () => 4242});
+    assert.deepEqual([...f.extension.Focus()], [7000, 4242]);
+    // The hold takes the keyboard to the Shell; the focus window, and so the answer, stay.
+    assert.equal(f.hotkey(true), true);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    assert.equal(f.modals.length, 1);
+    assert.deepEqual([...f.extension.Focus()], [7000, 4242]);
+    // The Shell's own interface over the hold (a system dialog) has the keyboard: no window has it.
+    f.shellModal(true);
+    assert.deepEqual([...f.extension.Focus()], [0, 0]);
+    f.shellModal(false);
+    f.key('release', KEY.Alt_R);
+    assert.equal(f.modals.length, 0);
+    assert.deepEqual([...f.extension.Focus()], [7000, 4242]);
+    // The overview, the window switcher or a menu has the keyboard, the focus window unchanged: none.
+    f.shellModal(true);
+    assert.deepEqual([...f.extension.Focus()], [0, 0]);
+    f.shellModal(false);
+    assert.deepEqual([...f.extension.Focus()], [7000, 4242]);
+    const other = {get_id: () => 7001, get_pid: () => -1};
+    f.display.focus_window = other;
+    assert.deepEqual([...f.extension.Focus()], [7001, 0], 'a window with no known process names none');
+    f.sessionMode.isLocked = true; assert.deepEqual([...f.extension.Focus()], [0, 0]); f.sessionMode.isLocked = false;
+    f.display.focus_window = null; assert.deepEqual([...f.extension.Focus()], [0, 0]);
     f.extension.disable();
 });
 

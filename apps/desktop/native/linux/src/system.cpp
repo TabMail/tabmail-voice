@@ -41,7 +41,7 @@ int main() {
     voice::Output output;
     voice::KeyboardLanguage keyboardLanguage;
     voice::GnomeCaret gnomeCaret;
-    voice::Foreground foreground([&] { return gnomeCaret.holding(); });
+    voice::Foreground foreground([&] { return gnomeCaret.holding(); }, [&] { return gnomeCaret.focus(); });
     voice::InputSession input(output);
     voice::ClipboardKeeper clipboard(input, clipboardRules());
     voice::Inserter inserter(input, clipboard, [&](uint64_t token) { return foreground.matches(token); }, [&] {

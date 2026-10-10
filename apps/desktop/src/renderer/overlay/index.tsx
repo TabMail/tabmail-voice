@@ -811,28 +811,18 @@ function NoteTimeoutBar() {
 }
 
 /** While the note for a text not pasted shows, the overlay takes clicks over it: the page says when
- * the pointer is over it (macOS, Windows), and where it is (Linux, where the overlay is cut to it). */
+ * the pointer is over it (macOS, Windows; on Linux the whole overlay takes clicks meanwhile). */
 function useNoteHitArea(ref: React.RefObject<HTMLDivElement | null>, active: boolean): void {
   useEffect(() => {
     const element = ref.current;
     if (!active || !element) return;
     const moved = (event: PointerEvent) => void send({ type: "pointerOver", over: event.target instanceof Element && event.target.closest(".note") !== null });
     const left = () => void send({ type: "pointerOver", over: false });
-    const measure = () => {
-      const frame = element.getBoundingClientRect();
-      void send({ type: "noteFrame", frame: { x: frame.x, y: frame.y, width: frame.width, height: frame.height } });
-    };
     document.addEventListener("pointermove", moved);
     document.documentElement.addEventListener("pointerleave", left);
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    // Again once it has sprung to its size: it appears scaled down.
-    const settled = setTimeout(measure, config.pillSpringResponseSeconds * 1000);
     return () => {
       document.removeEventListener("pointermove", moved);
       document.documentElement.removeEventListener("pointerleave", left);
-      observer.disconnect();
-      clearTimeout(settled);
     };
   }, [active]);
 }
