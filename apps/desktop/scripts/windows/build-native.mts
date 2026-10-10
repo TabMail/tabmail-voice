@@ -6,13 +6,14 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-/** Builds for the current Windows guest's architecture with Visual Studio Build Tools. */
+/** Builds for the current Windows guest's architecture with Visual Studio Build Tools, the newest
+ * installed: CMake's default generator (the arm64 runner has Visual Studio 2026, not 2022). */
 export function buildNative(root: string): void {
   if (process.arch !== "arm64" && process.arch !== "x64") throw new Error(`Unsupported Windows architecture: ${process.arch}`);
   const source = join(root, "native/windows");
   const build = join(source, "build", process.arch);
   const architecture = process.arch === "arm64" ? "ARM64" : "x64";
-  execFileSync("cmake", ["-S", source, "-B", build, "-G", "Visual Studio 17 2022", "-A", architecture, "-DBUILD_TESTING=OFF"], { stdio: "inherit" });
+  execFileSync("cmake", ["-S", source, "-B", build, "-A", architecture, "-DBUILD_TESTING=OFF"], { stdio: "inherit" });
   execFileSync("cmake", ["--build", build, "--config", "Release", "--parallel", "2"], { stdio: "inherit" });
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });
