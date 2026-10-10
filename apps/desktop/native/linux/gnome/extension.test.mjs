@@ -274,12 +274,31 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<signal name="Action"><arg type="s"\/><\/signal>/);
     assert.match(xml, /<method name="SetHotkey"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Holding"><arg type="b" direction="out"\/><\/method>/);
-    assert.equal(f.extension.Version(), 2);
+    assert.match(xml, /<method name="Focus"><arg type="t" direction="out"\/><arg type="u" direction="out"\/><\/method>/);
+    assert.equal(f.extension.Version(), 3);
     assert.equal(f.recording(true), true);
     f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
     assert.deepEqual(f.actions[0].slice(0, 4), [':1.42', path, 'ai.tabmail.Voice.Caret', 'Action']);
     assert.equal(f.actions[0][4].type, '(s)');
     assert.equal(f.actions[0][4].value[0], 'toggleMode');
+    f.extension.disable();
+});
+
+test('Focus names the Shell\'s focus window by id and process, through the dictation hold, and none when locked', async () => {
+    const f = await fixture();
+    Object.assign(f.window, {get_id: () => 7000, get_pid: () => 4242});
+    assert.deepEqual([...f.extension.Focus()], [7000, 4242]);
+    // The hold takes the keyboard to the Shell; the focus window, and so the answer, stay.
+    assert.equal(f.hotkey(true), true);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    assert.equal(f.modals.length, 1);
+    assert.deepEqual([...f.extension.Focus()], [7000, 4242]);
+    f.key('release', KEY.Alt_R);
+    const other = {get_id: () => 7001, get_pid: () => -1};
+    f.display.focus_window = other;
+    assert.deepEqual([...f.extension.Focus()], [7001, 0], 'a window with no known process names none');
+    f.sessionMode.isLocked = true; assert.deepEqual([...f.extension.Focus()], [0, 0]); f.sessionMode.isLocked = false;
+    f.display.focus_window = null; assert.deepEqual([...f.extension.Focus()], [0, 0]);
     f.extension.disable();
 });
 

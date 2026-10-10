@@ -8,9 +8,12 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <nlohmann/json.hpp>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace voice {
 // Focus/window events start one bounded visit. A successful query stops retries;
@@ -18,8 +21,15 @@ namespace voice {
 class Foreground {
 public:
     static constexpr unsigned attempts = 5, retryMilliseconds = 1000;
-    /** `shellHolds`: whether the Shell holds the keyboard for the dictation key (`GnomeCaret::holding`). */
-    explicit Foreground(std::function<bool()> shellHolds) : shellHolds(std::move(shellHolds)) {
+    /** Windows that keep their token when the focus comes back to them. */
+    static constexpr std::size_t rememberedWindows = 16;
+    /** The window with the keyboard focus and its process, by the Shell (`GnomeCaret::focus`). */
+    using ShellFocus = std::function<std::optional<std::pair<uint64_t, unsigned>>()>;
+    /** `shellHolds`: whether the Shell holds the keyboard for the dictation key (`GnomeCaret::holding`).
+     * `shellFocus`: which window is in front, where the Shell says (GNOME integration); accessibility
+     * then says only what in it has the focus, and each app's own way of announcing its windows (two
+     * accessible apps in Firefox, a window announced before its focus) no longer decides a paste. */
+    Foreground(std::function<bool()> shellHolds, ShellFocus shellFocus) : shellHolds(std::move(shellHolds)), shellFocus(std::move(shellFocus)) {
         listener = own(atspi_event_listener_new([](AtspiEvent* event, void* data) {
             const auto freeEvent = [](AtspiEvent* value) { g_boxed_free(ATSPI_TYPE_EVENT, value); };
             std::unique_ptr<AtspiEvent, decltype(freeEvent)> owned(event, freeEvent);
@@ -48,22 +58,42 @@ public:
     /** `pid`: the window's process, the identity voice-field-reader shares with this process (window
      * tokens are each process's own); 0 where the bus gives none. */
     struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; unsigned pid = 0; };
-    std::optional<Target> target() const { return current; }
+    /** What has the focus, in the window in front: by the Shell's window id where it says which that is,
+     * and only if the focus is that window's process's. */
+    std::optional<Target> target() const {
+        if (const auto focus = shellFocus()) {
+            if (!current || current->pid != focus->second) return std::nullopt;
+            auto target = *current;
+            target.token = focus->first;
+            return target;
+        }
+        return current;
+    }
+    /** The window in front and its process: the Shell's, or else the focus's own (`target`, `targets`). */
+    std::optional<std::pair<uint64_t, unsigned>> front() const {
+        if (const auto focus = shellFocus()) return focus;
+        if (current && targets(current->token)) return std::make_pair(current->token, current->pid);
+        return std::nullopt;
+    }
     bool matches(uint64_t token) const {
+        if (const auto focus = shellFocus()) return focus->first == token;
         return current && current->token == token && state(current->focus, ATSPI_STATE_FOCUSED);
     }
     /** `matches`, or the Shell holds the keyboard for the dictation key: the window in front has no
      * keyboard focus meanwhile, yet it is still the target. Not for an insertion: a paste while the
      * Shell holds the keyboard reaches no window. */
     bool targets(uint64_t token) const {
+        if (const auto focus = shellFocus()) return focus->first == token;
         return matches(token) || (current && current->token == token && shellHolds());
     }
 private:
     std::function<bool()> shellHolds;
+    ShellFocus shellFocus;
     Object<AtspiEventListener> listener;
     Node active;
     Node tokenWindow;
     uint64_t windowToken = 0;
+    std::vector<std::pair<Node, uint64_t>> windows;
     std::optional<Target> current;
     uint64_t next = static_cast<uint64_t>(g_random_int()) * 1024;
     guint retry = 0;
@@ -79,7 +109,19 @@ private:
         if (window == path.end()) { current.reset(); return; }
         // The dictation target is the original app/window, not the original field
         // or caret. Moving between fields in that window must keep its identity.
-        if (!same(tokenWindow, *window)) { tokenWindow = *window; windowToken = ++next; }
+        if (!same(tokenWindow, *window)) {
+            tokenWindow = *window;
+            // A window the focus comes back to keeps its token: Firefox moves the focus through a
+            // second accessible app of its own and back as the Shell lets the keyboard go, and a new
+            // token there made every paste "another app is in front".
+            const auto known = std::find_if(windows.begin(), windows.end(), [&](const auto& entry) { return same(entry.first, *window); });
+            if (known != windows.end()) windowToken = known->second;
+            else {
+                windowToken = ++next;
+                windows.emplace_back(*window, windowToken);
+                if (windows.size() > rememberedWindows) windows.erase(windows.begin());
+            }
+        }
         Error error;
         const auto pid = atspi_accessible_get_process_id(focus.get(), &error.value);
         error.check(); // This queries the accessibility bus daemon, not the target application.
@@ -122,12 +164,28 @@ private:
             // key: the target stays. The Shell's own interface is never a target.
             if (shell(source) || shellHolds()) return;
             if (type == "window:deactivate") {
+                // Where the Shell says which window is in front, the focus a window had is kept for when
+                // it comes back: Firefox gives it up as the dictation key's hold begins.
+                if (shellFocus()) return;
                 if (same(source, active) || same(source, tokenWindow)) { current.reset(); active.reset(); cancelRetry(); }
             }
             else if (type == "window:activate") {
-                // An app can announce its focused element before its window (LibreOffice).
-                if (current && same(source, tokenWindow) && state(current->focus, ATSPI_STATE_FOCUSED)) {
-                    cancelRetry(); active = source; return;
+                // The target's own window again: the target stays. An app can announce its focused
+                // element before its window (LibreOffice), or after it as the Shell lets the keyboard go
+                // after the dictation key (Firefox). Walking a large page for the focus meanwhile (Gmail)
+                // ran out of time and dropped the target just as the paste asked for it, so the walk
+                // waits for the focus to come back by itself.
+                if (current && same(source, tokenWindow)) {
+                    cancelRetry(); active = source;
+                    if (!state(current->focus, ATSPI_STATE_FOCUSED)) {
+                        tried = 0;
+                        retry = g_timeout_add(retryMilliseconds, [](gpointer data) -> gboolean {
+                            auto self = static_cast<Foreground*>(data); self->retry = 0;
+                            if (!self->current || !state(self->current->focus, ATSPI_STATE_FOCUSED)) self->warm();
+                            return G_SOURCE_REMOVE;
+                        }, this);
+                    }
+                    return;
                 }
                 current.reset(); cancelRetry(); active = source; tried = 0; warm();
             } else if (event->detail1) {
@@ -164,16 +222,13 @@ private:
     }
 };
 
-/** `frontmostApp`'s reply: `{window, pid}`, the window in front by this process's own token (tokens are
- * per process, so a token from another helper names nothing here) and its process, by which
- * voice-field-reader is asked for the field pasted into; or null. */
+/** `frontmostApp`'s reply: `{window, pid}`, the window in front and its process (`Foreground::front`), by
+ * which voice-field-reader is asked for the field pasted into; or null. Where the Shell says, the window
+ * is the Shell's own id for it, the same in every helper. */
 inline nlohmann::json frontmostApp(const Foreground& foreground) {
-    const auto target = foreground.target();
-    const bool focused = target && foreground.targets(target->token);
-    // Opaque per-process window tokens, never window titles or field text.
-    // Distinguish a missing provider result from a genuine target change.
-    std::cerr << "debug accessibility: frontmost target "
-        << (focused ? std::to_string(target->token) : target ? "unfocused" : "unavailable") << "\n";
-    return focused ? nlohmann::json{{"window", target->token}, {"pid", target->pid}} : nlohmann::json(nullptr);
+    const auto front = foreground.front();
+    // Opaque window ids, never window titles or field text.
+    std::cerr << "debug accessibility: frontmost target " << (front ? std::to_string(front->first) : "unavailable") << "\n";
+    return front ? nlohmann::json{{"window", front->first}, {"pid", front->second}} : nlohmann::json(nullptr);
 }
 }

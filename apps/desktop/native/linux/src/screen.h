@@ -4,6 +4,7 @@
 #pragma once
 #include "../../shared/context/SemanticText.h"
 #include "../../shared/context/CaretSource.h"
+#include <functional>
 #include "accessibility.h"
 #include "privacy.h"
 #include "identity.h"
@@ -43,6 +44,12 @@ public:
         if (milliseconds) deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(*milliseconds);
     }
     bool same(const Node& first, const Node& second) { return voice::same(first, second); }
+    // The field read still has the focus: its own state says so, or the Shell holds the keyboard for
+    // the dictation key over the same window and focus (`focusKept`). A GTK 4 window gives up its
+    // focus while the Shell holds the keyboard, so a read during the hold found every field
+    // unfocused and withheld it (Text Editor, 2026-10-10).
+    std::function<bool(const Node&)> focusKept;
+    bool focused(const Node& node) { return state(node, ATSPI_STATE_FOCUSED) || (focusKept && focusKept(node)); }
     bool withinBudget() const { return !deadline || std::chrono::steady_clock::now() < *deadline; }
     AtspiRole role(const Node& node) { check(); return voice::role(node); }
     bool isPassword(const Node& node) { return role(node) == ATSPI_ROLE_PASSWORD_TEXT; }
@@ -411,7 +418,7 @@ public:
         catch (const std::exception&) { return CaretText::unread(from < to); }
         const auto final = snapshot();
         check();
-        if (final != initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unread(from < to);
+        if (final != initial || !focused(node)) return CaretText::unread(from < to);
         check();
         return result;
     }
@@ -459,7 +466,7 @@ public:
                 [&](size_t begin, size_t end) { return scalarSlice(rich->text, begin, end); });
             const auto final = snapshot();
             check();
-            if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unread(selectsText);
+            if (!final || *final != *initial || !focused(node)) return CaretText::unread(selectsText);
             return result;
         }
         const auto [count, offset, selections, from, to] = *initial;
@@ -470,7 +477,7 @@ public:
         });
         const auto final = snapshot();
         check();
-        if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unread(selectsText);
+        if (!final || *final != *initial || !focused(node)) return CaretText::unread(selectsText);
         check();
         return result;
     }

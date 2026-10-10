@@ -12,14 +12,17 @@ import type { ChatPlacement } from "../shared/ipc.js";
 /** Presentation operations used by the shared placement controller. A platform may present the
  * same renderer through a native window without duplicating caret or chat placement logic. */
 export type OverlaySurface = Pick<BrowserWindow,
-  "hide" | "isVisible" | "setBounds" | "getBounds" | "setOpacity" | "setIgnoreMouseEvents" | "setShape" | "showInactive"
+  "hide" | "isVisible" | "setBounds" | "getBounds" | "setOpacity" | "setIgnoreMouseEvents" | "showInactive"
 >;
 
 /** How the overlay, at the chat window's tallest size while it shows, takes clicks only on the chat
  * (and, while it shows, on the note for a text not pasted): by the page saying when the pointer is
  * over it (`pointerOver`), where the window can let clicks through while still passing the pointer's
- * moves to the page (macOS, Windows); or cut to its shape (`setShape`), where it can't (Linux). */
-export type ChatHitTest = "pointer" | "shape";
+ * moves to the page (macOS, Windows); or by looking where the pointer is, every
+ * `overlayPointerPollInterval` while the chat or the note shows, where it can't (Linux). Not by
+ * cutting the window to the chat's shape (`setShape`): on Ubuntu that crashed Xwayland, and every
+ * X11 window with it, the app among them (2026-10-09). */
+export type ChatHitTest = "pointer" | "poll";
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
@@ -63,6 +66,9 @@ export class OverlayWindowController {
   /** The note for a text not pasted shows, and copies it when clicked (ADR-DESK-042). */
   private note = false;
   private measuredChatHeight: number | null = null;
+  /** The note's frame in the overlay, as measured (`fitNote`), where the pointer is polled for. */
+  private noteFrame: Rect | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
 
@@ -186,7 +192,6 @@ export class OverlayWindowController {
   fitChat(height: number): void {
     if (this.chat === null || this.chatShrinkTimer !== null) return;
     this.measuredChatHeight = height;
-    if (this.chatHitTest === "shape") this.window.setShape([this.chatShape(height)]);
     if (!this.chatUnmeasured) return;
     this.chatUnmeasured = false;
     this.window.setOpacity(1);
@@ -199,25 +204,56 @@ export class OverlayWindowController {
   /** The pointer went over the chat window or the note, or off it (`ChatHitTest`): the overlay takes
    * clicks only over it, letting the rest through to the app under it. */
   pointerOver(over: boolean): void {
-    if ((this.chat === null && !this.note) || this.chatShrinkTimer !== null || this.chatHitTest !== "pointer" || over === this.takesClicks) return;
+    if ((this.chat === null && !this.note) || this.chatShrinkTimer !== null || this.chatHitTest !== "pointer") return;
+    this.takeClicks(over);
+  }
+
+  private takeClicks(over: boolean): void {
+    if (over === this.takesClicks) return;
     this.takesClicks = over;
     this.window.setIgnoreMouseEvents(!over, { forward: true });
   }
 
-  /** The note measured itself, at `frame` in the overlay: where the overlay is cut to its shape
-   * (`ChatHitTest` "shape"), only the note takes clicks. */
+  /** The note measured itself, at `frame` in the overlay: where the pointer is polled for
+   * (`ChatHitTest` "poll"), only the note takes clicks. */
   fitNote(frame: Rect): void {
-    if (!this.note || this.chatHitTest !== "shape") return;
-    this.window.setShape([rounded(frame)]);
-    this.window.setIgnoreMouseEvents(false);
+    if (!this.note || this.chatHitTest !== "poll") return;
+    this.noteFrame = rounded(frame);
+    this.pollPointer();
   }
 
   /** The note went: the whole overlay lets clicks through again. */
   private endNote(): void {
     this.note = false;
+    this.noteFrame = null;
+    this.stopPolling();
     this.takesClicks = false;
-    if (this.chatHitTest === "shape") this.window.setShape([]);
     this.window.setIgnoreMouseEvents(true, { forward: true });
+  }
+
+  /** Where the page can't say where the pointer is (`ChatHitTest` "poll"): looks, while the chat
+   * window or the note shows, and takes clicks while it is over the one showing. */
+  private pollPointer(): void {
+    if (this.chatHitTest !== "poll" || this.pollTimer !== null) return;
+    this.pollTimer = setInterval(() => {
+      const target = this.clickTarget();
+      if (target === null) return;
+      const pointer = screen.getCursorScreenPoint();
+      this.takeClicks(pointer.x >= target.x && pointer.x < target.x + target.width && pointer.y >= target.y && pointer.y < target.y + target.height);
+    }, config.overlayPointerPollInterval);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== null) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  /** The chat window as measured, or the note, on the screen; null before either measured itself. */
+  private clickTarget(): Rect | null {
+    if (this.chat !== null) return this.chatUnmeasured || this.measuredChatHeight === null ? null : rounded(this.chatFrame(this.measuredChatHeight));
+    if (!this.note || this.noteFrame === null) return null;
+    const bounds = this.window.getBounds();
+    return { ...this.noteFrame, x: bounds.x + this.noteFrame.x, y: bounds.y + this.noteFrame.y };
   }
 
   /** Opens the chat window over the pill, which stays where it is, at the caret the request was
@@ -238,14 +274,10 @@ export class OverlayWindowController {
     this.chatClosing = false;
     this.chatUnmeasured = true;
     this.window.setOpacity(0);
-    if (this.chatHitTest === "shape") {
-      this.window.setShape([this.chatShape(0)]);
-      this.window.setIgnoreMouseEvents(false);
-    } else {
-      // Clicks only once the pointer is over the chat, which the page says as it moves.
-      this.takesClicks = false;
-      this.window.setIgnoreMouseEvents(true, { forward: true });
-    }
+    // Clicks only once the pointer is over the chat, which the page says as it moves, or the poll finds.
+    this.takesClicks = false;
+    this.window.setIgnoreMouseEvents(true, { forward: true });
+    this.pollPointer();
     this.window.setBounds(rounded(this.chatFrame(this.chat.side.maxHeight)));
     this.window.showInactive();
     this.onPlace?.();
@@ -257,22 +289,12 @@ export class OverlayWindowController {
     return chatWindowFrame(chat.pill, height, chat.workArea, chat.side, chat.bubblesUnder);
   }
 
-  /** The chat window `height` tall, with its shadow and the pill's strip, in the overlay at the chat's
-   * tallest size. */
-  private chatShape(height: number): Rect {
-    const side = this.chat?.side;
-    if (side === undefined) throw new Error("no chat window");
-    const tallest = rounded(this.chatFrame(side.maxHeight));
-    const frame = rounded(this.chatFrame(height));
-    return { x: frame.x - tallest.x, y: frame.y - tallest.y, width: frame.width, height: frame.height };
-  }
-
   /** The chat window closed: its page shrinks it into its pill, letting clicks through meanwhile, and
    * then the overlay leaves its frame and follows the phase of that moment. Once, however often told. */
   private shrinkChat(): void {
     if (this.chatShrinkTimer !== null) return;
+    this.stopPolling();
     this.takesClicks = false;
-    if (this.chatHitTest === "shape") this.window.setShape([]);
     this.window.setIgnoreMouseEvents(true, { forward: true });
     this.chatShrinkTimer = setTimeout(() => {
       this.chatShrinkTimer = null;
@@ -287,7 +309,7 @@ export class OverlayWindowController {
     clearTimeout(this.chatShrinkTimer);
     this.chatShrinkTimer = null;
     // Reopened as it shrank (a follow-up): it takes clicks again where it is.
-    if (this.chat !== null && this.chatHitTest === "shape" && this.measuredChatHeight !== null) this.window.setShape([this.chatShape(this.measuredChatHeight)]);
+    if (this.chat !== null) this.pollPointer();
   }
 
   private hideChat(): void {
@@ -295,9 +317,9 @@ export class OverlayWindowController {
     this.chatUnmeasured = false;
     this.chatClosing = true;
     this.window.setOpacity(0);
-    // The whole window again (an empty list), click-through, the pointer's moves still reaching the
-    // page (a bubble's hover).
-    if (this.chatHitTest === "shape") this.window.setShape([]);
+    this.stopPolling();
+    this.takesClicks = false;
+    // Click-through, the pointer's moves still reaching the page (a bubble's hover).
     this.window.setIgnoreMouseEvents(true, { forward: true });
   }
 

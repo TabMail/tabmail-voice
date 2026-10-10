@@ -38,6 +38,10 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
             if (window == path.end()) { std::cerr << "debug screen: focused window unavailable\n"; return nullptr; }
             if (method == "readScreen") {
                 voice::LiveScreenTree tree(*window);
+                tree.focusKept = [&](const voice::Node& node) {
+                    const auto now = foreground.target();
+                    return now && foreground.targets(now->token) && voice::same(now->focus, node);
+                };
                 return voice::gatherScreen(tree, *window, target->focus, path, target->app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
             }
             // A terminal's text is its scrollback: its field is the box around its cursor, which the

@@ -606,6 +606,9 @@ export const thinkingTrackOpacity = 0.2;
  * 2026-10-02). */
 export const thinkingArcEndColor = 0.6;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
+/** How often the overlay looks where the pointer is, while the chat window or the note shows, where the
+ * page can't say (Linux, `ChatHitTest` "poll"): often enough that the first click on the chat lands. */
+export const overlayPointerPollInterval = 50;
 export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 100;
 /** Agent mode's bubbles in a row under the pill, one per tool and connector: icon-only circles,
  * slightly smaller than the pill at rest (owner, 2026-09-28), grown to `agentBubbleRunningDiameter`

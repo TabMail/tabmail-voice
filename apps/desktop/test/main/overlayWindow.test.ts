@@ -41,10 +41,8 @@ function overlayWindow(): BrowserWindow {
 }
 
 /** An overlay window that keeps its bounds and whether it lets the mouse through. */
-function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[]; shape: () => Rect[] } {
+function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[] } {
   let visible = false;
-  /** The window's shape (`setShape`): the whole window when empty. */
-  let shape: Rect[] = [];
   let opacity = 1;
   /** Every frame the window took while it showed at full opacity. */
   const opaqueFrames: Rect[] = [];
@@ -68,15 +66,12 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
       opacity = value;
     },
     getBounds: () => bounds,
-    setShape: (rects: Rect[]) => {
-      shape = rects;
-    },
     setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
       ignoresMouse = ignore;
       forwardsMouse = options?.forward === true;
     },
   } as unknown as BrowserWindow;
-  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames, shape: () => shape };
+  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames };
 }
 
 /** A closed chat window's page shrinks it into its pill meanwhile (real timers). */
@@ -366,46 +361,101 @@ describe("OverlayWindowController", () => {
     }
   });
 
-  /** Where a click-through window gets no pointer moves (Linux), the overlay at the chat's tallest is
-   * cut to the chat as measured, with its shadow and the pill's strip, the edge by the pill staying
-   * put: only that takes clicks, as a window that size did. Closed, it is whole and click-through. */
+  /** Where a click-through window gets no pointer moves (Linux), the overlay at the chat's tallest
+   * looks where the pointer is every `overlayPointerPollInterval`, and takes clicks only while it is
+   * over the chat as measured, the edge by the pill staying put: the rest of the tallest frame lets
+   * clicks through, as a window that size did. What the page says of the pointer changes nothing
+   * there, and the overlay never takes a shape (that crashed Xwayland). Closed, it stops looking and
+   * lets clicks through while its page shrinks it into its pill, and after. */
   test.each([
     ["over", 500],
     ["under", 40],
-  ])("cut to its shape, the chat window %s the pill takes clicks only where it is", (_, y) => {
+  ])("polling the pointer, the chat window %s the pill takes clicks only where it is", (_, y) => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
     const overlay = recordingWindow();
-    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "poll");
+    const tick = () => vi.advanceTimersByTime(config.overlayPointerPollInterval);
     screenNow.pointer = { x: 400, y };
     try {
       controller.update({ kind: "running", tool: "answer" }, true);
+      const tallest = overlay.bounds();
+      expect(tallest.height).toBe(2 * config.chatShadowMargin + config.chatMaxHeight + config.chatPillGap + config.chatStripHeight);
+      const below = controller.chatPlacement?.below === true;
+      expect(below).toBe(y < 100);
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(overlay.forwardsMouse()).toBe(true);
+      // Unmeasured, there is no chat to be over yet.
+      screenNow.pointer = { x: tallest.x + 1, y: tallest.y + 1 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+
+      controller.fitChat(120);
+      const height = tallest.height - config.chatMaxHeight + 120;
+      const top = below ? tallest.y : tallest.y + tallest.height - height;
+      expect(overlay.bounds()).toEqual(tallest);
+      for (const [pointer, takes] of [
+        [{ x: tallest.x + 1, y: top + 1 }, true],
+        [{ x: tallest.x + 1, y: below ? top + height : top - 1 }, false],
+        [{ x: tallest.x + tallest.width - 1, y: top + height - 1 }, true],
+        [{ x: tallest.x + tallest.width, y: top + 1 }, false],
+      ] as const) {
+        screenNow.pointer = pointer;
+        tick();
+        expect(overlay.ignoresMouse()).toBe(!takes);
+        expect(overlay.forwardsMouse()).toBe(true);
+        // The page's word on the pointer is not taken over the poll.
+        controller.pointerOver(!takes);
+        expect(overlay.ignoresMouse()).toBe(!takes);
+      }
+
+      screenNow.pointer = { x: tallest.x + 1, y: top + 1 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.update({ kind: "idle" }, false);
+      expect(overlay.ignoresMouse()).toBe(true);
+      // Closed, the poll stops as the chat shrinks: the pointer still over it takes no clicks.
+      tick();
+      expect(controller.chatPlacement).not.toBeNull();
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       screenNow.pointer = pointerAtRest;
+      vi.useRealTimers();
     }
-    expect(overlay.ignoresMouse()).toBe(false);
-    const tallest = overlay.bounds();
-    expect(tallest.height).toBe(2 * config.chatShadowMargin + config.chatMaxHeight + config.chatPillGap + config.chatStripHeight);
-    const below = controller.chatPlacement?.below === true;
-    expect(below).toBe(y < 100);
-    const unmeasured = overlay.shape();
-    expect(unmeasured).toHaveLength(1);
-    expect(unmeasured[0]?.height).toBe(tallest.height - config.chatMaxHeight);
+  });
 
-    controller.fitChat(120);
-    const height = tallest.height - config.chatMaxHeight + 120;
-    expect(overlay.shape()).toEqual([{ x: 0, y: below ? 0 : tallest.height - height, width: tallest.width, height }]);
-    expect(overlay.bounds()).toEqual(tallest);
-    // The page says where the pointer is on every platform; cut to shape, the window keeps taking
-    // clicks whatever it says (ignoring them here would leave no move to undo it).
-    const shaped = overlay.shape();
-    for (const over of [true, false, true, false]) {
-      controller.pointerOver(over);
+  /** Polling the pointer, a follow-up as the chat window shrinks looks again: the pointer over it takes
+   * clicks, as before it closed. */
+  test("polling the pointer, a follow-up as the chat window shrinks takes clicks where it is", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "poll");
+    const tick = () => vi.advanceTimersByTime(config.overlayPointerPollInterval);
+    screenNow.pointer = { x: 400, y: 500 };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      const tallest = overlay.bounds();
+      screenNow.pointer = { x: tallest.x + 1, y: tallest.y + tallest.height - 1 };
+      tick();
       expect(overlay.ignoresMouse()).toBe(false);
-      expect(overlay.shape()).toEqual(shaped);
-    }
 
-    controller.update({ kind: "idle" }, false);
-    expect(overlay.shape()).toEqual([]);
-    expect(overlay.ignoresMouse()).toBe(true);
+      controller.update({ kind: "idle" }, false);
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      controller.update({ kind: "arming" }, true);
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
+      expect(controller.chatPlacement).not.toBeNull();
+      expect(overlay.ignoresMouse()).toBe(false);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.useRealTimers();
+    }
   });
 
   /** Hidden as the chat window closes, the overlay's last frame would still be the chat, which then
@@ -680,9 +730,9 @@ describe("OverlayWindowController", () => {
     controller.pointerOver(false);
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
-    // A measured frame is the shape-cut overlay's (Linux) only.
+    // A measured frame is for the pointer poll (Linux) only: the page's word stands.
     controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
-    expect(overlay.shape()).toEqual([]);
+    expect(overlay.ignoresMouse()).toBe(true);
     controller.pointerOver(true);
     // The same note again (a state push) changes nothing.
     controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
@@ -698,21 +748,52 @@ describe("OverlayWindowController", () => {
     expect(overlay.ignoresMouse()).toBe(true);
   });
 
-  /** Where the overlay is cut to a shape (Linux), the note takes clicks over its measured frame only,
-   * and the next hold gets the whole, click-through overlay back. */
-  test("the not-pasted note is the shape-cut overlay's only shape while it shows", () => {
+  /** Where the pointer is polled for (Linux), the note takes clicks only while the pointer is over its
+   * measured frame, and the next hold stops the poll and lets clicks through. */
+  test("polling the pointer, the not-pasted note takes clicks only where it is", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const overlay = recordingWindow();
-    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
-    controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
-    controller.fitNote({ x: 10.4, y: 20.6, width: 180.2, height: 32 });
-    expect(overlay.shape()).toEqual([{ x: 10, y: 21, width: 180, height: 32 }]);
-    expect(overlay.ignoresMouse()).toBe(false);
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "poll");
+    const tick = () => vi.advanceTimersByTime(config.overlayPointerPollInterval);
+    try {
+      controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
+      const bounds = overlay.bounds();
+      // Unmeasured, nothing is polled for.
+      screenNow.pointer = { x: bounds.x + 15, y: bounds.y + 25 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
 
-    controller.update({ kind: "arming" });
-    expect(overlay.shape()).toEqual([]);
-    expect(overlay.ignoresMouse()).toBe(true);
-    controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
-    expect(overlay.shape()).toEqual([]);
+      controller.fitNote({ x: 10.4, y: 20.6, width: 180.2, height: 32 });
+      for (const [pointer, takes] of [
+        [{ x: bounds.x + 10, y: bounds.y + 21 }, true],
+        [{ x: bounds.x + 9, y: bounds.y + 21 }, false],
+        [{ x: bounds.x + 189, y: bounds.y + 52 }, true],
+        [{ x: bounds.x + 190, y: bounds.y + 52 }, false],
+        [{ x: bounds.x + 100, y: bounds.y + 53 }, false],
+      ] as const) {
+        screenNow.pointer = pointer;
+        tick();
+        expect(overlay.ignoresMouse()).toBe(!takes);
+        expect(overlay.forwardsMouse()).toBe(true);
+      }
+
+      screenNow.pointer = { x: bounds.x + 15, y: bounds.y + 25 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.update({ kind: "arming" });
+      expect(overlay.ignoresMouse()).toBe(true);
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      // A note gone measures nothing.
+      controller.fitNote({ x: 10, y: 20, width: 180, height: 32 });
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.useRealTimers();
+    }
   });
 
   /** A caret found after the chat window opened doesn't move it back to where the pill would be. */

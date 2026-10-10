@@ -637,8 +637,9 @@ describe("main process wiring", () => {
   });
 
   /** The chat window takes clicks only where it is: by the pointer's moves where a click-through
-   * window still gets them (macOS, Windows), cut to its shape on Linux, where it doesn't. */
-  test.each([["darwin", "pointer"], ["win32", "pointer"], ["linux", "shape"]] as const)("on %s the chat window takes clicks by its %s", async (platform, hitTest) => {
+   * window still gets them (macOS, Windows), by polling where the pointer is on Linux, where it
+   * doesn't. */
+  test.each([["darwin", "pointer"], ["win32", "pointer"], ["linux", "poll"]] as const)("on %s the chat window takes clicks by its %s", async (platform, hitTest) => {
     await launch(platform);
     expect(app.overlay?.hitTest).toBe(hitTest);
   });

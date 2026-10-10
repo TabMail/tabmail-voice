@@ -284,7 +284,7 @@ function launch(): void {
     }
     const pid = await system.frontmostApp();
     return pid === null ? null : system.caretAnchor(pid);
-  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined, process.platform === "linux" ? "shape" : "pointer");
+  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined, process.platform === "linux" ? "poll" : "pointer");
 
   if (system instanceof WindowsSystem) {
     let refreshing = false;

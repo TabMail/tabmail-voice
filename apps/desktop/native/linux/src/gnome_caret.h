@@ -3,6 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
 #include <array>
+#include <optional>
+#include <utility>
 #include <cmath>
 #include <cstring>
 #include "accessibility.h"
@@ -19,6 +21,9 @@ class GnomeCaret {
     std::shared_ptr<State> state = std::make_shared<State>();
 public:
     static constexpr int timeoutMilliseconds = 25;
+    /** Which window is in front decides whether a paste goes ahead: the Shell gets longer to say it
+     * than to place a caret, a busy Shell (a slow machine) missing 25 ms. */
+    static constexpr int focusTimeoutMilliseconds = 250;
     GnomeCaret() {
         g_bus_get(G_BUS_TYPE_SESSION, state->cancel.get(), [](GObject*, GAsyncResult* result, gpointer data) {
             std::unique_ptr<std::shared_ptr<State>> state(static_cast<std::shared_ptr<State>*>(data));
@@ -41,9 +46,10 @@ public:
                 auto value = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error.value);
                 guint version = 0;
                 if (value) { g_variant_get(value, "(u)", &version); g_variant_unref(value); }
-                // 2: the extension holds Right Alt (SetHotkey, Holding). A Shell still running an older
-                // extension until the next login is not ready, so Settings asks for one.
-                (*reply)(version == 2, true);
+                // 3: the extension says which window has the focus (Focus); 2 added holding Right Alt
+                // (SetHotkey, Holding). A Shell still running an older extension until the next login is
+                // not ready, so Settings asks for one.
+                (*reply)(version == 3, true);
             }, new Channel::Reply(std::move(reply)));
     }
 
@@ -94,6 +100,22 @@ public:
         g_variant_get(value, "(b)", &held);
         g_variant_unref(value);
         return held;
+    }
+    /** The window with the keyboard focus, by the Shell (`Focus`): its id and process. Asked and answered
+     * before returning, at most `focusTimeoutMilliseconds`. No Shell, no answer, or no window: none. */
+    std::optional<std::pair<uint64_t, unsigned>> focus() {
+        if (!state->bus) return std::nullopt;
+        Error error;
+        auto value = g_dbus_connection_call_sync(state->bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
+            "ai.tabmail.Voice.Caret", "Focus", nullptr, G_VARIANT_TYPE("(tu)"), G_DBUS_CALL_FLAGS_NO_AUTO_START,
+            focusTimeoutMilliseconds, state->cancel.get(), &error.value);
+        if (!value) return std::nullopt;
+        guint64 window = 0;
+        guint32 pid = 0;
+        g_variant_get(value, "(tu)", &window, &pid);
+        g_variant_unref(value);
+        if (!window) return std::nullopt;
+        return std::make_pair(static_cast<uint64_t>(window), static_cast<unsigned>(pid));
     }
 private:
     void rectangle(const char* method, GVariant* args, Channel::Reply reply) {

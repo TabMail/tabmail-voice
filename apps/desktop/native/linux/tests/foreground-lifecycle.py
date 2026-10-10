@@ -180,6 +180,15 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert field() == {'value': 'Synthetic field content'}
         elif not reader:
             assert request('frontmostApp') == {'window': window, 'pid': first}
+        # A GTK 4 window drops its field's focus while the Shell holds the keyboard (GNOME Text
+        # Editor): the selection read at the key's press is still the field's, not withheld.
+        command('l')
+        command('h')
+        if reader:
+            read = screen()
+            assert read['selectionRedacted'] is False and read['selectedText'] == 'x' * 20001, \
+                'the selection is read while the Shell holds the keyboard'
+        command('H')
         for mode in ('l', 'v'):
             command(mode)
             if reader:
@@ -281,6 +290,28 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert command('s') == (11, 1)
         if not reader:
             assert target() is None, 'departure cancels retries'
+        if not reader and not fields:
+            # A window the focus comes back to keeps its token: Firefox moves the focus through a
+            # second accessible app of its own and back as the Shell lets the keyboard go, and a new
+            # token made every paste "another app is in front".
+            command('a')
+            window = request('frontmostApp')['window']
+            command('b')
+            assert request('frontmostApp')['window'] != window
+            command('a')
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'a window keeps its token when the focus comes back'
+            # Where the Shell says which window has the focus, that window is the target, by the Shell's
+            # id, whatever the focus does meanwhile: while the Shell holds the keyboard, and back again.
+            command('F')
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}, "the Shell's window id names the target"
+            command('h')
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}, 'the target stays while the Shell holds the keyboard'
+            command('H')
+            command('b')
+            assert request('frontmostApp') == {'window': 7001, 'pid': second}
+            command('a')
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}
+            command('N')
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
         child.stdin.close()

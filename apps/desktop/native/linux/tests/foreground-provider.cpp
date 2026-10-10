@@ -17,6 +17,9 @@ AtspiAccessible *desktop, *apps[2], *windows[2], *documents[2], *fields[2], *sec
 // The Shell's own window and the actor that holds the keyboard for the dictation key.
 AtspiAccessible *shellWindow, *shellPanel;
 bool holding = false;
+// Whether the Shell says which window has the focus (the extension's `Focus`, from version 3): each
+// synthetic window by an id of its own, with its app's process.
+bool shellFocus = false;
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
 bool mutateSelectionOnText = false, containerFocused = false;
@@ -105,6 +108,8 @@ gboolean command(gint fd, GIOCondition, gpointer) {
         focusLost = true; event("object:state-changed:focused", fields[active], 0);
     }
     if (value == 'u') items.at(fields[active]).live.clear();
+    if (value == 'F') shellFocus = true;
+    if (value == 'N') shellFocus = false;
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
     if (::write(acknowledgments, reply.data(), reply.size()) != static_cast<ssize_t>(reply.size())) std::abort();
     return G_SOURCE_CONTINUE;
@@ -131,12 +136,15 @@ extern "C" AtspiEventListener* __real_atspi_event_listener_new(AtspiEventListene
 extern "C" AtspiEventListener* __wrap_atspi_event_listener_new(AtspiEventListenerCB cb, gpointer data, GDestroyNotify destroy) {
     callback = cb; callbackData = data; return __real_atspi_event_listener_new(cb, data, destroy);
 }
-// The Shell answers whether it holds the keyboard; the helper's other Shell calls get no Shell.
+// The Shell answers whether it holds the keyboard, and, once the fixture says so, which window has the
+// focus; the helper's other Shell calls get no Shell.
 extern "C" GVariant* __real_g_dbus_connection_call_sync(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*,
     GVariant*, const GVariantType*, GDBusCallFlags, gint, GCancellable*, GError**);
 extern "C" GVariant* __wrap_g_dbus_connection_call_sync(GDBusConnection* bus, const gchar* name, const gchar* path, const gchar* interface,
     const gchar* method, GVariant* args, const GVariantType* type, GDBusCallFlags flags, gint timeout, GCancellable* cancel, GError** error) {
     if (std::string(method) == "Holding") return g_variant_ref_sink(g_variant_new("(b)", holding));
+    if (std::string(method) == "Focus" && shellFocus)
+        return g_variant_ref_sink(g_variant_new("(tu)", active >= 0 ? static_cast<guint64>(7000 + active) : guint64{0}, active >= 0 ? 4194305u + active : 0u));
     return __real_g_dbus_connection_call_sync(bus, name, path, interface, method, args, type, flags, timeout, cancel, error);
 }
 extern "C" gboolean __wrap_atspi_event_listener_register(AtspiEventListener*, const gchar*, GError**) { return TRUE; }
