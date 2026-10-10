@@ -1,11 +1,14 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, expect, test as anyHostTest, vi } from "vitest";
 import { LinuxFileStore } from "../../../../src/main/native/linux/files.js";
 const mocks = vi.hoisted(() => ({ lstat: vi.fn(), openPath: vi.fn(), showItemInFolder: vi.fn() }));
 vi.mock("node:fs/promises", () => ({ lstat: mocks.lstat }));
 vi.mock("electron", () => ({ shell: { openPath: mocks.openPath, showItemInFolder: mocks.showItemInFolder } }));
+// The store reads paths and file URLs by the machine's own rules, Linux's; a Windows machine
+// running the tests (its release build) reads them by its own.
+const test = anyHostTest.skipIf(process.platform === "win32");
 const query = { words: ["report"], kind: "any" as const, changedAfter: null, changedBefore: null };
 beforeEach(() => {
   vi.clearAllMocks();

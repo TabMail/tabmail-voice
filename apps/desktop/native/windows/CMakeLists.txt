@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.24)
 project(TabMailVoiceWindows LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# The C++ runtime is linked into each helper (the Rust core links it the same way, in its
+# .cargo/config.toml): Windows does not ship it, and the installer does not either.
+set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
 include(CTest)
 
 include(../shared/rust/VoiceCore.cmake)
@@ -213,7 +216,7 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs $<TARGET_FILE:voice-windows> --privacy-only)
       add_test(NAME voice-electron-cold-activation COMMAND "${ELECTRON_EXECUTABLE}"
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs $<TARGET_FILE:voice-windows> --cold-activation)
-      set_tests_properties(voice-electron voice-electron-cold-activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 150)
+      set_tests_properties(voice-electron voice-electron-cold-activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 270)
       set_tests_properties(voice-electron-privacy PROPERTIES RUN_SERIAL TRUE TIMEOUT 75)
     else()
       message(WARNING "Electron integration test unavailable: install desktop dependencies before configuring native tests")

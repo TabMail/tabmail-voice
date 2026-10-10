@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { test, expect, vi, afterEach } from "vitest";
-import { mkdtemp, writeFile, readFile, rm, truncate } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm, truncate, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fstatSync } from "node:fs";
@@ -37,6 +37,10 @@ async function prepare() {
   const root = await mkdtemp(join(tmpdir(), "voice-document-lifecycle-")); roots.push(root);
   const path = join(root, "synthetic.pdf"), before = Buffer.alloc(131072, "A");
   await writeFile(path, before);
+  // Saved well before it is read, as a document is: Windows stamps file times from a clock that
+  // ticks every ~15 ms, so a rewrite within the same tick would keep the same times.
+  const saved = new Date(Date.now() - 60 * 60 * 1000);
+  await utimes(path, saved, saved);
   const signal = new AbortController().signal;
   return { root, path, before, signal, document: await LocalDocument.prepare(path, root, signal) };
 }

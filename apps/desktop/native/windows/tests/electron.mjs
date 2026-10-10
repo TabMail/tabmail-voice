@@ -77,12 +77,13 @@ async function anchor(target, field = "editor", fieldFallback = false) {
   return rect;
 }
 // The full matrix makes hundreds of separately bounded UIA calls; x64 runs
-// under emulation on ARM64 developer VMs. Keep each request capped at four
-// seconds while allowing the complete matrix two minutes.
+// under emulation on ARM64 developer VMs, and a hosted CI runner renders in
+// software. Keep each request capped at four seconds while allowing the
+// complete matrix four minutes (two were not enough on a hosted x64 runner).
 const timeout = setTimeout(() => {
   process.stderr.write(`Windows Electron integration timed out at ${stage}; ${id} requests in ${Date.now() - startedAt} ms\n`);
   activator?.kill(); helper?.kill(); reader?.kill(); fieldReader?.kill(); app.exit(1);
-}, privacyOnly ? 60_000 : 120_000);
+}, privacyOnly ? 60_000 : 240_000);
 async function main() {
   try {
     await app.whenReady();
@@ -405,7 +406,7 @@ async function main() {
     process.stderr.write(stderr);
     process.stderr.write(readerErrors);
     process.stderr.write(fieldReaderErrors);
-    process.stderr.write(`${error.stack}\n`);
+    process.stderr.write(`failed at ${stage}\n${error.stack}\n`);
     app.exit(1);
   } finally {
     clearTimeout(timeout); activator?.kill(); helper?.kill(); reader?.kill(); fieldReader?.kill(); lines?.close();

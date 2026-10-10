@@ -1,0 +1,4 @@
+# The Windows helpers link the C runtime statically (native/windows/CMakeLists.txt): the core links
+# the same one.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

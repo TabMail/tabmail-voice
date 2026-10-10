@@ -156,8 +156,12 @@ try {
   }
   await command("editable");
   await command("seed");
-  for (const extra of [{ window: 0 }, { window: window + 1 }, { window: -1 }, { deadline: Date.now() - 1 }, { text: "" }, { text: "bad\0text" }]) {
-    assert.ok((await request("insert", params(extra)).result).error, "invalid or stale request refused");
+  for (const extra of [{ window: 0 }, { window: window + 1 }, { window: -1 }, { text: "" }, { text: "bad\0text" }]) {
+    assert.ok((await request("insert", params(extra)).result).error, `invalid request refused: ${JSON.stringify(extra)}`);
+  }
+  // A deadline just past is refused every time, not only once the helper's clock next moves on.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    assert.ok((await request("insert", params({ deadline: Date.now() - 1 })).result).error, `stale request refused (attempt ${attempt})`);
   }
   assert.equal((await command("value")).text, "Before selected after.");
   assert.deepEqual(await command("clipboard"), original);
@@ -227,6 +231,10 @@ try {
     .replace(/^debug clipboard keeper: (clipboard (saved|not to be saved|put back) after \d+ms|clipboard unchanged since it was saved|no save of the clipboard as it was; it won't be put back|clipboard changed since the paste; not put back|clipboard couldn't be put back|nothing saved to put back; the paste's text stays)\n/gmu, ""),
   "", "only categorical, timed insertion diagnostics are emitted");
   process.stdout.write("Windows insertion, clipboard save and put-back, cancellation, privacy and refusal checks passed\n");
+} catch (error) {
+  // The helpers' own lines say why a request failed: fixed phrases and timings, never text.
+  process.stderr.write(`${errors.slice(-2000)}\n`);
+  throw error;
 } finally {
   clearTimeout(timeout); helper.kill(); fixture.kill(); helperLines.close(); fixtureLines.close();
 }

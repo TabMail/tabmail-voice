@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../src/core/config.js";
 import { palette } from "../../src/core/palette.js";
@@ -92,14 +93,14 @@ function settingsWindow(platform: NodeJS.Platform): Record<string, unknown> | un
 
 describe("Windows", () => {
   test("Linux Settings supplies the application icon to its actual window", () => {
-    expect(settingsWindow("linux")?.icon).toBe("/voice/resources/icon.png");
+    expect(settingsWindow("linux")?.icon).toBe(join("/voice", "resources", "icon.png"));
     expect(settingsWindow("darwin")?.icon).toBeUndefined();
   });
 
   test("packaged Linux Settings uses the icon shipped outside the app archive", () => {
     electron.app.isPackaged = true;
     Object.defineProperty(process, "resourcesPath", { value: "/opt/TabMail Voice/resources", configurable: true });
-    expect(settingsWindow("linux")?.icon).toBe("/opt/TabMail Voice/resources/icon.png");
+    expect(settingsWindow("linux")?.icon).toBe(join("/opt/TabMail Voice/resources", "icon.png"));
   });
 
   /** The paste history (ADR-DESK-043): a frameless panel over every other window, shown with the

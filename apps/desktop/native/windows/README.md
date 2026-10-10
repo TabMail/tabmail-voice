@@ -4,15 +4,17 @@ These helpers use Win32 rather than Chromium for global key capture and micropho
 
 Overlay startup sends `caretAnchor` without a `window` parameter so the helper snapshots the foreground HWND when enqueueing the request. This avoids a foreground-query round trip before caret placement. Explicit window targets remain supported; a captured window that loses foreground ownership yields no geometry. The portable `voice-accessibility-worker` test compiles the actual worker with synthetic OS/provider boundaries and checks queued focus changes, fresh-request recovery, cancellation and malformed input.
 
-Install Node.js 24 and Visual Studio Build Tools 2022 with the C++ workload, Windows 11 SDK, CMake tools, and compiler tools for the target architecture. Run from a developer shell where `node` and `cmake` are on PATH:
+Install Node.js 24 and Visual Studio Build Tools (2022 or later) with the C++ workload, Windows 11 SDK, CMake tools, and compiler tools for the target architecture. Run from a developer shell where `node` and `cmake` are on PATH; CMake picks the newest Visual Studio installed:
 
 ```powershell
-cmake -S apps/desktop/native/windows -B apps/desktop/native/windows/build -G "Visual Studio 17 2022" -A ARM64
+cmake -S apps/desktop/native/windows -B apps/desktop/native/windows/build -A ARM64
 cmake --build apps/desktop/native/windows/build --config Release --parallel 2
 ctest --test-dir apps/desktop/native/windows/build -C Release --output-on-failure
 ```
 
 Use `-A x64` and a separate build directory for an x64 target. The app build dispatcher uses the current Node architecture. `npm run compile:native` copies the two release executables into `dist/helpers`.
+
+The helpers link the C++ runtime statically, as the Rust core does (`../shared/rust/.cargo/config.toml`): Windows does not ship the Visual C++ runtime and the installer does not carry it, so a helper that imported it would not start on a machine without Visual Studio. The keyring addon the app stores its session with (`@napi-rs/keyring`) does import it: the app build copies `vcruntime140.dll` from the build's Visual Studio redistributable (`redistributableRuntime` in `scripts/windows/build-native.mts`), and the app ships it beside the addon, where Windows looks for an addon's DLLs. The Windows release build checks that every installed file importing the runtime has it beside it.
 
 The JSON dependency is fetched from its official versioned release with a pinned SHA-256. Gesture tests are portable; native helper protocol tests must run on the Windows desktop as a normal user. Running them as SYSTEM does not validate access to the user's foreground windows or keyboard. Launch focus-dependent tests from a visible foreground terminal; a hidden background launcher may not have permission to give its fixtures foreground focus.
 

@@ -244,7 +244,10 @@ if(BUILD_TESTING)
   # app's Electron is installed beside the helpers' source.
   set(ELECTRON_EXECUTABLE "${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/electron/dist/electron" CACHE FILEPATH "Electron executable for Linux integration tests")
   if(EXISTS "${ELECTRON_EXECUTABLE}")
-    add_test(NAME voice-electron COMMAND "${ELECTRON_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs" $<TARGET_FILE:voice-linux>)
+    # GNOME activates a new Wayland window, not a new X11 one, and reads only the active window. On the
+    # command line, after the fixture's own arguments: Chromium picks its display before the script
+    # runs, and the fixture's run of itself passes its arguments on.
+    add_test(NAME voice-electron COMMAND "${ELECTRON_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs" $<TARGET_FILE:voice-linux> --ozone-platform=wayland)
     set_tests_properties(voice-electron PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
   else()
     message(WARNING "Electron integration test unavailable: install desktop dependencies before configuring native tests")

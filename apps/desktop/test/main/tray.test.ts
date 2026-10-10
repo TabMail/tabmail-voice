@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MenuState, UpdateState } from "../../src/core/ui/menuModel.js";
 import { type TrayActions, TrayMenu } from "../../src/main/tray.js";
 
@@ -16,7 +16,7 @@ vi.mock("electron", () => ({
   nativeImage: {
     // Each image names its file; on Linux its pixels say which one it was (the marked one is fainter).
     createFromPath: (path: string) => ({
-      file: path.split("/").at(-1),
+      file: path.split(/[\\/]/).at(-1),
       template: false,
       setTemplateImage(template: boolean) { this.template = template; },
       toBitmap: () => Buffer.from([10, 20, 30, path.endsWith("Marked.png") ? 64 : 128]),
@@ -130,6 +130,11 @@ function onLinux(desktop: string, run: () => void) {
 /** While a permission is missing the icon carries a mark, so the user can see why dictation won't start. */
 describe("TrayMenu's permission mark", () => {
   const icon = () => (tray.icons.at(-1) as { file?: string }).file;
+
+  // The macOS icons, whatever the machine running the tests (the Windows and Linux release builds run them too).
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  beforeEach(() => Object.defineProperty(process, "platform", { value: "darwin", configurable: true }));
+  afterEach(() => Object.defineProperty(process, "platform", platform));
 
   test("a ready app shows the plain icon", () => {
     menu(null);
