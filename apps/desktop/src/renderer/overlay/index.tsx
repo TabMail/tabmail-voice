@@ -126,6 +126,8 @@ function Overlay() {
   // afresh.
   const [swirl, setSwirl] = useState<{ key: number; leaving: boolean } | null>(null);
   const swirlGone = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // The chat window last shown, drawn shrinking into its pill as it closes.
+  const lastChat = useRef<AgentChat | null>(null);
   const previous = useRef<Mode>(mode);
   useLayoutEffect(() => {
     const was = previous.current;
@@ -142,8 +144,12 @@ function Overlay() {
   }, [mode]);
 
   if (!state) return null;
-  const placement = state.chat === null ? null : state.chatPlacement;
-  const chat = placement === null ? null : state.chat;
+  // The overlay keeps the chat's place a moment after it closes, as it shrinks into its pill: the last
+  // chat, closing.
+  if (state.chat !== null) lastChat.current = state.chat;
+  const placement = state.chatPlacement;
+  const chat = placement === null ? null : (state.chat ?? lastChat.current);
+  const isChatClosing = chat !== null && state.chat === null;
   const canvas = config.overlayCanvasSize;
   // The one-line pill's top edge, centered in the canvas: taller pills grow downward.
   let anchor: Point = { x: canvas.width / 2, y: (canvas.height - config.pillHeight) / 2 };
@@ -168,7 +174,7 @@ function Overlay() {
       {chat === null && mode.kind === "hidden" && exiting?.pill && (
         <PillLayout key={`exiting-${exiting.key}`} mode={exiting.pill} state={state} tip={null} showsTools={false} keepsBubbles={false} exiting anchor={anchor} canvas={canvas} bubblesUnder={state.bubblesFitUnder} />
       )}
-      {chat !== null && placement !== null && <ChatBox chat={chat} below={placement.below} maxHeight={placement.maxHeight} width={placement.width ?? config.chatWidth} />}
+      {chat !== null && placement !== null && <ChatBox chat={chat} below={placement.below} maxHeight={placement.maxHeight} width={placement.width ?? config.chatWidth} pillOrigin={chatPillOrigin(placement)} closing={isChatClosing} />}
       {pillMode !== null && (
         <PillLayout mode={pillMode} state={state} tip={tip} showsTools={showsTools} keepsBubbles={chat !== null} exiting={false} anchor={anchor} canvas={layer.size} bubblesUnder={placement?.bubblesUnder ?? state.bubblesFitUnder} layerStyle={layer.style} />
       )}
@@ -187,6 +193,19 @@ function chatPillLayer(placement: ChatPlacement): { anchor: Point; size: Size; s
   const overBubbles = placement.bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
   if (placement.below) return { anchor: { x: placement.pillX, y: margin + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, top: 0, height } };
   return { anchor: { x: placement.pillX, y: config.chatBubbleTooltipRoom + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, bottom: 0, height } };
+}
+
+/** The pill's center, from the chat window's own corner, as a CSS `transform-origin`: the chat grows
+ * out of it and shrinks back into it. */
+function chatPillOrigin(placement: ChatPlacement): string {
+  const margin = config.chatShadowMargin;
+  const { anchor, size } = chatPillLayer(placement);
+  const pillCenter = anchor.y + config.pillHeight / 2;
+  // The chat's edge on the pill's side, from the window's edge on that side, as `ChatBox` places it.
+  const offset = margin + config.chatStripHeight + config.chatPillGap;
+  const x = anchor.x - margin;
+  // Under the pill, the window's top edge is the layer's; over it, the window's bottom edge is.
+  return placement.below ? `${x}px ${pillCenter - offset}px` : `${x}px calc(100% + ${offset - (size.height - pillCenter)}px)`;
 }
 
 /** A bubble in the row under the pill. */
@@ -325,7 +344,7 @@ function PillLayout({
  * window at its tallest; it reports that height, the part of the window that takes clicks, and the
  * pointer moving over it or off it (`ChatHitTest`). Under the pill's bubbles instead when there is no
  * room over it (`below`). Light in light and dark mode alike, as the pill. */
-function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: boolean; maxHeight: number; width: number }) {
+function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat: AgentChat; below: boolean; maxHeight: number; width: number; pillOrigin: string; closing: boolean }) {
   const [sizeRef, contentSize] = useSize<HTMLDivElement>();
   const appearRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -342,16 +361,28 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
   // Its scrolling column's height, and its border: until measured, as tall as that lays out.
   const height = contentSize.height > 0 ? contentSize.height + 2 * config.pillBorderWidth : undefined;
   useLayoutEffect(() => {
-    // Once, as it opens: rising from the pill a little as it fades in.
-    const rise = below ? -config.chatAppearRise : config.chatAppearRise;
+    // Once, as it opens: growing out of the pill (its `transform-origin`) as it fades in.
     appearRef.current?.animate(
       [
-        { opacity: 0, transform: `translateY(${rise}px) scale(${config.chatAppearScale})` },
+        { opacity: 0, transform: `scale(${config.chatPillScale})` },
         { opacity: 1, transform: "none" },
       ],
-      { duration: config.chatAppearDurationSeconds * 1000, easing: "ease-out", fill: "backwards" },
+      { duration: config.chatOpenDurationSeconds * 1000, easing: config.pillSpringEasing, fill: "backwards" },
     );
   }, []);
+  useLayoutEffect(() => {
+    // Closing: shrinking back into the pill as it fades out, until the overlay leaves its frame;
+    // reopened meanwhile (a follow-up), it stays.
+    if (!closing) return;
+    const shrinking = appearRef.current?.animate(
+      [
+        { opacity: 1, transform: "none" },
+        { opacity: 0, transform: `scale(${config.chatPillScale})` },
+      ],
+      { duration: config.chatCloseDurationSeconds * 1000, easing: "ease-in", fill: "forwards" },
+    );
+    return () => shrinking?.cancel();
+  }, [closing]);
   useEffect(() => {
     if (height !== undefined) void send({ type: "chatHeight", height });
   }, [height]);
@@ -396,7 +427,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
       style={{
         left: margin,
         ...(below ? { top: offset } : { bottom: offset }),
-        transformOrigin: below ? "top center" : "bottom center",
+        transformOrigin: pillOrigin,
         width,
         height,
         transition: `height ${config.chatGrowDurationSeconds}s ease-out`,

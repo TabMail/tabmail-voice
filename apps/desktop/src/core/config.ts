@@ -780,10 +780,13 @@ export const chatPillGap = 10;
 export const chatStripHeight = listeningPillHeight + agentBubbleGap + agentBubbleDiameter;
 /** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCenter`). */
 export const chatBubbleTooltipRoom = 80;
-/** The chat window appears rising this far, from this scale, fading in. */
-export const chatAppearDurationSeconds = 0.25;
-export const chatAppearRise = 8;
-export const chatAppearScale = 0.98;
+/** The chat window grows out of its pill as it opens, from this scale, fading in on the pill's spring,
+ * and shrinks back into it as it closes, fading out (owner, 2026-10-09: "it should seem like it's
+ * growing out of the pill"; closing, "sucked back into the agent pill"). The overlay keeps the chat's
+ * frame while it shrinks. */
+export const chatOpenDurationSeconds = 0.35;
+export const chatCloseDurationSeconds = 0.25;
+export const chatPillScale = 0.1;
 /** The chat window grows to its new height over this long as a line or turn joins it. */
 export const chatGrowDurationSeconds = 0.2;
 /** Rounder, as macOS 26's surfaces (owner, 2026-10-09); what sits inside rounder too. */

@@ -2799,6 +2799,26 @@ Answer, which also circled, went on behind it.
 - A tool shorter than a frame still never visibly circles. The bubble no longer stays in front once its
   tool has finished.
 
+
+> **Amended (owner, 2026-10-09): the chat window grows out of its pill and shrinks back into it.**
+> The owner: opening, *"it should also seem like it's growing out of the pill"*; closing (a write
+> that ends a request, a timeout, the x), *"go get smaller and disappear … the reverse animation so
+> that it looks like it's getting sucked back into the agent pill"*. So the chat window opens from
+> `chatPillScale` about the pill's center (its `transform-origin`, from where the pill's layer puts
+> it, over the chat or under it) to full size, fading in on the pill's spring
+> (`chatOpenDurationSeconds`), in place of rising `chatAppearRise` from `chatAppearScale` (both
+> gone). Closing, the page draws the last chat shrinking back to that point, fading out
+> (`chatCloseDurationSeconds`): the overlay keeps the chat's frame meanwhile (`shrinkChat`), letting
+> every click through, then leaves it as before (transparent while the page draws it away), for the
+> phase of that moment. A follow-up meanwhile keeps it open where it was. A chat never shown (not
+> yet measured) closes at once.
+>
+> Tests: `overlay/index.test.ts` (the chat's origin at the pill's center over it and under it; it
+> grows from it, and its last chat stays drawn, shrinking into it, while placed), `overlayWindow.test.ts`
+> (the overlay keeps the chat's frame, opaque and click-through, for the close's length, then leaves
+> it; a follow-up during it keeps it open, taking clicks again), each red-verified against the
+> instant close.
+
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
 > Since ADR-DESK-055 (2026-10-05) agent mode is one tool loop: bringing this tool back means offering it as a loop tool, and the chooser this ADR describes is gone.

@@ -79,6 +79,9 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
   return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames, shape: () => shape };
 }
 
+/** A closed chat window's page shrinks it into its pill meanwhile (real timers). */
+const chatShrunk = () => new Promise<void>((resolve) => setTimeout(resolve, config.chatCloseDurationSeconds * 1000 + 20));
+
 describe("OverlayWindowController", () => {
   test("a listening pill moves, hides and returns as shell coverage changes", async () => {
     let exclusions: Rect[] = [];
@@ -204,6 +207,7 @@ describe("OverlayWindowController", () => {
     expect(overlay.opaqueFrames().filter((frame) => frame.width !== canvas.width)).toEqual([overlay.bounds()]);
 
     controller.update({ kind: "idle" }, false);
+    await chatShrunk();
     controller.update({ kind: "arming" });
     await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
@@ -299,6 +303,13 @@ describe("OverlayWindowController", () => {
     expect(overlay.visible()).toBe(true);
 
     controller.update({ kind: "idle" }, false);
+    // Shrinking into its pill, where it was, it lets every click through already.
+    expect(controller.chatPlacement).not.toBeNull();
+    expect(overlay.bounds()).toEqual(fitted);
+    expect(overlay.ignoresMouse()).toBe(true);
+    controller.pointerOver(true);
+    expect(overlay.ignoresMouse()).toBe(true);
+    await chatShrunk();
     expect(controller.chatPlacement).toBeNull();
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
@@ -410,6 +421,14 @@ describe("OverlayWindowController", () => {
       controller.fitChat(120);
 
       controller.update({ kind: "idle" }, false);
+      // The page shrinks the chat into its pill first, in the chat's frame, opaque.
+      expect(controller.chatPlacement).not.toBeNull();
+      expect(overlay.opacity()).toBe(1);
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 - 1);
+      expect(controller.chatPlacement).not.toBeNull();
+      vi.advanceTimersByTime(1);
+      expect(controller.chatPlacement).toBeNull();
       expect(overlay.visible()).toBe(true);
       expect(overlay.opacity()).toBe(0);
       expect(overlay.ignoresMouse()).toBe(true);
@@ -429,6 +448,32 @@ describe("OverlayWindowController", () => {
     }
   });
 
+  /** A follow-up as the chat window shrinks into its pill keeps it open, where it was, taking clicks
+   * again. */
+  test("a follow-up as the chat window shrinks keeps it open where it is", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      const open = overlay.bounds();
+
+      controller.update({ kind: "idle" }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 500);
+      controller.update({ kind: "arming" }, true);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
+
+      expect(controller.chatPlacement).not.toBeNull();
+      expect(overlay.bounds()).toEqual(open);
+      expect(overlay.opacity()).toBe(1);
+      controller.pointerOver(true);
+      expect(overlay.ignoresMouse()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   /** A hold started just as the chat window closes doesn't hide the overlay before its page has drawn
    * the chat away either: it stays transparent until the pill shows. */
   test("a hold started as the chat window closes shows its pill without the chat", async () => {
@@ -440,6 +485,10 @@ describe("OverlayWindowController", () => {
 
     controller.update({ kind: "idle" }, false);
     controller.update({ kind: "arming" });
+    // The chat shrinking into its pill first; then the hold, its window transparent.
+    expect(controller.chatPlacement).not.toBeNull();
+    await chatShrunk();
+    expect(controller.chatPlacement).toBeNull();
     expect(overlay.visible()).toBe(true);
     expect(overlay.opacity()).toBe(0);
     await new Promise<void>(queueMicrotask);
