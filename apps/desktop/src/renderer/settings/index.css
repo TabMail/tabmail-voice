@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-/* Settings: a sidebar of sections beside the chosen section's cards, in the TabMail icon's
- * blue → purple (`--brand-*`; under white text, the darker `--brand-text-gradient`), light and dark,
+/* Settings: a sidebar of sections beside the chosen section's cards, the chosen one in the TabMail
+ * icon's blue → purple (under its white text, the darker `--brand-text-gradient`); its buttons and
+ * switches in the flat accent, as the welcome wizard's (owner, 2026-10-09); light and dark,
  * every color from the palette (`core/palette.ts`, set by `shared/theme.ts`). On macOS the sidebar
  * shows the window's frosted material, so the page itself is transparent. */
 
@@ -174,11 +175,7 @@
   gap: 2px;
 }
 
-.settings button.default {
-  background: var(--brand-text-gradient);
-}
-
-/* A switch, as macOS draws one, on in the brand gradient. */
+/* A switch, as macOS draws one, on in the accent. */
 
 input.switch {
   position: relative;
@@ -206,7 +203,7 @@ input.switch::before {
 }
 
 input.switch:checked {
-  background: var(--brand-gradient);
+  background: var(--accent);
 }
 
 input.switch:checked::before {

@@ -23,8 +23,6 @@ export function brandColor(fraction: number, alpha = 1, shade = 0): string {
 }
 
 export const brandBlue = brandColor(0);
-export const brandPurple = brandColor(1);
-export const brandGradient = `linear-gradient(to right, ${brandBlue}, ${brandPurple})`;
 
 /** How much the gradient darkens under white text, so that even its lightest (blue) end gives small
  * text the 4.5:1 contrast WCAG AA asks for. */

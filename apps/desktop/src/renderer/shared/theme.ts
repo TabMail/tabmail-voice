@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { palette, type Theme } from "../../core/palette.js";
-import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
+import { brandBlue, brandTextGradient } from "./brand.js";
 
 /** A theme's colors as the CSS variables the stylesheets read: `controlBorder` is `--control-border`. */
 export function themeVariables(theme: Theme): Record<string, string> {
@@ -14,7 +14,6 @@ export function themeVariables(theme: Theme): Record<string, string> {
  * `--brand-text-gradient` (`brand.ts`). */
 export const brandVariables: Record<string, string> = {
   "--brand-blue": brandBlue,
-  "--brand-gradient": brandGradient,
   "--brand-text-gradient": brandTextGradient,
 };
 

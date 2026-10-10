@@ -10,7 +10,7 @@ import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
-import { brandBlue, brandGradient, brandTextGradient } from "../../../src/renderer/shared/brand.js";
+import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
 
 const signedIn: SettingsState = {
@@ -632,7 +632,7 @@ describe("Settings page", () => {
 
     expect(read.size).toBeGreaterThan(0);
     for (const name of read) if (!declared.has(name)) expect(lightColors, name).toContain(`${name}: `);
-    for (const variable of [`--brand-gradient: ${brandGradient};`, `--brand-text-gradient: ${brandTextGradient};`, `--brand-blue: ${brandBlue};`, `--window: ${palette.light.window};`, `--secondary: ${palette.light.secondary};`]) {
+    for (const variable of [`--brand-text-gradient: ${brandTextGradient};`, `--brand-blue: ${brandBlue};`, `--window: ${palette.light.window};`, `--secondary: ${palette.light.secondary};`]) {
       expect(lightColors).toContain(variable);
     }
     for (const variable of [`--window: ${palette.dark.window};`, `--secondary: ${palette.dark.secondary};`, `--switch-off: ${palette.dark.switchOff};`]) expect(darkColors).toContain(variable);

@@ -4099,6 +4099,12 @@ window's) and `renderer/shared/brand.ts` (the brand blue and purple).
 > - **Rounder**: the chat window and the note 20 (were 14 and 12), what sits inside them 12, a tip 12.
 > - Unchanged: Settings and the welcome wizard (ordinary windows), whose brand-gradient accents (the
 >   chosen section, the wizard's buttons) are the owner's call.
+>   *Then (owner, the same day, from real renders of Settings in three accents):* Settings' switches
+>   and its default button ("Email Me a Code") are the flat accent, as the welcome wizard's already
+>   were (`form.css`'s `button.default`; `--brand-gradient` gone); the chosen section keeps the brand
+>   gradient (*"the tab color that we had with the brand gradient is actually better"*). The welcome
+>   wizard is unchanged. Test: `settings/style.test.ts` (only the chosen section on the gradient, the
+>   switch on the accent, no button of Settings' own; red-verified).
 >
 > Tests: `shared/theme.test.ts` (every page, the overlay too, takes the light and the dark theme),
 > `shared/icons.test.tsx` (every tool, app and status icon one accent color, no gradient;

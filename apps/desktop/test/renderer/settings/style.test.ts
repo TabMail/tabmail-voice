@@ -76,11 +76,15 @@ function specificity(selector: string): number {
 }
 
 describe("Settings stylesheet", () => {
-  /** White text sits only on the darkened gradient (4.5:1, `brand.test.ts`): the plain gradient only
-   * under the switch's thumb, no text. The sidebar's account line is in the text color. */
+  /** White text sits only on the darkened gradient (4.5:1, `brand.test.ts`), the chosen section's;
+   * the buttons (`form.css`'s accent) and the switches are the flat accent, as the welcome wizard's
+   * (owner, 2026-10-09). The sidebar's account line is in the text color. */
   test("text on the brand colors keeps its contrast", () => {
-    expect(declaring(css, /var\(--brand-gradient\)/)).toEqual(["input.switch:checked"]);
-    expect(declaring(css, /var\(--brand-text-gradient\)/).sort()).toEqual([".settings button.default", ".sidebar button.nav.selected"]);
+    expect(declaring(css, /var\(--brand-gradient\)/)).toEqual([]);
+    expect(declaring(css, /var\(--brand-text-gradient\)/)).toEqual([".sidebar button.nav.selected"]);
+    expect(declaring(css, /var\(--accent\)/)).toContain("input.switch:checked");
+    // No button of its own here: `form.css`'s, in the accent.
+    expect(rules(css).flatMap((rule) => rule.selectors).filter((selector) => selector.includes("button.default"))).toEqual([]);
     expect(declaring(css, /color:\s*var\(--text\)/)).toContain(".identity .identity-account");
     expect(specificity(".identity .identity-account")).toBeGreaterThan(specificity(".caption"));
   });
