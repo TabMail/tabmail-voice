@@ -3,14 +3,21 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { EventEmitter } from "node:events";
-import { afterAll, expect, test, vi } from "vitest";
+import { afterAll, afterEach, expect, test, vi } from "vitest";
 
 const realm = vi.hoisted(() => ({ extract: vi.fn() }));
 vi.mock("../../../src/main/documents/pdfRealm.js", () => ({ extractPDFInRealm: realm.extract }));
 
 const port = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
 const original = { parentPort: (process as { parentPort?: unknown }).parentPort, fetch: globalThis.fetch };
+// The worker's timer outlives its reply, as in its process until the parent kills it: ended here.
+const intervals = vi.spyOn(globalThis, "setInterval");
+afterEach(() => {
+  for (const result of intervals.mock.results) clearInterval(result.value as NodeJS.Timeout);
+  intervals.mockClear();
+});
 afterAll(() => {
+  intervals.mockRestore();
   (process as { parentPort?: unknown }).parentPort = original.parentPort;
   globalThis.fetch = original.fetch;
 });
@@ -49,9 +56,10 @@ test("the network is off in the worker", async () => {
   await expect(globalThis.fetch("https://example.com/")).rejects.toThrow("disabled");
 });
 
-test("keeps the process running until it replies", async () => {
+test("keeps the process running while it reads and after it replies, for the parent to end", async () => {
   // A pending WebAssembly compile holds no handle of the event loop: something else must, or the
-  // process ends mid-read with no reply. Waited on with immediates, which are no timers.
+  // process ends mid-read with no reply; and a process ending right after its reply can reach the
+  // parent as an exit before the reply. Waited on with immediates, which are no timers.
   const timers = () => process.getActiveResourcesInfo().filter((kind) => kind === "Timeout").length;
   const settle = async () => { for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve)); };
   vi.resetModules();
@@ -69,5 +77,5 @@ test("keeps the process running until it replies", async () => {
   release({ totalPages: 1, pages: [], nextPage: null, truncated: false, before: "", after: "" });
   await settle();
   expect(port.postMessage).toHaveBeenCalledOnce();
-  expect(timers()).toBe(idle);
+  expect(timers()).toBeGreaterThan(idle);
 });
