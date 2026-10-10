@@ -23,7 +23,8 @@ public:
     static constexpr unsigned attempts = 5, retryMilliseconds = 1000;
     /** Windows that keep their token when the focus comes back to them. */
     static constexpr std::size_t rememberedWindows = 16;
-    /** The window with the keyboard focus and its process, by the Shell (`GnomeCaret::focus`). */
+    /** The window with the keyboard focus and its process, by the Shell (`GnomeCaret::focus`); window 0 where
+     * the Shell says none is (the screen locked); none where the Shell doesn't say. */
     using ShellFocus = std::function<std::optional<std::pair<uint64_t, unsigned>>()>;
     /** `shellHolds`: whether the Shell holds the keyboard for the dictation key (`GnomeCaret::holding`).
      * `shellFocus`: which window is in front, where the Shell says (GNOME integration); accessibility
@@ -56,13 +57,18 @@ public:
         }
     }
     /** `pid`: the window's process, the identity voice-field-reader shares with this process (window
-     * tokens are each process's own); 0 where the bus gives none. */
-    struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; unsigned pid = 0; };
-    /** What has the focus, in the window in front: by the Shell's window id where it says which that is,
-     * and only if the focus is that window's process's. */
+     * tokens are each process's own); 0 where the bus gives none. `shellWindow`: the Shell's id for the
+     * window the focus came in, where the Shell named one of its process then; else 0. */
+    struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; unsigned pid = 0; uint64_t shellWindow = 0; };
+    /** What has the focus, in the window in front: by the Shell's window id where it says which that is.
+     * The focus is that window's only while it is focused, or, while the Shell holds the keyboard for the
+     * dictation key (GTK 4 drops the focus meanwhile), if it came in that very window: a process is not a
+     * window, and a field of its other window is never named for this one. */
     std::optional<Target> target() const {
         if (const auto focus = shellFocus()) {
-            if (!current || current->pid != focus->second) return std::nullopt;
+            if (!focus->first || !current || current->pid != focus->second) return std::nullopt;
+            if (current->shellWindow && current->shellWindow != focus->first) return std::nullopt;
+            if (!state(current->focus, ATSPI_STATE_FOCUSED) && !(current->shellWindow == focus->first && shellHolds())) return std::nullopt;
             auto target = *current;
             target.token = focus->first;
             return target;
@@ -71,19 +77,21 @@ public:
     }
     /** The window in front and its process: the Shell's, or else the focus's own (`target`, `targets`). */
     std::optional<std::pair<uint64_t, unsigned>> front() const {
-        if (const auto focus = shellFocus()) return focus;
+        if (const auto focus = shellFocus()) return focus->first ? focus : std::nullopt;
         if (current && targets(current->token)) return std::make_pair(current->token, current->pid);
         return std::nullopt;
     }
+    /** Whether a paste may go to `token`'s window: it has the keyboard. Never while the Shell holds the
+     * keyboard for the dictation key: a paste then reaches no window. */
     bool matches(uint64_t token) const {
-        if (const auto focus = shellFocus()) return focus->first == token;
+        if (const auto focus = shellFocus()) return focus->first && focus->first == token && !shellHolds();
         return current && current->token == token && state(current->focus, ATSPI_STATE_FOCUSED);
     }
     /** `matches`, or the Shell holds the keyboard for the dictation key: the window in front has no
      * keyboard focus meanwhile, yet it is still the target. Not for an insertion: a paste while the
      * Shell holds the keyboard reaches no window. */
     bool targets(uint64_t token) const {
-        if (const auto focus = shellFocus()) return focus->first == token;
+        if (const auto focus = shellFocus()) return focus->first && focus->first == token;
         return matches(token) || (current && current->token == token && shellHolds());
     }
 private:
@@ -124,7 +132,9 @@ private:
         error.check(); // This queries the accessibility bus daemon, not the target application.
         const bool terminal = role(focus) == ATSPI_ROLE_TERMINAL ||
             std::any_of(path.begin(), path.end(), [](const Node& node) { return role(node) == ATSPI_ROLE_TERMINAL; });
-        current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid};
+        // The Shell has given the window the keyboard by the time its app says what in it has the focus.
+        const auto shellWindow = shellFocus();
+        current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid, shellWindow && shellWindow->first && shellWindow->second == pid ? shellWindow->first : 0};
     }
     Node findFocus(const Node& root) {
         std::vector<Node> stack{root};

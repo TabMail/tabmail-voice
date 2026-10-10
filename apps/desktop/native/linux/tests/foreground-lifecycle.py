@@ -315,6 +315,32 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert request('frontmostApp')['window'] != window
             command('a')
             assert request('frontmostApp') == {'window': window, 'pid': first}, 'a window keeps its token when the focus comes back'
+            # Sixteen windows keep their tokens: the two apps' and fourteen new ones; one more and the
+            # first, the oldest, is forgotten, so the focus coming back to it is a new window.
+            for _ in range(14):
+                command('n')
+            command('y')
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'a window among the last sixteen keeps its token'
+            command('n')
+            command('y')
+            renamed = request('frontmostApp')
+            assert renamed['pid'] == first and renamed['window'] != window, 'a window past the last sixteen gets a new token'
+            window = renamed['window']
+            # Firefox announces its window before its field's focus as the Shell lets the keyboard go: the
+            # target stays, and the walk for the focus waits a second for it to come back by itself.
+            before = command('s')
+            command('h')
+            command('J')
+            command('G')
+            time.sleep(1.1)
+            assert command('s') == before, 'a focus back within the wait is not looked for'
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'the target stays through the hold'
+            command('h')
+            command('J')
+            time.sleep(1.1)
+            assert command('s') == (before[0] + 1, before[1]), 'a focus still away after the wait is looked for'
+            command('G')
+            assert request('frontmostApp') == {'window': window, 'pid': first}, 'the target is the same once its focus is back'
             # Where the Shell says which window has the focus, that window is the target, by the Shell's
             # id, whatever the focus does meanwhile: while the Shell holds the keyboard, and back again.
             command('F')
@@ -341,6 +367,58 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         elif fields:
             assert field(second) is None and field() is None, "another app's field is not read as the window the Shell names"
         command('a')
+        # The focus came in the window the Shell names now (7000). While the Shell holds the keyboard
+        # over it, the field is still read (GTK 4 drops its focus meanwhile), and nothing is pasted; once
+        # the Shell lets go, the paste goes through.
+        command('h')
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText'], 'the screen is read while the Shell holds the keyboard over its window'
+        elif fields:
+            assert field() == {'value': 'Synthetic field content'}, 'the field is read while the Shell holds the keyboard over its window'
+        else:
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}
+            paste(7000, refused=True)
+            assert portal_events(0.5) == [], 'nothing is pasted while the Shell holds the keyboard over the window it names'
+        command('H')
+        if not reader and not fields:
+            paste(7000, refused=False)
+            assert portal_events(0.5) == ['publish', 'key 65507 1', 'key 118 1', 'key 118 0', 'key 65507 0'], \
+                'once the Shell lets go, the paste goes to the window it names'
+        # The Shell names another window of the same app before that app says what has its focus: the
+        # field the focus came in is that other window's no more, a hold over it changes nothing, and a
+        # paste for the first window waits.
+        command('k')
+        for held in ('', 'h'):
+            if held:
+                command(held)
+            if reader:
+                assert screen() is None, "a field of the app's other window is not read as the window the Shell names"
+            elif fields:
+                assert field() is None, "a field of the app's other window is not read as the window the Shell names"
+            else:
+                assert request('frontmostApp') == {'window': 7100, 'pid': first}, 'the window in front is the one the Shell names'
+                paste(7000, refused=True)
+                assert portal_events(0.5) == [], 'a paste is not sent to another window of the app'
+        command('H')
+        command('K')
+        # The Shell says no window has the focus (a locked screen): nothing is in front, read or pasted
+        # into, whatever accessibility last said; it all comes back with the window.
+        command('L')
+        if reader:
+            assert screen() is None, 'nothing is read while the Shell says no window has the focus'
+        elif fields:
+            assert field() is None, 'no field is read while the Shell says no window has the focus'
+        else:
+            assert request('frontmostApp') is None, 'nothing is in front while the Shell says no window has the focus'
+            paste(7000, refused=True)
+            assert portal_events(0.5) == [], 'nothing is pasted while the Shell says no window has the focus'
+        command('K')
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText'], 'reads come back with the window'
+        elif fields:
+            assert field() == {'value': 'Synthetic field content'}, 'field reads come back with the window'
+        else:
+            assert request('frontmostApp') == {'window': 7000, 'pid': first}, 'the window in front comes back'
         command('N')
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:

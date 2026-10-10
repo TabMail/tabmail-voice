@@ -102,7 +102,8 @@ public:
         return held;
     }
     /** The window with the keyboard focus, by the Shell (`Focus`): its id and process. Asked and answered
-     * before returning, at most `focusTimeoutMilliseconds`. No Shell, no answer, or no window: none. */
+     * before returning, at most `focusTimeoutMilliseconds`. No Shell or no answer: none. No window, or the
+     * screen locked: 0, 0, an answer, by which nothing is in front (not a reason to ask accessibility). */
     std::optional<std::pair<uint64_t, unsigned>> focus() {
         if (!state->bus) return std::nullopt;
         Error error;
@@ -114,8 +115,7 @@ public:
         guint32 pid = 0;
         g_variant_get(value, "(tu)", &window, &pid);
         g_variant_unref(value);
-        if (!window) return std::nullopt;
-        return std::make_pair(static_cast<uint64_t>(window), static_cast<unsigned>(pid));
+        return std::make_pair(static_cast<uint64_t>(window), window ? static_cast<unsigned>(pid) : 0u);
     }
 private:
     void rectangle(const char* method, GVariant* args, Channel::Reply reply) {

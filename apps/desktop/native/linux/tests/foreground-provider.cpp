@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/accessibility.h"
+#include <gio/gio.h>
 #include <glib-unix.h>
 #include <map>
 #include <optional>
@@ -22,8 +23,11 @@ bool holding = false;
 AtspiAccessible *dialogs[2], *dialogFields[2];
 bool inDialog = false;
 // Whether the Shell says which window has the focus (the extension's `Focus`, from version 3): each
-// synthetic window by an id of its own, with its app's process.
+// synthetic window by an id of its own, with its app's process. Otherwise no Shell answers.
 bool shellFocus = false;
+// What the Shell names, with no accessibility event: the window in front, another window of the same
+// app ('k'), or none, as on a locked screen ('L'); 'K' goes back to the window in front.
+enum class ShellSays { front, otherWindow, none } shellSays = ShellSays::front;
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
 bool mutateSelectionOnText = false, containerFocused = false;
@@ -106,6 +110,21 @@ gboolean command(gint fd, GIOCondition, gpointer) {
         event("object:state-changed:focused", shellPanel, 0); event("window:deactivate", shellWindow);
         focusLost = false; event("object:state-changed:focused", fields[active], 1); event("window:activate", windows[active]);
     }
+    // The Shell lets the keyboard go, and the window is announced before its field has the focus back
+    // (Firefox); 'G' gives the field its focus back.
+    if (value == 'J' && active >= 0) {
+        holding = false;
+        event("object:state-changed:focused", shellPanel, 0); event("window:deactivate", shellWindow);
+        event("window:activate", windows[active]);
+    }
+    if (value == 'G' && active >= 0) { focusLost = false; event("object:state-changed:focused", fields[active], 1); }
+    // The focus moves to a new window of the app in front, with no activation ('n'), and back to its
+    // field ('y').
+    if (value == 'n' && active >= 0) {
+        const auto window = node(ATSPI_ROLE_FRAME, apps[active], "Synthetic window");
+        event("object:state-changed:focused", node(ATSPI_ROLE_ENTRY, window, "Synthetic other window content"), 1);
+    }
+    if (value == 'y' && active >= 0) event("object:state-changed:focused", fields[active], 1);
     // The focus moves to the Shell's own window with no hold (its overview).
     if (value == 'S' && active >= 0) {
         event("window:activate", shellWindow); event("object:state-changed:focused", shellPanel, 1);
@@ -126,6 +145,9 @@ gboolean command(gint fd, GIOCondition, gpointer) {
     if (value == 'x' && active >= 0) event("object:state-changed:focused", fields[1 - active], 1);
     if (value == 'F') shellFocus = true;
     if (value == 'N') shellFocus = false;
+    if (value == 'k') shellSays = ShellSays::otherWindow;
+    if (value == 'L') shellSays = ShellSays::none;
+    if (value == 'K') shellSays = ShellSays::front;
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
     if (::write(acknowledgments, reply.data(), reply.size()) != static_cast<ssize_t>(reply.size())) std::abort();
     return G_SOURCE_CONTINUE;
@@ -153,14 +175,18 @@ extern "C" AtspiEventListener* __wrap_atspi_event_listener_new(AtspiEventListene
     callback = cb; callbackData = data; return __real_atspi_event_listener_new(cb, data, destroy);
 }
 // The Shell answers whether it holds the keyboard, and, once the fixture says so, which window has the
-// focus; the helper's other Shell calls get no Shell.
+// focus (else no Shell answers it, whatever Shell runs where the test does); the helper's other Shell
+// calls get no Shell.
 extern "C" GVariant* __real_g_dbus_connection_call_sync(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*,
     GVariant*, const GVariantType*, GDBusCallFlags, gint, GCancellable*, GError**);
 extern "C" GVariant* __wrap_g_dbus_connection_call_sync(GDBusConnection* bus, const gchar* name, const gchar* path, const gchar* interface,
     const gchar* method, GVariant* args, const GVariantType* type, GDBusCallFlags flags, gint timeout, GCancellable* cancel, GError** error) {
     if (std::string(method) == "Holding") return g_variant_ref_sink(g_variant_new("(b)", holding));
-    if (std::string(method) == "Focus" && shellFocus)
-        return g_variant_ref_sink(g_variant_new("(tu)", active >= 0 ? static_cast<guint64>(7000 + active) : guint64{0}, active >= 0 ? 4194305u + active : 0u));
+    if (std::string(method) == "Focus") {
+        if (!shellFocus) { g_set_error_literal(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN, "no Shell"); return nullptr; }
+        if (active < 0 || shellSays == ShellSays::none) return g_variant_ref_sink(g_variant_new("(tu)", guint64{0}, 0u));
+        return g_variant_ref_sink(g_variant_new("(tu)", static_cast<guint64>(shellSays == ShellSays::otherWindow ? 7100 + active : 7000 + active), 4194305u + active));
+    }
     return __real_g_dbus_connection_call_sync(bus, name, path, interface, method, args, type, flags, timeout, cancel, error);
 }
 extern "C" gboolean __wrap_atspi_event_listener_register(AtspiEventListener*, const gchar*, GError**) { return TRUE; }
