@@ -4,15 +4,8 @@
 
 // This process handles one document, with no file path or app credentials. The
 // parent suppresses stdout/stderr and kills it after success, failure or timeout.
-import { pdfProcessTimeout } from "../../core/config.js";
-
 globalThis.fetch = async () => { throw new Error("PDF network access is disabled."); };
 process.parentPort.once("message", async ({ data }: { data: { bytes: Uint8Array; range: import("../../core/agent/connectors/pdf.js").PDFRange } }) => {
-  // The process runs until the parent ends it. Once the request is in, nothing else keeps its event
-  // loop running (a pending WebAssembly compile holds none of it), and a process that ended on its
-  // own right after replying could reach the parent as an exit before its reply: the two come on
-  // separate channels, in either order. The parent kills it once it has the reply, or gives up.
-  setInterval(() => {}, pdfProcessTimeout);
   try {
     const { extractPDFInRealm } = await import("./pdfRealm.js");
     process.parentPort.postMessage({ ok: true, result: await extractPDFInRealm(data.bytes, data.range) });
