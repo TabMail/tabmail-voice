@@ -95,9 +95,12 @@ try {
   child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null], "EOF ends the helper");
   assert.equal(pending.size, 0);
-  assert.equal(reader.stderr, "", "refused screen policies log nothing");
-  assert.equal(fieldReader.stderr, "", "refused field policies log nothing");
-  assert.equal(helper.stderr.replaceAll("\r\n", "\n"), "debug caret lookup: foreground-changed\ndebug caret lookup: provider-call-failed\n", "invalid caret requests log only fixed categories");
+  assert.equal(reader.stderr.replaceAll("\r\n", "\n").replace(/^debug readScreen failed after \d+ms: (invalid screen policy|shared core refused)\n/gmu, ""), "",
+    "refused screen policies log only their fixed debug reason");
+  assert.equal(fieldReader.stderr.replaceAll("\r\n", "\n").replace(/^debug focusedFieldValue failed after \d+ms: (invalid screen policy|shared core refused|invalid target)\n/gmu, ""), "",
+    "refused field policies log only their fixed debug reason");
+  assert.equal(helper.stderr.replaceAll("\r\n", "\n").replace(/^debug accessibility request (caretAnchor|insert) failed after \d+ms: invalid target\n/gmu, ""),
+    "debug caret lookup: foreground-changed\ndebug caret lookup: provider-call-failed\n", "invalid caret requests log only fixed categories");
   process.stdout.write("system identity, refusal, malformed input, recovery and EOF checks passed\n");
 } finally {
   clearTimeout(timeout);

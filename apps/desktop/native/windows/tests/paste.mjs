@@ -223,6 +223,7 @@ try {
   assert.equal(pending.size, 0);
   assert.equal(errors.replaceAll("\r\n", "\n")
     .replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete) after \d+ms\n/gmu, "")
+    .replace(/^debug accessibility request insert failed after \d+ms: (target focus unavailable or protected: (protected-field|foreground-changed)|invalid target|shared core refused|paste is no longer current|clipboard busy)\n/gmu, "")
     .replace(/^debug clipboard keeper: (clipboard (saved|not to be saved|put back) after \d+ms|clipboard unchanged since it was saved|no save of the clipboard as it was; it won't be put back|clipboard changed since the paste; not put back|clipboard couldn't be put back|nothing saved to put back; the paste's text stays)\n/gmu, ""),
   "", "only categorical, timed insertion diagnostics are emitted");
   process.stdout.write("Windows insertion, clipboard save and put-back, cancellation, privacy and refusal checks passed\n");

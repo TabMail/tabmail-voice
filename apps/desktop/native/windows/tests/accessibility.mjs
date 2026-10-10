@@ -145,7 +145,9 @@ try {
   fixture.child.stdin.end(); helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   assert.equal(fixture.errors(), "");
-  const logged = (client) => client.errors().replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "");
+  // Debug-only failure reasons are fixed phrases; anything else in the log fails these checks.
+  const logged = (client) => client.errors().replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "")
+    .replace(/^debug focusedFieldValue failed after \d+ms: shared core refused\n/gmu, "");
   assert.equal(logged(helper), "debug caret lookup: protected-field\n", "privacy refusals log only fixed categories");
   assert.equal(logged(reader), "debug screen access: excluded app not read\n", "the reader's privacy refusals log only fixed categories");
   assert.equal(logged(fieldReader), "debug screen access: excluded app not read\n", "the field reader's privacy refusals log only fixed categories");
