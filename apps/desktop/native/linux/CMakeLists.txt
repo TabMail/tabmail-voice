@@ -169,7 +169,9 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_hypertext_get_n_links -Wl,--wrap=atspi_hypertext_get_link
     -Wl,--wrap=atspi_hyperlink_get_start_index -Wl,--wrap=atspi_hyperlink_get_object
     -Wl,--wrap=atspi_accessible_get_attributes -Wl,--wrap=atspi_accessible_get_state_set
-    -Wl,--wrap=atspi_accessible_get_role)
+    -Wl,--wrap=atspi_accessible_get_role -Wl,--wrap=atspi_text_get_character_extents
+    -Wl,--wrap=atspi_text_get_range_extents -Wl,--wrap=atspi_accessible_get_component_iface
+    -Wl,--wrap=atspi_component_get_extents)
   add_test(NAME voice-rich-source COMMAND voice-rich-source-tests)
   add_executable(voice-screen-collection-tests tests/screen-collection.cpp)
   target_link_libraries(voice-screen-collection-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)

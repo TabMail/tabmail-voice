@@ -20,6 +20,8 @@ struct Element {
     std::string display = "block";
     bool editable = true;
     AtspiRole role = ATSPI_ROLE_PARAGRAPH;
+    // Its boxes, each character 10 wide on one line; none when the provider gives no geometry.
+    bool boxed = true;
 };
 std::map<const void*, Element> elements;
 std::map<const void*, std::pair<int, AtspiAccessible*>> hyperlinks;
@@ -69,6 +71,18 @@ extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* v
     return result;
 }
 extern "C" AtspiRole __wrap_atspi_accessible_get_role(AtspiAccessible* value, GError**) { return at(value).role; }
+namespace {
+AtspiRect* box(const void* value, gint from, gint to) {
+    if (!at(value).boxed) return nullptr;
+    auto result = g_new0(AtspiRect, 1);
+    result->x = 10 * from; result->y = 0; result->width = 10 * (to - from); result->height = 20;
+    return result;
+}
+}
+extern "C" AtspiRect* __wrap_atspi_text_get_character_extents(AtspiText* text, gint offset, AtspiCoordType, GError**) { return box(text, offset, offset + 1); }
+extern "C" AtspiRect* __wrap_atspi_text_get_range_extents(AtspiText* text, gint from, gint to, AtspiCoordType, GError**) { return box(text, from, to); }
+extern "C" AtspiComponent* __wrap_atspi_accessible_get_component_iface(AtspiAccessible* value) { return reinterpret_cast<AtspiComponent*>(g_object_ref(value)); }
+extern "C" AtspiRect* __wrap_atspi_component_get_extents(AtspiComponent* value, AtspiCoordType, GError**) { return box(value, 0, 4); }
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto result = atspi_state_set_new(nullptr);
     atspi_state_set_add(result, ATSPI_STATE_SHOWING); atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
@@ -171,6 +185,27 @@ int main() {
             const auto bare = voice::own(element({"See " + object + " and" + object + " now" + object, -1, std::nullopt,
                                                   {{4, link}, {9, image}, {14, next}}, ""}));
             expect(tree.screenText(bare) == "See docs and now" + blockBreak + "Next", "without display, a link or image joins its line and another element starts one");
+        }
+        {
+            // A paragraph with a link in it reads as its pieces, in order, each run where it is; one
+            // of whose pieces has no box is read whole, so no piece starts a line of its own.
+            auto docs = element({"docs", -1, std::nullopt, {}, "inline", true, ATSPI_ROLE_LINK});
+            auto paragraph = voice::own(element({"See " + object + " now", -1, std::nullopt, {{4, docs}}, "block"}));
+            voice::LiveScreenTree tree(paragraph);
+            const auto pieces = tree.pieces(paragraph);
+            expect(pieces && pieces->size() == 3, "a paragraph with a link reads as its pieces");
+            if (pieces && pieces->size() == 3) {
+                const auto& first = (*pieces)[0]; const auto& link = (*pieces)[1]; const auto& last = (*pieces)[2];
+                expect(first.text == "See " && first.frame && first.frame->x == 0 && first.frame->width == 40 && first.ends &&
+                       last.text == " now" && last.frame && last.frame->x == 50 && last.frame->width == 40 && last.ends && (*last.ends)[1].x == 80 &&
+                       link.element && link.element->get() == docs, "each piece is where the screen shows it");
+            }
+            at(paragraph.get()).boxed = false;
+            expect(!tree.pieces(paragraph), "a paragraph whose text has no boxes is read whole");
+            at(paragraph.get()).boxed = true; at(docs).boxed = false;
+            expect(!tree.pieces(paragraph), "a paragraph whose link has no box is read whole");
+            at(docs).boxed = true;
+            expect(tree.pieces(paragraph).has_value(), "the same paragraph with its boxes reads as pieces again");
         }
         {
             // An element holding more than the read may take is not asked for its text: the walk

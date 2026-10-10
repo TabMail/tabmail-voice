@@ -56,11 +56,15 @@ public:
     size_t nodes = 0;
     std::string stopped;
     bool hasCaret = false;
+    // The next block is another part of the same text as the one before it (a paragraph's run and
+    // its link): admitted without comparing it with that block, as a repeat of it is the screen's.
+    bool distinct = false;
 
     void append(ContextKind kind, std::string text, std::optional<ContextFrame> frame = {},
                 std::optional<std::array<ContextFrame, 2>> ends = {}) {
         if (kind != ContextKind::caret) {
-            const auto result = core::request({{"admit", text}, {"previous", blocks.empty() || blocks.back().kind == ContextKind::caret ? nlohmann::json(nullptr) : nlohmann::json(blocks.back().text)}, {"used", bytes}}, voice_core_context_json);
+            const auto result = core::request({{"admit", text}, {"previous", distinct || blocks.empty() || blocks.back().kind == ContextKind::caret ? nlohmann::json(nullptr) : nlohmann::json(blocks.back().text)}, {"used", bytes}}, voice_core_context_json);
+            distinct = false;
             text = result.at("text").get<std::string>();
             bytes = result.at("used").get<size_t>();
             textBudgetFull = result.at("budgetFull").get<bool>();
@@ -81,7 +85,8 @@ public:
     void appendSemantic(ContextKind kind, const nlohmann::json& source, std::optional<ContextFrame> frame = {},
                         std::optional<std::array<ContextFrame, 2>> ends = {}) {
         auto block = source; block["kind"] = kinds[static_cast<size_t>(kind)];
-        const auto previous = blocks.empty() ? nlohmann::json(nullptr) : blockJSON(blocks.back());
+        const auto previous = distinct || blocks.empty() ? nlohmann::json(nullptr) : blockJSON(blocks.back());
+        distinct = false;
         const auto result = core::request({{"admitSemantic", block}, {"used", bytes}, {"previous", previous}}, voice_core_context_json);
         bytes = result.at("used").get<size_t>(); textBudgetFull = result.at("budgetFull").get<bool>();
         if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();

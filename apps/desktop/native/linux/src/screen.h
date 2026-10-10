@@ -134,17 +134,26 @@ public:
         std::vector<gunichar> scalars;
         for (const char* at = whole.c_str(); *at; at = g_utf8_next_char(at)) scalars.push_back(g_utf8_get_char(at));
         std::vector<Piece> result;
+        // Pieces are joined on a line by where they are: a run or link without a box would start a
+        // line of its own, parting a key across it before the redactor sees it whole. Read whole then.
+        bool placed = true;
         const auto run = [&](int from, int to) {
-            if (from < to) result.push_back({scalarSlice(whole, static_cast<size_t>(from), static_cast<size_t>(to)), rangeFrame(text, from, to), endsOf(text, from, to), std::nullopt});
+            if (from >= to) return;
+            auto box = rangeFrame(text, from, to); auto edges = endsOf(text, from, to);
+            placed = placed && box && edges;
+            result.push_back({scalarSlice(whole, static_cast<size_t>(from), static_cast<size_t>(to)), box, edges, std::nullopt});
         };
         int at = 0;
         for (const auto& [offset, child] : *links) {
             if (offset < at || static_cast<size_t>(offset) >= scalars.size() || scalars[static_cast<size_t>(offset)] != 0xFFFC) return {};
             run(at, offset);
+            const auto box = frame(child);
+            placed = placed && box && box->width > 0 && box->height > 0;
             result.push_back({{}, {}, {}, child});
             at = offset + 1;
         }
         run(at, count);
+        if (!placed) return {};
         return result;
     }
     std::string label(const Node& node) {
@@ -925,12 +934,15 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     struct Entry {
         std::optional<typename Tree::Node> node; bool inPage = false;
         std::string text = {}; std::optional<ContextFrame> frame = {}; std::optional<std::array<ContextFrame, 2>> ends = {};
+        bool piece = false;
     };
     std::vector<Entry> stack{{window, false}};
     while (!stack.empty()) {
         // What to do with each element is the shared core's (`walk::node`, ADR-DESK-054).
         if (const auto stopped = walk::stop(context.nodes, context.textBudgetFull)) { context.stopped = *stopped; break; }
         auto entry = std::move(stack.back()); stack.pop_back();
+        // A piece of a paragraph is the screen's own text, however it repeats the piece before it.
+        if (entry.piece) context.distinct = true;
         if (!entry.node) { context.append(ContextKind::text, std::move(entry.text), entry.frame, entry.ends); continue; }
         auto node = std::move(*entry.node);
         const bool inPage = entry.inPage;
@@ -973,8 +985,8 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
                 if constexpr (requires { tree.pieces(node); })
                     if (auto pieces = tree.pieces(node)) {
                         for (auto it = pieces->rbegin(); it != pieces->rend(); ++it)
-                            if (it->element) stack.push_back({std::move(*it->element), step.childrenInPage});
-                            else stack.push_back({std::nullopt, false, std::move(it->text), it->frame, it->ends});
+                            if (it->element) stack.push_back({std::move(*it->element), step.childrenInPage, {}, {}, {}, true});
+                            else stack.push_back({std::nullopt, false, std::move(it->text), it->frame, it->ends, true});
                         continue;
                     }
                 const auto field = screenText(tree, node);

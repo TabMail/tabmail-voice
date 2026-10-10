@@ -142,6 +142,23 @@ int main() {
         expect(screen.dump().find("sk-Review") == std::string::npos, "a key in a link is not read");
     }
     {
+        // Pieces repeating the one before them are the screen's text all the same: none is left
+        // out, and a key whose body repeats across a link is redacted whole.
+        Element echo{ATSPI_ROLE_LINK, "Echo", {}, {}, false, voice::ContextFrame{60, 0, 40, 20}};
+        Element half{ATSPI_ROLE_LINK, "Abcd1234", {}, {}, false, voice::ContextFrame{76, 30, 64, 20}};
+        Element repeats{ATSPI_ROLE_PARAGRAPH, "Echo\uFFFCEcho", {}, {&echo}, false, voice::ContextFrame{20, 0, 120, 20}};
+        Element key{ATSPI_ROLE_PARAGRAPH, "Key sk-\uFFFCAbcd1234", {}, {&half}, false, voice::ContextFrame{20, 30, 184, 20}};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&repeats, &key}};
+        Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
+        PiecesTree tree;
+        tree.split[&repeats] = {{"Echo", voice::ContextFrame{20, 0, 40, 20}, {}, {}}, {{}, {}, {}, &echo}, {"Echo", voice::ContextFrame{100, 0, 40, 20}, {}, {}}};
+        tree.split[&key] = {{"Key sk-", voice::ContextFrame{20, 30, 56, 20}, {}, {}}, {{}, {}, {}, &half}, {"Abcd1234", voice::ContextFrame{140, 30, 64, 20}, {}, {}}};
+        const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        const auto rendered = screen["renderedText"].get<std::string>();
+        expect(rendered.rfind("Echo[Echo]Echo\n", 0) == 0, "a piece repeating the one before it is read");
+        expect(screen.dump().find("Abcd1234") == std::string::npos, "a key whose body repeats across a link is redacted whole");
+    }
+    {
         Element field{ATSPI_ROLE_ENTRY, "syntheticSecret123", {}, {}};
         Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&field}};
         Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&row}};
