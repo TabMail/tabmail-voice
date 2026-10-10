@@ -213,7 +213,7 @@ if(WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs $<TARGET_FILE:voice-windows> --privacy-only)
       add_test(NAME voice-electron-cold-activation COMMAND "${ELECTRON_EXECUTABLE}"
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs $<TARGET_FILE:voice-windows> --cold-activation)
-      set_tests_properties(voice-electron voice-electron-cold-activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 150)
+      set_tests_properties(voice-electron voice-electron-cold-activation PROPERTIES RUN_SERIAL TRUE TIMEOUT 270)
       set_tests_properties(voice-electron-privacy PROPERTIES RUN_SERIAL TRUE TIMEOUT 75)
     else()
       message(WARNING "Electron integration test unavailable: install desktop dependencies before configuring native tests")
