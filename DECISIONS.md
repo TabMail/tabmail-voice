@@ -4259,6 +4259,19 @@ switch (ADR-IOS-087 amendment 2026-10-07).
   random dictations covered), red with the switch on; the pause rule's own tests, and the
   controller's and recorder's long-dictation tests, run with it on.
 
+**Amendment 2026-10-09 — what came in is pasted, and nothing is said of the end.** Owner, of "Couldn't
+transcribe the end": *"instead of showing that message, paste directly whatever it has left"*. A
+long dictation whose end was lost (a chunk giving up, above) pastes the chunks before it as any
+dictation's text, and the pill goes back to rest: `partlyTranscribedMessage` and
+`partlyNotPastedMessage` are gone. Not pasted, as the user switched apps (ADR-DESK-042), it gets the
+usual note with that text. The loss still goes to the log (`log.error`). Unchanged: the chunks after
+the first that gave up are not pasted (no hole in the text), the first chunk giving up fails the
+dictation, and agent mode carries out nothing of a request whose end was lost.
+
+- Tests: `controller.test.ts` › a long dictation (a chunk not in by the deadline, failing on every
+  try, refused, or after an account switch: the chunks before it pasted and the pill at rest; not
+  pasted, the usual note; the seeded fuzz).
+
 ## ADR-DESK-050: Windows and Linux update themselves too, from signed packages proven by the app
 
 **Context:** ADR-DESK-041 gave macOS automatic updates; Windows and Linux had none (`publish: null`).
