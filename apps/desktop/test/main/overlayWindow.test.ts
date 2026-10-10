@@ -458,6 +458,146 @@ describe("OverlayWindowController", () => {
     }
   });
 
+  /** Polling the pointer, the note measured again and again keeps one poll, which follows its last frame
+   * and ends with it. */
+  test("polling the pointer, a note laid out again keeps one poll, at its last frame, gone with the note", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "poll");
+    const tick = () => vi.advanceTimersByTime(config.overlayPointerPollInterval);
+    try {
+      controller.update({ kind: "notPasted", message: "Click to copy.", text: "Synthetic note." });
+      const bounds = overlay.bounds();
+      screenNow.pointer = { x: bounds.x + 15, y: bounds.y + 25 };
+      controller.fitNote({ x: 10, y: 20, width: 40, height: 30 });
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      controller.fitNote({ x: 150, y: 20, width: 40, height: 30 });
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      screenNow.pointer = { x: bounds.x + 155, y: bounds.y + 25 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      expect(vi.getTimerCount()).toBe(1);
+      controller.update({ kind: "idle" });
+      vi.advanceTimersByTime(config.overlayDismissDuration + config.overlayPointerPollInterval);
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(overlay.visible()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  /** Polling the pointer, a chat window closed before it measured itself leaves no poll running. */
+  test("polling the pointer, a chat window closed before it measured itself stops looking", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "poll");
+    const tick = () => vi.advanceTimersByTime(config.overlayPointerPollInterval);
+    screenNow.pointer = { x: 400, y: 500 };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+      const bounds = overlay.bounds();
+      screenNow.pointer = { x: bounds.x + 1, y: bounds.y + bounds.height - 1 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      controller.update({ kind: "idle" }, false);
+      vi.advanceTimersByTime(config.overlayDismissDuration + config.overlayPointerPollInterval);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(overlay.visible()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      // A later, measured chat remains interactive, then also fully relinquishes the pointer.
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      const next = overlay.bounds();
+      screenNow.pointer = { x: next.x + 1, y: next.y + next.height - 1 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.update({ kind: "idle" }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  /** Polling the pointer, the chat window takes clicks over the height it last measured, growing or
+   * shrinking, opened over the pill or under it. */
+  test.each([["over", 500], ["under", 40]])("polling the pointer, a chat window opened %s the pill takes clicks over its latest height", (_, y) => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "poll");
+    const tick = () => vi.advanceTimersByTime(config.overlayPointerPollInterval);
+    screenNow.pointer = { x: 400, y };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+      const tallest = overlay.bounds();
+      const below = controller.chatPlacement?.below === true;
+      const height120 = tallest.height - config.chatMaxHeight + 120;
+      const edge120 = below ? tallest.y + height120 : tallest.y + tallest.height - height120;
+      screenNow.pointer = { x: tallest.x + 1, y: below ? edge120 + 40 : edge120 - 40 };
+      controller.fitChat(120);
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      controller.fitChat(240);
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.fitChat(80);
+      tick();
+      expect(overlay.ignoresMouse()).toBe(true);
+      const height80 = tallest.height - config.chatMaxHeight + 80;
+      screenNow.pointer = { x: tallest.x + 1, y: below ? tallest.y + height80 - 1 : tallest.y + tallest.height - 1 };
+      tick();
+      expect(overlay.ignoresMouse()).toBe(false);
+      expect(overlay.bounds()).toEqual(tallest);
+      controller.update({ kind: "idle" }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  /** Where the page says where the pointer is, it alone decides the clicks: nothing polls. */
+  test("where the page says where the pointer is, nothing polls", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    screenNow.pointer = { x: 400, y: 500 };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      const bounds = overlay.bounds();
+      screenNow.pointer = { x: bounds.x + 1, y: bounds.y + bounds.height - 1 };
+      controller.pointerOver(true);
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.pointerOver(false);
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.overlayPointerPollInterval);
+      expect(overlay.ignoresMouse()).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      controller.update({ kind: "idle" }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   /** Hidden as the chat window closes, the overlay's last frame would still be the chat, which then
    * showed for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
    * blinks"). It stays up, transparent and click-through, while its page draws the chat away, and is
