@@ -15,7 +15,7 @@ import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
 import { TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import * as config from "../../../src/core/config.js";
-import { DictationController, type DictationDependencies, isResting, nothingHeardMessage, notCopiedMessage, notPastedMessage, partlyNotPastedMessage, partlyTranscribedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
+import { DictationController, type DictationDependencies, isResting, nothingHeardMessage, notCopiedMessage, notPastedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { CorrectionWatch } from "../../../src/core/dictionary/correctionWatch.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
@@ -6770,8 +6770,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Owner, 2026-10-08: "nobody waits for dictation more than 10" seconds. A chunk not in by the
-     * deadline gives up then: the chunks before it are pasted, the pill says the end is missing, and
-     * its request is called off. */
+     * deadline gives up then: the chunks before it are pasted, with nothing said of the end (owner,
+     * 2026-10-09), and its request is called off. */
     test("a chunk not in by the deadline gives up then, and the chunks before it are pasted", async () => {
       const backend = new ChunkBackend((chunk) => (chunk === 1 ? never() : part(chunk)));
       const { controller, capture, pastes } = makeLong(backend);
@@ -6785,7 +6785,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(performance.now() - released).toBeLessThan(400 + 300);
       expect(pastes).toEqual(["Part 0."]);
-      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(controller.phase).toEqual(idle);
       expect(backend.inFlight).toBe(0);
     });
 
@@ -6805,7 +6805,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual(["Part 0."]);
-      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(controller.phase).toEqual(idle);
     });
 
     /** Not even the first chunk in by the deadline: nothing is pasted, nothing is polished, every
@@ -6842,7 +6842,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(performance.now() - released).toBeLessThan(400 + 300);
       expect(pastes).toEqual(["Part 0."]);
-      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(controller.phase).toEqual(idle);
     });
 
     /** A long dictation whose last chunk ran out the deadline is pasted as far as it came, and not
@@ -6866,7 +6866,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         clock.mockRestore();
       }
       expect(pastes).toEqual(["Part 0. Part 1."]);
-      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(controller.phase).toEqual(idle);
       expect(completions.requests).toHaveLength(0);
     });
 
@@ -6921,11 +6921,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Owner, 2026-10-03: "paste only the up to successful part". The chunks after the first that
-     * gave up are not pasted either: the text would have a hole. */
+     * gave up are not pasted either: the text would have a hole. Owner, 2026-10-09: "instead of
+     * showing that message … paste directly whatever it has": the pill says nothing of the end. */
     test.each([
       { lost: "a middle chunk refused", answer: (chunk: number) => (chunk === 1 ? refused : part(chunk)), pasted: "Part 0." },
       { lost: "the last chunk failing on every try", answer: (chunk: number) => (chunk === 2 ? serverError : part(chunk)), pasted: "Part 0. Part 1." },
-    ])("$lost: the chunks before it are pasted, and the pill says the end is missing", async ({ answer, pasted }) => {
+    ])("$lost: the chunks before it are pasted, as any dictation's text", async ({ answer, pasted }) => {
       const backend = new ChunkBackend(answer);
       const { controller, capture, pastes } = makeLong(backend);
 
@@ -6935,7 +6936,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([pasted]);
-      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(controller.phase).toEqual(idle);
       // The text pasted is polished when it is of two chunks or more (this backend's polish fails).
       expect(completions.requests.map((_, index) => completions.message(index)?.dictation)).toEqual(pasted === "Part 0." ? [] : [pasted]);
     });
@@ -6955,8 +6956,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(backend.sent.filter((sent) => sent.chunk === 2).every((sent) => sent.signal?.aborted === true)).toBe(true);
     });
 
-    /** Not pasted (the user switched apps, ADR-DESK-042), the note still says the end is missing. */
-    test("a dictation whose end was lost and that is not pasted, as the user switched apps, says the end is missing", async () => {
+    /** Not pasted (the user switched apps, ADR-DESK-042), the note is any dictation's, with the text
+     * that came in. */
+    test("a dictation whose end was lost and that is not pasted, as the user switched apps, gets the usual note", async () => {
       const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : part(chunk)));
       const { controller, capture, pastes, copies } = makeLong(backend);
 
@@ -6968,7 +6970,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([]);
       expect(copies).toEqual([]);
-      expect(controller.phase).toEqual({ kind: "notPasted", message: partlyNotPastedMessage, text: "Part 0." });
+      expect(controller.phase).toEqual({ kind: "notPasted", message: notPastedMessage, text: "Part 0." });
       await controller.copyNotPasted();
       expect(copies).toEqual(["Part 0."]);
     });
@@ -7130,7 +7132,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(backend.sent.map((sent) => sent.authorization)).toEqual(["Bearer access-1"]);
       expect(pastes).toEqual(["Part 0."]);
-      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(controller.phase).toEqual(idle);
     });
 
     /** The user signed out and into another account as the last chunk answered: the polish is not
@@ -7232,7 +7234,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(completions.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
       expect(controller.phase.kind).toBe("failed");
-      expect(controller.phase).not.toEqual(failed(partlyTranscribedMessage));
     });
 
     /** A chunk of nothing but the room (the quiet after the last words) is sent too: the model
@@ -7308,10 +7309,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
         } else if (lost === 0) {
           expect(pastes, `seed ${seed}`).toEqual([]);
           expect(controller.phase.kind, `seed ${seed}`).toBe("failed");
-          expect(controller.phase, `seed ${seed}`).not.toEqual(failed(partlyTranscribedMessage));
         } else {
+          // The end lost, what came before it goes in as any dictation's text, nothing said of the end.
           expect(pastes, `seed ${seed}`).toEqual([kept.join(" ")]);
-          expect(controller.phase, `seed ${seed}`).toEqual(failed(partlyTranscribedMessage));
+          expect(controller.phase, `seed ${seed}`).toEqual(idle);
         }
         // Nothing is left running once it is done.
         expect(await eventually(() => backend.inFlight === 0), `seed ${seed}`).toBe(true);

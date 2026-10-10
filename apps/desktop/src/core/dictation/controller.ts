@@ -129,11 +129,6 @@ export const silentMicrophoneMessage = "Microphone muted or at zero volume.";
 /** Shown while a transcription that failed on the server's side is tried again. */
 export const retryingMessage = "Server error, retrying…";
 
-/** Shown after a long dictation whose later chunks couldn't be transcribed: what came before them was
- * pasted (ADR-DESK-049). Kept to one line of the pill. */
-export const partlyTranscribedMessage = "Couldn't transcribe the end. The rest was pasted.";
-/** `partlyTranscribedMessage` for one not pasted, as the user switched apps (ADR-DESK-042). */
-export const partlyNotPastedMessage = "Couldn't transcribe the end. Click to copy the rest.";
 
 /** The status the backend answers when the speech model did not answer in time. */
 const gatewayTimeout = 504;
@@ -716,7 +711,8 @@ export class DictationController extends Observable {
   /** Waits for the transcription `obtain` gets, in its parts (one, or a long dictation's chunks), and
    * inserts it (dictation) or carries it out (agent mode). `obtain` answers null when the dictation
    * ended meanwhile. With `lost` (a long dictation whose later chunks failed), a dictation pastes what
-   * came before them and says the end is missing; agent mode carries out nothing of it. */
+   * came before them as any dictation's text, with nothing said of the end (owner, 2026-10-09: "paste
+   * directly whatever it has"); agent mode carries out nothing of it. */
   private async deliver(generation: number, obtain: () => Promise<{ parts: TranscribedPart[]; lost: unknown; polish?: Polish | null; deadline: number } | null>): Promise<void> {
     // Agent mode's requests go under the account signed in now, even if the user switches accounts
     // while they run.
@@ -821,19 +817,14 @@ export class DictationController extends Observable {
       }
       if (this.generation !== generation) return;
       this.teardown();
-      if (lost !== null) {
-        log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
-        this.fail(partlyTranscribedMessage);
-        return;
-      }
+      if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
       this.setPhase({ kind: "idle" });
     } catch (error) {
       if (!isCurrent()) return;
       this.teardown();
       if (error instanceof NotPastedError) {
-        // Not pasted, the missing end is still said.
         if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
-        this.showMessage({ kind: "notPasted", message: lost === null ? error.message : partlyNotPastedMessage, text: error.text }, config.notPastedDisplayDuration);
+        this.showMessage({ kind: "notPasted", message: error.message, text: error.text }, config.notPastedDisplayDuration);
         return;
       }
       log.error(`DictationController: ${mode} failed: ${errorName(error)}`);

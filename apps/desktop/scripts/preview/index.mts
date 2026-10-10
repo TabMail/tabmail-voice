@@ -157,7 +157,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-not-pasted", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Let's move the launch review to Friday at ten, and I'll send the agenda tonight." } }],
     // A long text, cut short after its lines.
-    ["overlay-not-pasted-long", { phase: { kind: "notPasted", message: "Couldn't transcribe the end. Click to copy the rest.", text: "Thanks for the notes on the draft. I went through each of them and agree with most; the two I'd push back on are the timeline for the second phase, which I think is too tight given the holidays, and the budget line for travel, which we can probably cut in half if we do the kickoff remotely." } }],
+    ["overlay-not-pasted-long", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Thanks for the notes on the draft. I went through each of them and agree with most; the two I'd push back on are the timeline for the second phase, which I think is too tight given the holidays, and the budget line for travel, which we can probably cut in half if we do the kickoff remotely." } }],
     // A word or two.
     ["overlay-not-pasted-short", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Sounds good." } }],
     // One unbroken word, wrapped inside the box.
