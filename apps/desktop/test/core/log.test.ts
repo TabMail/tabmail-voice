@@ -114,7 +114,7 @@ describe("content log", () => {
     const [request, variables, response] = entries.map((entry) => entry.text);
     expect(request?.startsWith("POST https://api.example.com/completions/chat\n")).toBe(true);
     expect(request).toContain(`Authorization: ${BackendLog.maskedAuthorization}`);
-    expect(request).toContain("X-Client-Type: macos");
+    expect(request).toContain("X-Client-Type: voice");
     // The body exactly as sent.
     expect(request?.endsWith(`\n\n${stub.requests[0]?.body}`)).toBe(true);
     // Every variable whole, its line breaks as they are.
@@ -211,14 +211,14 @@ describe("content log", () => {
     const text = BackendLog.request({
       method: "POST",
       url: baseURL,
-      headers: { authorization: "Bearer secret-token-123", "X-Client-Type": "macos" },
+      headers: { authorization: "Bearer secret-token-123", "X-Client-Type": "voice" },
       body: "{}",
       timeout: 1,
     });
 
     expect(text).not.toContain("secret-token-123");
     expect(text).toContain(BackendLog.maskedAuthorization);
-    expect(text).toContain("X-Client-Type: macos");
+    expect(text).toContain("X-Client-Type: voice");
     expect(text.endsWith("\n\n{}")).toBe(true);
   });
 

@@ -42,7 +42,7 @@ describe("CompletionsClient", () => {
     expect(request?.headers).toEqual({
       "Content-Type": "application/json",
       Authorization: "Bearer token-abc",
-      "X-Client-Type": "macos",
+      "X-Client-Type": "voice",
       "X-Client-Version": "test-version",
     });
     const body = stub.body(0);

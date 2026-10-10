@@ -176,7 +176,7 @@ message and pastes nothing. No agent call has a deadline.
 
 ## Relationships
 
-Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) with a Supabase
+Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: voice`) with a Supabase
 JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
 dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
 Packaged builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/` (`latest-mac.yml`,
