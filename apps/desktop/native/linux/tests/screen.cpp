@@ -135,8 +135,8 @@ int main() {
         Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&visit, &paste, &plain}};
         Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
         PiecesTree tree;
-        tree.split[&visit] = {{"Visit ", voice::ContextFrame{20, 0, 30, 20}, {}, {}}, {{}, {}, {}, &link}, {" now", voice::ContextFrame{103, 0, 30, 20}, {}, {}}};
-        tree.split[&paste] = {{"Paste", voice::ContextFrame{20, 30, 36, 20}, {}, {}}, {{}, {}, {}, &key}};
+        tree.split[&visit] = {{"Visit ", voice::ContextFrame{20, 0, 30, 20}, {}, {}}, {{}, link.bounds, {}, &link}, {" now", voice::ContextFrame{103, 0, 30, 20}, {}, {}}};
+        tree.split[&paste] = {{"Paste", voice::ContextFrame{20, 30, 36, 20}, {}, {}}, {{}, key.bounds, {}, &key}};
         const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
         expect(screen["renderedText"] == "Visit [example] now\nPaste [[redacted]]\nRead whole", "a paragraph's links read as pieces of its line");
         expect(screen.dump().find("sk-Review") == std::string::npos, "a key in a link is not read");
@@ -151,12 +151,61 @@ int main() {
         Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&repeats, &key}};
         Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
         PiecesTree tree;
-        tree.split[&repeats] = {{"Echo", voice::ContextFrame{20, 0, 40, 20}, {}, {}}, {{}, {}, {}, &echo}, {"Echo", voice::ContextFrame{100, 0, 40, 20}, {}, {}}};
-        tree.split[&key] = {{"Key sk-", voice::ContextFrame{20, 30, 56, 20}, {}, {}}, {{}, {}, {}, &half}, {"Abcd1234", voice::ContextFrame{140, 30, 64, 20}, {}, {}}};
+        tree.split[&repeats] = {{"Echo", voice::ContextFrame{20, 0, 40, 20}, {}, {}}, {{}, echo.bounds, {}, &echo}, {"Echo", voice::ContextFrame{100, 0, 40, 20}, {}, {}}};
+        tree.split[&key] = {{"Key sk-", voice::ContextFrame{20, 30, 56, 20}, {}, {}}, {{}, half.bounds, {}, &half}, {"Abcd1234", voice::ContextFrame{140, 30, 64, 20}, {}, {}}};
         const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
-        const auto rendered = screen["renderedText"].get<std::string>();
-        expect(rendered.rfind("Echo[Echo]Echo\n", 0) == 0, "a piece repeating the one before it is read");
+        expect(screen["renderedText"] == "Echo[Echo]Echo\nKey [redacted]", "a piece repeating the one before it is read, and the key's line kept");
         expect(screen.dump().find("Abcd1234") == std::string::npos, "a key whose body repeats across a link is redacted whole");
+    }
+    {
+        // A paragraph repeating the last piece of the one before it is the screen's text as well.
+        Element link{ATSPI_ROLE_LINK, "link", {}, {}, false, voice::ContextFrame{60, 0, 40, 20}};
+        Element split{ATSPI_ROLE_PARAGRAPH, "Lead\uFFFCSame", {}, {&link}, false, voice::ContextFrame{20, 0, 120, 20}};
+        Element same{ATSPI_ROLE_PARAGRAPH, "Same", {}, {}, false, voice::ContextFrame{20, 30, 40, 20}};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&split, &same}};
+        Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
+        PiecesTree tree;
+        tree.split[&split] = {{"Lead", voice::ContextFrame{20, 0, 40, 20}, {}, {}}, {{}, link.bounds, {}, &link}, {"Same", voice::ContextFrame{100, 0, 40, 20}, {}, {}}};
+        const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        expect(screen["renderedText"] == "Lead[link]Same\nSame", "a paragraph repeating the last piece before it is read");
+    }
+    {
+        // A link is set where its paragraph was split by, however the element answers when walked:
+        // a link placed elsewhere then would start a line of its own and part the key across it.
+        Element half{ATSPI_ROLE_LINK, "Abcd1234", {}, {}, false, voice::ContextFrame{76, 200, 64, 20}};
+        Element key{ATSPI_ROLE_PARAGRAPH, "Key sk-\uFFFCAbcd1234", {}, {&half}, false, voice::ContextFrame{20, 0, 184, 20}};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&key}};
+        Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
+        PiecesTree tree;
+        tree.split[&key] = {{"Key sk-", voice::ContextFrame{20, 0, 56, 20}, {}, {}}, {{}, voice::ContextFrame{76, 0, 64, 20}, {}, &half},
+            {"Abcd1234", voice::ContextFrame{140, 0, 64, 20}, {}, {}}};
+        const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        expect(screen["renderedText"] == "Key [redacted]" && screen.dump().find("Abcd1234") == std::string::npos,
+            "a link is placed where its paragraph was split");
+    }
+    {
+        // A paragraph with more pieces than the walk has left is read whole, within the shared core's
+        // block limit; one with as many as are left is read as its pieces. Its runs count against
+        // what is left for the next.
+        const auto read = [&](std::vector<size_t> counts) {
+            std::vector<Element> paragraphs;
+            paragraphs.reserve(counts.size());
+            for (size_t index = 0; index < counts.size(); ++index)
+                paragraphs.push_back({ATSPI_ROLE_PARAGRAPH, "Whole paragraph", {}, {}, false, voice::ContextFrame{0, 30.0 * index, 10, 20}});
+            Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {}};
+            for (auto& paragraph : paragraphs) window.children.push_back(&paragraph);
+            Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
+            PiecesTree tree;
+            for (size_t index = 0; index < counts.size(); ++index)
+                for (size_t piece = 0; piece < counts[index]; ++piece)
+                    tree.split[&paragraphs[index]].push_back({"r", voice::ContextFrame{10.0 * piece, 30.0 * index, 10, 20}, {}, {}});
+            return voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        };
+        const size_t budget = voice::walk::limits().nodeBudget;
+        expect(read({budget - 2})["renderedText"] == std::string(budget - 2, 'r'), "a paragraph with as many pieces as the walk has left is read as them");
+        expect(read({budget - 1})["renderedText"] == "Whole paragraph", "a paragraph with more pieces than the walk has left is read whole");
+        const size_t half = budget / 2 + 100;
+        expect(read({half, half})["renderedText"] == std::string(half, 'r') + "\nWhole paragraph", "a paragraph's runs count against what the walk has left");
     }
     {
         Element field{ATSPI_ROLE_ENTRY, "syntheticSecret123", {}, {}};

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include "../rust/VoiceCore.h"
 
@@ -56,15 +57,16 @@ public:
     size_t nodes = 0;
     std::string stopped;
     bool hasCaret = false;
-    // The next block is another part of the same text as the one before it (a paragraph's run and
-    // its link): admitted without comparing it with that block, as a repeat of it is the screen's.
+    // The next block is a part of a paragraph (its run or its link): neither it nor the block after it
+    // is compared with the block before it, as a part repeating its neighbour is the screen's text.
     bool distinct = false;
 
     void append(ContextKind kind, std::string text, std::optional<ContextFrame> frame = {},
                 std::optional<std::array<ContextFrame, 2>> ends = {}) {
+        bool part = false;
         if (kind != ContextKind::caret) {
-            const auto result = core::request({{"admit", text}, {"previous", distinct || blocks.empty() || blocks.back().kind == ContextKind::caret ? nlohmann::json(nullptr) : nlohmann::json(blocks.back().text)}, {"used", bytes}}, voice_core_context_json);
-            distinct = false;
+            part = std::exchange(distinct, false);
+            const auto result = core::request({{"admit", text}, {"previous", part || lastPart || blocks.empty() || blocks.back().kind == ContextKind::caret ? nlohmann::json(nullptr) : nlohmann::json(blocks.back().text)}, {"used", bytes}}, voice_core_context_json);
             text = result.at("text").get<std::string>();
             bytes = result.at("used").get<size_t>();
             textBudgetFull = result.at("budgetFull").get<bool>();
@@ -73,6 +75,7 @@ public:
         }
         if (kind == ContextKind::caret) hasCaret = true;
         blocks.push_back({kind, std::move(text), frame, {}, {}, ends});
+        lastPart = part;
     }
     void appendField(const std::array<std::string, 3>& parts, std::optional<ContextFrame> frame = {}) {
         const auto result = core::request({{"admitField", parts}, {"used", bytes}}, voice_core_context_json);
@@ -80,18 +83,18 @@ public:
         bytes = result.at("used").get<size_t>();
         textBudgetFull = result.at("budgetFull").get<bool>();
         if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
-        if (!source[1].empty()) blocks.push_back({ContextKind::field, source[1], frame, source});
+        if (!source[1].empty()) { blocks.push_back({ContextKind::field, source[1], frame, source}); lastPart = false; }
     }
     void appendSemantic(ContextKind kind, const nlohmann::json& source, std::optional<ContextFrame> frame = {},
                         std::optional<std::array<ContextFrame, 2>> ends = {}) {
         auto block = source; block["kind"] = kinds[static_cast<size_t>(kind)];
-        const auto previous = distinct || blocks.empty() ? nlohmann::json(nullptr) : blockJSON(blocks.back());
-        distinct = false;
+        const bool part = std::exchange(distinct, false);
+        const auto previous = part || lastPart || blocks.empty() ? nlohmann::json(nullptr) : blockJSON(blocks.back());
         const auto result = core::request({{"admitSemantic", block}, {"used", bytes}, {"previous", previous}}, voice_core_context_json);
         bytes = result.at("used").get<size_t>(); textBudgetFull = result.at("budgetFull").get<bool>();
         if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
         const auto text = result.at("text").get<std::string>();
-        if (!text.empty()) blocks.push_back({kind, text, frame, {}, std::optional<nlohmann::json>(std::in_place, result.at("runs")), ends});
+        if (!text.empty()) { blocks.push_back({kind, text, frame, {}, std::optional<nlohmann::json>(std::in_place, result.at("runs")), ends}); lastPart = part; }
     }
     // Private staging transport for a field nested inside a semantic container.
     // These parts must still pass semantic admission and final shared redaction.
@@ -120,6 +123,8 @@ public:
 private:
     size_t bytes = 0;
     std::vector<ContextBlock> blocks;
+    // The last block was admitted as a part of a paragraph (`distinct`).
+    bool lastPart = false;
     static constexpr const char* kinds[] = {"text", "heading", "link", "row", "field", "caret"};
     static nlohmann::json blockJSON(const ContextBlock& block) {
         nlohmann::json value = {{"kind", kinds[static_cast<size_t>(block.kind)]}, {"text", block.text}};

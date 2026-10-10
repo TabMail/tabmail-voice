@@ -110,8 +110,8 @@ public:
         if (error.value || count <= 0) return {};
         return endsOf(text, 0, count);
     }
-    // A piece of an element's text as the screen shows it: a run of the element's own text, with
-    // where it is, or the element one of its embedded objects stands for.
+    // A piece of an element's text as the screen shows it: a run of the element's own text, or the
+    // element one of its embedded objects stands for, with where it is.
     struct Piece { std::string text; std::optional<ContextFrame> frame; std::optional<std::array<ContextFrame, 2>> ends; std::optional<Node> element; };
     // A paragraph's text with links in it, in order. Chromium gives each link as an embedded object
     // (U+FFFC) in its paragraph's text, where macOS and Windows give the paragraph's runs and its
@@ -134,8 +134,9 @@ public:
         std::vector<gunichar> scalars;
         for (const char* at = whole.c_str(); *at; at = g_utf8_next_char(at)) scalars.push_back(g_utf8_get_char(at));
         std::vector<Piece> result;
-        // Pieces are joined on a line by where they are: a run or link without a box would start a
-        // line of its own, parting a key across it before the redactor sees it whole. Read whole then.
+        // Pieces are joined on a line by where they are: a run or link without a box, or without the
+        // boxes of its first and last characters, would be set apart from the piece beside it, parting
+        // a key across them before the redactor sees it whole. Read whole then.
         bool placed = true;
         const auto run = [&](int from, int to) {
             if (from >= to) return;
@@ -147,9 +148,9 @@ public:
         for (const auto& [offset, child] : *links) {
             if (offset < at || static_cast<size_t>(offset) >= scalars.size() || scalars[static_cast<size_t>(offset)] != 0xFFFC) return {};
             run(at, offset);
-            const auto box = frame(child);
-            placed = placed && box && box->width > 0 && box->height > 0;
-            result.push_back({{}, {}, {}, child});
+            const auto box = frame(child); auto edges = ends(child);
+            placed = placed && box && box->width > 0 && box->height > 0 && edges;
+            result.push_back({{}, box, edges, child});
             at = offset + 1;
         }
         run(at, count);
@@ -943,10 +944,11 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
         auto entry = std::move(stack.back()); stack.pop_back();
         // A piece of a paragraph is the screen's own text, however it repeats the piece before it.
         if (entry.piece) context.distinct = true;
+        // A run is a block as an element is: counted with them, so the read stays within the core's.
+        ++context.nodes;
         if (!entry.node) { context.append(ContextKind::text, std::move(entry.text), entry.frame, entry.ends); continue; }
         auto node = std::move(*entry.node);
         const bool inPage = entry.inPage;
-        ++context.nodes;
         const bool isFocus = tree.same(node, focus);
         const bool ancestor = !isFocus && std::any_of(path.begin(), path.end(), [&](const auto& parent) { return tree.same(parent, node); });
         std::optional<PageHost> page;
@@ -981,17 +983,20 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             }
             if (step.action == "text") {
                 // A paragraph with links in it is read as its pieces, in order (onto the stack in
-                // reverse): its runs of text, and each link walked as one.
+                // reverse): its runs of text, and each link walked as one, where it was placed. One
+                // with more pieces than the walk has left is read whole.
                 if constexpr (requires { tree.pieces(node); })
-                    if (auto pieces = tree.pieces(node)) {
+                    if (auto pieces = tree.pieces(node); pieces && context.nodes + stack.size() + pieces->size() <= limits.nodeBudget) {
                         for (auto it = pieces->rbegin(); it != pieces->rend(); ++it)
-                            if (it->element) stack.push_back({std::move(*it->element), step.childrenInPage, {}, {}, {}, true});
+                            if (it->element) stack.push_back({std::move(*it->element), step.childrenInPage, {}, it->frame, it->ends, true});
                             else stack.push_back({std::nullopt, false, std::move(it->text), it->frame, it->ends, true});
                         continue;
                     }
                 const auto field = screenText(tree, node);
                 std::optional<std::array<ContextFrame, 2>> ends;
-                if constexpr (requires { tree.ends(node); }) if (frame) ends = tree.ends(node);
+                // A paragraph's piece is set where `pieces` placed it, the place its paragraph was split by.
+                if (entry.piece) { frame = entry.frame; ends = entry.ends; }
+                else if constexpr (requires { tree.ends(node); }) if (frame) ends = tree.ends(node);
                 context.append(ContextKind::text, field ? *field : tree.label(node), frame, ends);
                 continue;
             }
@@ -1006,7 +1011,8 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             const auto kind = step.kind == "heading" ? SemanticText::Kind::heading : step.kind == "link" ? SemanticText::Kind::link : SemanticText::Kind::row;
             const auto label = semanticSource(tree, node, kind, context.nodes, exclusions, inPage, windowFrame);
             std::optional<std::array<ContextFrame, 2>> ends;
-            if constexpr (requires { tree.ends(node); }) if (frame && step.kind == "link") ends = tree.ends(node);
+            if (entry.piece) { frame = entry.frame; ends = entry.ends; }
+            else if constexpr (requires { tree.ends(node); }) if (frame && step.kind == "link") ends = tree.ends(node);
             context.appendSemantic(step.kind == "heading" ? ContextKind::heading : step.kind == "link" ? ContextKind::link : ContextKind::row, label, frame, ends);
             continue;
         }

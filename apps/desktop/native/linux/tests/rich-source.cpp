@@ -20,8 +20,9 @@ struct Element {
     std::string display = "block";
     bool editable = true;
     AtspiRole role = ATSPI_ROLE_PARAGRAPH;
-    // Its boxes, each character 10 wide on one line; none when the provider gives no geometry.
-    bool boxed = true;
+    // Its boxes, each character 10 wide on one line: of a character, of a range of them and of the
+    // element; none of a kind the provider gives no geometry for.
+    bool characterBoxes = true, rangeBoxes = true, componentBox = true;
 };
 std::map<const void*, Element> elements;
 std::map<const void*, std::pair<int, AtspiAccessible*>> hyperlinks;
@@ -72,17 +73,17 @@ extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* v
 }
 extern "C" AtspiRole __wrap_atspi_accessible_get_role(AtspiAccessible* value, GError**) { return at(value).role; }
 namespace {
-AtspiRect* box(const void* value, gint from, gint to) {
-    if (!at(value).boxed) return nullptr;
+AtspiRect* box(bool given, gint from, gint to) {
+    if (!given) return nullptr;
     auto result = g_new0(AtspiRect, 1);
     result->x = 10 * from; result->y = 0; result->width = 10 * (to - from); result->height = 20;
     return result;
 }
 }
-extern "C" AtspiRect* __wrap_atspi_text_get_character_extents(AtspiText* text, gint offset, AtspiCoordType, GError**) { return box(text, offset, offset + 1); }
-extern "C" AtspiRect* __wrap_atspi_text_get_range_extents(AtspiText* text, gint from, gint to, AtspiCoordType, GError**) { return box(text, from, to); }
+extern "C" AtspiRect* __wrap_atspi_text_get_character_extents(AtspiText* text, gint offset, AtspiCoordType, GError**) { return box(at(text).characterBoxes, offset, offset + 1); }
+extern "C" AtspiRect* __wrap_atspi_text_get_range_extents(AtspiText* text, gint from, gint to, AtspiCoordType, GError**) { return box(at(text).rangeBoxes, from, to); }
 extern "C" AtspiComponent* __wrap_atspi_accessible_get_component_iface(AtspiAccessible* value) { return reinterpret_cast<AtspiComponent*>(g_object_ref(value)); }
-extern "C" AtspiRect* __wrap_atspi_component_get_extents(AtspiComponent* value, AtspiCoordType, GError**) { return box(value, 0, 4); }
+extern "C" AtspiRect* __wrap_atspi_component_get_extents(AtspiComponent* value, AtspiCoordType, GError**) { return box(at(value).componentBox, 0, 4); }
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto result = atspi_state_set_new(nullptr);
     atspi_state_set_add(result, ATSPI_STATE_SHOWING); atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
@@ -198,14 +199,26 @@ int main() {
                 const auto& first = (*pieces)[0]; const auto& link = (*pieces)[1]; const auto& last = (*pieces)[2];
                 expect(first.text == "See " && first.frame && first.frame->x == 0 && first.frame->width == 40 && first.ends &&
                        last.text == " now" && last.frame && last.frame->x == 50 && last.frame->width == 40 && last.ends && (*last.ends)[1].x == 80 &&
-                       link.element && link.element->get() == docs, "each piece is where the screen shows it");
+                       link.element && link.element->get() == docs && link.frame && link.frame->width == 40 && link.ends && (*link.ends)[1].x == 30,
+                       "each piece is where the screen shows it");
             }
-            at(paragraph.get()).boxed = false;
-            expect(!tree.pieces(paragraph), "a paragraph whose text has no boxes is read whole");
-            at(paragraph.get()).boxed = true; at(docs).boxed = false;
-            expect(!tree.pieces(paragraph), "a paragraph whose link has no box is read whole");
-            at(docs).boxed = true;
-            expect(tree.pieces(paragraph).has_value(), "the same paragraph with its boxes reads as pieces again");
+            // Each box a piece is placed by, missing on its own.
+            for (const auto& [missing, which] : std::vector<std::pair<bool Element::*, AtspiAccessible*>>{
+                     {&Element::rangeBoxes, paragraph.get()}, {&Element::characterBoxes, paragraph.get()},
+                     {&Element::componentBox, docs}, {&Element::characterBoxes, docs}}) {
+                at(which).*missing = false;
+                expect(!tree.pieces(paragraph), "a paragraph one of whose pieces has a box missing is read whole");
+                at(which).*missing = true;
+                expect(tree.pieces(paragraph).has_value(), "the same paragraph with its boxes reads as pieces again");
+            }
+            // Adjacent links, between runs counted in scalars (one each, however many bytes).
+            auto second = element({"more", -1, std::nullopt, {}, "inline", true, ATSPI_ROLE_LINK});
+            auto pair = voice::own(element({"\u00e9" + object + object + "\U0001F600 end", -1, std::nullopt, {{1, docs}, {2, second}}, "block"}));
+            const auto both = tree.pieces(pair);
+            expect(both && both->size() == 4 && (*both)[0].text == "\u00e9" && (*both)[0].frame && (*both)[0].frame->width == 10 &&
+                   (*both)[1].element && (*both)[1].element->get() == docs && (*both)[2].element && (*both)[2].element->get() == second &&
+                   (*both)[3].text == "\U0001F600 end" && (*both)[3].frame && (*both)[3].frame->x == 30 && (*both)[3].frame->width == 50,
+                   "adjacent links and the runs around them are pieces where the screen shows them");
         }
         {
             // An element holding more than the read may take is not asked for its text: the walk
