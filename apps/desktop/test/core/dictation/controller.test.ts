@@ -3735,11 +3735,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Error: The file is unavailable."]);
         });
 
-        /** A tool the answer's model calls runs with no chat window: only an answer or a question opens
-         * one (owner, 2026-10-07). Its result goes back to the model, and the answer opens the chat,
-         * which then times out unless touched. The loop is offered the date tools and this computer's
-         * tools. */
-        test("an answer's tool runs without opening the chat window", async () => {
+        /** The chat window opens as the request is heard, and shows it, and what a tool the answer's
+         * model calls does while it runs (owner, 2026-10-09: "always show what's going on"). Its result
+         * goes back to the model, and the answer joins the chat, which then times out unless touched.
+         * The loop is offered the date tools and this computer's tools. */
+        test("an answer's tool runs in the chat window, which shows the request and what the tool does", async () => {
           const tool = new FakeLoopTool();
           const whileRunning: (AgentChat | null)[] = [];
           let controllerRef: DictationController | undefined;
@@ -3754,7 +3754,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { pastes } = await done;
 
           expect(tool.runs).toEqual([{ title: "Launch review", day: "friday", hour: 10.5, note: null }]);
-          expect(whileRunning).toEqual([null]);
+          expect(whileRunning.map((chat) => [chat?.pendingRequest, chat?.activity, chat?.turns])).toEqual([[toolRequest, tool.progressLabel, []]]);
           expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create"]);
           expect(completions.body(0).disable_tools).toBe(false);
           expect(told(1)).toEqual(["Added."]);
@@ -5015,8 +5015,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         });
 
         /** Canceled, or ended with the account, while a tool runs or asks, a first request leaves no
-         * chat window: one its question opened, still empty, closes with it, and one that only runs
-         * opens none. The next hold dictates. */
+         * chat window: the one it opened, still empty, closes with it. The next hold dictates. */
         test.each([
           ["canceled", "asks"],
           ["canceled", "runs"],
@@ -5038,7 +5037,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(controller.chat?.turns).toEqual([]);
           } else {
             await started.promise;
-            expect(controller.chat).toBeNull();
+            expect(controller.chat?.activity).toBe(tool.progressLabel);
           }
 
           if (how === "canceled") controller.handle("cancel");
@@ -5048,7 +5047,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await sleep(100);
 
           expect(controller.chat).toBeNull();
-          expect(chatChanges).toEqual(when === "asks" ? [true, false] : []);
+          expect(chatChanges).toEqual([true, false]);
           expect(controller.phase).toEqual(idle);
           expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
           expect(completions.requests).toHaveLength(1);
@@ -5201,9 +5200,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           }
         });
 
-        /** The answer failing after a tool ran: no chat window ever opened, and the pill says what
-         * failed. */
-        test("a failed answer after a tool opens no chat window", async () => {
+        /** The answer failing after a tool ran: the chat window the request opened, still empty,
+         * closes, and the pill says what failed. */
+        test("a failed answer after a tool leaves no chat window", async () => {
           const tool = new FakeLoopTool();
           const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", "{}"])]);
           completions.enqueue(500, { error: "internal_error" });
@@ -5211,18 +5210,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           expect(tool.runs).toHaveLength(1);
           expect(controller.chat).toBeNull();
-          expect(chatChanges).toEqual([]);
+          expect(chatChanges).toEqual([true, false]);
           expect(controller.phase).toEqual(failed(new BackendError("failed", 500).message));
         });
 
-        /** A lookup, then Compose ("check my calendar and write when I'm free"): no chat window opens and
-         * Answer's bubble never runs, the loop thinking under none; the tool's app's bubble runs, then
+        /** A lookup, then Compose ("check my calendar and write when I'm free"): the chat window shows
+         * the request and the lookup while it runs, and closes before the text is pasted; Answer's
+         * bubble never runs, the loop thinking under none; the tool's app's bubble runs, then
          * Compose's, first when the text is pasted (ADR-DESK-055, owner 2026-10-07). */
-        test("a lookup then a write pastes with no chat window and no Answer bubble", async () => {
+        test("a lookup then a write shows in the chat window, which closes before the paste, and no Answer bubble", async () => {
           const tool = new FakeLoopTool();
           let controllerRef: DictationController | undefined;
           const chatAtPaste: (AgentChat | null)[] = [];
           const recentAtPaste: string[][] = [];
+          const whileRunning: (string | null | undefined)[] = [];
+          tool.during = async () => {
+            whileRunning.push(controllerRef?.chat?.activity);
+          };
           const { controller, done, chatChanges } = await ask(
             [tool],
             [calling(["example_create", "{}"]), writes("compose", "I'm free at 3.")],
@@ -5240,11 +5244,45 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { phases } = await done;
 
           expect(tool.runs).toHaveLength(1);
+          expect(whileRunning).toEqual([tool.progressLabel]);
           expect(chatAtPaste).toEqual([null]);
-          expect(chatChanges).toEqual([]);
+          expect(chatChanges).toEqual([true, false]);
           expect(phases.filter((phase) => phase.kind === "running")).toEqual([running(null), running("compose")]);
           expect(recentAtPaste).toEqual([["compose", "calendar"]]);
           expect(controller.chat).toBeNull();
+        });
+
+        /** Owner, 2026-10-09: "always show what's going on … show user inputs being accepted there".
+         * With no tool to run, the chat window still opens as the request is heard, showing it while
+         * the agent thinks; then the answer joins it, or a write closes it before the text is
+         * pasted. */
+        test.each(["answers", "writes"])("the request shows in the chat window as soon as it is heard, and the agent %s", async (then) => {
+          let controllerRef: DictationController | undefined;
+          const chatAtPaste: (AgentChat | null)[] = [];
+          const pending: (string | null)[] = [];
+          const { controller, done, chatChanges } = await ask(
+            [],
+            [then === "answers" ? reply(answer) : writes("compose", "I'm free at 3.")],
+            (controller) => {
+              controllerRef = controller;
+              if (then === "writes") setTools(["compose", "answer"]);
+              controller.observe(() => pending.push(controller.chat?.pendingRequest ?? null));
+            },
+            { paste: async () => void chatAtPaste.push(controllerRef?.chat ?? null) },
+          );
+          const { pastes } = await done;
+
+          expect(pending).toContain(toolRequest);
+          if (then === "answers") {
+            expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer }]);
+            expect(controller.chat?.pendingRequest).toBeNull();
+            expect(chatChanges).toEqual([true]);
+            expect(pastes).toEqual([]);
+          } else {
+            expect(chatAtPaste).toEqual([null]);
+            expect(controller.chat).toBeNull();
+            expect(chatChanges).toEqual([true, false]);
+          }
         });
 
         /** A tool's question opens the chat window, and the write that follows closes it before the
