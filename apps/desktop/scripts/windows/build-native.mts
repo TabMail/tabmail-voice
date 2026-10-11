@@ -23,22 +23,22 @@ export function buildNative(root: string): void {
   process.stdout.write(`Copied Windows helpers to ${destination}\n`);
   const runtime = join(root, "dist/runtime");
   mkdirSync(runtime, { recursive: true });
-  copyFileSync(redistributableRuntime(build), join(runtime, "vcruntime140.dll"));
-  process.stdout.write(`Copied the Visual C++ runtime to ${runtime}\n`);
+  copyFileSync(runtimeInstaller(build), join(runtime, "vc_redist.exe"));
+  process.stdout.write(`Copied the Visual C++ runtime installer to ${runtime}\n`);
 }
 
-/** The newest Visual C++ runtime this build's Visual Studio redistributes for its architecture.
- * The keyring addon (`@napi-rs/keyring`) imports `vcruntime140.dll`, which Windows does not ship;
- * the app ships it beside the addon (electron-builder.json), where Windows looks for an addon's
- * DLLs. The helpers link the runtime statically. */
-export function redistributableRuntime(build: string): string {
+/** Microsoft's installer of the Visual C++ runtime for this architecture, from the newest version
+ * this build's Visual Studio redistributes. The helpers, the Rust core and the keyring addon
+ * (`@napi-rs/keyring`) use the runtime Windows installs system-wide, which Windows itself does not
+ * ship: the app's installer runs this one when the installed runtime is missing or older than it
+ * (`resources/windows/installer.nsh`). */
+export function runtimeInstaller(build: string): string {
   const linker = /^CMAKE_LINKER:FILEPATH=(.+)$/m.exec(readFileSync(join(build, "CMakeCache.txt"), "utf8"))?.[1];
   const tools = linker?.lastIndexOf("/Tools/MSVC/") ?? -1;
   if (!linker || tools < 0) throw new Error("CMake recorded no Visual Studio linker to find the C++ runtime by");
   const redist = join(linker.slice(0, tools), "Redist/MSVC");
   const newest = readdirSync(redist).filter(name => /^\d+(\.\d+)+$/.test(name)).sort((a, b) => b.localeCompare(a, "en", { numeric: true }))[0];
-  const folder = newest === undefined ? undefined : join(redist, newest, process.arch);
-  const crt = folder !== undefined && existsSync(folder) ? readdirSync(folder).find(name => /^Microsoft\.VC\d+\.CRT$/.test(name)) : undefined;
-  if (folder === undefined || crt === undefined) throw new Error(`No Visual C++ runtime for ${process.arch} in ${redist}`);
-  return join(folder, crt, "vcruntime140.dll");
+  const installer = newest === undefined ? undefined : join(redist, newest, `vc_redist.${process.arch}.exe`);
+  if (installer === undefined || !existsSync(installer)) throw new Error(`No Visual C++ runtime installer for ${process.arch} in ${redist}`);
+  return installer;
 }

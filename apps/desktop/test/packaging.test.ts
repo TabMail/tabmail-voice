@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
@@ -17,17 +17,26 @@ test("Windows packages every helper the main process can launch", () => {
   expect(builder.win.extraResources.find(resource => resource.from === "dist/helpers")?.filter?.slice().sort()).toEqual(launched);
 });
 
-/** The keyring addon imports the Visual C++ runtime, which Windows does not ship: the runtime the
- * Windows build copies goes beside the addon of the architecture being packaged, the folder Windows
- * looks in for an addon's DLLs. */
-test("Windows ships the C++ runtime beside the keyring addon", () => {
-  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { extraResources: { from: string; to: string; filter?: string[] }[] } };
-  const runtime = builder.win.extraResources.filter(resource => resource.from === "dist/runtime");
-  expect(runtime).toEqual([{ from: "dist/runtime", to: "app.asar.unpacked/node_modules/@napi-rs/keyring-win32-${arch}-msvc", filter: ["vcruntime140.dll"] }]);
-  const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")) as { packages: Record<string, { os?: string[]; cpu?: string[] }> };
-  for (const arch of ["x64", "arm64"]) {
-    expect(lock.packages[`node_modules/@napi-rs/keyring-win32-${arch}-msvc`]).toMatchObject({ os: ["win32"], cpu: [arch] });
-  }
+/** The helpers, the Rust core and the keyring addon use the Visual C++ runtime Windows installs
+ * system-wide, where Windows Update services it (ADR-DESK-057): the installer runs the runtime
+ * installer the Windows build copies, for the architecture it carries, and the app ships no copy of
+ * the runtime and links none of it in. */
+test("Windows installs the C++ runtime system-wide and ships none of its own", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { nsis: { include?: string }; win: { extraResources: { from: string; filter?: string[] }[] } };
+  expect(builder.nsis.include).toBe("resources/windows/installer.nsh");
+  const installer = readFileSync(join(root, builder.nsis.include!), "utf8");
+  expect(installer).toContain('!getdllversion "${PROJECT_DIR}\\dist\\runtime\\vc_redist.exe" VOICE_RUNTIME_');
+  expect(installer).toContain('File "/oname=$PLUGINSDIR\\vc_redist.exe" "${PROJECT_DIR}\\dist\\runtime\\vc_redist.exe"');
+  expect(installer).toMatch(/!ifdef APP_ARM64\s+!define VOICE_RUNTIME_KEY "SOFTWARE\\Microsoft\\VisualStudio\\14\.0\\VC\\Runtimes\\arm64"\s+!else\s+!define VOICE_RUNTIME_KEY "SOFTWARE\\Microsoft\\VisualStudio\\14\.0\\VC\\Runtimes\\x64"/);
+  expect(installer).toMatch(/!macro customInit\s+!insertmacro voiceRuntimeInstalled/);
+  // Where Windows keeps the runtime's state, in both registry views (the test that runs the step
+  // reads it from a test key of its own).
+  expect(installer.match(/ReadRegDWORD \$R\d HKLM "\$\{VOICE_RUNTIME_KEY\}" "(Installed|\$\{NAME\})"/g)).toHaveLength(2);
+  expect(installer).toMatch(/!insertmacro voiceRuntimePart Major \$\{VOICE_RUNTIME_1\}\s+!insertmacro voiceRuntimePart Minor \$\{VOICE_RUNTIME_2\}\s+!insertmacro voiceRuntimePart Bld \$\{VOICE_RUNTIME_3\}\s+!insertmacro voiceRuntimePart Rbld \$\{VOICE_RUNTIME_4\}/);
+  expect(installer).toMatch(/!insertmacro voiceRuntimeInstalledIn 32\s+!insertmacro voiceRuntimeInstalledIn 64\s+!macroend/);
+  expect(builder.win.extraResources.filter(resource => resource.from === "dist/runtime" || (resource.filter ?? []).some(name => /\.dll$/i.test(name)))).toEqual([]);
+  expect(readFileSync(join(root, "native/windows/CMakeLists.txt"), "utf8")).not.toMatch(/CMAKE_MSVC_RUNTIME_LIBRARY|\/MT\b/);
+  expect(existsSync(join(root, "native/shared/rust/.cargo/config.toml")) && readFileSync(join(root, "native/shared/rust/.cargo/config.toml"), "utf8").includes("crt-static")).toBe(false);
 });
 
 /** What the packaged Mac app declares for the access it asks for (`voice-macos` for Calendar,
