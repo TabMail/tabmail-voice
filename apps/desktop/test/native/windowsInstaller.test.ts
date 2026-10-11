@@ -421,6 +421,10 @@ SectionEnd
     const quitTime = install({ arch: "arm64", installs: { arm64: carried }, updated: true, running: 2_000 });
     expect(quitTime).toMatchObject({ status: 0, payload: "new", opened: "", reopened: "" });
     expect(quitTime.calls).toEqual([{ args: "/install /quiet /norestart", payload: "old", app: "gone" }]);
+    // The user quit the app to update: refused, it stays closed.
+    const quitRefused = install({ arch: "arm64", exit: 1602, updated: true, running: 2_000 });
+    expect(quitRefused).toMatchObject({ status: 2, payload: "old", opened: "", reopened: "" });
+    expect(quitRefused.calls).toEqual([{ args: "/install /quiet /norestart", payload: "old", app: "gone" }]);
   }, runTimeout);
 
   test("an update ends the app it replaces when it outlasts the wait, as electron-builder does, and an install that isn't an update doesn't wait", () => {
