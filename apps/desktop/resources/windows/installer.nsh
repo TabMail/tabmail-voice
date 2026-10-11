@@ -22,8 +22,8 @@
 !else
   !define VOICE_RUNTIME_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 !endif
-; How long an update waits for the app it replaces, which quits for it, to end: the most checks,
-; and the milliseconds between them.
+; How long an update waits for the app it replaces, which quits for it, to end (and again after
+; ending it): the most checks, and the milliseconds between them.
 !define VOICE_APP_QUIT_CHECKS 20
 !define VOICE_APP_QUIT_INTERVAL 500
 ; VOICE_RUNTIME_1 to VOICE_RUNTIME_4: the runtime's version (major, minor, build, revision), as
@@ -69,8 +69,10 @@
 !macroend
 
 ; Waits, at most VOICE_APP_QUIT_CHECKS times, while the installed app is running: Windows doesn't
-; let a running program's file be opened for writing (nothing is written to it).
-!macro voiceAwaitAppQuit
+; let a running program's file be opened for writing (nothing is written to it). $R7 is 1 once it
+; isn't running, 0 if it still was at the last check.
+!macro voiceAppEnded
+  StrCpy $R7 1
   ${If} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
     StrCpy $R5 1
     ${Do}
@@ -81,6 +83,7 @@
         ${Break}
       ${EndIf}
       ${If} $R5 >= ${VOICE_APP_QUIT_CHECKS}
+        StrCpy $R7 0
         ${Break}
       ${EndIf}
       IntOp $R5 $R5 + 1
@@ -89,11 +92,23 @@
   ${EndIf}
 !macroend
 
+; The app an update replaces has quit for it; one still running after the wait is ended, as
+; electron-builder ends it in an update (the user's own processes of the app's program).
+!macro voiceAwaitAppQuit
+  !insertmacro voiceAppEnded
+  ${If} $R7 <> 1
+    nsExec::Exec '"$SYSDIR\cmd.exe" /C taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%"'
+    Pop $R6
+    !insertmacro voiceAppEnded
+  ${EndIf}
+!macroend
+
 !macro customInit
   !insertmacro voiceRuntimeInstalled
   ${If} $R0 <> 1
     ; An update the app runs (--updated) starts as the app quits: Microsoft's installer runs, and the
     ; app is opened again below, once it has ended (electron-builder closes it later, after this).
+    StrCpy $R7 0
     ${If} ${isUpdated}
       !insertmacro voiceAwaitAppQuit
     ${EndIf}
@@ -112,8 +127,9 @@
       MessageBox MB_OK|MB_ICONSTOP "TabMail Voice needs the Microsoft Visual C++ Runtime, which wasn't installed. Run the installer again and allow the runtime to install." /SD IDOK
       ; Restart Now quit the app for its update (--force-run): it opens again as it was, as
       ; electron-builder opens an installed one, and says the update didn't install (ADR-DESK-050).
-      ; It keeps its single-instance lock: the app it replaces ended above, unless that outlasted the wait.
+      ; Only once the app it replaces has ended, whose single-instance lock it would otherwise lose.
       ${If} ${isForceRun}
+      ${AndIf} $R7 = 1
         ${StdUtils.ExecShellAsUser} $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "open" ""
       ${EndIf}
       SetErrorLevel 2

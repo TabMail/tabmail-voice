@@ -5037,9 +5037,11 @@ built with 14.51).
   so the user is not left without it and sees at once that the update didn't install. An update the
   app runs (`--updated`) starts as the app quits, so before Microsoft's installer runs it waits, at
   most 10 seconds, until the app has ended (Windows doesn't let a running program's file be opened
-  for writing): the app opened again then keeps its single-instance lock, and Microsoft's installer
-  doesn't find the app holding the runtime. An install that isn't an update doesn't wait; electron-
-  builder asks to close the app afterwards, as before. When Microsoft's installer asks for a
+  for writing); one still running then is ended with `taskkill`, as electron-builder ends it in an
+  update, and checked again for as long. Microsoft's installer then doesn't find the app holding the
+  runtime, and the app is opened again only once the one it replaces has ended, so it keeps its
+  single-instance lock (an app that can't be seen to end isn't opened again). An install that isn't
+  an update doesn't wait; electron-builder asks to close the app afterwards, as before. When Microsoft's installer asks for a
   restart (3010, or 1641), the app is installed as usual, and an interactive install then says to
   restart Windows when convenient; a silent one says nothing, and nothing restarts Windows. That is
   what standard installers do (Wireshark's NSIS installer sets the reboot flag and continues; WiX
