@@ -16,6 +16,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 const helpers = ["voice-field-reader.exe", "voice-hotkey.exe", "voice-microphone.exe", "voice-productivity.exe", "voice-screen-reader.exe", "voice-windows.exe"];
 const otherArch = process.arch === "arm64" ? "x64" : "arm64";
+const cmakeArch = process.arch === "arm64" ? "ARM64" : "x64";
 
 describe("the Windows helper build", () => {
   const roots: string[] = [];
@@ -26,22 +27,32 @@ describe("the Windows helper build", () => {
     writeFileSync(path, contents);
   }
 
-  /** A built tree for this machine's architecture, by a Visual Studio whose redistributable folder
-   *  holds `redist` (version folder → architecture → its runtime installer). */
+  /** A source tree for this machine's architecture, built by a Visual Studio whose redistributable
+   *  folder holds `redist` (version folder → architecture → its runtime installer). The fake CMake
+   *  writes `cache` when it configures, and the helpers, marked with the configured architecture,
+   *  only when it builds a configured tree. */
   function built(redist: Record<string, Record<string, string>>, cache?: string): { root: string; build: string } {
     const root = mkdtempSync(join(tmpdir(), "voice-windows-build-"));
     roots.push(root);
     const vc = join(root, "Synthetic Visual Studio/VC");
     const build = join(root, "native/windows/build", process.arch);
-    file(join(build, "CMakeCache.txt"), cache ?? `CMAKE_GENERATOR:INTERNAL=Visual Studio\r\nCMAKE_LINKER:FILEPATH=${vc}/Tools/MSVC/14.50.35717/bin/Hostx64/${process.arch}/link.exe\r\nCMAKE_AR:FILEPATH=lib.exe\r\n`);
-    for (const helper of helpers) file(join(build, "Release", helper), helper);
     for (const [version, arches] of Object.entries(redist)) {
       for (const [arch, contents] of Object.entries(arches)) file(join(vc, "Redist/MSVC", version, `vc_redist.${arch}.exe`), contents);
     }
     mkdirSync(join(vc, "Redist/MSVC/v145"), { recursive: true });
-    vi.mocked(execFileSync).mockImplementation(((command: string) => {
-      if (command === "cmake") return Buffer.alloc(0);
-      throw new Error(`unexpected command ${command}`);
+    let configured: string | undefined;
+    vi.mocked(execFileSync).mockImplementation(((command: string, args: readonly string[]) => {
+      if (command !== "cmake") throw new Error(`unexpected command ${command}`);
+      if (args[0] === "-S") {
+        expect(args).toEqual(["-S", join(root, "native/windows"), "-B", build, "-A", expect.any(String), "-DBUILD_TESTING=OFF"]);
+        configured = args[5];
+        file(join(build, "CMakeCache.txt"), cache ?? `CMAKE_GENERATOR:INTERNAL=Visual Studio\r\nCMAKE_LINKER:FILEPATH=${vc}/Tools/MSVC/14.50.35717/bin/Hostx64/${process.arch}/link.exe\r\nCMAKE_AR:FILEPATH=lib.exe\r\n`);
+      } else {
+        expect(args).toEqual(["--build", build, "--config", "Release", "--parallel", "2"]);
+        if (configured === undefined) throw new Error("built before configuring");
+        for (const helper of helpers) file(join(build, "Release", helper), `${helper} for ${configured}`);
+      }
+      return Buffer.alloc(0);
     }) as typeof execFileSync);
     return { root, build };
   }
@@ -55,6 +66,7 @@ describe("the Windows helper build", () => {
     });
     buildNative(root);
     expect(readdirSync(join(root, "dist/helpers")).sort()).toEqual(helpers);
+    for (const helper of helpers) expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`${helper} for ${cmakeArch}`);
     expect(readFileSync(join(root, "dist/runtime/vc_redist.exe"), "utf8")).toBe("14.50 runtime");
     expect(readdirSync(join(root, "dist/runtime"))).toEqual(["vc_redist.exe"]);
   });
@@ -64,15 +76,16 @@ describe("the Windows helper build", () => {
     const { root } = built({ "14.44.35112": { [process.arch]: "14.44 runtime" }, "14.50.35710": { [otherArch]: "14.50 runtime of the other architecture" } });
     expect(() => buildNative(root)).toThrow(`No Visual C++ runtime installer for ${process.arch}`);
     expect(existsSync(join(root, "dist/runtime/vc_redist.exe"))).toBe(false);
-    const { build } = built({});
+    const { root: none, build } = built({});
+    expect(() => buildNative(none)).toThrow(`No Visual C++ runtime installer for ${process.arch}`);
     expect(() => runtimeInstaller(build)).toThrow(`No Visual C++ runtime installer for ${process.arch}`);
   });
 
   test("fails where CMake recorded no Visual Studio linker", () => {
     for (const cache of ["CMAKE_GENERATOR:INTERNAL=Visual Studio\n", "CMAKE_LINKER:FILEPATH=C:/Synthetic Tools/bin/link.exe\n"]) {
       const { root, build } = built({ "14.50.35710": { [process.arch]: "14.50 runtime" } }, cache);
-      expect(() => runtimeInstaller(build)).toThrow("CMake recorded no Visual Studio linker");
       expect(() => buildNative(root)).toThrow("CMake recorded no Visual Studio linker");
+      expect(() => runtimeInstaller(build)).toThrow("CMake recorded no Visual Studio linker");
       expect(existsSync(join(root, "dist/runtime/vc_redist.exe"))).toBe(false);
     }
   });
