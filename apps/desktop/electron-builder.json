@@ -173,7 +173,7 @@
     ],
     "fpm": [
       "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai",
-      "resources/linux/tabmail-voice-archive-keyring.gpg=/usr/share/keyrings/tabmail-voice-archive-keyring.gpg",
+      "resources/linux/tabmail-voice-archive-keyring.gpg=/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg",
       "resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources"
     ]
   },

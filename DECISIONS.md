@@ -5091,12 +5091,18 @@ off the website until this ships.
 
 **Decision:**
 - **The package installs its source and keys** as plain packaged files (fpm mappings, no maintainer
-  script): the binary keyring `/usr/share/keyrings/tabmail-voice-archive-keyring.gpg` holding both
+  script): the binary keyring `/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg` holding both
   public keys (`resources/linux/tabmail-voice-archive-keyring.gpg`), and the deb822 source
   `/etc/apt/sources.list.d/tabmail-voice.sources` (`resources/linux/tabmail-voice.sources`):
-  `https://cdn.tabmail.ai/releases/voice`, suite `stable`, component `main`, `Signed-By` that keyring,
-  so the keys vouch for this repository only, never for the system's own sources. The source is
-  under `/etc`, so dpkg keeps it as a conffile: a user's edit or removal survives upgrades.
+  `https://cdn.tabmail.ai/releases/voice`, suite `stable`, component `main`, architectures `amd64`
+  and `arm64` (so a machine with i386 enabled isn't told about it at each update), `Signed-By` that
+  keyring, so the keys vouch for this repository only, never for the system's own sources. Both are
+  under `/etc`, so dpkg keeps them as conffiles, with one lifetime: a user's edit or removal
+  survives upgrades, `apt remove` keeps both and `apt purge` removes both. (A keyring under
+  `/usr/share/keyrings` is removed by `apt remove` while the source stays, and every `apt update`
+  after it then warns that the repository's signature can't be checked; found in the Ubuntu VM.)
+  An unedited conffile is replaced on upgrade, so a new keyring reaches every machine that didn't
+  edit it.
 - **The repository** is on the CDN beside the downloads: `dists/stable/InRelease`, `Release`,
   `Release.gpg`, and `main/binary-{amd64,arm64}/Packages` (and `.gz`), the latest version per
   architecture. `Packages` points at the `.deb` the website links (`linux-x64/…`, `linux-arm64/…`),
@@ -5108,8 +5114,7 @@ off the website until this ships.
   is null, so no `app-update.yml`). `apt update` offers new versions, and Ubuntu's Software Updater
   shows them as it shows Chrome's.
 - **Keys** are created, rotated and replaced by the backup with
-  `tabmail-cloudflare/scripts/rotate/rotate-voice-apt-signing-key.sh` (the private repository). The
-  keyring holds the backup from the first release, so a leaked or lost primary is replaced by
+  a script of TabMail's private operations repository. The keyring holds the backup from the first release, so a leaked or lost primary is replaced by
   promoting the backup, which installed apps already trust, and a new backup is created and ships in
   the next release. Only a key in the latest release's keyring is promoted.
 

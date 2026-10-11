@@ -3,4 +3,5 @@ Types: deb
 URIs: https://cdn.tabmail.ai/releases/voice
 Suites: stable
 Components: main
-Signed-By: /usr/share/keyrings/tabmail-voice-archive-keyring.gpg
+Architectures: amd64 arm64
+Signed-By: /etc/apt/keyrings/tabmail-voice-archive-keyring.gpg

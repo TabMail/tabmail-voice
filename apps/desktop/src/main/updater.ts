@@ -19,16 +19,9 @@ export const updateRequestHeaders = { "x-user-staging-id": "none" };
  * happened. */
 export const installingKey = "updateInstalling";
 
-/** One file of a release, as the feed lists it: its SHA-512 is base64. */
-export interface UpdateFile {
-  url: string;
-  sha512: string;
-}
-
 /** What `electron-updater` says about the update it found and, once downloaded, where it is. */
 export interface UpdateInfo {
   version: string;
-  files?: UpdateFile[];
   downloadedFile?: string;
 }
 

@@ -2,12 +2,43 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 
 const root = join(__dirname, "..");
+
+/** An OpenPGP keyring's packets (RFC 9580 §4.2); throws on anything that isn't a whole packet. */
+function openPGPPackets(data: Buffer): { tag: number; body: Buffer }[] {
+  const packets: { tag: number; body: Buffer }[] = [];
+  let at = 0;
+  while (at < data.length) {
+    const header = data[at++]!;
+    if ((header & 0x80) === 0) throw new Error("not an OpenPGP packet");
+    let tag: number;
+    let length: number;
+    if (header & 0x40) {
+      tag = header & 0x3f;
+      const first = data[at++]!;
+      if (first < 192) length = first;
+      else if (first < 224) length = ((first - 192) << 8) + data[at++]! + 192;
+      else if (first === 255) { length = data.readUInt32BE(at); at += 4; }
+      else throw new Error("partial packet in a keyring");
+    } else {
+      tag = (header >> 2) & 0x0f;
+      const size = [1, 2, 4][header & 0x03];
+      if (size === undefined) throw new Error("indeterminate packet length in a keyring");
+      length = data.readUIntBE(at, size);
+      at += size;
+    }
+    if (at + length > data.length) throw new Error("truncated packet");
+    packets.push({ tag, body: data.subarray(at, at + length) });
+    at += length;
+  }
+  return packets;
+}
 
 test("Windows packages every helper the main process can launch", () => {
   const source = readFileSync(join(root, "src/main/index.ts"), "utf8");
@@ -111,23 +142,37 @@ describe("the Mac app's packaging", () => {
    * that sign it where only that source trusts them; the app publishes no update feed of its own. */
   test("Linux installs its apt source and the keys that sign it, and has no update feed", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { publish: unknown; extraResources: { from: string }[] }; deb: { fpm: string[]; depends: string[] } };
-    const keyring = "/usr/share/keyrings/tabmail-voice-archive-keyring.gpg";
+    const keyring = "/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg";
     const source = readFileSync(join(root, "resources/linux/tabmail-voice.sources"), "utf8");
 
     expect(builder.linux.publish).toBeNull();
     expect(builder.deb.fpm).toContain(`resources/linux/tabmail-voice-archive-keyring.gpg=${keyring}`);
     expect(builder.deb.fpm).toContain("resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources");
-    // A binary OpenPGP keyring (what apt's Signed-By reads), not an armored one.
-    expect(readFileSync(join(root, "resources/linux/tabmail-voice-archive-keyring.gpg"))[0]! & 0x80).toBe(0x80);
+    // Both under /etc, so dpkg keeps both as conffiles: `apt remove` never leaves the source without
+    // its keys, which would make every `apt update` after it warn.
+    expect(builder.deb.fpm.filter(mapping => mapping.startsWith("resources/linux/tabmail-voice")).map(mapping => mapping.split("=")[1]!.startsWith("/etc/"))).toEqual([true, true]);
     expect(source.split("\n").filter(line => line && !line.startsWith("#"))).toEqual([
       "Types: deb",
       "URIs: https://cdn.tabmail.ai/releases/voice",
       "Suites: stable",
       "Components: main",
+      "Architectures: amd64 arm64",
       `Signed-By: ${keyring}`,
     ]);
     expect(builder.linux.extraResources.map(resource => resource.from)).not.toContain("resources/linux/install-update");
     expect(builder.deb.depends).not.toContain("pkexec");
+  });
+
+  /** The keyring is binary OpenPGP (what apt's Signed-By reads) holding two public keys, the one
+   * that signs and its offline backup, which installed apps must already trust for it to replace
+   * the first (ADR-DESK-058), and nothing secret. */
+  test("the apt keyring holds the signing key and its backup, public only", () => {
+    const packets = openPGPPackets(readFileSync(join(root, "resources/linux/tabmail-voice-archive-keyring.gpg")));
+    const keys = packets.filter(packet => packet.tag === 6);
+
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys.map(key => createHash("sha1").update(Buffer.concat([Buffer.from([0x99, key.body.length >> 8, key.body.length & 0xff]), key.body])).digest("hex"))).size).toBe(2);
+    expect(packets.filter(packet => packet.tag === 5 || packet.tag === 7)).toEqual([]);
   });
 
   /** Snap's AT-SPI rules accept only unconfined peers, so each helper that reads through AT-SPI (the

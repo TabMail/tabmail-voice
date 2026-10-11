@@ -157,9 +157,10 @@ connectors remain unavailable. Thunderbird connectivity is outside this work.
 ## Updates
 
 apt updates the app (ADR-DESK-058), as it does VS Code and Chrome: the package installs
-`/usr/share/keyrings/tabmail-voice-archive-keyring.gpg` (the TabMail Voice signing keys, the one in
-use and its offline backup) and `/etc/apt/sources.list.d/tabmail-voice.sources`, a configuration
-file a user may edit or delete, which points at `https://cdn.tabmail.ai/releases/voice` (suite
+`/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg` (the TabMail Voice signing keys, the one in
+use and its offline backup) and `/etc/apt/sources.list.d/tabmail-voice.sources`, configuration
+files a user may edit or delete, kept by `apt remove` and removed by `apt purge` together, the
+source pointing at `https://cdn.tabmail.ai/releases/voice` (suite
 `stable`, component `main`). `apt update` and Ubuntu's Software Updater then offer each new release,
 whose `InRelease` is signed by one of those keys. The app has no updater of its own on Linux.
 
