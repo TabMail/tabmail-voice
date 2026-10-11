@@ -4382,7 +4382,10 @@ the feed's own SHA-512.
   state is ready. An installer refused, not newer, or still being proven never installs at the quit.
   It
   installs when the app quits, or at once with Restart Now, quietly and for this user (no
-  administrator), and the new version opens. The web installer is off. The library calls that check
+  administrator), and the new version opens. *(Amended by ADR-DESK-057, 2026-10-10: an update that
+  carries a newer Visual C++ runtime than the one installed first runs Microsoft's installer of it,
+  which asks for an administrator; refused, the installed version stays and, after Restart Now,
+  opens again and says the update didn't install.)* The web installer is off. The library calls that check
   only when the installed `app-update.yml` names a publisher, so the feed configuration names
   `windowsUpdatePublisher` itself (`publisherName` in `electron-builder.json`): every Windows build
   checks, signed or not, and none relies on release signing to add it. The release's verification
@@ -5029,7 +5032,9 @@ built with 14.51).
   (`/install /passive /norestart`, `/quiet` in a silent install such as the update the app runs as
   it quits), which asks for an administrator, and reads the version again. Still missing or older,
   TabMail Voice says so and is not installed (exit 2): the version already installed stays as it was,
-  and an update reports it didn't install (ADR-DESK-050). When Microsoft's installer asks for a
+  and an update reports it didn't install (ADR-DESK-050). An update Restart Now ran (`--force-run`,
+  the app having quit for it) opens that version again, as electron-builder opens an installed app,
+  so the user is not left without it and sees at once that the update didn't install. When Microsoft's installer asks for a
   restart (3010, or 1641), the app is installed as usual, and an interactive install then says to
   restart Windows when convenient; a silent one says nothing, and nothing restarts Windows. That is
   what standard installers do (Wireshark's NSIS installer sets the reboot flag and continues; WiX
@@ -5045,7 +5050,8 @@ built with 14.51).
 
 **Consequences:**
 - A user without the runtime, or with an older one, sees Windows' administrator prompt once when
-  installing, or when an update needs a newer runtime than they have; one without an administrator
+  installing, or when an update carries a newer runtime than the one installed (the build takes the
+  newest its Visual Studio redistributes, so a Visual Studio update can bring one); one without an administrator
   can't install TabMail Voice until someone installs the runtime. Everyone else installs for
   themselves with no prompt, as before.
 - The installer is larger by Microsoft's installer (about 20 MB on x64).

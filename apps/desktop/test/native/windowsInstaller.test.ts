@@ -17,7 +17,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 // like the real key, has a 32-bit and a 64-bit registry view). That key, and the restart notice
 // recorded instead of shown (as Windows would show it: only when the install is not silent), are
 // the changes made to resources/windows/installer.nsh before compiling it (where Windows keeps the
-// real state is pinned in packaging.test.ts).
+// real state is pinned in packaging.test.ts). What electron-builder's script gives the step is
+// stood in for: the --force-run flag, an installed app's folder, and opening a program, recorded.
 
 const desktop = resolve(__dirname, "../..");
 const hook = join(desktop, "resources/windows/installer.nsh");
@@ -43,6 +44,8 @@ type Scenario = {
   installsIn?: View;
   exit?: number;
   silent?: boolean;
+  /** Run as the app's Restart Now runs it: an update that opens the app afterwards. */
+  forceRun?: boolean;
 };
 
 // The registry values Windows records a runtime version in, part by part.
@@ -56,6 +59,7 @@ const notice = "MessageBox MB_OK|MB_ICONINFORMATION";
 const restartNotice = "TabMail Voice is installed. Restart Windows when you can to finish installing the Microsoft Visual C++ Runtime.";
 
 const nsisString = (value: string): string => value.replaceAll("$", "$$");
+const appFile = "TabMail Voice.exe";
 
 describe.runIf(process.platform === "win32")("the Windows installer's Visual C++ runtime step", () => {
   let work: string;
@@ -154,6 +158,7 @@ RequestExecutionLevel user
 AutoCloseWindow true
 ShowInstDetails nevershow
 Page instfiles
+!include FileFunc.nsh
 !macro recordNotice TEXT SD ANSWER
   \${IfNot} \${Silent}
     FileOpen $0 "\${STATE}\\notice" w
@@ -161,9 +166,24 @@ Page instfiles
     FileClose $0
   \${EndIf}
 !macroend
+; electron-builder's flag, and its StdUtils plugin's opening of a program as the signed-in user.
+!macro _isForceRun _a _b _t _f
+  \${GetParameters} $R9
+  ClearErrors
+  \${GetOptions} $R9 "--force-run" $R8
+  IfErrors \`\${_f}\` \`\${_t}\`
+!macroend
+!define isForceRun \`"" isForceRun ""\`
+!macro recordOpen RESULT FILE VERB ARGS
+  FileOpen $0 "\${STATE}\\opened" w
+  FileWrite $0 "\${FILE}|\${VERB}|\${ARGS}"
+  FileClose $0
+!macroend
+!define StdUtils.ExecShellAsUser "!insertmacro recordOpen"
 !include "\${WORK}\\installer.nsh"
 Function .onInit
   SetRegView 64
+  StrCpy $INSTDIR "\${STATE}\\app"
   !insertmacro customInit
 FunctionEnd
 Section
@@ -175,7 +195,7 @@ SectionEnd
 `);
     for (const arch of ["arm64", "x64"] as const) {
       installers[arch] = join(work, `installer-${arch}.exe`);
-      makensis(join(work, "installer.nsi"), { [arch === "arm64" ? "APP_ARM64" : "APP_64"]: "1", PROJECT_DIR: join(work, "project"), WORK: work, STATE: nsisString(state), OUT: installers[arch] }, nsis);
+      makensis(join(work, "installer.nsi"), { [arch === "arm64" ? "APP_ARM64" : "APP_64"]: "1", APP_EXECUTABLE_FILENAME: appFile, PROJECT_DIR: join(work, "project"), WORK: work, STATE: nsisString(state), OUT: installers[arch] }, nsis);
     }
   }, compileTimeout);
 
@@ -188,11 +208,12 @@ SectionEnd
     if (work) rmSync(work, { recursive: true, force: true });
   });
 
-  /** Runs the installer for `arch`; returns its exit code, how Microsoft's installer was run, and
-   *  what the app's files hold afterwards ("old" until the installer replaces them). */
-  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string; notice: string } {
+  /** Runs the installer for `arch`; returns its exit code, how Microsoft's installer was run, what
+   *  the app's files hold afterwards ("old" until the installer replaces them), the notice shown,
+   *  and what the step opened (file|verb|arguments). */
+  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true, forceRun = false }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string; notice: string; opened: string } {
     clear();
-    for (const file of ["calls", "installs-arm64", "installs-x64", "installs-in-64", "exit", "notice"]) rmSync(join(state, file), { force: true });
+    for (const file of ["calls", "installs-arm64", "installs-x64", "installs-in-64", "exit", "notice", "opened"]) rmSync(join(state, file), { force: true });
     for (const [registered, entries] of Object.entries(before)) {
       for (const { version, installed = 1, view = 32 } of [entries].flat()) {
         const key = `HKCU\\${testKey}\\Runtimes\\${registered}`;
@@ -206,15 +227,16 @@ SectionEnd
     for (const [registered, version] of Object.entries(installs)) writeFileSync(join(state, `installs-${registered}`), version.map(part => `${part}\r\n`).join(""));
     writeFileSync(join(state, "exit"), String(exit));
     writeFileSync(join(state, "payload"), "old");
-    const run = spawnSync(installers[arch]!, silent ? ["/S"] : [], { stdio: "pipe", timeout: runTimeout });
+    // The app's Restart Now runs the installer with "--updated /S --force-run" (electron-updater).
+    const run = spawnSync(installers[arch]!, [...(forceRun ? ["--updated"] : []), ...(silent ? ["/S"] : []), ...(forceRun ? ["--force-run"] : [])], { stdio: "pipe", timeout: runTimeout });
     const calls = existsSync(join(state, "calls"))
       ? readFileSync(join(state, "calls"), "utf8").split("\r\n").filter(Boolean).map(line => {
         const [command, payload] = line.split("|");
         return { args: command!.slice(command!.indexOf(".exe") + ".exe".length).replace(/^"?\s*/, "").trim(), payload: payload! };
       })
       : [];
-    const shown = join(state, "notice");
-    return { status: run.status, calls, payload: readFileSync(join(state, "payload"), "utf8"), notice: existsSync(shown) ? readFileSync(shown, "utf8") : "" };
+    const read = (file: string): string => existsSync(join(state, file)) ? readFileSync(join(state, file), "utf8") : "";
+    return { status: run.status, calls, payload: readFileSync(join(state, "payload"), "utf8"), notice: read("notice"), opened: read("opened") };
   }
 
   test.each<[string, Registered | Registered[]]>([
@@ -228,7 +250,7 @@ SectionEnd
     ["the same version in the 32-bit view and an older in the 64-bit one", [{ version: carried }, { version: older, view: 64 }]],
   ])("with %s installed, Microsoft's installer is not run and the app is installed", (_, registered) => {
     const result = install({ arch: "arm64", before: { arm64: registered } });
-    expect(result).toEqual({ status: 0, calls: [], payload: "new", notice: "" });
+    expect(result).toEqual({ status: 0, calls: [], payload: "new", notice: "", opened: "" });
   }, runTimeout);
 
   test.each<[string, Scenario["before"]]>([
@@ -281,6 +303,16 @@ SectionEnd
     expect(result.status).toBe(2);
     expect(result.calls).toHaveLength(1);
     expect(result.payload).toBe("old");
+    expect(result.opened).toBe("");
+    // Restart Now quit the app for the update: it opens again, as it was, with no arguments.
+    const restartNow = install({ arch: "arm64", ...scenario, forceRun: true });
+    expect(restartNow).toMatchObject({ status: 2, payload: "old", opened: `${join(state, "app", appFile)}|open|` });
+    expect(restartNow.calls).toHaveLength(1);
+  }, runTimeout);
+
+  test("an update Restart Now runs that installs leaves opening the app to electron-builder's installer", () => {
+    expect(install({ arch: "arm64", installs: { arm64: carried }, forceRun: true })).toMatchObject({ status: 0, payload: "new", opened: "" });
+    expect(install({ arch: "arm64", before: { arm64: { version: carried } }, forceRun: true })).toEqual({ status: 0, calls: [], payload: "new", notice: "", opened: "" });
   }, runTimeout);
 
   test("the runtime Windows has afterwards decides, whatever Microsoft's installer returns", () => {
@@ -289,7 +321,7 @@ SectionEnd
   }, runTimeout);
 
   test("the x64 installer reads and installs the x64 runtime", () => {
-    expect(install({ arch: "x64", before: { x64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new", notice: "" });
+    expect(install({ arch: "x64", before: { x64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new", notice: "", opened: "" });
     const missing = install({ arch: "x64", before: { arm64: { version: carried } }, installs: { x64: carried } });
     expect(missing.status).toBe(0);
     expect(missing.calls.map(call => call.args)).toEqual(["/install /quiet /norestart"]);

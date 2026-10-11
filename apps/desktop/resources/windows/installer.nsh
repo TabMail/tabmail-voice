@@ -8,7 +8,7 @@
 ; architecture, and runs Microsoft's installer of it (scripts/windows/build-native.mts copies it
 ; from the build's Visual Studio) when it is missing or older than that one. Microsoft's installer
 ; asks for an administrator; refused or failed, TabMail Voice is not installed, and an installed
-; version stays as it was.
+; version stays as it was (and opens again when it asked for the update as it quit).
 
 !ifndef APP_ARM64
   !ifndef APP_64
@@ -80,6 +80,11 @@
     !insertmacro voiceRuntimeInstalled
     ${If} $R0 <> 1
       MessageBox MB_OK|MB_ICONSTOP "TabMail Voice needs the Microsoft Visual C++ Runtime, which wasn't installed. Run the installer again and allow the runtime to install." /SD IDOK
+      ; Restart Now quit the app for its update (--force-run): it opens again as it was, as
+      ; electron-builder opens an installed one, and says the update didn't install (ADR-DESK-050).
+      ${If} ${isForceRun}
+        ${StdUtils.ExecShellAsUser} $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "open" ""
+      ${EndIf}
       SetErrorLevel 2
       Quit
     ${EndIf}
