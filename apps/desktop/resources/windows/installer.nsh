@@ -22,6 +22,10 @@
 !else
   !define VOICE_RUNTIME_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 !endif
+; How long an update waits for the app it replaces, which quits for it, to end: the most checks,
+; and the milliseconds between them.
+!define VOICE_APP_QUIT_CHECKS 20
+!define VOICE_APP_QUIT_INTERVAL 500
 ; VOICE_RUNTIME_1 to VOICE_RUNTIME_4: the runtime's version (major, minor, build, revision), as
 ; Microsoft's installer carries it.
 !getdllversion "${PROJECT_DIR}\dist\runtime\vc_redist.exe" VOICE_RUNTIME_
@@ -64,9 +68,35 @@
   !insertmacro voiceRuntimeInstalledIn 64
 !macroend
 
+; Waits, at most VOICE_APP_QUIT_CHECKS times, while the installed app is running: Windows doesn't
+; let a running program's file be opened for writing (nothing is written to it).
+!macro voiceAwaitAppQuit
+  ${If} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    StrCpy $R5 1
+    ${Do}
+      ClearErrors
+      FileOpen $R6 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" a
+      ${IfNot} ${Errors}
+        FileClose $R6
+        ${Break}
+      ${EndIf}
+      ${If} $R5 >= ${VOICE_APP_QUIT_CHECKS}
+        ${Break}
+      ${EndIf}
+      IntOp $R5 $R5 + 1
+      Sleep ${VOICE_APP_QUIT_INTERVAL}
+    ${Loop}
+  ${EndIf}
+!macroend
+
 !macro customInit
   !insertmacro voiceRuntimeInstalled
   ${If} $R0 <> 1
+    ; An update the app runs (--updated) starts as the app quits: Microsoft's installer runs, and the
+    ; app is opened again below, once it has ended (electron-builder closes it later, after this).
+    ${If} ${isUpdated}
+      !insertmacro voiceAwaitAppQuit
+    ${EndIf}
     InitPluginsDir
     File "/oname=$PLUGINSDIR\vc_redist.exe" "${PROJECT_DIR}\dist\runtime\vc_redist.exe"
     ; A silent install (an update the app runs as it quits) shows only Windows' administrator
@@ -82,6 +112,7 @@
       MessageBox MB_OK|MB_ICONSTOP "TabMail Voice needs the Microsoft Visual C++ Runtime, which wasn't installed. Run the installer again and allow the runtime to install." /SD IDOK
       ; Restart Now quit the app for its update (--force-run): it opens again as it was, as
       ; electron-builder opens an installed one, and says the update didn't install (ADR-DESK-050).
+      ; It keeps its single-instance lock: the app it replaces ended above, unless that outlasted the wait.
       ${If} ${isForceRun}
         ${StdUtils.ExecShellAsUser} $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "open" ""
       ${EndIf}

@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -18,7 +18,9 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 // recorded instead of shown (as Windows would show it: only when the install is not silent), are
 // the changes made to resources/windows/installer.nsh before compiling it (where Windows keeps the
 // real state is pinned in packaging.test.ts). What electron-builder's script gives the step is
-// stood in for: the --force-run flag, an installed app's folder, and opening a program, recorded.
+// stood in for: the --updated and --force-run flags, and opening a program, recorded. The installed
+// app is a program of the test's own, which can be left running for a while, as the app quitting
+// for its update is; it records that it ended before it exits.
 
 const desktop = resolve(__dirname, "../..");
 const hook = join(desktop, "resources/windows/installer.nsh");
@@ -44,8 +46,12 @@ type Scenario = {
   installsIn?: View;
   exit?: number;
   silent?: boolean;
-  /** Run as the app's Restart Now runs it: an update that opens the app afterwards. */
+  /** Run as an update the app runs as it quits (--updated), or as its Restart Now runs one, which
+   *  opens the app afterwards (--updated --force-run). */
+  updated?: boolean;
   forceRun?: boolean;
+  /** How long the installed app keeps running once the installer starts, in milliseconds. */
+  running?: number;
 };
 
 // The registry values Windows records a runtime version in, part by part.
@@ -60,6 +66,8 @@ const restartNotice = "TabMail Voice is installed. Restart Windows when you can 
 
 const nsisString = (value: string): string => value.replaceAll("$", "$$");
 const appFile = "TabMail Voice.exe";
+// How long an update waits for the app it replaces (VOICE_APP_QUIT_CHECKS × VOICE_APP_QUIT_INTERVAL).
+const quitWait = 10_000;
 
 describe.runIf(process.platform === "win32")("the Windows installer's Visual C++ runtime step", () => {
   let work: string;
@@ -124,14 +132,18 @@ VIAddVersionKey "LegalCopyright" "TabMail"
   \${EndIf}
 !macroend
 Section
-  ; How it was run, and what the app's files held at the time. (Where it ran from is not checked:
-  ; this program is x86, and on ARM64 Windows its emulation keeps it locked a while after it exits.)
+  ; How it was run, what the app's files held at the time, and whether the app ran. (Where it ran
+  ; from is not checked: this program is x86, and on ARM64 Windows its emulation keeps it locked a
+  ; while after it exits.)
   FileOpen $0 "\${STATE}\\payload" r
   FileRead $0 $3
   FileClose $0
+  FileOpen $0 "\${STATE}\\ran" r
+  FileRead $0 $7
+  FileClose $0
   FileOpen $0 "\${STATE}\\calls" a
   FileSeek $0 0 END
-  FileWrite $0 "$CMDLINE|$3$\\r$\\n"
+  FileWrite $0 "$CMDLINE|$3|$7$\\r$\\n"
   FileClose $0
   !insertmacro register arm64
   !insertmacro register x64
@@ -143,6 +155,24 @@ Section
 SectionEnd
 `);
     makensis(join(work, "runtime.nsi"), { OUT: join(work, "project/dist/runtime/vc_redist.exe"), STATE: nsisString(state), KEY: testKey }, nsis);
+
+    // The installed app: it runs for as long as its argument says, then records that it ended.
+    writeFileSync(join(work, "app.nsi"), `Unicode true
+!include FileFunc.nsh
+Name "Synthetic app"
+OutFile "\${OUT}"
+RequestExecutionLevel user
+SilentInstall silent
+Section
+  \${GetParameters} $0
+  Sleep $0
+  FileOpen $1 "\${STATE}\\ran" w
+  FileWrite $1 "ended"
+  FileClose $1
+SectionEnd
+`);
+    mkdirSync(join(state, "app"));
+    makensis(join(work, "app.nsi"), { OUT: join(state, "app", appFile), STATE: nsisString(state) }, nsis);
 
     // The step with its state in the test's key, and the app's files as one file it replaces.
     const source = readFileSync(hook, "utf8");
@@ -166,7 +196,15 @@ Page instfiles
     FileClose $0
   \${EndIf}
 !macroend
-; electron-builder's flag, and its StdUtils plugin's opening of a program as the signed-in user.
+; electron-builder's flags, and its StdUtils plugin's opening of a program as the signed-in user
+; (recorded with whether the app ran).
+!macro _isUpdated _a _b _t _f
+  \${GetParameters} $R9
+  ClearErrors
+  \${GetOptions} $R9 "--updated" $R8
+  IfErrors \`\${_f}\` \`\${_t}\`
+!macroend
+!define isUpdated \`"" isUpdated ""\`
 !macro _isForceRun _a _b _t _f
   \${GetParameters} $R9
   ClearErrors
@@ -175,8 +213,11 @@ Page instfiles
 !macroend
 !define isForceRun \`"" isForceRun ""\`
 !macro recordOpen RESULT FILE VERB ARGS
+  FileOpen $0 "\${STATE}\\ran" r
+  FileRead $0 $R7
+  FileClose $0
   FileOpen $0 "\${STATE}\\opened" w
-  FileWrite $0 "\${FILE}|\${VERB}|\${ARGS}"
+  FileWrite $0 "\${FILE}|\${VERB}|\${ARGS}|$R7"
   FileClose $0
 !macroend
 !define StdUtils.ExecShellAsUser "!insertmacro recordOpen"
@@ -203,15 +244,32 @@ SectionEnd
     for (const view of ["/reg:32", "/reg:64"]) spawnSync("reg.exe", ["delete", `HKCU\\${testKey}`, "/f", view], { stdio: "pipe" });
   }
 
+  /** Ends the installed app if it still runs, and waits until Windows lets its file be written again
+   *  (an x86 program stays locked a while after it exits on ARM64 Windows). */
+  function stopApp(app: ChildProcess): void {
+    if (app.exitCode === null) spawnSync("taskkill.exe", ["/F", "/PID", String(app.pid)], { stdio: "pipe" });
+    const deadline = Date.now() + runTimeout;
+    for (;;) {
+      try {
+        closeSync(openSync(join(state, "app", appFile), "r+"));
+        return;
+      } catch (error) {
+        if (Date.now() > deadline) throw error;
+        spawnSync("cmd.exe", ["/d", "/c", "ping -n 2 127.0.0.1 >nul"]);
+      }
+    }
+  }
+
   afterAll(() => {
     clear();
     if (work) rmSync(work, { recursive: true, force: true });
   });
 
-  /** Runs the installer for `arch`; returns its exit code, how Microsoft's installer was run, what
-   *  the app's files hold afterwards ("old" until the installer replaces them), the notice shown,
-   *  and what the step opened (file|verb|arguments). */
-  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true, forceRun = false }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string; notice: string; opened: string } {
+  /** Runs the installer for `arch`; returns its exit code, how Microsoft's installer was run (and
+   *  whether the installed app was "running", had "ended", or ran not at all, "none"), what the app's
+   *  files hold afterwards ("old" until the installer replaces them), the notice shown, and what the
+   *  step opened (file|verb|arguments|whether the app ran). */
+  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true, updated = false, forceRun = false, running }: Scenario): { status: number | null; calls: { args: string; payload: string; app: string }[]; payload: string; notice: string; opened: string } {
     clear();
     for (const file of ["calls", "installs-arm64", "installs-x64", "installs-in-64", "exit", "notice", "opened"]) rmSync(join(state, file), { force: true });
     for (const [registered, entries] of Object.entries(before)) {
@@ -227,12 +285,16 @@ SectionEnd
     for (const [registered, version] of Object.entries(installs)) writeFileSync(join(state, `installs-${registered}`), version.map(part => `${part}\r\n`).join(""));
     writeFileSync(join(state, "exit"), String(exit));
     writeFileSync(join(state, "payload"), "old");
-    // The app's Restart Now runs the installer with "--updated /S --force-run" (electron-updater).
-    const run = spawnSync(installers[arch]!, [...(forceRun ? ["--updated"] : []), ...(silent ? ["/S"] : []), ...(forceRun ? ["--force-run"] : [])], { stdio: "pipe", timeout: runTimeout });
+    writeFileSync(join(state, "ran"), running === undefined ? "none" : "running");
+    const app = running === undefined ? undefined : spawn(join(state, "app", appFile), [String(running)], { stdio: "ignore" });
+    // electron-updater runs the installer with "--updated", then "/S" when silent and "--force-run"
+    // for Restart Now.
+    const run = spawnSync(installers[arch]!, [...(updated || forceRun ? ["--updated"] : []), ...(silent ? ["/S"] : []), ...(forceRun ? ["--force-run"] : [])], { stdio: "pipe", timeout: runTimeout });
+    if (app) stopApp(app);
     const calls = existsSync(join(state, "calls"))
       ? readFileSync(join(state, "calls"), "utf8").split("\r\n").filter(Boolean).map(line => {
-        const [command, payload] = line.split("|");
-        return { args: command!.slice(command!.indexOf(".exe") + ".exe".length).replace(/^"?\s*/, "").trim(), payload: payload! };
+        const [command, payload, ran] = line.split("|");
+        return { args: command!.slice(command!.indexOf(".exe") + ".exe".length).replace(/^"?\s*/, "").trim(), payload: payload!, app: ran! };
       })
       : [];
     const read = (file: string): string => existsSync(join(state, file)) ? readFileSync(join(state, file), "utf8") : "";
@@ -306,9 +368,33 @@ SectionEnd
     expect(result.opened).toBe("");
     // Restart Now quit the app for the update: it opens again, as it was, with no arguments.
     const restartNow = install({ arch: "arm64", ...scenario, forceRun: true });
-    expect(restartNow).toMatchObject({ status: 2, payload: "old", opened: `${join(state, "app", appFile)}|open|` });
+    expect(restartNow).toMatchObject({ status: 2, payload: "old", opened: `${join(state, "app", appFile)}|open||none` });
     expect(restartNow.calls).toHaveLength(1);
   }, runTimeout);
+
+  test("an update waits for the app it replaces to end before Microsoft's installer runs, and before opening it again", () => {
+    // The app quits for the update after starting the installer, and may take a moment to end.
+    const refused = install({ arch: "arm64", exit: 1602, forceRun: true, running: 2_000 });
+    expect(refused).toMatchObject({ status: 2, payload: "old", opened: `${join(state, "app", appFile)}|open||ended` });
+    expect(refused.calls).toEqual([{ args: "/install /quiet /norestart", payload: "old", app: "ended" }]);
+    const quitTime = install({ arch: "arm64", installs: { arm64: carried }, updated: true, running: 2_000 });
+    expect(quitTime).toMatchObject({ status: 0, payload: "new", opened: "" });
+    expect(quitTime.calls).toEqual([{ args: "/install /quiet /norestart", payload: "old", app: "ended" }]);
+  }, runTimeout);
+
+  test("an update goes on when the app it replaces outlasts the wait, and an install that isn't an update doesn't wait", () => {
+    const started = Date.now();
+    const outlasted = install({ arch: "arm64", exit: 1602, forceRun: true, running: runTimeout });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(quitWait - 1_000);
+    expect(outlasted).toMatchObject({ status: 2, payload: "old", opened: `${join(state, "app", appFile)}|open||running` });
+    expect(outlasted.calls).toEqual([{ args: "/install /quiet /norestart", payload: "old", app: "running" }]);
+    // electron-builder asks to close a running app after this step (and closes it in an update).
+    const byHandStarted = Date.now();
+    const byHand = install({ arch: "arm64", installs: { arm64: carried }, running: runTimeout });
+    expect(Date.now() - byHandStarted).toBeLessThan(quitWait);
+    expect(byHand).toMatchObject({ status: 0, payload: "new", opened: "" });
+    expect(byHand.calls).toEqual([{ args: "/install /quiet /norestart", payload: "old", app: "running" }]);
+  }, 2 * runTimeout);
 
   test("an update Restart Now runs that installs leaves opening the app to electron-builder's installer", () => {
     expect(install({ arch: "arm64", installs: { arm64: carried }, forceRun: true })).toMatchObject({ status: 0, payload: "new", opened: "" });
