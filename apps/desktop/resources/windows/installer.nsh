@@ -7,8 +7,8 @@
 ; anything is installed or replaced, the installer checks the runtime Windows has for the app's
 ; architecture, and runs Microsoft's installer of it (scripts/windows/build-native.mts copies it
 ; from the build's Visual Studio) when it is missing or older than that one. Microsoft's installer
-; asks for an administrator; refused or failed, or until Windows restarts when it asks to, TabMail
-; Voice is not installed, and an installed version stays as it was.
+; asks for an administrator; refused or failed, TabMail Voice is not installed, and an installed
+; version stays as it was.
 
 !ifndef APP_ARM64
   !ifndef APP_64
@@ -83,13 +83,20 @@
       SetErrorLevel 2
       Quit
     ${EndIf}
-    ; 3010 and 1641: the runtime's files in use are replaced when Windows restarts, and until then
-    ; the app would load the old ones, so it is installed after the restart.
+    ; Microsoft's installer asks for a restart (3010, or 1641) when runtime files were in use: the new
+    ; ones are already in place, which the app loads when it starts, and the old ones are removed at
+    ; the restart. As standard installers do, the app is installed, and the user is told at the end.
     ${If} $R4 = 3010
     ${OrIf} $R4 = 1641
-      MessageBox MB_OK|MB_ICONINFORMATION "Restart Windows to finish installing the Microsoft Visual C++ Runtime, then run the TabMail Voice installer again." /SD IDOK
-      SetErrorLevel 2
-      Quit
+      SetRebootFlag true
     ${EndIf}
+  ${EndIf}
+!macroend
+
+; electron-builder's one-click installer has no finish page to offer the restart: an interactive
+; install says so once the app is installed. Nothing restarts Windows.
+!macro customInstall
+  ${If} ${RebootFlag}
+    MessageBox MB_OK|MB_ICONINFORMATION "TabMail Voice is installed. Restart Windows when you can to finish installing the Microsoft Visual C++ Runtime." /SD IDOK
   ${EndIf}
 !macroend

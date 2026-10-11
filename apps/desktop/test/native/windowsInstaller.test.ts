@@ -14,9 +14,10 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 // packages with and run for real on Windows. Microsoft's installer is replaced by a synthetic one
 // with the same version resource, which records how it was run and writes the runtime state a run
 // asks for; that state lives in a key of this test's own under the current user (in CLSID, which,
-// like the real key, has a 32-bit and a 64-bit registry view), which is the one change made to
-// resources/windows/installer.nsh before compiling it (where Windows keeps the real state is pinned
-// in packaging.test.ts).
+// like the real key, has a 32-bit and a 64-bit registry view). That key, and the restart notice
+// recorded instead of shown (as Windows would show it: only when the install is not silent), are
+// the changes made to resources/windows/installer.nsh before compiling it (where Windows keeps the
+// real state is pinned in packaging.test.ts).
 
 const desktop = resolve(__dirname, "../..");
 const hook = join(desktop, "resources/windows/installer.nsh");
@@ -49,6 +50,10 @@ const parts = ["Major", "Minor", "Bld", "Rbld"];
 // The version the synthetic Microsoft installer carries, and one older.
 const carried: Version = [14, 44, 35211, 5];
 const older: Version = [14, 44, 35211, 4];
+
+// The restart notice the installer shows when the runtime's installer asks for a restart.
+const notice = "MessageBox MB_OK|MB_ICONINFORMATION";
+const restartNotice = "TabMail Voice is installed. Restart Windows when you can to finish installing the Microsoft Visual C++ Runtime.";
 
 const nsisString = (value: string): string => value.replaceAll("$", "$$");
 
@@ -139,7 +144,8 @@ SectionEnd
     const source = readFileSync(hook, "utf8");
     expect(source.split(`HKLM "\${VOICE_RUNTIME_KEY}"`).length - 1).toBe(2);
     expect(source.split(realKey).length - 1).toBe(2);
-    writeFileSync(join(work, "installer.nsh"), source.replaceAll(`HKLM "\${VOICE_RUNTIME_KEY}"`, `HKCU "\${VOICE_RUNTIME_KEY}"`).replaceAll(realKey, `${testKey}\\Runtimes\\`));
+    expect(source.split(notice).length - 1).toBe(1);
+    writeFileSync(join(work, "installer.nsh"), source.replaceAll(`HKLM "\${VOICE_RUNTIME_KEY}"`, `HKCU "\${VOICE_RUNTIME_KEY}"`).replaceAll(realKey, `${testKey}\\Runtimes\\`).replace(notice, "!insertmacro recordNotice"));
     writeFileSync(join(work, "installer.nsi"), `Unicode true
 !include LogicLib.nsh
 Name "Runtime step"
@@ -148,6 +154,13 @@ RequestExecutionLevel user
 AutoCloseWindow true
 ShowInstDetails nevershow
 Page instfiles
+!macro recordNotice TEXT SD ANSWER
+  \${IfNot} \${Silent}
+    FileOpen $0 "\${STATE}\\notice" w
+    FileWrite $0 "\${TEXT}"
+    FileClose $0
+  \${EndIf}
+!macroend
 !include "\${WORK}\\installer.nsh"
 Function .onInit
   SetRegView 64
@@ -157,6 +170,7 @@ Section
   FileOpen $0 "\${STATE}\\payload" w
   FileWrite $0 "new"
   FileClose $0
+  !insertmacro customInstall
 SectionEnd
 `);
     for (const arch of ["arm64", "x64"] as const) {
@@ -176,9 +190,9 @@ SectionEnd
 
   /** Runs the installer for `arch`; returns its exit code, how Microsoft's installer was run, and
    *  what the app's files hold afterwards ("old" until the installer replaces them). */
-  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string } {
+  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string; notice: string } {
     clear();
-    for (const file of ["calls", "installs-arm64", "installs-x64", "installs-in-64", "exit"]) rmSync(join(state, file), { force: true });
+    for (const file of ["calls", "installs-arm64", "installs-x64", "installs-in-64", "exit", "notice"]) rmSync(join(state, file), { force: true });
     for (const [registered, entries] of Object.entries(before)) {
       for (const { version, installed = 1, view = 32 } of [entries].flat()) {
         const key = `HKCU\\${testKey}\\Runtimes\\${registered}`;
@@ -199,7 +213,8 @@ SectionEnd
         return { args: command!.slice(command!.indexOf(".exe") + ".exe".length).replace(/^"?\s*/, "").trim(), payload: payload! };
       })
       : [];
-    return { status: run.status, calls, payload: readFileSync(join(state, "payload"), "utf8") };
+    const shown = join(state, "notice");
+    return { status: run.status, calls, payload: readFileSync(join(state, "payload"), "utf8"), notice: existsSync(shown) ? readFileSync(shown, "utf8") : "" };
   }
 
   test.each<[string, Registered | Registered[]]>([
@@ -213,7 +228,7 @@ SectionEnd
     ["the same version in the 32-bit view and an older in the 64-bit one", [{ version: carried }, { version: older, view: 64 }]],
   ])("with %s installed, Microsoft's installer is not run and the app is installed", (_, registered) => {
     const result = install({ arch: "arm64", before: { arm64: registered } });
-    expect(result).toEqual({ status: 0, calls: [], payload: "new" });
+    expect(result).toEqual({ status: 0, calls: [], payload: "new", notice: "" });
   }, runTimeout);
 
   test.each<[string, Scenario["before"]]>([
@@ -238,20 +253,22 @@ SectionEnd
     expect(result.status).toBe(0);
     expect(result.calls.map(call => [call.args, call.payload])).toEqual([["/install /passive /norestart", "old"]]);
     expect(result.payload).toBe("new");
+    expect(result.notice).toBe("");
   }, runTimeout);
 
   test("a runtime Microsoft's installer records in the 64-bit registry view only is found", () => {
     expect(install({ arch: "arm64", installs: { arm64: carried }, installsIn: 64 })).toMatchObject({ status: 0, payload: "new" });
   }, runTimeout);
 
-  test.each([3010, 1641])("when Microsoft's installer asks for a restart (%i), this run leaves the app as it was", exit => {
-    // Until Windows restarts, the runtime's files in use are the old ones.
-    const result = install({ arch: "arm64", installs: { arm64: carried }, exit });
-    expect(result).toMatchObject({ status: 2, payload: "old" });
-    expect(result.calls).toHaveLength(1);
-    // The runtime is then registered, so the next run installs without running it again, whether or
-    // not Windows has restarted (which the step cannot tell; ADR-DESK-057 accepts a run before it).
-    expect(install({ arch: "arm64", before: { arm64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new" });
+  test.each([3010, 1641])("when Microsoft's installer asks for a restart (%i), the app is installed and an interactive install says to restart", exit => {
+    // Windows moves the runtime's files in use aside and puts the new ones in place, which the app
+    // loads when it starts; only programs already running keep the old ones until the restart.
+    const silent = install({ arch: "arm64", installs: { arm64: carried }, exit });
+    expect(silent).toMatchObject({ status: 0, payload: "new", notice: "" });
+    expect(silent.calls.map(call => [call.args, call.payload])).toEqual([["/install /quiet /norestart", "old"]]);
+    const interactive = install({ arch: "arm64", installs: { arm64: carried }, exit, silent: false });
+    expect(interactive).toMatchObject({ status: 0, payload: "new", notice: restartNotice });
+    expect(interactive.calls.map(call => [call.args, call.payload])).toEqual([["/install /passive /norestart", "old"]]);
   }, runTimeout);
 
   test.each<[string, Pick<Scenario, "installs" | "exit">]>([
@@ -272,7 +289,7 @@ SectionEnd
   }, runTimeout);
 
   test("the x64 installer reads and installs the x64 runtime", () => {
-    expect(install({ arch: "x64", before: { x64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new" });
+    expect(install({ arch: "x64", before: { x64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new", notice: "" });
     const missing = install({ arch: "x64", before: { arm64: { version: carried } }, installs: { x64: carried } });
     expect(missing.status).toBe(0);
     expect(missing.calls.map(call => call.args)).toEqual(["/install /quiet /norestart"]);

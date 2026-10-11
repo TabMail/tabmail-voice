@@ -5030,11 +5030,15 @@ built with 14.51).
   it quits), which asks for an administrator, and reads the version again. Still missing or older,
   TabMail Voice says so and is not installed (exit 2): the version already installed stays as it was,
   and an update reports it didn't install (ADR-DESK-050). When Microsoft's installer asks for a
-  restart (3010, 1641), the runtime's files in use are replaced only then, and the app would load the
-  old ones until it: the user is asked to restart Windows and run the installer again, and it exits 2
-  the same way (an update installs at the next quit after the restart). Accepted (owner,
-  2026-10-10): a run before the restart finds the runtime registered and installs the app, which loads
-  the old runtime files until Windows restarts, as other software installed then does.
+  restart (3010, or 1641), the app is installed as usual, and an interactive install then says to
+  restart Windows when convenient; a silent one says nothing, and nothing restarts Windows. That is
+  what standard installers do (Wireshark's NSIS installer sets the reboot flag and continues; WiX
+  Burn's `scheduleReboot` continues and asks at the end). Measured (2026-10-10, Windows 11 ARM64,
+  runtime 14.44 held in use, 14.51 installed over it): Windows Installer moved the files in use aside,
+  put the new ones in place at once (a new process loaded 14.51), and scheduled only the old copies'
+  deletion for the restart. Accepted (owner, 2026-10-10): should Windows be unable to move a file in
+  use aside and schedule its replacement for the restart instead, the app may load the old runtime
+  until then.
 - The release (`tabmail-release-helpers`) checks that the runtime installer is signed by Microsoft,
   that no installed file was built with a newer Visual C++ (its linker version) than that installer,
   and that no copy of the runtime is installed with the app.
