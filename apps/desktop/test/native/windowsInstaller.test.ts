@@ -13,27 +13,32 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 // The installer's Visual C++ runtime step (ADR-DESK-057), compiled by the NSIS electron-builder
 // packages with and run for real on Windows. Microsoft's installer is replaced by a synthetic one
 // with the same version resource, which records how it was run and writes the runtime state a run
-// asks for; that state lives in a key of this test's own under the current user, which is the one
-// change made to resources/windows/installer.nsh before compiling it (where Windows keeps the real
-// state is pinned in packaging.test.ts).
+// asks for; that state lives in a key of this test's own under the current user (in CLSID, which,
+// like the real key, has a 32-bit and a 64-bit registry view), which is the one change made to
+// resources/windows/installer.nsh before compiling it (where Windows keeps the real state is pinned
+// in packaging.test.ts).
 
 const desktop = resolve(__dirname, "../..");
 const hook = join(desktop, "resources/windows/installer.nsh");
 const realKey = "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\";
-const testKey = `Software\\TabMailVoiceTest\\${randomUUID()}`;
+const testKey = `Software\\Classes\\CLSID\\{${randomUUID().toUpperCase()}}`;
 // Compiling may first download electron-builder's NSIS, and each run starts two programs.
 const compileTimeout = 300_000;
 const runTimeout = 60_000;
 
 type Arch = "arm64" | "x64";
 type Version = [major: number, minor: number];
-/** A runtime registered as installed (or, with `installed: 0`, registered and not installed). */
-type Registered = { version: Version; installed?: 0 | 1 };
+type View = 32 | 64;
+/** A runtime registered as installed (or, with `installed: 0`, registered and not installed), in the
+ *  32-bit registry view where Microsoft documents it unless another is given. */
+type Registered = { version: Version; installed?: 0 | 1; view?: View };
 type Scenario = {
   arch: Arch;
-  before?: Partial<Record<Arch, Registered>>;
-  /** What the synthetic Microsoft installer registers, and the exit code it returns. */
+  before?: Partial<Record<Arch, Registered | Registered[]>>;
+  /** What the synthetic Microsoft installer registers, in which view (32-bit unless given), and the
+   *  exit code it returns. */
   installs?: Partial<Record<Arch, Version>>;
+  installsIn?: View;
   exit?: number;
   silent?: boolean;
 };
@@ -68,6 +73,7 @@ describe.runIf(process.platform === "win32")("the Windows installer's Visual C++
     // Microsoft's installer, as far as the step can tell: its version resource is 14.44.
     mkdirSync(join(work, "project/dist/runtime"), { recursive: true });
     writeFileSync(join(work, "runtime.nsi"), `Unicode true
+!include LogicLib.nsh
 Name "Synthetic runtime"
 OutFile "\${OUT}"
 RequestExecutionLevel user
@@ -78,7 +84,11 @@ VIAddVersionKey "FileVersion" "14.44.35211.0"
 VIAddVersionKey "FileDescription" "Synthetic runtime"
 VIAddVersionKey "LegalCopyright" "TabMail"
 !macro register ARCH
-  IfFileExists "\${STATE}\\installs-\${ARCH}" 0 +9
+  \${If} \${FileExists} "\${STATE}\\installs-\${ARCH}"
+    SetRegView 32
+    \${If} \${FileExists} "\${STATE}\\installs-in-64"
+      SetRegView 64
+    \${EndIf}
     FileOpen $0 "\${STATE}\\installs-\${ARCH}" r
     FileRead $0 $1
     FileRead $0 $2
@@ -88,6 +98,7 @@ VIAddVersionKey "LegalCopyright" "TabMail"
     WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Installed" 1
     WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Major" $1
     WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Minor" $2
+  \${EndIf}
 !macroend
 Section
   ; How it was run, and what the app's files held at the time. (Where it ran from is not checked:
@@ -140,22 +151,29 @@ SectionEnd
     }
   }, compileTimeout);
 
+  function clear(): void {
+    for (const view of ["/reg:32", "/reg:64"]) spawnSync("reg.exe", ["delete", `HKCU\\${testKey}`, "/f", view], { stdio: "pipe" });
+  }
+
   afterAll(() => {
-    spawnSync("reg.exe", ["delete", `HKCU\\${testKey}`, "/f"], { stdio: "pipe" });
+    clear();
     if (work) rmSync(work, { recursive: true, force: true });
   });
 
   /** Runs the installer for `arch`; returns its exit code, how Microsoft's installer was run, and
    *  what the app's files hold afterwards ("old" until the installer replaces them). */
-  function install({ arch, before = {}, installs = {}, exit = 0, silent = true }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string } {
-    spawnSync("reg.exe", ["delete", `HKCU\\${testKey}`, "/f"], { stdio: "pipe" });
-    for (const file of ["calls", "installs-arm64", "installs-x64", "exit"]) rmSync(join(state, file), { force: true });
-    for (const [registered, { version, installed = 1 }] of Object.entries(before)) {
-      const key = `HKCU\\${testKey}\\Runtimes\\${registered}`;
-      reg("add", key, "/v", "Installed", "/t", "REG_DWORD", "/d", String(installed), "/f");
-      reg("add", key, "/v", "Major", "/t", "REG_DWORD", "/d", String(version[0]), "/f");
-      reg("add", key, "/v", "Minor", "/t", "REG_DWORD", "/d", String(version[1]), "/f");
+  function install({ arch, before = {}, installs = {}, installsIn = 32, exit = 0, silent = true }: Scenario): { status: number | null; calls: { args: string; payload: string }[]; payload: string } {
+    clear();
+    for (const file of ["calls", "installs-arm64", "installs-x64", "installs-in-64", "exit"]) rmSync(join(state, file), { force: true });
+    for (const [registered, entries] of Object.entries(before)) {
+      for (const { version, installed = 1, view = 32 } of [entries].flat()) {
+        const key = `HKCU\\${testKey}\\Runtimes\\${registered}`;
+        reg("add", key, "/v", "Installed", "/t", "REG_DWORD", "/d", String(installed), "/f", `/reg:${view}`);
+        reg("add", key, "/v", "Major", "/t", "REG_DWORD", "/d", String(version[0]), "/f", `/reg:${view}`);
+        reg("add", key, "/v", "Minor", "/t", "REG_DWORD", "/d", String(version[1]), "/f", `/reg:${view}`);
+      }
     }
+    if (installsIn === 64) writeFileSync(join(state, "installs-in-64"), "");
     for (const [registered, version] of Object.entries(installs)) writeFileSync(join(state, `installs-${registered}`), `${version[0]}\r\n${version[1]}\r\n`);
     writeFileSync(join(state, "exit"), String(exit));
     writeFileSync(join(state, "payload"), "old");
@@ -169,10 +187,13 @@ SectionEnd
     return { status: run.status, calls, payload: readFileSync(join(state, "payload"), "utf8") };
   }
 
-  test.each<[string, Registered]>([
+  test.each<[string, Registered | Registered[]]>([
     ["the same version", { version: [14, 44] }],
     ["a newer minor version", { version: [14, 50] }],
     ["a newer major version with a lower minor", { version: [15, 0] }],
+    ["the same version, in the 64-bit registry view only", { version: [14, 44], view: 64 }],
+    ["an older version in the 32-bit view and the same in the 64-bit one", [{ version: [14, 40] }, { version: [14, 44], view: 64 }]],
+    ["the same version in the 32-bit view and an older in the 64-bit one", [{ version: [14, 44] }, { version: [14, 40], view: 64 }]],
   ])("with %s installed, Microsoft's installer is not run and the app is installed", (_, registered) => {
     const result = install({ arch: "arm64", before: { arm64: registered } });
     expect(result).toEqual({ status: 0, calls: [], payload: "new" });
@@ -184,6 +205,7 @@ SectionEnd
     ["older by major version with a higher minor", { arm64: { version: [13, 99] } }],
     ["registered and not installed", { arm64: { version: [14, 44], installed: 0 } }],
     ["installed for the other architecture only", { x64: { version: [14, 44] } }],
+    ["older in both registry views", { arm64: [{ version: [14, 40] }, { version: [14, 40], view: 64 }] }],
   ])("with the runtime %s, a silent install runs Microsoft's installer quietly first, then installs the app", (_, before) => {
     const result = install({ arch: "arm64", before, installs: { arm64: [14, 44] } });
     expect(result.status).toBe(0);
@@ -198,10 +220,17 @@ SectionEnd
     expect(result.payload).toBe("new");
   }, runTimeout);
 
-  test("a restart Microsoft's installer asks for does not stop the app's install", () => {
-    const result = install({ arch: "arm64", installs: { arm64: [14, 44] }, exit: 3010 });
-    expect(result).toMatchObject({ status: 0, payload: "new" });
+  test("a runtime Microsoft's installer records in the 64-bit registry view only is found", () => {
+    expect(install({ arch: "arm64", installs: { arm64: [14, 44] }, installsIn: 64 })).toMatchObject({ status: 0, payload: "new" });
+  }, runTimeout);
+
+  test.each([3010, 1641])("when Microsoft's installer asks for a restart (%i), the app is installed only after it", exit => {
+    // Until Windows restarts, the runtime's files in use are the old ones.
+    const result = install({ arch: "arm64", installs: { arm64: [14, 44] }, exit });
+    expect(result).toMatchObject({ status: 2, payload: "old" });
     expect(result.calls).toHaveLength(1);
+    // After the restart the runtime is there: the next run installs without running it again.
+    expect(install({ arch: "arm64", before: { arm64: { version: [14, 44] } } })).toEqual({ status: 0, calls: [], payload: "new" });
   }, runTimeout);
 
   test.each<[string, Pick<Scenario, "installs" | "exit">]>([

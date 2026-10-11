@@ -7,8 +7,8 @@
 ; anything is installed or replaced, the installer checks the runtime Windows has for the app's
 ; architecture, and runs Microsoft's installer of it (scripts/windows/build-native.mts copies it
 ; from the build's Visual Studio) when it is missing or older than that one. Microsoft's installer
-; asks for an administrator; refused or failed, TabMail Voice is not installed, and an installed
-; version stays as it was.
+; asks for an administrator; refused or failed, or until Windows restarts when it asks to, TabMail
+; Voice is not installed, and an installed version stays as it was.
 
 !ifndef APP_ARM64
   !ifndef APP_64
@@ -26,10 +26,10 @@
 ; installer carries them.
 !getdllversion "${PROJECT_DIR}\dist\runtime\vc_redist.exe" VOICE_RUNTIME_
 
-; $R0 is 1 when Windows has the runtime at that major and minor version or later (Microsoft keeps
-; the installed version in VOICE_RUNTIME_KEY, read in the 64-bit view electron-builder sets).
-!macro voiceRuntimeInstalled
-  StrCpy $R0 0
+; Sets $R0 to 1 when VOICE_RUNTIME_KEY in this registry view records the runtime at that major and
+; minor version or later.
+!macro voiceRuntimeInstalledIn VIEW
+  SetRegView ${VIEW}
   ReadRegDWORD $R1 HKLM "${VOICE_RUNTIME_KEY}" "Installed"
   ReadRegDWORD $R2 HKLM "${VOICE_RUNTIME_KEY}" "Major"
   ReadRegDWORD $R3 HKLM "${VOICE_RUNTIME_KEY}" "Minor"
@@ -41,6 +41,15 @@
       StrCpy $R0 1
     ${EndIf}
   ${EndIf}
+!macroend
+
+; $R0 is 1 when Windows has the runtime at that major and minor version or later. Microsoft documents
+; the key in the 32-bit view, and some machines record it only in the 64-bit one: either counts. The
+; 64-bit view, read last, stays set, as electron-builder set it.
+!macro voiceRuntimeInstalled
+  StrCpy $R0 0
+  !insertmacro voiceRuntimeInstalledIn 32
+  !insertmacro voiceRuntimeInstalledIn 64
 !macroend
 
 !macro customInit
@@ -62,9 +71,13 @@
       SetErrorLevel 2
       Quit
     ${EndIf}
-    ; 3010: Microsoft's installer finishes replacing files in use when Windows restarts.
+    ; 3010 and 1641: the runtime's files in use are replaced when Windows restarts, and until then
+    ; the app would load the old ones, so it is installed after the restart.
     ${If} $R4 = 3010
-      MessageBox MB_OK|MB_ICONINFORMATION "Restart Windows to finish installing the Microsoft Visual C++ Runtime." /SD IDOK
+    ${OrIf} $R4 = 1641
+      MessageBox MB_OK|MB_ICONINFORMATION "Restart Windows to finish installing the Microsoft Visual C++ Runtime, then run the TabMail Voice installer again." /SD IDOK
+      SetErrorLevel 2
+      Quit
     ${EndIf}
   ${EndIf}
 !macroend

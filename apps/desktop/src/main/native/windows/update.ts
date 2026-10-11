@@ -31,8 +31,9 @@ interface InstallerSignature {
  * when signed by `windowsUpdatePublisher` and its own version is the one the feed offered, which
  * `Updater` holds newer than the running app. A feed can't so name an older signed installer as
  * newer. The installer kept is proven again before it is offered: the library keeps one it already
- * had, its SHA-512 the feed's, without the first proof. It installs, for this user and without an
- * administrator, when the app quits, and only once proven (`Updater.quitting`).
+ * had, its SHA-512 the feed's, without the first proof. It installs, for this user, when the app
+ * quits, and only once proven (`Updater.quitting`); without an administrator unless it needs a newer
+ * Visual C++ runtime than Windows has (ADR-DESK-057).
  */
 export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; helper: string; run: RunFile }): UpdatePlatform {
   const { source, helper, run } = options;

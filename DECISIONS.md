@@ -5022,13 +5022,16 @@ built with 14.51).
 - The installer (`resources/windows/installer.nsh`, electron-builder's `customInit`) carries it and,
   before anything is installed or replaced, reads the installed runtime of its architecture where
   Microsoft records it (`HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\<arch>`: `Installed`,
-  `Major`, `Minor`). When it is missing or its major and minor version is older than the carried
+  `Major`, `Minor`; documented in the 32-bit registry view, and found only in the 64-bit one on some
+  machines, so either counts). When it is missing or its major and minor version is older than the carried
   installer's (read from that file when the installer is built), it runs Microsoft's installer
   (`/install /passive /norestart`, `/quiet` in a silent install such as the update the app runs as
   it quits), which asks for an administrator, and reads the version again. Still missing or older,
   TabMail Voice says so and is not installed (exit 2): the version already installed stays as it was,
-  and an update reports it didn't install (ADR-DESK-050). Exit 3010 asks for a Windows restart to
-  finish.
+  and an update reports it didn't install (ADR-DESK-050). When Microsoft's installer asks for a
+  restart (3010, 1641), the runtime's files in use are replaced only then, and the app would load the
+  old ones until it: the user is asked to restart Windows and run the installer again, and it exits 2
+  the same way (an update installs at the next quit after the restart).
 - The release (`tabmail-release-helpers`) checks that the runtime installer is signed by Microsoft,
   that no installed file was built with a newer Visual C++ (its linker version) than that installer,
   and that no copy of the runtime is installed with the app.
@@ -5038,7 +5041,7 @@ built with 14.51).
   installing, or when an update needs a newer runtime than they have; one without an administrator
   can't install TabMail Voice until someone installs the runtime. Everyone else installs for
   themselves with no prompt, as before.
-- The installer is larger by Microsoft's installer (about 25 MB on x64).
+- The installer is larger by Microsoft's installer (about 20 MB on x64).
 - Electron itself links its runtime statically; that is Electron's choice, not ours.
 - A runner whose Visual Studio redistributes an older runtime than a prebuilt addon was built with
   fails the release rather than shipping it; the x64 Windows build runs on a runner with Visual

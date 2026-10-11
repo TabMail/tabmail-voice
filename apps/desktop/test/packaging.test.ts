@@ -29,6 +29,10 @@ test("Windows installs the C++ runtime system-wide and ships none of its own", (
   expect(installer).toContain('File "/oname=$PLUGINSDIR\\vc_redist.exe" "${PROJECT_DIR}\\dist\\runtime\\vc_redist.exe"');
   expect(installer).toMatch(/!ifdef APP_ARM64\s+!define VOICE_RUNTIME_KEY "SOFTWARE\\Microsoft\\VisualStudio\\14\.0\\VC\\Runtimes\\arm64"\s+!else\s+!define VOICE_RUNTIME_KEY "SOFTWARE\\Microsoft\\VisualStudio\\14\.0\\VC\\Runtimes\\x64"/);
   expect(installer).toMatch(/!macro customInit\s+!insertmacro voiceRuntimeInstalled/);
+  // Where Windows keeps the runtime's state, in both registry views (the test that runs the step
+  // reads it from a test key of its own).
+  expect(installer.match(/ReadRegDWORD \$R\d HKLM "\$\{VOICE_RUNTIME_KEY\}" "(Installed|Major|Minor)"/g)).toHaveLength(3);
+  expect(installer).toMatch(/!insertmacro voiceRuntimeInstalledIn 32\s+!insertmacro voiceRuntimeInstalledIn 64\s+!macroend/);
   expect(builder.win.extraResources.filter(resource => resource.from === "dist/runtime" || (resource.filter ?? []).some(name => /\.dll$/i.test(name)))).toEqual([]);
   expect(readFileSync(join(root, "native/windows/CMakeLists.txt"), "utf8")).not.toMatch(/CMAKE_MSVC_RUNTIME_LIBRARY|\/MT\b/);
   expect(existsSync(join(root, "native/shared/rust/.cargo/config.toml")) && readFileSync(join(root, "native/shared/rust/.cargo/config.toml"), "utf8").includes("crt-static")).toBe(false);
