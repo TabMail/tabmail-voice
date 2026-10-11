@@ -68,6 +68,8 @@ const older: Version = [14, 44, 35211, 4];
 // The restart notice the installer shows when the runtime's installer asks for a restart.
 const notice = "MessageBox MB_OK|MB_ICONINFORMATION";
 const restartNotice = "TabMail Voice is installed. Restart Windows when you can to finish installing the Microsoft Visual C++ Runtime.";
+// The notices an install shows, as recorded: each with what the app's files held when it was shown.
+const shown = (...notices: [text: string, payload: string][]): string => notices.map(([text, payload]) => `${text}|${payload}\r\n`).join("");
 
 const nsisString = (value: string): string => value.replaceAll("$", "$$");
 const appFile = "TabMail Voice.exe";
@@ -210,10 +212,15 @@ AutoCloseWindow true
 ShowInstDetails nevershow
 Page instfiles
 !include FileFunc.nsh
+; Each notice shown, with what the app's files held at that moment.
 !macro recordNotice TEXT SD ANSWER
   \${IfNot} \${Silent}
-    FileOpen $0 "\${STATE}\\notice" w
-    FileWrite $0 "\${TEXT}"
+    FileOpen $1 "\${STATE}\\payload" r
+    FileRead $1 $2
+    FileClose $1
+    FileOpen $0 "\${STATE}\\notice" a
+    FileSeek $0 0 END
+    FileWrite $0 "\${TEXT}|$2$\\r$\\n"
     FileClose $0
   \${EndIf}
 !macroend
@@ -383,7 +390,8 @@ SectionEnd
     expect(silent).toMatchObject({ status: 0, payload: "new", notice: "" });
     expect(silent.calls.map(call => [call.args, call.payload])).toEqual([["/install /quiet /norestart", "old"]]);
     const interactive = install({ arch: "arm64", installs: { arm64: carried }, exit, silent: false });
-    expect(interactive).toMatchObject({ status: 0, payload: "new", notice: restartNotice });
+    // Once, and once the app is installed.
+    expect(interactive).toMatchObject({ status: 0, payload: "new", notice: shown([restartNotice, "new"]) });
     expect(interactive.calls.map(call => [call.args, call.payload])).toEqual([["/install /passive /norestart", "old"]]);
   }, runTimeout);
 
