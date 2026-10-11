@@ -3305,6 +3305,11 @@ from an app run off its disk image not shown). The menu and Settings › General
 (Linux), Installing Version…, and Retry Update to Version… after a failure, with the reason under
 the General card. A refusal or failed install logs the platform's own fixed sentence, never content.
 
+**Amendment 2026-10-11 — Linux updates through apt (ADR-DESK-058).** The Linux part of the amendment
+above is superseded: a packaged Linux build has no updater and no update item; apt updates the
+package from the signed repository at `cdn.tabmail.ai/releases/voice`, as the second consequence
+above foresaw for a `.deb`. Install Version… and Installing Version… are gone.
+
 ## ADR-DESK-042: The text goes where the caret was at key-down, or onto the clipboard
 
 > **Amended (owner, 2026-10-08): nothing goes on the clipboard by itself; the note offers to copy.**
@@ -4343,6 +4348,12 @@ dictation, and agent mode carries out nothing of a request whose end was lost.
 
 ## ADR-DESK-050: Windows and Linux update themselves too, from signed packages proven by the app
 
+> **Linux half SUPERSEDED by ADR-DESK-058 (owner 2026-10-11):** Linux updates through a signed apt
+> repository instead. The app's Linux updater (`install-update`, its polkit action and keys, the
+> `DebUpdater` download, the Linux question and Installing state, the `pkexec` AppArmor rule and the
+> `openssl` and `pkexec` dependencies) was removed in 0.2.1. It had never been on: no key ever
+> shipped in `update-keys/`, and no release wrote a Linux feed. The Windows half stands.
+
 **Context:** ADR-DESK-041 gave macOS automatic updates; Windows and Linux had none (`publish: null`).
 Owner, 2026-10-04: shared update logic with thin per-OS install adapters; the macOS security and
 behavior kept; a feed per architecture for the signed Windows NSIS installer; on Ubuntu a direct
@@ -5066,3 +5077,57 @@ built with 14.51).
 - A runner whose Visual Studio redistributes an older runtime than a prebuilt addon was built with
   fails the release rather than shipping it; the x64 Windows build runs on a runner with Visual
   Studio 2026.
+
+---
+
+## ADR-DESK-058: Linux updates through an apt repository
+
+**Context:** ADR-DESK-050 gave Linux an in-app updater: the app downloads the `.deb`, a packaged
+script checks an Ed25519 signature of our own, and `pkexec` installs it as root. It never ran: no key
+was ever shipped in `update-keys/`, so the app kept it off, and no release wrote a Linux feed. Owner,
+2026-10-11: Linux updates through an apt repository, the way VS Code and Chrome do; two GPG keys, a
+primary that signs and an offline backup; nobody reinstalls to get updates. The Linux download stays
+off the website until this ships.
+
+**Decision:**
+- **The package installs its source and keys** as plain packaged files (fpm mappings, no maintainer
+  script): the binary keyring `/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg` holding both
+  public keys (`resources/linux/tabmail-voice-archive-keyring.gpg`), and the deb822 source
+  `/etc/apt/sources.list.d/tabmail-voice.sources` (`resources/linux/tabmail-voice.sources`):
+  `https://cdn.tabmail.ai/releases/voice`, suite `stable`, component `main`, architectures `amd64`
+  and `arm64` (so a machine with i386 enabled isn't told about it at each update), `Signed-By` that
+  keyring, so the keys vouch for this repository only, never for the system's own sources. Both are
+  under `/etc`, so dpkg keeps them as conffiles, with one lifetime: a user's edit or removal
+  survives upgrades, `apt remove` keeps both and `apt purge` removes both. (A keyring under
+  `/usr/share/keyrings` is removed by `apt remove` while the source stays, and every `apt update`
+  after it then warns that the repository's signature can't be checked; found in the Ubuntu VM.)
+  An unedited conffile is replaced on upgrade, so a new keyring reaches every machine that didn't
+  edit it.
+- **The repository** is on the CDN beside the downloads: `dists/stable/InRelease`, `Release`,
+  `Release.gpg`, and `main/binary-{amd64,arm64}/Packages` (and `.gz`), the latest version per
+  architecture. `Packages` points at the `.deb` the website links (`linux-x64/…`, `linux-arm64/…`),
+  so apt and the download fetch the very same file. The release (`tabmail-release-helpers`) signs it
+  with the primary key, refuses to sign with a key the package's own keyring doesn't hold, checks the
+  signatures with `gpgv` against that keyring, never replaces a newer version with an older one, and
+  writes `InRelease` last.
+- **The app has no Linux updater:** no update item in the tray or Settings, no feed (`linux.publish`
+  is null, so no `app-update.yml`). `apt update` offers new versions, and Ubuntu's Software Updater
+  shows them as it shows Chrome's.
+- **Keys** are created, rotated and replaced by the backup with
+  a script of TabMail's private operations repository. The keyring holds the backup from the first release, so a leaked or lost primary is replaced by
+  promoting the backup, which installed apps already trust, and a new backup is created and ships in
+  the next release. Only a key in the latest release's keyring is promoted.
+
+**Consequences:**
+- Installed apps update without the app asking for an administrator; apt and the system's updater do,
+  in the way the user already knows. Apt also installs missing dependencies from the system's sources.
+- apt refuses a repository whose `InRelease` isn't signed by a key in the keyring, or a package whose
+  hash isn't the signed index's.
+- An `apt update` that reads the index while a release writes it can see a hash mismatch; the next one
+  (minutes later) succeeds.
+- A machine that skipped every release since the last replacement trusts neither key and reinstalls
+  once.
+- Anyone who installed the 0.2.0 `.deb` (linked for a few hours before Linux was taken off the site)
+  has no source and reinstalls once; that build never had updates.
+- Tested in the Ubuntu VM with a test key and a local repository: the 0.2.1 package installs the
+  keyring and source, `apt upgrade` brings a later version, and a tampered `InRelease` is refused.

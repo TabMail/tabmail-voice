@@ -125,7 +125,7 @@ describe("Windows: what installs when the app quits (ADR-DESK-050), with the rea
     await offer("1.3.0");
     await proven();
 
-    expect(updater.state).toEqual({ kind: "ready", version: "1.3.0", installsOnQuit: true });
+    expect(updater.state).toEqual({ kind: "ready", version: "1.3.0" });
     expect(quit()).toBe(1);
   });
 
@@ -166,7 +166,7 @@ describe("Windows: what installs when the app quits (ADR-DESK-050), with the rea
     await offer("1.3.1");
     await proven();
 
-    expect(updater.state).toEqual({ kind: "ready", version: "1.3.1", installsOnQuit: true });
+    expect(updater.state).toEqual({ kind: "ready", version: "1.3.1" });
     expect(quit()).toBe(1);
   });
 });

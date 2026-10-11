@@ -38,19 +38,17 @@ export function statusLine(state: MenuState): string {
 }
 
 /** Where an update is (ADR-DESK-041, ADR-DESK-050). `ready`: downloaded and proven ours; it installs
- * when the app quits (`installsOnQuit`, macOS and Windows) or when the user installs it with an
- * administrator's authorization (Linux), `installing` meanwhile. `failed`: a download, its proof or
- * its install failed; the next check tries again. */
+ * when the app quits. `failed`: a download, its proof or its install failed; the next check tries
+ * again. */
 export type UpdateState =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "downloading"; version: string }
-  | { kind: "ready"; version: string; installsOnQuit: boolean }
-  | { kind: "installing"; version: string }
+  | { kind: "ready"; version: string }
   | { kind: "failed"; version: string; message: string };
 
-/** The menu's update item: Check for Updates, what a check is doing, Restart to Update or Install
- * Update once one is ready, or Retry after a failure; `install` says which command it sends. */
+/** The menu's update item: Check for Updates, what a check is doing, Restart to Update once one is
+ * ready, or Retry after a failure; `install` says which command it sends. */
 export function updateItem(update: UpdateState): { label: string; enabled: boolean; install: boolean } {
   switch (update.kind) {
     case "idle":
@@ -60,11 +58,7 @@ export function updateItem(update: UpdateState): { label: string; enabled: boole
     case "downloading":
       return { label: `Downloading Version ${update.version}…`, enabled: false, install: false };
     case "ready":
-      return update.installsOnQuit
-        ? { label: `Restart to Update to Version ${update.version}`, enabled: true, install: true }
-        : { label: `Install Version ${update.version}…`, enabled: true, install: true };
-    case "installing":
-      return { label: `Installing Version ${update.version}…`, enabled: false, install: false };
+      return { label: `Restart to Update to Version ${update.version}`, enabled: true, install: true };
     case "failed":
       return { label: `Retry Update to Version ${update.version}`, enabled: true, install: false };
   }

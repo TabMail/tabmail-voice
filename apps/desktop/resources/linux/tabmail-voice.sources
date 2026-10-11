@@ -1,0 +1,7 @@
+# TabMail Voice updates through apt, signed by the keys in the keyring below (ADR-DESK-058).
+Types: deb
+URIs: https://cdn.tabmail.ai/releases/voice
+Suites: stable
+Components: main
+Architectures: amd64 arm64
+Signed-By: /etc/apt/keyrings/tabmail-voice-archive-keyring.gpg

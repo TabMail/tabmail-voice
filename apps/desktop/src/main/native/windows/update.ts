@@ -58,7 +58,6 @@ export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; he
   source.verifyUpdateCodeSignature = (_publisherNames, path) => (offered === null ? Promise.resolve("no update was offered") : check(path, offered));
   return {
     source,
-    installsOnQuit: true,
     verify: async (update) => {
       const reason = update.downloadedFile === undefined ? "nothing was downloaded" : await check(update.downloadedFile, update.version);
       if (reason !== null) throw new UpdateError(`Version ${update.version} isn't signed by TabMail, so it wasn't installed.`);

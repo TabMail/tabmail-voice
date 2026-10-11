@@ -75,17 +75,13 @@ describe("TrayMenu's update item", () => {
   });
 
   test("Restart to Update restarts into the downloaded version", () => {
-    const { item, clicked } = menu({ kind: "ready", version: "1.2.3", installsOnQuit: true });
+    const { item, clicked } = menu({ kind: "ready", version: "1.2.3" });
 
     item("Restart to Update to Version 1.2.3")?.click?.();
     expect(clicked).toEqual(["installUpdate"]);
   });
 
-  test("Install installs it where an administrator does; Retry checks again", () => {
-    const ready = menu({ kind: "ready", version: "1.2.3", installsOnQuit: false });
-    ready.item("Install Version 1.2.3…")?.click?.();
-    expect(ready.clicked).toEqual(["installUpdate"]);
-
+  test("Retry checks again", () => {
     const failed = menu({ kind: "failed", version: "1.2.3", message: "x" });
     failed.item("Retry Update to Version 1.2.3")?.click?.();
     expect(failed.clicked).toEqual(["checkForUpdates"]);

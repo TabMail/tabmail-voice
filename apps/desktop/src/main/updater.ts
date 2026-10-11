@@ -19,18 +19,9 @@ export const updateRequestHeaders = { "x-user-staging-id": "none" };
  * happened. */
 export const installingKey = "updateInstalling";
 
-/** One file of a release, as the feed lists it: its SHA-512 is base64. */
-export interface UpdateFile {
-  url: string;
-  sha512: string;
-}
-
-/** What `electron-updater` says about the update it found and, once downloaded, where it is. The
- * Linux feed also carries `signature` (ADR-DESK-050). */
+/** What `electron-updater` says about the update it found and, once downloaded, where it is. */
 export interface UpdateInfo {
   version: string;
-  files?: UpdateFile[];
-  signature?: string;
   downloadedFile?: string;
 }
 
@@ -45,13 +36,12 @@ export interface UpdateSource {
   on(event: "error", listener: (error: Error) => void): unknown;
 }
 
-/** An update refused or not installed, with what to tell the user. `canceled`: the user called the
- * install off (the administrator's authorization); nothing failed. `quiet`: not shown, as macOS
+/** An update refused or not installed, with what to tell the user. `quiet`: not shown, as macOS
  * refusing an app run off its disk image (ADR-DESK-041). */
 export class UpdateError extends Error {
   constructor(
     message: string,
-    readonly options: { canceled?: boolean; quiet?: boolean } = {},
+    readonly options: { quiet?: boolean } = {},
   ) {
     super(message);
     this.name = "UpdateError";
@@ -60,12 +50,10 @@ export class UpdateError extends Error {
 
 /** What differs per OS (`native/<os>/update.ts`, ADR-DESK-050): how a downloaded update is proven
  * ours, and how it is installed. Everything else (when to look, the download, the states, the
- * question, failures and retries) is `Updater`'s, the same everywhere. */
+ * question, failures and retries) is `Updater`'s, the same everywhere. A verified update installs
+ * itself when the app quits. Linux has none: apt updates it (ADR-DESK-058). */
 export interface UpdatePlatform {
   readonly source: UpdateSource;
-  /** True where a verified update installs itself when the app quits (macOS, Windows); false where
-   * it waits for the user to install it with an administrator's authorization (Linux). */
-  readonly installsOnQuit: boolean;
   /** Resolves once the downloaded update is proven ours and to be `update.version`; rejects with an
    * `UpdateError` otherwise. */
   verify(update: UpdateInfo): Promise<void>;
@@ -80,8 +68,8 @@ export interface UpdaterOptions {
   store: KeyValueStore;
   /** The running app's version, for "up to date" and "newer". */
   currentVersion: string;
-  /** Asks whether to install `version` now (restarting where it installs at the quit); true to. */
-  ask(version: string, installsOnQuit: boolean): Promise<boolean>;
+  /** Asks whether to restart now to install `version`; true to. */
+  ask(version: string): Promise<boolean>;
   /** Answers "Check for Updates…", and says why an install the user asked for didn't happen. */
   tell(message: string, detail: string): void;
   /** Whether the user is dictating or has the chat window open: the question waits until not. */
@@ -93,8 +81,7 @@ export interface UpdaterOptions {
 /**
  * Keeps a packaged app up to date (ADR-DESK-041, ADR-DESK-050): looks for a newer release on
  * cdn.tabmail.ai at launch and every `updateCheckInterval`, downloads it quietly, has the platform
- * prove it ours and newer, and then installs it when the app quits (macOS, Windows) or when the user
- * installs it with an administrator's authorization (Linux). Once it is ready the user is asked once
+ * prove it ours and newer, and then installs it when the app quits. Once it is ready the user is asked once
  * whether to install now, never during a dictation or while the chat window is open, and the menu
  * offers it until then. A download, a proof or an install that fails is shown as failed until the
  * next check tries again; nothing is ever called installed that wasn't.
@@ -113,7 +100,7 @@ export class Updater {
     source.autoDownload = true;
     // On while running: the library arms its quit-time install only when a download finishes with
     // this on. What actually installs at the quit is decided as the app quits (`quitting`).
-    source.autoInstallOnAppQuit = options.platform.installsOnQuit;
+    source.autoInstallOnAppQuit = true;
     // Never install an older version, whatever a feed says (`channel` would turn this on).
     source.allowDowngrade = false;
     source.requestHeaders = { ...updateRequestHeaders };
@@ -151,7 +138,7 @@ export class Updater {
     void this.check(true);
   }
 
-  /** "Restart to Update" / "Install Update…": installs the ready update now. */
+  /** "Restart to Update": installs the ready update now. */
   install(): void {
     void this.installNow();
   }
@@ -165,7 +152,7 @@ export class Updater {
    * now. What the library kept but this refused (not newer, not ours) or hasn't proven yet doesn't;
    * it keeps an installer it already had without the proof a download gets. */
   quitting(): void {
-    if (this.options.platform.installsOnQuit) this.options.platform.source.autoInstallOnAppQuit = this.current.kind === "ready";
+    this.options.platform.source.autoInstallOnAppQuit = this.current.kind === "ready";
   }
 
   /** An install begun before this launch either happened (this is that version, or newer) or didn't:
@@ -225,10 +212,9 @@ export class Updater {
     }
     log.debug(`Updater: ${version} is ready`);
     this.update = info;
-    const { installsOnQuit } = this.options.platform;
     // Installs at the quit from now on: the next launch says whether it did.
-    if (installsOnQuit) this.options.store.set(installingKey, version);
-    this.set({ kind: "ready", version, installsOnQuit });
+    this.options.store.set(installingKey, version);
+    this.set({ kind: "ready", version });
     this.offer();
   }
 
@@ -238,18 +224,10 @@ export class Updater {
     if (current.kind !== "ready" || update === null) return;
     const { version } = current;
     this.options.store.set(installingKey, version);
-    if (!current.installsOnQuit) this.set({ kind: "installing", version });
     try {
       await this.options.platform.install(update);
     } catch (error) {
       log.error(`Updater: ${version} not installed: ${reason(error)}`);
-      if (!current.installsOnQuit) this.options.store.remove(installingKey);
-      if (error instanceof UpdateError && error.options.canceled) {
-        // Nothing failed: it stays ready, to install when the user is.
-        this.set(current);
-        this.options.tell(`TabMail Voice ${version} wasn't installed.`, error.message);
-        return;
-      }
       const message = error instanceof UpdateError ? error.message : `Version ${version} couldn't be installed.`;
       this.fail(version, message);
       this.options.tell(`TabMail Voice ${version} wasn't installed.`, message);
@@ -264,7 +242,7 @@ export class Updater {
       const current = this.current;
       if (current.kind !== "ready" || this.asked === current.version || this.options.isBusy()) return;
       this.asked = current.version;
-      this.options.ask(current.version, current.installsOnQuit).then(
+      this.options.ask(current.version).then(
         (install) => {
           if (install) this.install();
         },

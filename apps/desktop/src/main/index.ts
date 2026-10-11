@@ -5,12 +5,12 @@
 import { LocalPDFReader } from "./documents/pdfReader.js";
 import { parsePDF } from "./documents/pdfProcess.js";
 import { NativeTextRedactor } from "./native/textRedactor.js";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
-import { autoUpdater, DebUpdater, NsisUpdater } from "electron-updater";
+import { autoUpdater, NsisUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
 import { connectorsForPlatform } from "../core/agent/connectors/index.js";
@@ -81,7 +81,6 @@ import { TrayMenu } from "./tray.js";
 import { runFile, type UpdatePlatform, Updater } from "./updater.js";
 import { macUpdatePlatform } from "./native/macos/update.js";
 import { windowsUpdatePlatform } from "./native/windows/update.js";
-import { linuxUpdatePlatform, relaunchAfterExit } from "./native/linux/update.js";
 import { GnomeIntegration } from "./native/linux/gnomeIntegration.js";
 import { Windows } from "./windows.js";
 
@@ -310,7 +309,8 @@ function launch(): void {
     });
   }
 
-  // Packaged builds update from their platform's feed (ADR-DESK-041, ADR-DESK-050).
+  // Packaged macOS and Windows builds update from their platform's feed (ADR-DESK-041, ADR-DESK-050);
+  // apt updates Linux (ADR-DESK-058).
   const updatePlatform = isDebugBuild ? null : makeUpdatePlatform();
   const updater = updatePlatform === null ? null : makeUpdater(updatePlatform);
 
@@ -470,7 +470,7 @@ function launch(): void {
   }
 
   /** The platform's update adapter, its library's own log off (it writes to the console; ours says
-   * what failed). Linux updates only once the package carries a key to check them with. */
+   * what failed). Linux has none: the package's apt source updates it (ADR-DESK-058). */
   function makeUpdatePlatform(): UpdatePlatform | null {
     switch (process.platform) {
       case "darwin":
@@ -480,24 +480,6 @@ function launch(): void {
         const source = new NsisUpdater();
         source.logger = null;
         return windowsUpdatePlatform({ source, helper: join(helpers, "voice-windows.exe"), run: runFile });
-      }
-      case "linux": {
-        const resources = join(process.resourcesPath, "linux");
-        if (!hasUpdateKey(join(resources, "update-keys"))) {
-          log.debug("main: no update key; Linux updates are off");
-          return null;
-        }
-        const source = new DebUpdater();
-        source.logger = null;
-        return linuxUpdatePlatform({
-          source,
-          script: join(resources, "install-update"),
-          run: runFile,
-          relaunch: () => {
-            relaunchAfterExit({ pid: process.pid, executable: process.execPath, args: process.argv.slice(1) });
-            app.exit(0);
-          },
-        });
       }
       default:
         return null;
@@ -509,13 +491,13 @@ function launch(): void {
       platform,
       store,
       currentVersion: app.getVersion(),
-      ask: async (version, installsOnQuit) => {
+      ask: async (version) => {
         app.focus({ steal: true });
         const { response } = await dialog.showMessageBox({
           type: "info",
-          ...(installsOnQuit
-            ? { message: `TabMail Voice ${version} is ready.`, detail: "It installs when TabMail Voice quits. Restart now to update?", buttons: ["Restart Now", "Later"] }
-            : { message: `TabMail Voice ${version} is ready to install.`, detail: "Installing it needs an administrator's authorization. Install now?", buttons: ["Install Now", "Later"] }),
+          message: `TabMail Voice ${version} is ready.`,
+          detail: "It installs when TabMail Voice quits. Restart now to update?",
+          buttons: ["Restart Now", "Later"],
           // Later is both: Return, typed as the question appears, does nothing; Escape picks Later.
           defaultId: 1,
           cancelId: 1,
@@ -982,14 +964,5 @@ function launch(): void {
   if (!settings.hasFinishedWelcome) {
     tips.markLearned("longDictations");
     showWelcome();
-  }
-}
-
-/** Whether `folder` holds a public key to check Linux updates with (ADR-DESK-050). */
-function hasUpdateKey(folder: string): boolean {
-  try {
-    return readdirSync(folder).some((name) => name.endsWith(".pem"));
-  } catch {
-    return false;
   }
 }

@@ -2,12 +2,25 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 
 const root = join(__dirname, "..");
+
+/** What GnuPG makes of an OpenPGP file, read in a home of its own so no user keyring is involved. */
+function gpg(...args: string[]): string {
+  const home = mkdtempSync(join(tmpdir(), "voice-gpg-"));
+  try {
+    return execFileSync("gpg", ["--homedir", home, "--batch", "--with-colons", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } finally {
+    execFileSync("gpgconf", ["--homedir", home, "--kill", "all"]);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
 
 test("Windows packages every helper the main process can launch", () => {
   const source = readFileSync(join(root, "src/main/index.ts"), "utf8");
@@ -93,40 +106,65 @@ describe("the Mac app's packaging", () => {
     expect(builder.mac.artifactName).toBe("TabMail-Voice-${version}-${arch}.${ext}");
   });
 
-  /** Windows and Linux read their own architecture's feed on the same CDN (ADR-DESK-050):
+  /** Windows reads its own architecture's feed on the same CDN (ADR-DESK-050):
    * electron-builder writes each build's `app-update.yml` with `${arch}` filled in, and the release
    * uploads each architecture's installer and feed to its own folder. electron-updater checks a
    * downloaded Windows installer's signature only when `app-update.yml` names a publisher, and
    * installs anything the feed offers otherwise, so every Windows build names it. */
-  test("Windows and Linux update from their architecture's folder on cdn.tabmail.ai", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { publish: unknown; artifactName: string }; linux: { publish: unknown; artifactName: string } };
+  test("Windows updates from its architecture's folder on cdn.tabmail.ai", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { publish: unknown; artifactName: string }; linux: { artifactName: string } };
 
     expect(builder.win.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/windows-${arch}", useMultipleRangeRequest: false, publisherName: [config.windowsUpdatePublisher] }]);
-    expect(builder.linux.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
     expect(builder.win.artifactName).toBe("TabMail-Voice-${version}-windows-${arch}.${ext}");
+    // The apt repository's Packages files point at the .deb by this name (ADR-DESK-058).
     expect(builder.linux.artifactName).toBe("TabMail-Voice-${version}-linux-${arch}.${ext}");
   });
 
-  /** A Linux update is proven and installed by `install-update`, packaged executable, root-owned
-   * under /opt with the keys it checks against, and it needs `openssl` and `pkexec` (ADR-DESK-050). */
-  test("Linux ships install-update, its keys, and what it runs", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; to?: string; filter?: string[] }[] }; deb: { depends: string[] } };
+  /** apt updates Linux (ADR-DESK-058): the package installs the repository's source, and the keys
+   * that sign it where only that source trusts them; the app publishes no update feed of its own. */
+  test("Linux installs its apt source and the keys that sign it, and has no update feed", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { publish: unknown; extraResources: { from: string }[] }; deb: { fpm: string[]; depends: string[] } };
+    const keyring = "/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg";
+    const source = readFileSync(join(root, "resources/linux/tabmail-voice.sources"), "utf8");
 
-    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/install-update", to: "linux/install-update" });
-    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/update-keys", to: "linux/update-keys", filter: ["*.pem"] });
-    // Windows has no executable bit to check (its release build runs these tests too).
-    if (process.platform !== "win32") expect(statSync(join(root, "resources/linux/install-update")).mode & 0o111).toBe(0o111);
-    expect(builder.deb.depends).toEqual(expect.arrayContaining(["openssl", "pkexec"]));
+    expect(builder.linux.publish).toBeNull();
+    expect(builder.deb.fpm).toContain(`resources/linux/tabmail-voice-archive-keyring.gpg=${keyring}`);
+    expect(builder.deb.fpm).toContain("resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources");
+    // Both under /etc, which fpm lists as conffiles unless an option says otherwise, and fpm gets no
+    // option here, only files: dpkg keeps the two for the same lifetime, so `apt remove` never leaves
+    // the source without its keys, which would make every `apt update` after it warn. The release
+    // checks the built package's conffiles before it publishes one.
+    expect(builder.deb.fpm.filter(mapping => mapping.startsWith("resources/linux/tabmail-voice")).map(mapping => mapping.split("=")[1]!.startsWith("/etc/"))).toEqual([true, true]);
+    expect(builder.deb.fpm.filter(argument => argument.startsWith("-") || !argument.includes("="))).toEqual([]);
+    expect(source.split("\n").filter(line => line && !line.startsWith("#"))).toEqual([
+      "Types: deb",
+      "URIs: https://cdn.tabmail.ai/releases/voice",
+      "Suites: stable",
+      "Components: main",
+      "Architectures: amd64 arm64",
+      `Signed-By: ${keyring}`,
+    ]);
+    expect(builder.linux.extraResources.map(resource => resource.from)).not.toContain("resources/linux/install-update");
+    expect(builder.deb.depends).not.toContain("pkexec");
   });
 
-  /** The app's AppArmor profile is inherited by what it runs: the root install leaves it at the
-   * pkexec the app runs, or dpkg can't replace the files the profile names (found in the Ubuntu VM). */
-  test("Linux installs an update outside the app's AppArmor profile", () => {
-    const profile = readFileSync(join(root, "scripts/linux/apparmor-profile.tpl"), "utf8");
-    const adapter = readFileSync(join(root, "src/main/native/linux/update.ts"), "utf8");
+  /** The keyring is binary OpenPGP (what apt's Signed-By reads) holding two public keys, the one
+   * that signs and its offline backup, which installed apps must already trust for it to replace
+   * the first (ADR-DESK-058), and nothing secret. */
+  // GnuPG reads the keyring as apt's own verifier does; Windows has no GnuPG.
+  test.skipIf(process.platform === "win32")("the apt keyring holds the signing key and its backup, public only", () => {
+    const keyring = join(root, "resources/linux/tabmail-voice-archive-keyring.gpg");
+    const records = gpg("--with-sig-check", "--show-keys", keyring).split("\n").map(line => line.split(":"));
+    const keys = records.filter(([type]) => type === "pub");
 
-    expect(profile).toMatch(/^\s*\/usr\/bin\/pkexec Ux,$/m);
-    expect(adapter).toContain('"/usr/bin/pkexec"');
+    expect(keys).toHaveLength(2);
+    expect(new Set(records.filter(([type]) => type === "fpr").map(record => record[9])).size).toBe(2);
+    // Each can sign, neither is revoked or expired, and each carries a self-signature GnuPG checked.
+    for (const key of keys) expect([key[1], key[11]?.includes("s")]).toEqual(["-", true]);
+    expect(records.filter(([type, validity]) => type === "sig" && validity === "!")).toHaveLength(2);
+    expect(records.filter(([type, validity]) => type === "sig" && validity !== "!")).toEqual([]);
+    expect(records.filter(([type]) => type === "sec" || type === "ssb")).toEqual([]);
+    expect(gpg("--list-packets", keyring)).not.toMatch(/secret (sub)?key packet/);
   });
 
   /** Snap's AT-SPI rules accept only unconfined peers, so each helper that reads through AT-SPI (the
@@ -137,20 +175,6 @@ describe("the Mac app's packaging", () => {
     for (const helper of ["voice-linux", "voice-screen-reader", "voice-field-reader"]) {
       expect(profile, helper).toContain(`"/opt/\${sanitizedProductName}/resources/helpers/${helper}" Ux,`);
     }
-  });
-
-  /** The administrator's authentication dialog says what it is for, not install-update's command line
-   * with its signature: a polkit action for the packaged script, installed where polkit reads them,
-   * asking for an administrator every time (ADR-DESK-050). */
-  test("Linux asks for an administrator to install an update, in words", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { productName: string; deb: { fpm: string[] } };
-    const policy = readFileSync(join(root, "resources/linux/ai.tabmail.voice.install-update.policy"), "utf8");
-
-    expect(builder.deb.fpm).toContain("resources/linux/ai.tabmail.voice.install-update.policy=/usr/share/polkit-1/actions/ai.tabmail.voice.install-update.policy");
-    // The path pkexec runs: the package installs the app under /opt/<productName>.
-    expect(policy).toContain(`<annotate key="org.freedesktop.policykit.exec.path">/opt/${builder.productName}/resources/linux/install-update</annotate>`);
-    expect(policy).toContain("<message>Authentication is required to install a TabMail Voice update.</message>");
-    expect([...policy.matchAll(/<allow_(?:any|inactive|active)>([^<]*)</g)].map(([, value]) => value)).toEqual(["auth_admin", "auth_admin", "auth_admin"]);
   });
 
   /** Squirrel.Mac installs an update only if its own version is not lower than the running app's, so

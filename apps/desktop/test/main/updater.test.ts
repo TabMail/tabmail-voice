@@ -154,7 +154,7 @@ describe("Updater on macOS (ADR-DESK-041)", () => {
 
     source.downloaded("1.1.0");
     await settle();
-    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: true });
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0" });
     expect(asked).toEqual(["1.1.0"]);
     expect(source.installs).toBe(0);
 
@@ -250,7 +250,7 @@ describe("Updater on macOS (ADR-DESK-041)", () => {
     source.emit("error", new Error("Code signature did not pass validation"));
     updater.install();
 
-    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: true });
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0" });
     expect(source.installs).toBe(1);
   });
 
@@ -319,7 +319,7 @@ describe("Updater on macOS (ADR-DESK-041)", () => {
 
     source.installer.emit("update-downloaded");
     await settle();
-    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: true });
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0" });
     expect(asked).toEqual(["1.1.0"]);
   });
 
@@ -434,8 +434,6 @@ class FakePlatform implements UpdatePlatform {
   proof: () => Promise<void> = () => Promise.resolve();
   outcome: () => Promise<void> = () => Promise.resolve();
 
-  constructor(readonly installsOnQuit: boolean) {}
-
   verify(update: UpdateInfo): Promise<void> {
     this.verified.push(update);
     return this.proof();
@@ -453,17 +451,17 @@ class FakePlatform implements UpdatePlatform {
   }
 }
 
-function setUpOn(installsOnQuit: boolean, options: { store?: MemoryStore; currentVersion?: string; install?: boolean } = {}) {
-  const platform = new FakePlatform(installsOnQuit);
+function setUpOn(options: { store?: MemoryStore; currentVersion?: string; install?: boolean } = {}) {
+  const platform = new FakePlatform();
   const store = options.store ?? new MemoryStore();
-  const asked: [string, boolean][] = [];
+  const asked: string[] = [];
   const told: [string, string][] = [];
   const updater = new Updater({
     platform,
     store,
     currentVersion: options.currentVersion ?? "1.0.0",
-    ask: (version, onQuit) => {
-      asked.push([version, onQuit]);
+    ask: (version) => {
+      asked.push(version);
       return Promise.resolve(options.install ?? false);
     },
     tell: (message, detail) => told.push([message, detail]),
@@ -473,24 +471,11 @@ function setUpOn(installsOnQuit: boolean, options: { store?: MemoryStore; curren
   return { platform, updater, store, asked, told };
 }
 
-describe("Updater, on every platform (ADR-DESK-050)", () => {
-  test("where installing needs an administrator, nothing installs at the quit, and the user is asked to install", async () => {
-    const { platform, updater, asked } = setUpOn(false);
-
-    expect(platform.source.autoInstallOnAppQuit).toBe(false);
-    expect(platform.source.allowDowngrade).toBe(false);
-    platform.downloads("1.1.0");
-    await settle();
-
-    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: false });
-    expect(asked).toEqual([["1.1.0", false]]);
-    expect(platform.installed).toEqual([]);
-  });
-
+describe("Updater, on macOS and Windows (ADR-DESK-050)", () => {
   test("an update the platform refuses is shown as failed, never offered, and can't be installed; the log says why", async () => {
     const logged = vi.spyOn(log, "error").mockImplementation(() => {});
     try {
-      const { platform, updater, asked } = setUpOn(true);
+      const { platform, updater, asked } = setUpOn();
       platform.proof = () => Promise.reject(new UpdateError("It isn't signed by TabMail, so it wasn't installed."));
 
       platform.downloads("1.1.0");
@@ -510,7 +495,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   test("a proof that fails unexpectedly is a failure too, in words, and logged by its type only", async () => {
     const logged = vi.spyOn(log, "error").mockImplementation(() => {});
     try {
-      const { platform, updater } = setUpOn(true);
+      const { platform, updater } = setUpOn();
       platform.proof = () => Promise.reject(new TypeError("boom"));
 
       platform.downloads("1.1.0");
@@ -524,7 +509,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   });
 
   test("a quiet refusal (macOS, an app off its disk image) shows nothing", async () => {
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
     platform.proof = () => Promise.reject(new UpdateError("macOS refused the update.", { quiet: true }));
 
     platform.downloads("1.1.0");
@@ -535,7 +520,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
 
   /** The library refuses an older feed; a download that isn't newer is never even proven. */
   test.each(["1.0.0", "0.9.9", "1.1.0-beta", "1.1"])("a download of %s is refused unproven, and doesn't install at the quit", async (version) => {
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
 
     platform.downloads(version);
     await settle();
@@ -549,7 +534,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   /** The library arms its quit-time install as each download finishes, with the flag on; only as
    * the app quits does the flag say whether what it kept installs: only a proven update. */
   test("only a proven update installs at the quit; the flag stays on while running", async () => {
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
     const proof = Promise.withResolvers<undefined>();
     platform.proof = () => proof.promise;
 
@@ -562,12 +547,12 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
     proof.resolve(undefined);
     await settle();
     updater.quitting();
-    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: true });
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0" });
     expect(platform.source.autoInstallOnAppQuit).toBe(true);
   });
 
   test("a refused proof doesn't install at the quit", async () => {
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
     platform.proof = () => Promise.reject(new UpdateError("Version 1.1.0 isn't signed by TabMail, so it wasn't installed."));
 
     platform.downloads("1.1.0");
@@ -578,19 +563,8 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
     expect(platform.source.autoInstallOnAppQuit).toBe(false);
   });
 
-  test("where installing needs an administrator, even a ready update doesn't install at the quit", async () => {
-    const { platform, updater } = setUpOn(false);
-
-    platform.downloads("1.1.0");
-    await settle();
-    updater.quitting();
-
-    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: false });
-    expect(platform.source.autoInstallOnAppQuit).toBe(false);
-  });
-
   test("Windows refusing the installer's signature in the download is shown as unsigned", async () => {
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
     platform.source.finds("1.1.0");
     updater.checkNow();
     await settle();
@@ -601,7 +575,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   });
 
   test("the library's errors while the platform proves a download are the proof's to report", async () => {
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
     let refuse: (error: Error) => void = () => {};
     platform.proof = () => new Promise((_resolve, reject) => (refuse = reject));
 
@@ -616,7 +590,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
 
   test("a failed update is tried again by the next check, and by Retry", async () => {
     vi.useFakeTimers();
-    const { platform, updater } = setUpOn(true);
+    const { platform, updater } = setUpOn();
     platform.proof = () => Promise.reject(new UpdateError("refused"));
     platform.source.finds("1.1.0");
     updater.start();
@@ -638,78 +612,42 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   describe("the install", () => {
     test("where it installs at the quit, a ready update is recorded, and the next launch says whether it installed", async () => {
       const store = new MemoryStore();
-      const { platform } = setUpOn(true, { store });
+      const { platform } = setUpOn({ store });
       platform.downloads("1.1.0");
       await settle();
       expect(store.get(installingKey)).toBe("1.1.0");
 
       // The app quit and came back as the old version: it didn't install.
-      const failed = setUpOn(true, { store });
+      const failed = setUpOn({ store });
       expect(failed.updater.state).toEqual({ kind: "failed", version: "1.1.0", message: "Version 1.1.0 didn't install." });
       expect(store.get(installingKey)).toBeUndefined();
 
       store.set(installingKey, "1.1.0");
-      const installed = setUpOn(true, { store, currentVersion: "1.1.0" });
+      const installed = setUpOn({ store, currentVersion: "1.1.0" });
       expect(installed.updater.state).toEqual({ kind: "idle" });
       expect(store.get(installingKey)).toBeUndefined();
     });
 
-    test("with an administrator's authorization: installing, then the platform opens the new version", async () => {
-      const store = new MemoryStore();
-      const { platform, updater, told } = setUpOn(false, { store });
-      let finish: () => void = () => {};
-      platform.outcome = () => new Promise((resolve) => (finish = resolve));
-      platform.downloads("1.1.0");
-      await settle();
-      expect(store.get(installingKey)).toBeUndefined();
-
-      updater.install();
-      expect(updater.state).toEqual({ kind: "installing", version: "1.1.0" });
-      expect(store.get(installingKey)).toBe("1.1.0");
-      expect(platform.installed).toEqual([expect.objectContaining({ version: "1.1.0", downloadedFile: "/cache/1.1.0" })]);
-      // A second click while it installs does nothing.
-      updater.install();
-      expect(platform.installed).toHaveLength(1);
-
-      finish();
-      await settle();
-      expect(told).toEqual([]);
-    });
-
-    test("an authorization the user dismissed installs nothing and leaves it ready, to install later", async () => {
-      const store = new MemoryStore();
-      const { platform, updater, told } = setUpOn(false, { store });
-      platform.outcome = () => Promise.reject(new UpdateError("Installing needs an administrator's authorization.", { canceled: true }));
-      platform.downloads("1.1.0");
-      await settle();
-
-      updater.install();
-      await settle();
-
-      expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: false });
-      expect(store.get(installingKey)).toBeUndefined();
-      expect(told).toEqual([["TabMail Voice 1.1.0 wasn't installed.", "Installing needs an administrator's authorization."]]);
-      updater.install();
-      expect(platform.installed).toHaveLength(2);
-    });
-
     test.each([
-      [new UpdateError("The package manager couldn't install it."), "The package manager couldn't install it.", "The package manager couldn't install it."],
+      [new UpdateError("Windows couldn't install it."), "Windows couldn't install it.", "Windows couldn't install it."],
       [new TypeError("boom"), "Version 1.1.0 couldn't be installed.", "TypeError"],
     ])("an install that fails (%s) is shown as failed and said, never as installed", async (error, message, logLine) => {
       const logged = vi.spyOn(log, "error").mockImplementation(() => {});
       onTestFinished(() => logged.mockRestore());
       const store = new MemoryStore();
-      const { platform, updater, told } = setUpOn(false, { store });
+      const { platform, updater, told } = setUpOn({ store });
       platform.outcome = () => Promise.reject(error);
       platform.downloads("1.1.0");
       await settle();
 
       updater.install();
       await settle();
+      updater.quitting();
 
       expect(updater.state).toEqual({ kind: "failed", version: "1.1.0", message });
-      expect(store.get(installingKey)).toBeUndefined();
+      // Nothing installs at the quit, and the next launch says it didn't install.
+      expect(platform.source.autoInstallOnAppQuit).toBe(false);
+      expect(store.get(installingKey)).toBe("1.1.0");
       expect(told).toEqual([["TabMail Voice 1.1.0 wasn't installed.", message]]);
       expect(logged.mock.calls).toEqual([[`Updater: 1.1.0 not installed: ${logLine}`]]);
       updater.install();
@@ -717,7 +655,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
     });
 
     test("nothing installs before an update is ready", () => {
-      const { platform, updater } = setUpOn(false);
+      const { platform, updater } = setUpOn();
 
       updater.install();
 
@@ -741,8 +679,8 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   });
 });
 
-/** The installers' answers are exit codes (Linux `install-update` 3–6, pkexec 126/127): a code the
- * program chose comes back as its code, never as success or as a failure to run. Node stands in for
+/** A program's answer is its exit code: a code the program chose comes back as its code, never as
+ * success or as a failure to run. Node stands in for
  * the programs, so this runs on every platform. */
 describe("runFile", () => {
   const node = (script: string) => ["-e", script];
@@ -761,6 +699,6 @@ describe("runFile", () => {
   });
 
   test("a program that can't run fails", async () => {
-    await expect(runFile("/nonexistent/install-update", [])).rejects.toThrow();
+    await expect(runFile("/nonexistent/program", [])).rejects.toThrow();
   });
 });

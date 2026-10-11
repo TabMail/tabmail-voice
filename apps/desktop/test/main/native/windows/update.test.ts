@@ -40,11 +40,10 @@ function setUp(reply: Awaited<ReturnType<RunFile>> | Error) {
 }
 
 describe("Windows updates (ADR-DESK-050)", () => {
-  test("only a full installer, installed when the app quits", () => {
-    const { source, platform } = setUp({ code: 0, stdout: "" });
+  test("only a full installer", () => {
+    const { source } = setUp({ code: 0, stdout: "" });
 
     expect(source.disableWebInstaller).toBe(true);
-    expect(platform.installsOnQuit).toBe(true);
   });
 
   test("a downloaded installer is kept only when the helper proves it signed by TabMail and the offered version", async () => {

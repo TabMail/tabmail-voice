@@ -184,17 +184,9 @@ vi.mock("electron-updater", async () => {
       app.autoUpdater = this;
     }
   }
-  class DebUpdater extends FakeAutoUpdater {
-    constructor() {
-      super();
-      this.kind = "deb";
-      app.autoUpdater = this;
-    }
-  }
   // A fresh one for each test's launch: the mocked module outlives `vi.resetModules`.
   return {
     NsisUpdater,
-    DebUpdater,
     get autoUpdater() {
       app.autoUpdater ??= new FakeAutoUpdater();
       return app.autoUpdater;
@@ -1626,7 +1618,7 @@ describe("main process wiring", () => {
         await settle();
         // The helper proved the installer kept.
         expect(runs.map(([file, args]) => [file.endsWith("voice-windows.exe"), args])).toEqual([[true, ["--verify-update", "C:\\cache\\installer.exe"]]]);
-        expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+        expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
         // The app's quit (this time after its cleanup began) installs the proven one.
         quit();
         expect(updater?.autoInstallOnAppQuit).toBe(true);
@@ -1638,85 +1630,13 @@ describe("main process wiring", () => {
       }
     });
 
-    /** Linux updates only once the package carries a key to check them with. */
-    test("a packaged Linux build without an update key doesn't update", async () => {
+    /** apt updates Linux, through the source the package installs (ADR-DESK-058): the app has no
+     * updater there, and no update item. */
+    test("a packaged Linux build has no updater of its own", async () => {
       await launchPackaged("linux");
 
       expect(app.autoUpdater).toBeNull();
       expect(app.trayState?.().update).toBeNull();
-    });
-
-    /** Only a `.pem` file is a key: the folder ships with its README. */
-    test("a packaged Linux build whose key folder holds no .pem doesn't update", async () => {
-      const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
-      try {
-        mkdirSync(join(resources, "linux", "update-keys"), { recursive: true });
-        writeFileSync(join(resources, "linux", "update-keys", "README.md"), "Put the release's public key here.");
-        writeFileSync(join(resources, "linux", "update-keys", "release.pem.txt"), "not a key file");
-        await launchPackaged("linux", resources);
-
-        expect(app.autoUpdater).toBeNull();
-        expect(app.trayState?.().update).toBeNull();
-      } finally {
-        rmSync(resources, { recursive: true, force: true });
-      }
-    });
-
-    test("a packaged Linux build with an update key installs with an administrator, never at the quit", async () => {
-      const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
-      try {
-        mkdirSync(join(resources, "linux", "update-keys"), { recursive: true });
-        writeFileSync(join(resources, "linux", "update-keys", "release.pem"), "a public key");
-        await launchPackaged("linux", resources);
-        const updater = app.autoUpdater;
-
-        expect(updater?.kind).toBe("deb");
-        expect(updater?.logger).toBeNull();
-        expect(updater?.autoInstallOnAppQuit).toBe(false);
-        expect(updater?.allowDowngrade).toBe(false);
-        expect(app.trayState?.().update).toEqual({ kind: "idle" });
-      } finally {
-        rmSync(resources, { recursive: true, force: true });
-      }
-    });
-
-    /** The packaged `install-update` proves the download and, through pkexec, installs it; then the
-     * app opens the new version in its own place, with the arguments it was started with, and ends. */
-    test("a Linux update is proven and installed by the packaged script, then the app reopens", async () => {
-      const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
-      const runs: [string, string[]][] = [];
-      const relaunches: unknown[] = [];
-      vi.doMock("../../src/main/native/linux/update.js", async (original) => {
-        const real = await original<typeof import("../../src/main/native/linux/update.js")>();
-        return {
-          ...real,
-          linuxUpdatePlatform: (options: Parameters<typeof real.linuxUpdatePlatform>[0]) =>
-            real.linuxUpdatePlatform({ ...options, run: async (file, args) => { runs.push([file, args]); return { code: 0, stdout: "" }; } }),
-          relaunchAfterExit: (options: unknown) => relaunches.push(options),
-        };
-      });
-      try {
-        mkdirSync(join(resources, "linux", "update-keys"), { recursive: true });
-        writeFileSync(join(resources, "linux", "update-keys", "release.pem"), "a public key");
-        await launchPackaged("linux", resources);
-        const script = join(resources, "linux", "install-update");
-
-        app.autoUpdater?.emit("update-available", { version: "9.9.9" });
-        app.autoUpdater?.emit("update-downloaded", { version: "9.9.9", downloadedFile: "/tmp/voice.deb" });
-        await settle();
-        expect(runs.map(([file, args]) => [file, args[0]])).toEqual([[script, "verify"]]);
-        expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready to install.", buttons: ["Install Now", "Later"] })]);
-        expect(relaunches).toEqual([]);
-
-        app.trayActions?.installUpdate();
-        await settle();
-        expect(runs.slice(1).map(([file, args]) => [file, args[0], args[1]])).toEqual([["/usr/bin/pkexec", script, "install"]]);
-        expect(relaunches).toEqual([{ pid: process.pid, executable: process.execPath, args: process.argv.slice(1) }]);
-        expect(app.exits).toEqual([0]);
-      } finally {
-        vi.doUnmock("../../src/main/native/linux/update.js");
-        rmSync(resources, { recursive: true, force: true });
-      }
     });
 
     test("a debug build has no updater and no update item", async () => {
@@ -1768,7 +1688,7 @@ describe("main process wiring", () => {
 
       app.squirrel?.emit("update-downloaded");
       await settle();
-      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
       expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready." })]);
     });
 
@@ -1801,8 +1721,8 @@ describe("main process wiring", () => {
 
       downloaded("9.9.9");
       await settle();
-      expect(settingsUpdate()).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
-      expect(pushed).toContainEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+      expect(settingsUpdate()).toEqual({ kind: "ready", version: "9.9.9" });
+      expect(pushed).toContainEqual({ kind: "ready", version: "9.9.9" });
       expect(app.autoUpdater?.installs).toBe(0);
       await send({ type: "installUpdate" });
       expect(app.autoUpdater?.installs).toBe(1);
@@ -1829,7 +1749,7 @@ describe("main process wiring", () => {
       downloaded("9.9.9");
       await settle();
       expect(app.dialogs).toEqual([]);
-      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
 
       // The dictation ends into the chat window: still not.
       controller.phase = { kind: "idle" };
