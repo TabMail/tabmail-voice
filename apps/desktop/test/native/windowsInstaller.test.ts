@@ -27,7 +27,8 @@ const compileTimeout = 300_000;
 const runTimeout = 60_000;
 
 type Arch = "arm64" | "x64";
-type Version = [major: number, minor: number];
+/** A runtime version as Windows records it; a part left out is not recorded. */
+type Version = [major: number, minor: number, build?: number, revision?: number];
 type View = 32 | 64;
 /** A runtime registered as installed (or, with `installed: 0`, registered and not installed), in the
  *  32-bit registry view where Microsoft documents it unless another is given. */
@@ -42,6 +43,12 @@ type Scenario = {
   exit?: number;
   silent?: boolean;
 };
+
+// The registry values Windows records a runtime version in, part by part.
+const parts = ["Major", "Minor", "Bld", "Rbld"];
+// The version the synthetic Microsoft installer carries, and one older.
+const carried: Version = [14, 44, 35211, 5];
+const older: Version = [14, 44, 35211, 4];
 
 const nsisString = (value: string): string => value.replaceAll("$", "$$");
 
@@ -70,7 +77,8 @@ describe.runIf(process.platform === "win32")("the Windows installer's Visual C++
     };
     const nsis = await getMakeNsisPath(builder.toolsets?.nsis, builder.nsis?.customNsisBinary);
 
-    // Microsoft's installer, as far as the step can tell: its version resource is 14.44.
+    // Microsoft's installer, as far as the step can tell: its version resource is 14.44.35211.5 (a
+    // revision above 0, so that an older revision can be registered).
     mkdirSync(join(work, "project/dist/runtime"), { recursive: true });
     writeFileSync(join(work, "runtime.nsi"), `Unicode true
 !include LogicLib.nsh
@@ -78,9 +86,9 @@ Name "Synthetic runtime"
 OutFile "\${OUT}"
 RequestExecutionLevel user
 SilentInstall silent
-VIProductVersion "14.44.35211.0"
+VIProductVersion "14.44.35211.5"
 VIAddVersionKey "ProductName" "Synthetic runtime"
-VIAddVersionKey "FileVersion" "14.44.35211.0"
+VIAddVersionKey "FileVersion" "14.44.35211.5"
 VIAddVersionKey "FileDescription" "Synthetic runtime"
 VIAddVersionKey "LegalCopyright" "TabMail"
 !macro register ARCH
@@ -92,12 +100,18 @@ VIAddVersionKey "LegalCopyright" "TabMail"
     FileOpen $0 "\${STATE}\\installs-\${ARCH}" r
     FileRead $0 $1
     FileRead $0 $2
+    FileRead $0 $5
+    FileRead $0 $6
     FileClose $0
     IntOp $1 $1 + 0
     IntOp $2 $2 + 0
+    IntOp $5 $5 + 0
+    IntOp $6 $6 + 0
     WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Installed" 1
     WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Major" $1
     WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Minor" $2
+    WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Bld" $5
+    WriteRegDWORD HKCU "\${KEY}\\Runtimes\\\${ARCH}" "Rbld" $6
   \${EndIf}
 !macroend
 Section
@@ -123,7 +137,7 @@ SectionEnd
 
     // The step with its state in the test's key, and the app's files as one file it replaces.
     const source = readFileSync(hook, "utf8");
-    expect(source.split(`HKLM "\${VOICE_RUNTIME_KEY}"`).length - 1).toBe(3);
+    expect(source.split(`HKLM "\${VOICE_RUNTIME_KEY}"`).length - 1).toBe(2);
     expect(source.split(realKey).length - 1).toBe(2);
     writeFileSync(join(work, "installer.nsh"), source.replaceAll(`HKLM "\${VOICE_RUNTIME_KEY}"`, `HKCU "\${VOICE_RUNTIME_KEY}"`).replaceAll(realKey, `${testKey}\\Runtimes\\`));
     writeFileSync(join(work, "installer.nsi"), `Unicode true
@@ -169,12 +183,13 @@ SectionEnd
       for (const { version, installed = 1, view = 32 } of [entries].flat()) {
         const key = `HKCU\\${testKey}\\Runtimes\\${registered}`;
         reg("add", key, "/v", "Installed", "/t", "REG_DWORD", "/d", String(installed), "/f", `/reg:${view}`);
-        reg("add", key, "/v", "Major", "/t", "REG_DWORD", "/d", String(version[0]), "/f", `/reg:${view}`);
-        reg("add", key, "/v", "Minor", "/t", "REG_DWORD", "/d", String(version[1]), "/f", `/reg:${view}`);
+        version.forEach((part, index) => {
+          if (part !== undefined) reg("add", key, "/v", parts[index]!, "/t", "REG_DWORD", "/d", String(part), "/f", `/reg:${view}`);
+        });
       }
     }
     if (installsIn === 64) writeFileSync(join(state, "installs-in-64"), "");
-    for (const [registered, version] of Object.entries(installs)) writeFileSync(join(state, `installs-${registered}`), `${version[0]}\r\n${version[1]}\r\n`);
+    for (const [registered, version] of Object.entries(installs)) writeFileSync(join(state, `installs-${registered}`), version.map(part => `${part}\r\n`).join(""));
     writeFileSync(join(state, "exit"), String(exit));
     writeFileSync(join(state, "payload"), "old");
     const run = spawnSync(installers[arch]!, silent ? ["/S"] : [], { stdio: "pipe", timeout: runTimeout });
@@ -188,12 +203,14 @@ SectionEnd
   }
 
   test.each<[string, Registered | Registered[]]>([
-    ["the same version", { version: [14, 44] }],
-    ["a newer minor version", { version: [14, 50] }],
-    ["a newer major version with a lower minor", { version: [15, 0] }],
-    ["the same version, in the 64-bit registry view only", { version: [14, 44], view: 64 }],
-    ["an older version in the 32-bit view and the same in the 64-bit one", [{ version: [14, 40] }, { version: [14, 44], view: 64 }]],
-    ["the same version in the 32-bit view and an older in the 64-bit one", [{ version: [14, 44] }, { version: [14, 40], view: 64 }]],
+    ["the same version", { version: carried }],
+    ["a newer revision", { version: [14, 44, 35211, 6] }],
+    ["a newer build with a lower revision", { version: [14, 44, 35212, 0] }],
+    ["a newer minor version with a lower build", { version: [14, 50, 100, 0] }],
+    ["a newer major version with a lower minor", { version: [15, 0, 0, 0] }],
+    ["the same version, in the 64-bit registry view only", { version: carried, view: 64 }],
+    ["an older version in the 32-bit view and the same in the 64-bit one", [{ version: older }, { version: carried, view: 64 }]],
+    ["the same version in the 32-bit view and an older in the 64-bit one", [{ version: carried }, { version: older, view: 64 }]],
   ])("with %s installed, Microsoft's installer is not run and the app is installed", (_, registered) => {
     const result = install({ arch: "arm64", before: { arm64: registered } });
     expect(result).toEqual({ status: 0, calls: [], payload: "new" });
@@ -201,43 +218,47 @@ SectionEnd
 
   test.each<[string, Scenario["before"]]>([
     ["missing", {}],
-    ["older by minor version", { arm64: { version: [14, 40] } }],
-    ["older by major version with a higher minor", { arm64: { version: [13, 99] } }],
-    ["registered and not installed", { arm64: { version: [14, 44], installed: 0 } }],
-    ["installed for the other architecture only", { x64: { version: [14, 44] } }],
-    ["older in both registry views", { arm64: [{ version: [14, 40] }, { version: [14, 40], view: 64 }] }],
+    ["older by revision", { arm64: { version: older } }],
+    ["older by build with a higher revision", { arm64: { version: [14, 44, 35210, 9] } }],
+    ["older by minor version with a higher build", { arm64: { version: [14, 40, 40000, 9] } }],
+    ["older by major version with a higher minor", { arm64: { version: [13, 99, 99999, 9] } }],
+    ["recorded without its build and revision", { arm64: { version: [14, 44] } }],
+    ["registered and not installed", { arm64: { version: carried, installed: 0 } }],
+    ["installed for the other architecture only", { x64: { version: carried } }],
+    ["older in both registry views", { arm64: [{ version: older }, { version: older, view: 64 }] }],
   ])("with the runtime %s, a silent install runs Microsoft's installer quietly first, then installs the app", (_, before) => {
-    const result = install({ arch: "arm64", before, installs: { arm64: [14, 44] } });
+    const result = install({ arch: "arm64", before, installs: { arm64: carried } });
     expect(result.status).toBe(0);
     expect(result.calls.map(call => [call.args, call.payload])).toEqual([["/install /quiet /norestart", "old"]]);
     expect(result.payload).toBe("new");
   }, runTimeout);
 
   test("an interactive install shows Microsoft's installer's progress", () => {
-    const result = install({ arch: "arm64", installs: { arm64: [14, 44] }, silent: false });
+    const result = install({ arch: "arm64", installs: { arm64: carried }, silent: false });
     expect(result.status).toBe(0);
     expect(result.calls.map(call => [call.args, call.payload])).toEqual([["/install /passive /norestart", "old"]]);
     expect(result.payload).toBe("new");
   }, runTimeout);
 
   test("a runtime Microsoft's installer records in the 64-bit registry view only is found", () => {
-    expect(install({ arch: "arm64", installs: { arm64: [14, 44] }, installsIn: 64 })).toMatchObject({ status: 0, payload: "new" });
+    expect(install({ arch: "arm64", installs: { arm64: carried }, installsIn: 64 })).toMatchObject({ status: 0, payload: "new" });
   }, runTimeout);
 
-  test.each([3010, 1641])("when Microsoft's installer asks for a restart (%i), the app is installed only after it", exit => {
+  test.each([3010, 1641])("when Microsoft's installer asks for a restart (%i), this run leaves the app as it was", exit => {
     // Until Windows restarts, the runtime's files in use are the old ones.
-    const result = install({ arch: "arm64", installs: { arm64: [14, 44] }, exit });
+    const result = install({ arch: "arm64", installs: { arm64: carried }, exit });
     expect(result).toMatchObject({ status: 2, payload: "old" });
     expect(result.calls).toHaveLength(1);
-    // After the restart the runtime is there: the next run installs without running it again.
-    expect(install({ arch: "arm64", before: { arm64: { version: [14, 44] } } })).toEqual({ status: 0, calls: [], payload: "new" });
+    // The runtime is then registered, so the next run installs without running it again, whether or
+    // not Windows has restarted (which the step cannot tell; ADR-DESK-057 accepts a run before it).
+    expect(install({ arch: "arm64", before: { arm64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new" });
   }, runTimeout);
 
   test.each<[string, Pick<Scenario, "installs" | "exit">]>([
     ["refused (the administrator prompt declined)", { exit: 1602 }],
     ["reported installed without installing it", { exit: 0 }],
-    ["installed only for the other architecture", { installs: { x64: [14, 44] } }],
-    ["installed at an older version", { installs: { arm64: [14, 40] } }],
+    ["installed only for the other architecture", { installs: { x64: carried } }],
+    ["installed at an older version", { installs: { arm64: older } }],
   ])("with the runtime missing and %s, the installer exits 2 and the installed app stays as it was", (_, scenario) => {
     const result = install({ arch: "arm64", ...scenario });
     expect(result.status).toBe(2);
@@ -246,15 +267,15 @@ SectionEnd
   }, runTimeout);
 
   test("the runtime Windows has afterwards decides, whatever Microsoft's installer returns", () => {
-    const result = install({ arch: "arm64", installs: { arm64: [14, 44] }, exit: 1602 });
+    const result = install({ arch: "arm64", installs: { arm64: carried }, exit: 1602 });
     expect(result).toMatchObject({ status: 0, payload: "new" });
   }, runTimeout);
 
   test("the x64 installer reads and installs the x64 runtime", () => {
-    expect(install({ arch: "x64", before: { x64: { version: [14, 44] } } })).toEqual({ status: 0, calls: [], payload: "new" });
-    const missing = install({ arch: "x64", before: { arm64: { version: [14, 44] } }, installs: { x64: [14, 44] } });
+    expect(install({ arch: "x64", before: { x64: { version: carried } } })).toEqual({ status: 0, calls: [], payload: "new" });
+    const missing = install({ arch: "x64", before: { arm64: { version: carried } }, installs: { x64: carried } });
     expect(missing.status).toBe(0);
     expect(missing.calls.map(call => call.args)).toEqual(["/install /quiet /norestart"]);
-    expect(install({ arch: "x64", before: { arm64: { version: [14, 44] } }, installs: { arm64: [14, 44] } })).toMatchObject({ status: 2, payload: "old" });
+    expect(install({ arch: "x64", before: { arm64: { version: carried } }, installs: { arm64: carried } })).toMatchObject({ status: 2, payload: "old" });
   }, runTimeout);
 });

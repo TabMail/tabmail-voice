@@ -31,7 +31,8 @@ test("Windows installs the C++ runtime system-wide and ships none of its own", (
   expect(installer).toMatch(/!macro customInit\s+!insertmacro voiceRuntimeInstalled/);
   // Where Windows keeps the runtime's state, in both registry views (the test that runs the step
   // reads it from a test key of its own).
-  expect(installer.match(/ReadRegDWORD \$R\d HKLM "\$\{VOICE_RUNTIME_KEY\}" "(Installed|Major|Minor)"/g)).toHaveLength(3);
+  expect(installer.match(/ReadRegDWORD \$R\d HKLM "\$\{VOICE_RUNTIME_KEY\}" "(Installed|\$\{NAME\})"/g)).toHaveLength(2);
+  expect(installer).toMatch(/!insertmacro voiceRuntimePart Major \$\{VOICE_RUNTIME_1\}\s+!insertmacro voiceRuntimePart Minor \$\{VOICE_RUNTIME_2\}\s+!insertmacro voiceRuntimePart Bld \$\{VOICE_RUNTIME_3\}\s+!insertmacro voiceRuntimePart Rbld \$\{VOICE_RUNTIME_4\}/);
   expect(installer).toMatch(/!insertmacro voiceRuntimeInstalledIn 32\s+!insertmacro voiceRuntimeInstalledIn 64\s+!macroend/);
   expect(builder.win.extraResources.filter(resource => resource.from === "dist/runtime" || (resource.filter ?? []).some(name => /\.dll$/i.test(name)))).toEqual([]);
   expect(readFileSync(join(root, "native/windows/CMakeLists.txt"), "utf8")).not.toMatch(/CMAKE_MSVC_RUNTIME_LIBRARY|\/MT\b/);

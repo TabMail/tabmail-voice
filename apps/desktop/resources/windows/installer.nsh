@@ -22,28 +22,40 @@
 !else
   !define VOICE_RUNTIME_KEY "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 !endif
-; VOICE_RUNTIME_1 and VOICE_RUNTIME_2: the runtime's major and minor version, as Microsoft's
-; installer carries them.
+; VOICE_RUNTIME_1 to VOICE_RUNTIME_4: the runtime's version (major, minor, build, revision), as
+; Microsoft's installer carries it.
 !getdllversion "${PROJECT_DIR}\dist\runtime\vc_redist.exe" VOICE_RUNTIME_
 
-; Sets $R0 to 1 when VOICE_RUNTIME_KEY in this registry view records the runtime at that major and
-; minor version or later.
+; Compares one part of the version VOICE_RUNTIME_KEY records with the carried one, while the parts
+; before it were equal ($R1 = 1): newer sets $R1 to 2, older to 0. A part not recorded counts as 0.
+!macro voiceRuntimePart NAME CARRIED
+  ${If} $R1 = 1
+    ReadRegDWORD $R2 HKLM "${VOICE_RUNTIME_KEY}" "${NAME}"
+    ${If} $R2 > ${CARRIED}
+      StrCpy $R1 2
+    ${ElseIf} $R2 < ${CARRIED}
+      StrCpy $R1 0
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; Sets $R0 to 1 when VOICE_RUNTIME_KEY in this registry view records the runtime installed, at the
+; carried version or later.
 !macro voiceRuntimeInstalledIn VIEW
   SetRegView ${VIEW}
   ReadRegDWORD $R1 HKLM "${VOICE_RUNTIME_KEY}" "Installed"
-  ReadRegDWORD $R2 HKLM "${VOICE_RUNTIME_KEY}" "Major"
-  ReadRegDWORD $R3 HKLM "${VOICE_RUNTIME_KEY}" "Minor"
   ${If} $R1 = 1
-    ${If} $R2 > ${VOICE_RUNTIME_1}
-      StrCpy $R0 1
-    ${ElseIf} $R2 = ${VOICE_RUNTIME_1}
-    ${AndIf} $R3 >= ${VOICE_RUNTIME_2}
+    !insertmacro voiceRuntimePart Major ${VOICE_RUNTIME_1}
+    !insertmacro voiceRuntimePart Minor ${VOICE_RUNTIME_2}
+    !insertmacro voiceRuntimePart Bld ${VOICE_RUNTIME_3}
+    !insertmacro voiceRuntimePart Rbld ${VOICE_RUNTIME_4}
+    ${If} $R1 <> 0
       StrCpy $R0 1
     ${EndIf}
   ${EndIf}
 !macroend
 
-; $R0 is 1 when Windows has the runtime at that major and minor version or later. Microsoft documents
+; $R0 is 1 when Windows has the runtime at the carried version or later. Microsoft documents
 ; the key in the 32-bit view, and some machines record it only in the 64-bit one: either counts. The
 ; 64-bit view, read last, stays set, as electron-builder set it.
 !macro voiceRuntimeInstalled
