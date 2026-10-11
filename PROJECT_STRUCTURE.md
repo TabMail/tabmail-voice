@@ -21,7 +21,7 @@ Electron 44, React 19, Vite, Vitest, electron-builder; npm (`npx -y npm@11.19.1 
 ```
 apps/desktop/
 ├── package.json, electron-builder.json, tsconfig.{base,main,renderer,test}.json, vite.config.mts, vitest.config.mts, eslint.config.mjs
-├── resources/               App icon, tray template images (plain, and marked with a dot while a permission is missing), DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources); linux/install-update and linux/update-keys/ (ADR-DESK-050); windows/installer.nsh, the installer's check and install of the system-wide Visual C++ runtime (ADR-DESK-057)
+├── resources/               App icon, tray template images (plain, and marked with a dot while a permission is missing), DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources); linux/tabmail-voice.sources and linux/tabmail-voice-archive-keyring.gpg, the apt source and the keys that sign it, which the package installs (ADR-DESK-058); windows/installer.nsh, the installer's check and install of the system-wide Visual C++ runtime (ADR-DESK-057)
 ├── scripts/
 │   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
@@ -75,7 +75,7 @@ apps/desktop/
 │   │   ├── audioCapture.ts          The microphone, one session per try of a dictation's start (a failed start is tried again for about two seconds): through `voice-microphone` on macOS, Windows and Linux, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── documents/               A local file the user approved, for agent mode (ADR-DESK-051): `localDocument.ts` (home folder only, no symlinks, the same file read); the PDF parsed in a disposable utility process (`pdfProcess.ts`, `pdfWorker.ts`) inside a fixed-memory interpreter (`pdfRealm.ts`, `pdfRealmPrelude.ts`, `pdfExtraction.ts`); `pdfReader.ts` (its text redacted in the helper)
-│   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, on every platform: when to look, the download, the states, the question, failures and retries (ADR-DESK-041, ADR-DESK-050); each OS's proof and install in `native/<os>/update.ts`
+│   │   ├── updater.ts               Packaged macOS and Windows builds: updates from cdn.tabmail.ai: when to look, the download, the states, the question, failures and retries (ADR-DESK-041, ADR-DESK-050); each OS's proof and install in `native/<os>/update.ts` (Linux has none: apt updates it, ADR-DESK-058)
 │   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts (at once for a helper that exits to be started afresh)
 │   │   │   ├── microphone.ts         Shared native audio wire adapter and chunk decoder
@@ -83,7 +83,7 @@ apps/desktop/
 │   │   │   ├── fieldReader.ts        The focused field read after a paste (`CorrectionWatch`'s `FieldSource`), by `voice-field-reader`, a program of its own on every platform: the paste's own target by an identity both helpers share (the process on macOS and Linux, the window's handle on Windows), restarted when a read is superseded or stuck (ADR-DESK-053, amended 2026-10-07 and 2026-10-08)
 │   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters; update.ts (Squirrel.Mac's proof)
 │   │   │   ├── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters; update.ts (the installer's Authenticode signature, through `voice-windows.exe --verify-update`)
-│   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters; update.ts (`install-update`, through `pkexec` to install)
+│   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters (no updater: apt updates the package, ADR-DESK-058)
 │   │   └── storage/                 keychainSessionStore.ts (the sign-in; windows/sessionCredential.ts stores compressed binary sessions within Credential Manager’s blob bound), jsonFileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
 │   ├── preload/index.ts     `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
@@ -179,6 +179,7 @@ message and pastes nothing. No agent call has a deadline.
 Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: voice`) with a Supabase
 JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
 dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
-Packaged builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/` (`latest-mac.yml`,
-`latest.yml` on Windows, `latest-linux.yml` or `latest-linux-arm64.yml`) with `electron-updater`, sending no installation
-ID (ADR-DESK-041, ADR-DESK-050).
+Packaged macOS and Windows builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/`
+(`latest-mac.yml`, `latest.yml` on Windows) with `electron-updater`, sending no installation ID (ADR-DESK-041,
+ADR-DESK-050). On Linux apt updates the package from the signed repository at `cdn.tabmail.ai/releases/voice`,
+whose source and keys the package installs (ADR-DESK-058).

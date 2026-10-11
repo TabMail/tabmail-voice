@@ -659,15 +659,13 @@ describe("Settings page", () => {
   /** Under the version, the menu's update item as a button: Check for Updates, disabled while a
    * check or download runs, Restart to Update once one is ready; none where the app doesn't update
    * itself. */
-  test("the update button checks, waits, restarts or installs, and retries, saying why it failed", async () => {
+  test("the update button checks, waits, restarts, and retries, saying why it failed", async () => {
     const updateButton = () => [...document.querySelectorAll("main .row")].find((row) => row.firstElementChild?.textContent === "Updates")?.querySelector("button") ?? undefined;
     const cases: [SettingsState["update"], string | null, boolean, Command | null][] = [
       [{ kind: "idle" }, "Check for Updates…", false, { type: "checkForUpdates" }],
       [{ kind: "checking" }, "Checking for Updates…", true, null],
       [{ kind: "downloading", version: "2.0.0" }, "Downloading Version 2.0.0…", true, null],
-      [{ kind: "ready", version: "2.0.0", installsOnQuit: true }, "Restart to Update to Version 2.0.0", false, { type: "installUpdate" }],
-      [{ kind: "ready", version: "2.0.0", installsOnQuit: false }, "Install Version 2.0.0…", false, { type: "installUpdate" }],
-      [{ kind: "installing", version: "2.0.0" }, "Installing Version 2.0.0…", true, null],
+      [{ kind: "ready", version: "2.0.0" }, "Restart to Update to Version 2.0.0", false, { type: "installUpdate" }],
       [{ kind: "failed", version: "2.0.0", message: "Version 2.0.0 didn't install." }, "Retry Update to Version 2.0.0", false, { type: "checkForUpdates" }],
       [null, null, false, null],
     ];

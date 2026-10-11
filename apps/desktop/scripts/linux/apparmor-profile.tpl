@@ -19,9 +19,6 @@ profile "${executable}" "/opt/${sanitizedProductName}/${executable}" flags=(enfo
   # too (ADR-DESK-053).
   "/opt/${sanitizedProductName}/resources/helpers/voice-screen-reader" Ux,
   "/opt/${sanitizedProductName}/resources/helpers/voice-field-reader" Ux,
-  # An update installs as root through pkexec (ADR-DESK-050): it and the package manager under it
-  # leave this profile, which would otherwise refuse dpkg's links to the files it replaces.
-  /usr/bin/pkexec Ux,
 
   include if exists <local/${executable}>
 }

@@ -37,7 +37,6 @@ export function macUpdatePlatform(options: { source: MacUpdateSource; installer:
   });
   return {
     source,
-    installsOnQuit: true,
     verify: () =>
       new Promise((accept, refuse) => {
         pending = { accept, refuse };
