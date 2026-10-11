@@ -2,42 +2,24 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 
 const root = join(__dirname, "..");
 
-/** An OpenPGP keyring's packets (RFC 9580 §4.2); throws on anything that isn't a whole packet. */
-function openPGPPackets(data: Buffer): { tag: number; body: Buffer }[] {
-  const packets: { tag: number; body: Buffer }[] = [];
-  let at = 0;
-  while (at < data.length) {
-    const header = data[at++]!;
-    if ((header & 0x80) === 0) throw new Error("not an OpenPGP packet");
-    let tag: number;
-    let length: number;
-    if (header & 0x40) {
-      tag = header & 0x3f;
-      const first = data[at++]!;
-      if (first < 192) length = first;
-      else if (first < 224) length = ((first - 192) << 8) + data[at++]! + 192;
-      else if (first === 255) { length = data.readUInt32BE(at); at += 4; }
-      else throw new Error("partial packet in a keyring");
-    } else {
-      tag = (header >> 2) & 0x0f;
-      const size = [1, 2, 4][header & 0x03];
-      if (size === undefined) throw new Error("indeterminate packet length in a keyring");
-      length = data.readUIntBE(at, size);
-      at += size;
-    }
-    if (at + length > data.length) throw new Error("truncated packet");
-    packets.push({ tag, body: data.subarray(at, at + length) });
-    at += length;
+/** What GnuPG makes of an OpenPGP file, read in a home of its own so no user keyring is involved. */
+function gpg(...args: string[]): string {
+  const home = mkdtempSync(join(tmpdir(), "voice-gpg-"));
+  try {
+    return execFileSync("gpg", ["--homedir", home, "--batch", "--with-colons", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } finally {
+    execFileSync("gpgconf", ["--homedir", home, "--kill", "all"]);
+    rmSync(home, { recursive: true, force: true });
   }
-  return packets;
 }
 
 test("Windows packages every helper the main process can launch", () => {
@@ -148,9 +130,12 @@ describe("the Mac app's packaging", () => {
     expect(builder.linux.publish).toBeNull();
     expect(builder.deb.fpm).toContain(`resources/linux/tabmail-voice-archive-keyring.gpg=${keyring}`);
     expect(builder.deb.fpm).toContain("resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources");
-    // Both under /etc, so dpkg keeps both as conffiles: `apt remove` never leaves the source without
-    // its keys, which would make every `apt update` after it warn.
+    // Both under /etc, which fpm lists as conffiles unless an option says otherwise, and fpm gets no
+    // option here, only files: dpkg keeps the two for the same lifetime, so `apt remove` never leaves
+    // the source without its keys, which would make every `apt update` after it warn. The release
+    // checks the built package's conffiles before it publishes one.
     expect(builder.deb.fpm.filter(mapping => mapping.startsWith("resources/linux/tabmail-voice")).map(mapping => mapping.split("=")[1]!.startsWith("/etc/"))).toEqual([true, true]);
+    expect(builder.deb.fpm.filter(argument => argument.startsWith("-") || !argument.includes("="))).toEqual([]);
     expect(source.split("\n").filter(line => line && !line.startsWith("#"))).toEqual([
       "Types: deb",
       "URIs: https://cdn.tabmail.ai/releases/voice",
@@ -166,13 +151,20 @@ describe("the Mac app's packaging", () => {
   /** The keyring is binary OpenPGP (what apt's Signed-By reads) holding two public keys, the one
    * that signs and its offline backup, which installed apps must already trust for it to replace
    * the first (ADR-DESK-058), and nothing secret. */
-  test("the apt keyring holds the signing key and its backup, public only", () => {
-    const packets = openPGPPackets(readFileSync(join(root, "resources/linux/tabmail-voice-archive-keyring.gpg")));
-    const keys = packets.filter(packet => packet.tag === 6);
+  // GnuPG reads the keyring as apt's own verifier does; Windows has no GnuPG.
+  test.skipIf(process.platform === "win32")("the apt keyring holds the signing key and its backup, public only", () => {
+    const keyring = join(root, "resources/linux/tabmail-voice-archive-keyring.gpg");
+    const records = gpg("--with-sig-check", "--show-keys", keyring).split("\n").map(line => line.split(":"));
+    const keys = records.filter(([type]) => type === "pub");
 
     expect(keys).toHaveLength(2);
-    expect(new Set(keys.map(key => createHash("sha1").update(Buffer.concat([Buffer.from([0x99, key.body.length >> 8, key.body.length & 0xff]), key.body])).digest("hex"))).size).toBe(2);
-    expect(packets.filter(packet => packet.tag === 5 || packet.tag === 7)).toEqual([]);
+    expect(new Set(records.filter(([type]) => type === "fpr").map(record => record[9])).size).toBe(2);
+    // Each can sign, neither is revoked or expired, and each carries a self-signature GnuPG checked.
+    for (const key of keys) expect([key[1], key[11]?.includes("s")]).toEqual(["-", true]);
+    expect(records.filter(([type, validity]) => type === "sig" && validity === "!")).toHaveLength(2);
+    expect(records.filter(([type, validity]) => type === "sig" && validity !== "!")).toEqual([]);
+    expect(records.filter(([type]) => type === "sec" || type === "ssb")).toEqual([]);
+    expect(gpg("--list-packets", keyring)).not.toMatch(/secret (sub)?key packet/);
   });
 
   /** Snap's AT-SPI rules accept only unconfined peers, so each helper that reads through AT-SPI (the
