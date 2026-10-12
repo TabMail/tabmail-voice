@@ -2556,6 +2556,46 @@ digital silence. Silence only as a device starts (a Bluetooth headset switching 
 out, and once the key is released the recording goes on as any does. A spoken answer to a question
 is not checked.
 
+### Amendment 2026-10-11 (owner): an Intel Mac app too, and a universal one
+
+Owner: "why no intel mac support? doesn't mac support universal binaries?" The consequence above
+that the macOS helpers are built for Apple silicon only "(Xcode 27 deprecates x86_64)" is
+superseded. Xcode 27 still builds x86_64; it warns only when the deployment target is its own macOS
+(27), which `swift build --arch x86_64` assumes. For macOS 15, the app's minimum, x86_64 is
+supported, and a build that names the deployment target (`--triple x86_64-apple-macosx15.0`) is
+clean.
+
+**Decision:**
+- Three Mac downloads, as VS Code and Notion offer them (owner: "three releases like other apps
+  with universal as default ... and have links to each platform"): `TabMail-Voice-latest-universal.dmg`,
+  the website's main download, runs natively on both; `TabMail-Voice-latest-arm64.dmg`, unchanged,
+  and `TabMail-Voice-latest-x64.dmg`, each about half the universal app's size, are linked beside it.
+- Every app updates from the feed of the architecture it runs as (ADR-DESK-041's amendment of the
+  same day), so a universal install updates to that Mac's own app, and only the two thin apps have
+  feeds.
+- Each is its own build. `scripts/macos/build-native.mts` builds the helpers for `VOICE_MAC_ARCH`
+  (`arm64`, `x64`, or `universal`: both, joined by `lipo`; by default the build machine's, the app
+  electron-builder builds by default) with the triple for macOS
+  15, and links that architecture's Rust core: `Package.swift` takes the target from
+  `VOICE_RUST_TARGET`, as a manifest only knows the build machine's architecture. Each
+  architecture has its own SwiftPM scratch folder.
+- npm installs native packages for the build machine only, so every Mac build installs the app's
+  own Mac packages for both architectures (the keychain's `@napi-rs/keyring-darwin-*`) from
+  package-lock.json, each tarball checked against the lockfile's integrity before it is unpacked.
+  Every app carries both keychain binaries (about 0.5 MB each): electron-builder joins the universal
+  app from an Apple silicon and an Intel build, which must hold the same files, and
+  `mac.x64ArchFiles` lets it keep the two single-architecture binaries as they are.
+- The release (`tabmail-release-helpers/voice/release-mac.sh`) builds, notarizes, verifies and
+  publishes all three, each in its own CDN folder (`macos-<arch>`); the universal app is a DMG
+  alone, with no ZIP and no feed.
+
+**Consequences:**
+- Nobody here has an Intel Mac: the x64 app is checked under Rosetta on Apple silicon, the same
+  x86_64 code, but not on Intel hardware. The universal app's Intel half is that same code.
+- A universal install becomes a thin app with its first update; nothing it needs is lost, as it
+  runs only its own architecture's half.
+- macOS 26 is the last macOS for Intel Macs, so this app serves them on macOS 15 and 26.
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
@@ -3309,6 +3349,23 @@ the General card. A refusal or failed install logs the platform's own fixed sent
 above is superseded: a packaged Linux build has no updater and no update item; apt updates the
 package from the signed repository at `cdn.tabmail.ai/releases/voice`, as the second consequence
 above foresaw for a `.deb`. Install Version… and Installing Version… are gone.
+
+**Amendment 2026-10-11 — each Mac app reads the feed of the architecture it runs as
+(ADR-DESK-032's amendment).** The app sets its feed when it starts the updater:
+`https://cdn.tabmail.ai/releases/voice/macos-<process.arch>` (`macUpdateFeedURL` in `config.ts`,
+`src/main/native/macos/update.ts`), not the `app-update.yml` its build wrote. So the universal app,
+downloaded for either kind of Mac, updates to that Mac's own app (`macos-arm64` on Apple silicon,
+`macos-x64` on Intel); the Apple silicon app reads `macos-arm64`, as every copy installed before
+did; and an Apple silicon Mac that runs the Intel app under Rosetta (where it runs as x64) stays on
+the Intel feed. Squirrel.Mac installs the thin app over the universal one, as both carry the same
+Developer ID signature. `publish` is `https://cdn.tabmail.ai/releases/voice/macos`, with no
+architecture: electron-builder joins the universal app from an Apple silicon and an Intel build and
+refuses when their `app-update.yml` differ, and electron-updater reads that file only for its
+download cache's folder. A build-time feed URL would also be wrong for the universal app on one of
+the two kinds of Mac; were the app ever not to set its feed, `macos` has no feed and updates fail
+visibly instead. The mac targets name no architecture (one there would override the release's
+`--arm64`, `--x64` or `--universal`), so a plain build is the build machine's app, and the helpers
+default to the build machine's architecture to match.
 
 ## ADR-DESK-042: The text goes where the caret was at key-down, or onto the clipboard
 

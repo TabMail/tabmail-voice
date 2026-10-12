@@ -32,7 +32,7 @@
   "publish": [
     {
       "provider": "generic",
-      "url": "https://cdn.tabmail.ai/releases/voice/macos-arm64",
+      "url": "https://cdn.tabmail.ai/releases/voice/macos",
       "useMultipleRangeRequest": false
     }
   ],
@@ -47,19 +47,10 @@
       }
     ],
     "target": [
-      {
-        "target": "dmg",
-        "arch": [
-          "arm64"
-        ]
-      },
-      {
-        "target": "zip",
-        "arch": [
-          "arm64"
-        ]
-      }
+      "dmg",
+      "zip"
     ],
+    "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-*/*.node",
     "minimumSystemVersion": "15.0",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,

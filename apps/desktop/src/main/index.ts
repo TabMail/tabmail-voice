@@ -475,7 +475,7 @@ function launch(): void {
     switch (process.platform) {
       case "darwin":
         autoUpdater.logger = null;
-        return macUpdatePlatform({ source: autoUpdater, installer: squirrel });
+        return macUpdatePlatform({ source: autoUpdater, installer: squirrel, arch: process.arch });
       case "win32": {
         const source = new NsisUpdater();
         source.logger = null;

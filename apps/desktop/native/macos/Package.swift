@@ -6,11 +6,15 @@
 import PackageDescription
 import Foundation
 
+// The manifest runs on the build machine, so `arch` is the host's: a build for the other
+// architecture (the Intel app's helpers, built on Apple silicon) names its Rust target in
+// `VOICE_RUST_TARGET` (scripts/macos/build-native.mts).
 #if arch(arm64)
-let rustTarget = "aarch64-apple-darwin"
+let hostRustTarget = "aarch64-apple-darwin"
 #else
-let rustTarget = "x86_64-apple-darwin"
+let hostRustTarget = "x86_64-apple-darwin"
 #endif
+let rustTarget = ProcessInfo.processInfo.environment["VOICE_RUST_TARGET"] ?? hostRustTarget
 let rustLibrary = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
     .appendingPathComponent("../shared/rust/target/\(rustTarget)/release").standardizedFileURL.path
 

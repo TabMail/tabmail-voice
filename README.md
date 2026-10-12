@@ -45,6 +45,10 @@ npm test           # unit tests; also: npm run typecheck, npm run lint, ./script
 npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is in the keychain)
 ```
 
+`npm run dist` builds the app for the kind of Mac it runs on. To build the Intel app on any Mac:
+`VOICE_MAC_ARCH=x64 npm run dist -- --x64` (and `arm64` likewise); for both in one,
+`VOICE_MAC_ARCH=universal npm run dist -- --universal`.
+
 An unpackaged build (what `npm start` runs) keeps a detailed log at
 `~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
 every request to the TabMail backend and its reply, and what was pasted. The access token and the
