@@ -5162,8 +5162,9 @@ off the website until this ships.
   edit it.
 - **The repository** is on the CDN beside the downloads: `dists/stable/InRelease`, `Release`,
   `Release.gpg`, and `main/binary-{amd64,arm64}/Packages` (and `.gz`), the latest version per
-  architecture. `Packages` points at the `.deb` the website links (`linux-x64/…`, `linux-arm64/…`),
-  so apt and the download fetch the very same file. The release (`tabmail-release-helpers`) signs it
+  architecture. `Packages` points at the versioned `.deb` in `linux-x64/…` and `linux-arm64/…`; the
+  website links a `TabMail-Voice-latest-linux-<arch>.deb` copy of the same bytes there, which the
+  release writes after the index (amended 2026-10-12: the site never names a version). The release (`tabmail-release-helpers`) signs it
   with the primary key, refuses to sign with a key the package's own keyring doesn't hold, checks the
   signatures with `gpgv` against that keyring, never replaces a newer version with an older one, and
   writes `InRelease` last.
