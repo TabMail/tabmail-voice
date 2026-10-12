@@ -461,7 +461,9 @@ export const updateVerifyTimeout = 120_000;
  * certificate, as the release's signing names them (ADR-DESK-050). */
 export const windowsUpdatePublisher = "Lisem AI LTD";
 /** The Mac apps' update feeds, one folder per architecture: `<this>-arm64` and `<this>-x64`
- * (ADR-DESK-041). */
+ * (ADR-DESK-041). `electron-builder.json`'s publish URL is this, with no architecture: the
+ * universal app's two halves must be built with the same `app-update.yml`, and the app appends the
+ * architecture it runs as. */
 export const macUpdateFeedURL = "https://cdn.tabmail.ai/releases/voice/macos";
 
 // MARK: Welcome wizard

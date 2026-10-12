@@ -65,12 +65,13 @@ function buildHelpers(root: string, arch: keyof typeof architectures): string {
   return execFileSync("swift", [...swift, "--show-bin-path"], { encoding: "utf8", env }).trim();
 }
 
-/** Builds the helpers, and installs the packages, for one Mac app: Apple silicon unless
- * `VOICE_MAC_ARCH` is `x64` (the Intel app) or `universal` (both in one, the website's download).
- * The thin apps' helpers are thin; the universal app's are both architectures', joined by `lipo`. */
+/** Builds the helpers, and installs the packages, for one Mac app: `VOICE_MAC_ARCH` names it
+ * (`arm64`, `x64`, or `universal`, both in one, the website's download), or else the build
+ * machine's, the app electron-builder builds by default. The thin apps' helpers are thin; the
+ * universal app's are both architectures', joined by `lipo`. */
 export async function buildNative(root: string): Promise<void> {
-  const arch = process.env.VOICE_MAC_ARCH ?? "arm64";
-  if (arch !== "arm64" && arch !== "x64" && arch !== "universal") throw new Error(`VOICE_MAC_ARCH is ${arch}, not arm64, x64 or universal`);
+  const arch = process.env.VOICE_MAC_ARCH ?? process.arch;
+  if (arch !== "arm64" && arch !== "x64" && arch !== "universal") throw new Error(`The Mac app's architecture is ${arch}, not arm64, x64 or universal`);
   await installMacPackages(root);
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });

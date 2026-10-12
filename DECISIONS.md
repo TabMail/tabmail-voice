@@ -2574,7 +2574,8 @@ clean.
   same day), so a universal install updates to that Mac's own app, and only the two thin apps have
   feeds.
 - Each is its own build. `scripts/macos/build-native.mts` builds the helpers for `VOICE_MAC_ARCH`
-  (`arm64`, the default, `x64`, or `universal`: both, joined by `lipo`) with the triple for macOS
+  (`arm64`, `x64`, or `universal`: both, joined by `lipo`; by default the build machine's, the app
+  electron-builder builds by default) with the triple for macOS
   15, and links that architecture's Rust core: `Package.swift` takes the target from
   `VOICE_RUST_TARGET`, as a manifest only knows the build machine's architecture. Each
   architecture has its own SwiftPM scratch folder.
@@ -3357,10 +3358,14 @@ downloaded for either kind of Mac, updates to that Mac's own app (`macos-arm64` 
 `macos-x64` on Intel); the Apple silicon app reads `macos-arm64`, as every copy installed before
 did; and an Apple silicon Mac that runs the Intel app under Rosetta (where it runs as x64) stays on
 the Intel feed. Squirrel.Mac installs the thin app over the universal one, as both carry the same
-Developer ID signature. `publish` is still `https://cdn.tabmail.ai/releases/voice/macos-${arch}`,
-filled in per build: it names each thin build's `latest-mac.yml` folder, and electron-updater still
-reads `app-update.yml` for its download cache's folder. The mac targets name no architecture (one
-there would override the release's `--arm64`, `--x64` or `--universal`).
+Developer ID signature. `publish` is `https://cdn.tabmail.ai/releases/voice/macos`, with no
+architecture: electron-builder joins the universal app from an Apple silicon and an Intel build and
+refuses when their `app-update.yml` differ, and electron-updater reads that file only for its
+download cache's folder. A build-time feed URL would also be wrong for the universal app on one of
+the two kinds of Mac; were the app ever not to set its feed, `macos` has no feed and updates fail
+visibly instead. The mac targets name no architecture (one there would override the release's
+`--arm64`, `--x64` or `--universal`), so a plain build is the build machine's app, and the helpers
+default to the build machine's architecture to match.
 
 ## ADR-DESK-042: The text goes where the caret was at key-down, or onto the clipboard
 

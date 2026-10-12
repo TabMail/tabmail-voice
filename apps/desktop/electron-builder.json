@@ -32,7 +32,7 @@
   "publish": [
     {
       "provider": "generic",
-      "url": "https://cdn.tabmail.ai/releases/voice/macos-${arch}",
+      "url": "https://cdn.tabmail.ai/releases/voice/macos",
       "useMultipleRangeRequest": false
     }
   ],

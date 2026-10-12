@@ -45,8 +45,8 @@ npm test           # unit tests; also: npm run typecheck, npm run lint, ./script
 npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is in the keychain)
 ```
 
-`npm run dist` builds the Apple silicon app. For Intel Macs, build the x64 app (on either kind of
-Mac): `VOICE_MAC_ARCH=x64 npm run dist -- --x64`; for both in one,
+`npm run dist` builds the app for the kind of Mac it runs on. To build the Intel app on any Mac:
+`VOICE_MAC_ARCH=x64 npm run dist -- --x64` (and `arm64` likewise); for both in one,
 `VOICE_MAC_ARCH=universal npm run dist -- --universal`.
 
 An unpackaged build (what `npm start` runs) keeps a detailed log at

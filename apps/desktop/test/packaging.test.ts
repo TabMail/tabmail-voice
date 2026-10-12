@@ -97,15 +97,15 @@ describe("the Mac app's packaging", () => {
    * nowhere else (no third party sees an update check), which names the ZIP by the file name
    * electron-builder gave it, uploaded as named: no spaces. Squirrel.Mac installs from the ZIP. The
    * CDN refuses a request for several byte ranges, so a differential update asks for one at a time.
-   * Each Mac app reads the folder of the architecture it runs as (src/main/native/macos/update.ts),
-   * and its build writes its own architecture's feed for that folder: electron-builder fills in
-   * `${arch}` per build. The targets name no architecture, as one there would override the release's
-   * `--arm64`, `--x64` or `--universal`. */
-  test("it updates only from cdn.tabmail.ai, its architecture's folder, from a ZIP named without spaces", () => {
+   * Each Mac app reads the folder of the architecture it runs as (src/main/native/macos/update.ts:
+   * `macos-arm64` or `macos-x64`); the release uploads each thin build's feed there. The targets
+   * name no architecture, as one there would override the release's `--arm64`, `--x64` or
+   * `--universal`. */
+  test("it updates only from cdn.tabmail.ai, from a ZIP named without spaces", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { publish: unknown; mac: { artifactName: string; target: unknown[] } };
 
-    expect(builder.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/macos-${arch}", useMultipleRangeRequest: false }]);
-    expect(builder.publish).toEqual([{ provider: "generic", url: `${config.macUpdateFeedURL}-\${arch}`, useMultipleRangeRequest: false }]);
+    expect(builder.publish).toEqual([{ provider: "generic", url: config.macUpdateFeedURL, useMultipleRangeRequest: false }]);
+    expect(config.macUpdateFeedURL).toBe("https://cdn.tabmail.ai/releases/voice/macos");
     expect(builder.mac.target).toEqual(["dmg", "zip"]);
     // The name the release script uploads and the feed names.
     expect(builder.mac.artifactName).toBe("TabMail-Voice-${version}-${arch}.${ext}");
@@ -203,6 +203,18 @@ describe("the Mac app's packaging", () => {
 
     expect(builder.files.filter((pattern) => pattern.includes("keyring"))).toEqual([]);
     expect(builder.mac.x64ArchFiles).toBe("Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-*/*.node");
+  });
+
+  /** electron-builder joins the universal app from an Apple silicon and an Intel build, and refuses
+   * when any file but a binary differs between them: each build's `app-update.yml` comes from the
+   * Mac publish settings, so electron-builder's own expansion of them must not depend on the
+   * architecture. */
+  test("the universal app's two halves get the same update settings", async () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { publish: Record<string, unknown>[] };
+    const { expandMacro } = (await import("app-builder-lib/out/util/macroExpander.js")) as { expandMacro: (pattern: string, arch: string, appInfo: object) => string };
+    const expanded = (arch: string) => JSON.stringify(builder.publish.map((options) => Object.fromEntries(Object.entries(options).map(([key, value]) => [key, typeof value === "string" ? expandMacro(value, arch, { version: "1.0.0" }) : value]))));
+
+    expect(expanded("x64")).toBe(expanded("arm64"));
   });
 
   /** The website's download links go to the CDN's `TabMail-Voice-latest-universal.dmg`,
