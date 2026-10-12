@@ -28,6 +28,8 @@ class FakeSource extends EventEmitter implements UpdateSource {
     return this.answer();
   }
 
+  setFeedURL(): void {}
+
   quitAndInstall(): void {
     this.installs += 1;
   }
@@ -93,7 +95,7 @@ function setUp(options: { busy?: () => boolean; restart?: boolean; ask?: (versio
   const store = options.store ?? new MemoryStore();
   let changes = 0;
   const updater = new Updater({
-    platform: macUpdatePlatform({ source, installer: source.installer }),
+    platform: macUpdatePlatform({ source, installer: source.installer, arch: "arm64" }),
     store,
     currentVersion: options.currentVersion ?? "1.0.0",
     ask: (version) => {
@@ -403,18 +405,11 @@ describe("Updater on macOS (ADR-DESK-041)", () => {
    * `electron-updater` merges the updater's headers over its own, so the random installation ID it
    * keeps for staged rollouts is never sent, with the feed request or the download. */
   test("an update request carries no installation ID", async () => {
-    // Its constructor and header merging are internal: reached through a cast, as the app never does.
-    const { AppUpdater } = (await import("electron-updater/out/AppUpdater.js")) as unknown as {
-      AppUpdater: new (options: null, app: object) => UpdateSource & {
-        computeFinalHeaders(headers: Record<string, string>): Record<string, string>;
-        computeRequestHeaders(provider: { fileExtraDownloadHeaders: null }): Record<string, string>;
-      };
-    };
-    const real = new AppUpdater(null, { version: "1.0.0", name: "TabMail Voice", isPackaged: true, appUpdateConfigPath: "/nonexistent", userDataPath: "/nonexistent", baseCachePath: "/nonexistent", whenReady: () => Promise.resolve(), relaunch() {}, quit() {}, onQuit() {} });
+    const real = await realUpdater();
     const installationID = "0b6f3c1e-1111-4222-8333-944445555666";
     expect(real.computeFinalHeaders({ "x-user-staging-id": installationID })["x-user-staging-id"]).toBe(installationID);
 
-    new Updater({ platform: macUpdatePlatform({ source: real as unknown as MacUpdateSource, installer: new EventEmitter() }), store: new MemoryStore(), currentVersion: "1.0.0", ask: () => Promise.resolve(false), tell: () => {}, isBusy: () => false, onChange: () => {} });
+    new Updater({ platform: macUpdatePlatform({ source: real as unknown as MacUpdateSource, installer: new EventEmitter(), arch: "arm64" }), store: new MemoryStore(), currentVersion: "1.0.0", ask: () => Promise.resolve(false), tell: () => {}, isBusy: () => false, onChange: () => {} });
 
     const feedRequest = real.computeFinalHeaders({ "x-user-staging-id": installationID });
     const download = real.computeRequestHeaders({ fileExtraDownloadHeaders: null });
@@ -423,7 +418,35 @@ describe("Updater on macOS (ADR-DESK-041)", () => {
       expect(headers["x-user-staging-id"]).toBe(updateRequestHeaders["x-user-staging-id"]);
     }
   });
+
+  /** Each Mac app reads the feed of the architecture it runs as, not the one it was built for: the
+   * universal app updates to the Apple silicon app on Apple silicon and to the Intel app on an Intel
+   * Mac, and the Intel app under Rosetta (which runs as x64) stays the Intel app. The CDN refuses a
+   * request for several byte ranges, so a differential update asks for one at a time. */
+  test("it reads the feed of the architecture it runs as, one range a request", async () => {
+    for (const arch of ["arm64", "x64"]) {
+      const real = await realUpdater();
+      macUpdatePlatform({ source: real as unknown as MacUpdateSource, installer: new EventEmitter(), arch });
+
+      const provider = await real.clientPromise;
+      expect(provider.baseUrl.href).toBe(`https://cdn.tabmail.ai/releases/voice/macos-${arch}/`);
+      expect(provider.isUseMultipleRangeRequest).toBe(false);
+    }
+  });
 });
+
+/** The real `electron-updater`, its constructor and internals reached through a cast, as the app
+ * never does. */
+async function realUpdater() {
+  const { AppUpdater } = (await import("electron-updater/out/AppUpdater.js")) as unknown as {
+    AppUpdater: new (options: null, app: object) => UpdateSource & {
+      computeFinalHeaders(headers: Record<string, string>): Record<string, string>;
+      computeRequestHeaders(provider: { fileExtraDownloadHeaders: null }): Record<string, string>;
+      clientPromise: Promise<{ baseUrl: URL; isUseMultipleRangeRequest: boolean }>;
+    };
+  };
+  return new AppUpdater(null, { version: "1.0.0", name: "TabMail Voice", isPackaged: true, appUpdateConfigPath: "/nonexistent", userDataPath: "/nonexistent", baseCachePath: "/nonexistent", whenReady: () => Promise.resolve(), relaunch() {}, quit() {}, onQuit() {} });
+}
 
 /** A platform whose proof and install the test settles: the shared lifecycle, as on Windows (installs
  * at the quit) and Linux (installs with an administrator's authorization). */

@@ -460,6 +460,9 @@ export const updateVerifyTimeout = 120_000;
 /** Who a Windows update must be signed by: the common name and the organization of its Authenticode
  * certificate, as the release's signing names them (ADR-DESK-050). */
 export const windowsUpdatePublisher = "Lisem AI LTD";
+/** The Mac apps' update feeds, one folder per architecture: `<this>-arm64` and `<this>-x64`
+ * (ADR-DESK-041). */
+export const macUpdateFeedURL = "https://cdn.tabmail.ai/releases/voice/macos";
 
 // MARK: Welcome wizard
 

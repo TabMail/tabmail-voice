@@ -8,7 +8,7 @@ import { join } from "node:path";
 const root = join(import.meta.dirname, "..");
 switch (process.platform) {
   case "darwin":
-    (await import("./macos/build-native.mts")).buildNative(root);
+    await (await import("./macos/build-native.mts")).buildNative(root);
     break;
   case "win32":
     (await import("./windows/build-native.mts")).buildNative(root);

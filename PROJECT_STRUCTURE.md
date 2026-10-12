@@ -23,7 +23,7 @@ apps/desktop/
 ├── package.json, electron-builder.json, tsconfig.{base,main,renderer,test}.json, vite.config.mts, vitest.config.mts, eslint.config.mjs
 ├── resources/               App icon, tray template images (plain, and marked with a dot while a permission is missing), DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources); linux/tabmail-voice.sources and linux/tabmail-voice-archive-keyring.gpg, the apt source and the keys that sign it, which the package installs (ADR-DESK-058); windows/installer.nsh, the installer's check and install of the system-wide Visual C++ runtime (ADR-DESK-057)
 ├── scripts/
-│   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
+│   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM, for `VOICE_MAC_ARCH` arm64, x64 or universal, with both architectures' lockfile-pinned Mac packages) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries; `test` runs the shared Rust core's `cargo test` first
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs; exits 1 when a shot fails its checks (a page error, something cut off, the not-pasted note's layout as Chromium lays it out)
@@ -179,7 +179,7 @@ message and pastes nothing. No agent call has a deadline.
 Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: voice`) with a Supabase
 JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
 dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
-Packaged macOS and Windows builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/`
+Packaged macOS (universal, Apple silicon and Intel; each Mac app reads the feed of the architecture it runs as) and Windows builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/`
 (`latest-mac.yml`, `latest.yml` on Windows) with `electron-updater`, sending no installation ID (ADR-DESK-041,
 ADR-DESK-050). On Linux apt updates the package from the signed repository at `cdn.tabmail.ai/releases/voice`,
 whose source and keys the package installs (ADR-DESK-058).
