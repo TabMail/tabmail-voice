@@ -4,7 +4,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,14 +20,13 @@ interface LockedPackage { version: string; resolved: string; integrity: string; 
 /** Installs the app's own Mac packages for both architectures (the keychain's `@napi-rs/keyring`),
  * as package-lock.json pins them: npm installs only the build machine's, and every Mac app carries
  * both, as the universal app must (each of its halves the same files). Each tarball must match the
- * lockfile's hash. */
+ * lockfile's hash. Every build installs them afresh, over whatever is there: an install that failed
+ * partway can leave the pinned version's package.json beside an incomplete binary. */
 async function installMacPackages(root: string): Promise<void> {
   const locked = (JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")) as { packages: Record<string, LockedPackage> }).packages;
   for (const [path, entry] of Object.entries(locked)) {
     if (entry.dev || !entry.os?.includes("darwin") || !entry.cpu?.some((cpu) => cpu in architectures)) continue;
     const destination = join(root, path);
-    const installed = join(destination, "package.json");
-    if (existsSync(installed) && (JSON.parse(readFileSync(installed, "utf8")) as { version: string }).version === entry.version) continue;
     const response = await fetch(entry.resolved);
     if (!response.ok) throw new Error(`${entry.resolved}: HTTP ${response.status}`);
     const tarball = Buffer.from(await response.arrayBuffer());

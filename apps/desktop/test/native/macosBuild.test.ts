@@ -166,27 +166,28 @@ describe("the macOS helper build", () => {
     expect(commands).toEqual([]);
   });
 
-  test("a package already installed at the pinned version is kept; one at another version is replaced", async () => {
+  /** An install that failed partway can leave the pinned version's package.json beside an
+   *  incomplete binary: every build installs the package afresh, whatever is there. */
+  test("each build installs the pinned package afresh, over an incomplete one at the same version", async () => {
     const scratch = mkdtempSync(join(tmpdir(), "voice-macos-tarball-"));
     roots.push(scratch);
-    const arm64 = tarball(scratch, "@napi-rs/keyring-darwin-arm64", "2.0.0");
-    const x64URL = "https://registry.example.com/keyring-darwin-x64-2.0.0.tgz";
-    const arm64URL = "https://registry.example.com/keyring-darwin-arm64-2.0.0.tgz";
+    const x64 = tarball(scratch, "@napi-rs/keyring-darwin-x64", "2.0.0");
+    const url = "https://registry.example.com/keyring-darwin-x64-2.0.0.tgz";
     const { root, fetched } = checkout({
-      "node_modules/@napi-rs/keyring-darwin-x64": { version: "2.0.0", resolved: x64URL, integrity: "sha512-unused", os: ["darwin"], cpu: ["x64"], optional: true },
-      "node_modules/@napi-rs/keyring-darwin-arm64": { version: "2.0.0", resolved: arm64URL, integrity: arm64.integrity, os: ["darwin"], cpu: ["arm64"], optional: true },
-    }, { [arm64URL]: arm64.bytes });
-    file(join(root, "node_modules/@napi-rs/keyring-darwin-x64/package.json"), JSON.stringify({ version: "2.0.0" }));
-    file(join(root, "node_modules/@napi-rs/keyring-darwin-arm64/package.json"), JSON.stringify({ version: "1.9.0" }));
-    file(join(root, "node_modules/@napi-rs/keyring-darwin-arm64/stale.node"), "1.9.0 binary");
+      "node_modules/@napi-rs/keyring-darwin-x64": { version: "2.0.0", resolved: url, integrity: x64.integrity, os: ["darwin"], cpu: ["x64"], optional: true },
+    }, { [url]: x64.bytes });
+    const installed = join(root, "node_modules/@napi-rs/keyring-darwin-x64");
+    file(join(installed, "package.json"), JSON.stringify({ name: "@napi-rs/keyring-darwin-x64", version: "2.0.0" }));
+    file(join(installed, "binary.node"), "@napi-rs/keyring");
+    file(join(installed, "stale.node"), "an older file");
     process.env.VOICE_MAC_ARCH = "x64";
 
     await buildNative(root);
 
-    expect(fetched).toEqual([arm64URL]);
-    expect(readFileSync(join(root, "node_modules/@napi-rs/keyring-darwin-x64/package.json"), "utf8")).toBe(JSON.stringify({ version: "2.0.0" }));
-    expect(JSON.parse(readFileSync(join(root, "node_modules/@napi-rs/keyring-darwin-arm64/package.json"), "utf8"))).toEqual({ name: "@napi-rs/keyring-darwin-arm64", version: "2.0.0" });
-    expect(existsSync(join(root, "node_modules/@napi-rs/keyring-darwin-arm64/stale.node"))).toBe(false);
+    expect(fetched).toEqual([url]);
+    expect(JSON.parse(readFileSync(join(installed, "package.json"), "utf8"))).toEqual({ name: "@napi-rs/keyring-darwin-x64", version: "2.0.0" });
+    expect(readFileSync(join(installed, "binary.node"), "utf8")).toBe("@napi-rs/keyring-darwin-x64 binary");
+    expect(existsSync(join(installed, "stale.node"))).toBe(false);
   });
 
   test("a package the registry refuses stops the build before anything is installed or built", async () => {

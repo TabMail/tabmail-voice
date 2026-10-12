@@ -1651,8 +1651,15 @@ describe("main process wiring", () => {
       app.trayActions?.installUpdate();
     });
 
-    test("a packaged build updates by itself, silently to the console, and shows it in the menu", async () => {
-      await launchPackaged();
+    // Each architecture the app can run as: the universal app runs as either.
+    test.each(["arm64", "x64"])("a packaged build running as %s updates by itself from that architecture's feed, silently to the console, and shows it in the menu", async (runningAs) => {
+      const arch = Object.getOwnPropertyDescriptor(process, "arch");
+      Object.defineProperty(process, "arch", { value: runningAs, configurable: true });
+      try {
+        await launchPackaged();
+      } finally {
+        if (arch) Object.defineProperty(process, "arch", arch);
+      }
       const updater = app.autoUpdater;
 
       expect(updater?.autoDownload).toBe(true);
@@ -1660,7 +1667,7 @@ describe("main process wiring", () => {
       expect(updater?.logger).toBeNull();
       expect(updater?.requestHeaders).toEqual({ "x-user-staging-id": "none" });
       // The feed of the architecture it runs as, whatever it was built as.
-      expect(updater?.feed).toEqual({ provider: "generic", url: `https://cdn.tabmail.ai/releases/voice/macos-${process.arch}`, useMultipleRangeRequest: false });
+      expect(updater?.feed).toEqual({ provider: "generic", url: `https://cdn.tabmail.ai/releases/voice/macos-${runningAs}`, useMultipleRangeRequest: false });
       expect(app.trayState?.().update).toEqual({ kind: "idle" });
       app.trayActions?.checkForUpdates();
       expect(updater?.checks).toBe(1);
