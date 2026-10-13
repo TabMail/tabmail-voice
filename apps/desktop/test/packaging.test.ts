@@ -127,13 +127,13 @@ describe("the Mac app's packaging", () => {
   });
 
   /** apt updates Linux (ADR-DESK-058): the package installs the repository's source, and the keys
-   * that sign it where only that source trusts them; the app publishes no update feed of its own. */
-  test("Linux installs its apt source and the keys that sign it, and has no update feed", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { publish: unknown; extraResources: { from: string }[] }; deb: { fpm: string[]; depends: string[] } };
+   * that sign it where only that source trusts them; the package has no update feed of its own. */
+  test("Linux installs its apt source and the keys that sign it, and the package has no update feed", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string }[] }; deb: { publish: unknown; fpm: string[]; depends: string[] } };
     const keyring = "/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg";
     const source = readFileSync(join(root, "resources/linux/tabmail-voice.sources"), "utf8");
 
-    expect(builder.linux.publish).toBeNull();
+    expect(builder.deb.publish).toBeNull();
     expect(builder.deb.fpm).toContain(`resources/linux/tabmail-voice-archive-keyring.gpg=${keyring}`);
     expect(builder.deb.fpm).toContain("resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources");
     // Both under /etc, which fpm lists as conffiles unless an option says otherwise, and fpm gets no
@@ -156,13 +156,18 @@ describe("the Mac app's packaging", () => {
 
   /** The AppImage, for those who can't install the package (ADR-DESK-059): built on the static
    * runtime (the older one needs a libz.so a stock Ubuntu doesn't have), with an update feed of its
-   * own beside the packages, and the apt keyring to check its updates' signatures with. */
+   * own beside the packages, and the apt keyring to check its updates' signatures with. The feed is
+   * Linux's, not the AppImage target's: electron-builder writes `app-update.yml` into the app only
+   * from the platform's settings, and the updater reads the name of its download folder there, so
+   * without it every download fails (seen in a VM: "Error ENOENT"). The package gets the file too,
+   * unread: it starts no updater. */
   test("Linux also builds an AppImage, with its own feed and the keys that sign its updates", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { toolsets: { appimage: string }; linux: { target: string[]; executableArgs: string[]; extraResources: { from: string; to: string; filter?: string[] }[] }; appImage: { publish: unknown } };
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { toolsets: { appimage: string }; linux: { target: string[]; executableArgs: string[]; publish: unknown; extraResources: { from: string; to: string; filter?: string[] }[] }; appImage?: { publish?: unknown } };
 
     expect(builder.linux.target).toEqual(["deb", "AppImage"]);
     expect(builder.toolsets.appimage).toBe("1.0.3");
-    expect(builder.appImage.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
+    expect(builder.linux.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
+    expect(builder.appImage?.publish).toBeUndefined();
     expect(`${config.linuxUpdateFeedURL}-\${arch}`).toBe("https://cdn.tabmail.ai/releases/voice/linux-${arch}");
     expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/tabmail-voice-archive-keyring.gpg", to: "linux/tabmail-voice-archive-keyring.gpg" });
     expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/icons", to: "linux/icons", filter: ["*.png"] });

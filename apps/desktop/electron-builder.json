@@ -148,7 +148,13 @@
         ]
       }
     ],
-    "publish": null,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://cdn.tabmail.ai/releases/voice/linux-${arch}",
+        "useMultipleRangeRequest": false
+      }
+    ],
     "desktop": {
       "entry": {
         "Name": "TabMail Voice",
@@ -158,6 +164,7 @@
     }
   },
   "deb": {
+    "publish": null,
     "appArmorProfile": "scripts/linux/apparmor-profile.tpl",
     "depends": [
       "libgtk-3-0t64",
@@ -183,15 +190,6 @@
       "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai",
       "resources/linux/tabmail-voice-archive-keyring.gpg=/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg",
       "resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources"
-    ]
-  },
-  "appImage": {
-    "publish": [
-      {
-        "provider": "generic",
-        "url": "https://cdn.tabmail.ai/releases/voice/linux-${arch}",
-        "useMultipleRangeRequest": false
-      }
     ]
   },
   "nsis": {

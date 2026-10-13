@@ -5174,7 +5174,9 @@ off the website until this ships.
   writes `InRelease` last.
 - **The app has no Linux updater:** no update item in the tray or Settings, no feed (`linux.publish`
   is null, so no `app-update.yml`). *(Amended by ADR-DESK-059, 2026-10-13: the package still has none; the
-  AppImage updates itself from a feed of its own, its updates signed with this repository's key.)* `apt update` offers new versions, and Ubuntu's Software Updater
+  AppImage updates itself from a feed of its own, its updates signed with this repository's key;
+  `linux.publish` names that feed, so the package now carries electron-builder's `app-update.yml`,
+  which it never reads.)* `apt update` offers new versions, and Ubuntu's Software Updater
   shows them as it shows Chrome's.
 - **Keys** are created, rotated and replaced by the backup with
   a script of TabMail's private operations repository. The keyring holds the backup from the first release, so a leaked or lost primary is replaced by
@@ -5232,6 +5234,11 @@ old version runs works.
   `electron-updater`'s `AppImageUpdater`: the feed `https://cdn.tabmail.ai/releases/voice/linux-<arch>`
   (`latest-linux.yml` on x64, `latest-linux-arm64.yml` on ARM, beside the packages), one byte range per
   request (the CDN refuses several), a differential download from the blockmap the AppImage carries.
+  The feed is Linux's publish setting (`linux.publish`), not the AppImage target's: electron-builder
+  writes `app-update.yml` into the app only from the platform's, and the updater reads the name of its
+  download folder there (`updaterCacheDirName`), so without it every download fails (a VM run: "Error
+  ENOENT"). The package carries the file too, unread, as it starts no updater; `deb.publish` is null,
+  so no feed names the package. The release checks the AppImage holds it.
 - **Signed with the apt repository's key.** The feed carries `signature`: a detached OpenPGP signature,
   base64, made by the release with the key that signs the repository (ADR-DESK-058), over
   `TabMail Voice update\npackage: tabmail-voice-appimage\narchitecture: <arch>\nversion: <x.y.z>\nsha512: <base64>\n`
