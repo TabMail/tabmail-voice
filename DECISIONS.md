@@ -5219,6 +5219,12 @@ old version runs works.
   runtime (`toolsets.appimage` 1.0.3): the older runtime needs a `libz.so` stock Ubuntu doesn't have.
   The website links `TabMail-Voice-latest-linux-<arch>.AppImage`, a copy the release writes, under
   "No administrator (sudo) rights?"; the package stays the main Linux download.
+- **Which AppImage this is.** The AppImage's runtime sets `APPIMAGE` (its file) and `APPDIR` (where
+  it mounted it) for what it starts, and every process started from there inherits them: the
+  package's app opened from another AppImage's terminal or editor has both. So the app is an AppImage
+  only when packaged and its own executable is in the folder `APPDIR` names (`runningAppImage`, the
+  folder's real path); otherwise it is the package's, and never opens, puts on the desktop or replaces
+  that other AppImage. The login item names the AppImage so chosen, else the executable.
 - **On the desktop by itself.** At each launch the AppImage writes, in the user's own data folder
   (`$XDG_DATA_HOME`, else `~/.local/share`), only what differs: the launcher entry
   `applications/ai.tabmail.voice.desktop` (the app ID the desktop portal registers it by, so its
@@ -5258,10 +5264,13 @@ old version runs works.
   extension point): the library's own unlinks the AppImage before moving the download in, so a move
   that fails (the download gone from the cache) leaves no app at all, and it renames an AppImage
   whose name carries a version to the download's name, leaving the launcher entry and login item
-  naming a missing file. The app's copies the very download `gpgv` held beside the AppImage, with its
-  permissions, checks the copy's SHA-512 against the one gpgv held, and renames it over the AppImage
-  (`replaceAppImage`): the path holds the old AppImage or the new one, never neither, and keeps its
-  name; on any failure the old one stays and the copy is removed. After Restart Now the app opens the new AppImage from a shell of its own
+  naming a missing file. The app's copies the very download `gpgv` held beside the AppImage (in a hidden folder of
+  its own there, so the copy's name never depends on the AppImage's, which may already be as long as
+  a name can be), with its permissions, checks the copy's SHA-512 against the one gpgv held, and
+  renames it over the AppImage (`replaceAppImage`): the path holds the old AppImage or the new one,
+  never neither, and keeps its name; on any failure the old one stays and the copy is removed. The
+  library refuses every install after the first one begins; after one that failed, the app clears
+  that, so Restart Now again, or the quit, tries again. After Restart Now the app opens the new AppImage from a shell of its own
   once it has quit (`relaunchAfterExit`), never `app.relaunch()` (no_new_privs, ADR-DESK-050, would
   stop `fusermount3` mounting it); an install that didn't happen fails, and nothing quits or reopens.
 - **Release** (`tabmail-release-helpers`): CI builds and checks the AppImage with the package; the

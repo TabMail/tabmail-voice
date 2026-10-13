@@ -4,10 +4,10 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, createReadStream, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, createReadStream, mkdtempSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { AppImageUpdater } from "electron-updater";
 import * as config from "../../../core/config.js";
 import { errorName, log } from "../../../core/log.js";
@@ -45,37 +45,42 @@ export class AppImageInstaller extends AppImageUpdater {
 
   protected override doInstall(): boolean {
     const verified = this.verified;
-    if (verified === null || verified.file !== this.installerPath) {
-      log.error("Updater: no verified AppImage to install");
-      return false;
-    }
-    return replaceAppImage({ installer: verified.file, appImage: this.appImage, sha512: verified.sha512 });
+    let installed = false;
+    if (verified === null || verified.file !== this.installerPath) log.error("Updater: no verified AppImage to install");
+    else installed = replaceAppImage({ installer: verified.file, appImage: this.appImage, sha512: verified.sha512 });
+    // The library's `install` refuses every later call once one began; one that failed left the old
+    // AppImage in place, so a later one (Restart Now again, or the quit) may try again.
+    if (!installed) this.quitAndInstallCalled = false;
+    return installed;
   }
 }
 
 /**
  * Replaces the file `appImage` with a copy of `installer` whose SHA-512 (base64) is `sha512`: the copy
- * is made beside it, with its permissions, checked, and renamed over it, so the path holds the old
- * AppImage or the new one, never neither, and the running app's mount of the old one runs on. False,
- * with the old one in place and no copy left, when anything fails. Synchronous: the quit doesn't wait.
+ * is made beside it (in a folder of its own, so its name never depends on the AppImage's), with its
+ * permissions, checked, and renamed over it, so the path holds the old AppImage or the new one, never
+ * neither, and the running app's mount of the old one runs on. False, with the old one in place and
+ * no copy left, when anything fails. Synchronous: the quit doesn't wait.
  */
 export function replaceAppImage(options: { installer: string; appImage: string; sha512: string }): boolean {
   const { installer, appImage, sha512 } = options;
-  const staged = join(dirname(appImage), `.${basename(appImage)}.update`);
+  let folder: string | undefined;
   try {
+    folder = mkdtempSync(join(dirname(appImage), ".tabmail-voice-update-"));
+    const staged = join(folder, "AppImage");
     copyFileSync(installer, staged);
     chmodSync(staged, statSync(appImage).mode & 0o7777);
     if (createHash("sha512").update(readFileSync(staged)).digest("base64") !== sha512) {
       log.error("Updater: the AppImage's copy isn't the verified update");
-      rmSync(staged, { force: true });
       return false;
     }
     renameSync(staged, appImage);
     return true;
   } catch (error) {
     log.error(`Updater: the AppImage wasn't replaced: ${errorName(error)}`);
-    rmSync(staged, { force: true });
     return false;
+  } finally {
+    if (folder !== undefined) rmSync(folder, { recursive: true, force: true });
   }
 }
 

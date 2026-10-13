@@ -1,13 +1,29 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { desktopExec } from "./autostart.js";
 
 /** The argument every Linux launcher passes (`electron-builder.json`'s `executableArgs`): Electron
  * picks its display backend before the app's code runs, so it can't be added later. */
 export const x11Argument = "--ozone-platform=x11";
+
+/**
+ * The AppImage this process runs from: `APPIMAGE`, when the executable is in the folder the AppImage's
+ * runtime mounted it at (`APPDIR`), else undefined. The runtime sets both for everything it starts,
+ * and every process started from there inherits them: the package's app opened from an AppImage's
+ * terminal is not that AppImage, and must neither replace it nor put it on the desktop.
+ */
+export function runningAppImage(env: NodeJS.ProcessEnv, execPath: string): string | undefined {
+  const { APPIMAGE: appImage, APPDIR: mount } = env;
+  if (appImage === undefined || mount === undefined) return undefined;
+  try {
+    return realpathSync(mount) === dirname(execPath) ? appImage : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Whether an AppImage started without `x11Argument` (opened from Files or a terminal; the AppImage's
  * own launcher passes no arguments) and so must open itself again with it. */

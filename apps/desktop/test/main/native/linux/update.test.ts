@@ -210,10 +210,10 @@ describe("Linux AppImage updates (ADR-DESK-059)", () => {
 describe("installing an AppImage update (ADR-DESK-059)", () => {
   /** An AppImage named with its version (as the release's GitHub copies are), the next version
    * downloaded to the library's cache, and gpgv holding (`proven`) or refusing it. */
-  function setUpInstall(folder: string, proven = true) {
+  function setUpInstall(folder: string, proven = true, name = "TabMail-Voice-1.0.0-linux-x86_64.AppImage") {
     const apps = join(folder, "Apps");
     mkdirSync(apps);
-    const appImage = join(apps, "TabMail-Voice-1.0.0-linux-x86_64.AppImage");
+    const appImage = join(apps, name);
     writeFileSync(appImage, "the old AppImage", { mode: 0o755 });
     mkdirSync(join(folder, "cache"));
     const update = download(join(folder, "cache"), "the new AppImage");
@@ -298,6 +298,40 @@ describe("installing an AppImage update (ADR-DESK-059)", () => {
     expect(readdirSync(apps)).toEqual([basename(appImage)]);
     expect(events).toEqual([]);
   })());
+
+  /** A refused install leaves the old AppImage, so a later one may still try: the library's own
+   * `install` refuses every call after the first unless the app says otherwise. */
+  test("after an install that failed, the download back and proven again installs", inFolder(async (folder) => {
+    const { appImage, apps, update, platform, events, verify } = setUpInstall(folder);
+    await verify();
+    rmSync(update.path);
+    await refusal(platform.install({ version: "1.0.1" }));
+    expect(readFileSync(appImage, "utf8")).toBe("the old AppImage");
+    expect(events).toEqual([]);
+
+    writeFileSync(update.path, "the new AppImage");
+    await verify();
+    await platform.install({ version: "1.0.1" });
+
+    expect(readFileSync(appImage, "utf8")).toBe("the new AppImage");
+    expect(readdirSync(apps)).toEqual([basename(appImage)]);
+    expect(events).toEqual([`open ${appImage}`, "quit"]);
+  }));
+
+  /** The longest name a Linux file system allows (255 bytes): the copy's name doesn't grow from it. */
+  test("an AppImage with the longest name a file can have still updates", inFolder(async (folder) => {
+    const name = `TabMail-Voice-${"x".repeat(255 - "TabMail-Voice-.AppImage".length)}.AppImage`;
+    const { appImage, apps, platform, events, verify } = setUpInstall(folder, true, name);
+    await verify();
+
+    await platform.install({ version: "1.0.1" });
+
+    expect(name.length).toBe(255);
+    expect(readFileSync(appImage, "utf8")).toBe("the new AppImage");
+    if (process.platform !== "win32") expect(statSync(appImage).mode & 0o777).toBe(0o755);
+    expect(readdirSync(apps)).toEqual([name]);
+    expect(events).toEqual([`open ${appImage}`, "quit"]);
+  }));
 
   test("a download gpgv refused is never installed, at the quit or with Restart Now", inFolder(async (folder) => {
     const { appImage, apps, platform, events, verify, quitApp } = setUpInstall(folder, false);

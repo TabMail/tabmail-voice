@@ -2,11 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { integrateAppImage, needsX11Relaunch, x11Argument } from "../../../../src/main/native/linux/appImage.js";
+import { integrateAppImage, needsX11Relaunch, runningAppImage, x11Argument } from "../../../../src/main/native/linux/appImage.js";
 
 let folder: string;
 let resources: string;
@@ -74,5 +74,32 @@ describe("the X11 argument", () => {
     expect(needsX11Relaunch("/home/user/TabMail.AppImage", ["/tmp/.mount_x/tabmail-voice", "--no-sandbox"])).toBe(true);
     expect(needsX11Relaunch("/home/user/TabMail.AppImage", ["/tmp/.mount_x/tabmail-voice", x11Argument, "--no-sandbox"])).toBe(false);
     expect(needsX11Relaunch(undefined, ["/opt/TabMail Voice/tabmail-voice"])).toBe(false);
+  });
+});
+
+/** `APPIMAGE` and `APPDIR` reach every process an AppImage starts: only the one running from that
+ * mount is the AppImage. */
+describe("which AppImage this is", () => {
+  const appImage = "/home/user/TabMail.AppImage";
+
+  test("the executable in the runtime's mount is the AppImage, whatever path names the mount", () => {
+    const mount = join(folder, ".mount_TabMail");
+    mkdirSync(mount);
+    symlinkSync(mount, join(folder, "link"));
+    const executable = join(realpathSync(mount), "tabmail-voice");
+
+    expect(runningAppImage({ APPIMAGE: appImage, APPDIR: mount }, executable)).toBe(appImage);
+    expect(runningAppImage({ APPIMAGE: appImage, APPDIR: join(folder, "link") }, executable)).toBe(appImage);
+  });
+
+  test("any other executable, or no mount, or one gone, is not", () => {
+    const mount = join(folder, ".mount_TabMail");
+    mkdirSync(mount);
+
+    expect(runningAppImage({ APPIMAGE: appImage, APPDIR: mount }, "/opt/TabMail Voice/tabmail-voice")).toBeUndefined();
+    expect(runningAppImage({ APPIMAGE: appImage, APPDIR: mount }, join(realpathSync(mount), "resources", "tabmail-voice"))).toBeUndefined();
+    expect(runningAppImage({ APPIMAGE: appImage }, join(realpathSync(mount), "tabmail-voice"))).toBeUndefined();
+    expect(runningAppImage({ APPDIR: mount }, join(realpathSync(mount), "tabmail-voice"))).toBeUndefined();
+    expect(runningAppImage({ APPIMAGE: appImage, APPDIR: join(folder, "gone") }, join(folder, "gone", "tabmail-voice"))).toBeUndefined();
   });
 });
