@@ -4,23 +4,79 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { chmodSync, copyFileSync, createReadStream, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { AppImageUpdater } from "electron-updater";
 import * as config from "../../../core/config.js";
-import { log } from "../../../core/log.js";
+import { errorName, log } from "../../../core/log.js";
 import { type RunFile, UpdateError, type UpdateInfo, type UpdatePlatform, type UpdateSource } from "../../updater.js";
 
-/** `electron-updater`'s `AppImageUpdater`, as far as the Linux adapter uses it. */
+/** `AppImageInstaller`, as far as the Linux adapter uses it. */
 export interface AppImageUpdateSource extends UpdateSource {
   setFeedURL(options: { provider: "generic"; url: string; useMultipleRangeRequest: boolean }): void;
-  /** Replaces the running AppImage with the download and runs the new one with
-   * `APPIMAGE_EXIT_AFTER_INSTALL`, which its launcher answers by exiting at once; false when it didn't. */
+  /** The download `verify` proved ours, and its SHA-512: what an install puts in place. */
+  verified: { file: string; sha512: string } | null;
+  /** Replaces the running AppImage with the verified download; false when it didn't. */
   install(isSilent: boolean, isForceRunAfter: boolean): boolean;
   on(event: "update-available" | "update-downloaded", listener: (info: UpdateInfo) => void): unknown;
   on(event: "error", listener: (error: Error) => void): unknown;
-  on(event: "appimage-filename-updated", listener: (path: string) => void): unknown;
+}
+
+/**
+ * `electron-updater`'s `AppImageUpdater` with an install of the app's own, which the library runs at
+ * the quit and for Restart Now. The library's unlinks the AppImage before it moves the download in,
+ * so a move that fails (the download gone from the cache) leaves no app at all; and it renames an
+ * AppImage whose name carries a version to the download's name, so the launcher entry and the login
+ * item then name a missing file. This one keeps the path: `replaceAppImage`, with the very file and
+ * hash `verify` proved, and nothing else.
+ */
+export class AppImageInstaller extends AppImageUpdater {
+  verified: { file: string; sha512: string } | null = null;
+
+  /** `appImage`, the running AppImage (`APPIMAGE`); `app`, the library's app adapter (tests). */
+  constructor(
+    private readonly appImage: string,
+    app?: unknown,
+  ) {
+    super(null, app);
+  }
+
+  protected override doInstall(): boolean {
+    const verified = this.verified;
+    if (verified === null || verified.file !== this.installerPath) {
+      log.error("Updater: no verified AppImage to install");
+      return false;
+    }
+    return replaceAppImage({ installer: verified.file, appImage: this.appImage, sha512: verified.sha512 });
+  }
+}
+
+/**
+ * Replaces the file `appImage` with a copy of `installer` whose SHA-512 (base64) is `sha512`: the copy
+ * is made beside it, with its permissions, checked, and renamed over it, so the path holds the old
+ * AppImage or the new one, never neither, and the running app's mount of the old one runs on. False,
+ * with the old one in place and no copy left, when anything fails. Synchronous: the quit doesn't wait.
+ */
+export function replaceAppImage(options: { installer: string; appImage: string; sha512: string }): boolean {
+  const { installer, appImage, sha512 } = options;
+  const staged = join(dirname(appImage), `.${basename(appImage)}.update`);
+  try {
+    copyFileSync(installer, staged);
+    chmodSync(staged, statSync(appImage).mode & 0o7777);
+    if (createHash("sha512").update(readFileSync(staged)).digest("base64") !== sha512) {
+      log.error("Updater: the AppImage's copy isn't the verified update");
+      rmSync(staged, { force: true });
+      return false;
+    }
+    renameSync(staged, appImage);
+    return true;
+  } catch (error) {
+    log.error(`Updater: the AppImage wasn't replaced: ${errorName(error)}`);
+    rmSync(staged, { force: true });
+    return false;
+  }
 }
 
 /** What the release signs for an AppImage update, the same form as the Windows and Linux packages'
@@ -36,7 +92,7 @@ export function updateStatement(arch: string, version: string, sha512: string): 
  * `updateStatement` for this architecture, the offered version and the download's SHA-512, which
  * the app computes itself. `gpgv`, as apt does, checks it against the keyring the app carries; the
  * update is ready only when it holds. It installs when the app quits, or at once with Restart Now:
- * the library replaces the AppImage file in place, and the app then opens the new one itself.
+ * `AppImageInstaller` replaces the AppImage file at its path, and the app then opens the new one itself.
  */
 export function appImageUpdatePlatform(options: {
   source: AppImageUpdateSource;
@@ -52,20 +108,17 @@ export function appImageUpdatePlatform(options: {
   quit: () => void;
   relaunch?: typeof relaunchAfterExit;
 }): UpdatePlatform {
-  const { source, keyring, arch, run, quit, relaunch = relaunchAfterExit } = options;
+  const { source, appImage, keyring, arch, run, quit, relaunch = relaunchAfterExit } = options;
   source.setFeedURL({ provider: "generic", url: `${config.linuxUpdateFeedURL}-${arch}`, useMultipleRangeRequest: false });
-  /** Where the update goes: the running AppImage's path, unless its name carries a version, when the
-   * library names it as the download is named. */
-  let destination = options.appImage;
-  source.on("appimage-filename-updated", (path) => {
-    destination = path;
-  });
   return {
     source,
     verify: async (update) => {
+      source.verified = null;
       const notSigned = new UpdateError(`Version ${update.version} isn't signed by TabMail, so it wasn't installed.`);
-      if (update.downloadedFile === undefined || typeof update.signature !== "string") throw notSigned;
-      const statement = updateStatement(arch, update.version, await sha512(update.downloadedFile));
+      const file = update.downloadedFile;
+      if (file === undefined || typeof update.signature !== "string") throw notSigned;
+      const hash = await sha512(file);
+      const statement = updateStatement(arch, update.version, hash);
       const directory = await mkdtemp(join(tmpdir(), "tabmail-voice-update-"));
       try {
         const statementFile = join(directory, "statement");
@@ -81,10 +134,11 @@ export function appImageUpdatePlatform(options: {
       } finally {
         await rm(directory, { recursive: true, force: true });
       }
+      source.verified = { file, sha512: hash };
     },
     install: () => {
       if (!source.install(true, false)) return Promise.reject(new UpdateError("The update couldn't replace TabMail Voice."));
-      relaunch({ pid: process.pid, executable: destination, args: options.args });
+      relaunch({ pid: process.pid, executable: appImage, args: options.args });
       quit();
       return Promise.resolve();
     },

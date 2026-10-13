@@ -5223,8 +5223,10 @@ old version runs works.
   (`$XDG_DATA_HOME`, else `~/.local/share`), only what differs: the launcher entry
   `applications/ai.tabmail.voice.desktop` (the app ID the desktop portal registers it by, so its
   shortcuts and permissions work as the package's), its icons in `icons/hicolor`, and the GNOME
-  extension (ADR-DESK-052) in `gnome-shell/extensions`, which GNOME loads at the next sign-in. A
-  login item that names an earlier path of the AppImage is rewritten to name this one. Nothing is
+  extension (ADR-DESK-052) in `gnome-shell/extensions`, which GNOME loads at the next sign-in. The
+  login item is the user's and a launch never rewrites it: one the user turned off (`Hidden=true`)
+  stays off, and after the user moves the AppImage, Settings shows it off until turned on again,
+  which names the new path. An update never moves the AppImage (below). Nothing is
   removed with the AppImage; deleting it leaves a launcher entry that no longer opens, as Joplin's does.
 - **The X11 argument.** Opened from Files or a terminal, the AppImage's launcher passes no argument,
   and Electron chooses its display backend before the app's code runs. The app then opens itself
@@ -5251,10 +5253,15 @@ old version runs works.
   repository's: the keyring the AppImage carries is the one the package installs, replaced with each
   release.
 - **Install.** It installs when the app quits, or at once with Restart Now (the question is macOS's and
-  Windows': "It installs when TabMail Voice quits. Restart now to update?"). The library replaces the
-  AppImage file (same path, unless the file's name carries a version, when it takes the update's name)
-  and runs the new one with `APPIMAGE_EXIT_AFTER_INSTALL`, which its launcher answers by exiting
-  without starting the app. After Restart Now the app opens the new AppImage from a shell of its own
+  Windows': "It installs when TabMail Voice quits. Restart now to update?"). The library runs the
+  install at either moment, but it is the app's (`AppImageInstaller.doInstall`, the library's
+  extension point): the library's own unlinks the AppImage before moving the download in, so a move
+  that fails (the download gone from the cache) leaves no app at all, and it renames an AppImage
+  whose name carries a version to the download's name, leaving the launcher entry and login item
+  naming a missing file. The app's copies the very download `gpgv` held beside the AppImage, with its
+  permissions, checks the copy's SHA-512 against the one gpgv held, and renames it over the AppImage
+  (`replaceAppImage`): the path holds the old AppImage or the new one, never neither, and keeps its
+  name; on any failure the old one stays and the copy is removed. After Restart Now the app opens the new AppImage from a shell of its own
   once it has quit (`relaunchAfterExit`), never `app.relaunch()` (no_new_privs, ADR-DESK-050, would
   stop `fusermount3` mounting it); an install that didn't happen fails, and nothing quits or reopens.
 - **Release** (`tabmail-release-helpers`): CI builds and checks the AppImage with the package; the

@@ -10,7 +10,7 @@ import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
-import { AppImageUpdater, autoUpdater, NsisUpdater } from "electron-updater";
+import { autoUpdater, NsisUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
 import { connectorsForPlatform } from "../core/agent/connectors/index.js";
@@ -71,7 +71,7 @@ import { LinuxSystem } from "./native/linux/system.js";
 import { LinuxPermissions } from "./native/linux/permissions.js";
 import { LinuxAutostart } from "./native/linux/autostart.js";
 import { integrateAppImage, needsX11Relaunch, x11Argument } from "./native/linux/appImage.js";
-import { appImageUpdatePlatform, relaunchAfterExit } from "./native/linux/update.js";
+import { AppImageInstaller, appImageUpdatePlatform, relaunchAfterExit } from "./native/linux/update.js";
 import { linuxFallbackAnchor } from "./native/linux/overlayArea.js";
 import { shellPlacementArea } from "./native/windows/overlayArea.js";
 import { ShellGeometry } from "./native/windows/shellGeometry.js";
@@ -181,7 +181,6 @@ function launch(): void {
   if (appImage !== undefined) {
     try {
       integrateAppImage({ appImage, resources: process.resourcesPath, dataHome: process.env.XDG_DATA_HOME?.startsWith("/") ? process.env.XDG_DATA_HOME : join(homedir(), ".local", "share") });
-      linuxAutostart?.refresh();
     } catch (error) {
       log.error(`main: the AppImage's desktop entry couldn't be written: ${errorName(error)}`);
     }
@@ -500,7 +499,7 @@ function launch(): void {
       }
       case "linux": {
         if (appImage === undefined) return null;
-        const source = new AppImageUpdater();
+        const source = new AppImageInstaller(appImage);
         source.logger = null;
         return appImageUpdatePlatform({
           source,

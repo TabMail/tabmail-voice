@@ -5,13 +5,13 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter, once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import * as config from "../../../../src/core/config.js";
 import { log } from "../../../../src/core/log.js";
-import { type AppImageUpdateSource, appImageUpdatePlatform, relaunchAfterExit, updateStatement } from "../../../../src/main/native/linux/update.js";
+import { AppImageInstaller, type AppImageUpdateSource, appImageUpdatePlatform, relaunchAfterExit, updateStatement } from "../../../../src/main/native/linux/update.js";
 import { type RunFile, runFile, UpdateError } from "../../../../src/main/updater.js";
 
 /** `AppImageUpdater` as the adapter sees it: the feed it was given, and an install that did or didn't. */
@@ -20,6 +20,7 @@ class FakeSource extends EventEmitter {
   autoInstallOnAppQuit = false;
   allowDowngrade = true;
   requestHeaders = null;
+  verified: { file: string; sha512: string } | null = null;
   feed: unknown = null;
   installedWith: unknown[] | null = null;
   constructor(private readonly installs = true, private readonly events: string[] = []) {
@@ -95,10 +96,12 @@ describe("Linux AppImage updates (ADR-DESK-059)", () => {
     const folder = mkdtempSync(join(tmpdir(), "voice-appimage-"));
     try {
       const file = download(folder);
-      const { platform, runs } = setUp({ arch: "arm64" });
+      const { platform, source, runs } = setUp({ arch: "arm64" });
 
       await platform.verify({ version: "1.2.3", signature: Buffer.from("a signature").toString("base64"), downloadedFile: file.path });
 
+      // What an install puts in place: that file, with the hash gpgv held.
+      expect(source.verified).toEqual({ file: file.path, sha512: file.sha512 });
       expect(runs).toHaveLength(1);
       const [{ file: program, args, timeout, statement, signature }] = runs as [typeof runs[0]];
       expect(program).toBe(config.gpgvPath);
@@ -118,11 +121,13 @@ describe("Linux AppImage updates (ADR-DESK-059)", () => {
     const folder = mkdtempSync(join(tmpdir(), "voice-appimage-"));
     const logged = vi.spyOn(log, "error").mockImplementation(() => {});
     try {
-      const { platform, runs } = setUp({ reply: { code: 1, stdout: "" } });
+      const { platform, source, runs } = setUp({ reply: { code: 1, stdout: "" } });
+      source.verified = { file: "/home/user/.cache/earlier.AppImage", sha512: "ZWFybGllcg==" };
 
       const error = await refusal(platform.verify({ version: "1.2.3", signature: "c2ln", downloadedFile: download(folder).path }));
 
       expect(error.message).toBe("Version 1.2.3 isn't signed by TabMail, so it wasn't installed.");
+      expect(source.verified).toBeNull();
       expect(existsSync(runs[0]!.args[1]!)).toBe(false);
       expect(logged).toHaveBeenCalledWith("Updater: 1.2.3 refused: gpgv exit 1");
     } finally {
@@ -151,38 +156,6 @@ describe("Linux AppImage updates (ADR-DESK-059)", () => {
 
     expect((await refusal(platform.verify(update))).message).toBe("Version 1.2.3 isn't signed by TabMail, so it wasn't installed.");
     expect(runs).toEqual([]);
-  });
-
-  /** Restart Now: the library replaces the AppImage (and runs the new one only to let its launcher
-   * exit), then the app opens the new one once it has quit, and quits. */
-  test("installing replaces the AppImage, then opens the new one after the app quits", async () => {
-    const { platform, source, relaunch, events } = setUp();
-
-    await platform.install({ version: "1.2.3" });
-
-    expect(source.installedWith).toEqual([true, false]);
-    expect(relaunch).toHaveBeenCalledWith({ pid: process.pid, executable: "/home/user/Apps/TabMail-Voice-latest-linux-x64.AppImage", args: ["--ozone-platform=x11"] });
-    expect(events).toEqual(["install", "relaunch", "quit"]);
-  });
-
-  test("an AppImage whose name carries its version opens under the update's name", async () => {
-    const { platform, source, relaunch } = setUp();
-    source.install = () => {
-      source.emit("appimage-filename-updated", "/home/user/Apps/TabMail-Voice-1.2.3-linux-x86_64.AppImage");
-      return true;
-    };
-
-    await platform.install({ version: "1.2.3" });
-
-    expect(relaunch).toHaveBeenCalledWith(expect.objectContaining({ executable: "/home/user/Apps/TabMail-Voice-1.2.3-linux-x86_64.AppImage" }));
-  });
-
-  test("an install that didn't happen fails, and the app neither quits nor reopens", async () => {
-    const { platform, relaunch, quit } = setUp({ installs: false });
-
-    expect((await refusal(platform.install({ version: "1.2.3" }))).message).toBe("The update couldn't replace TabMail Voice.");
-    expect(relaunch).not.toHaveBeenCalled();
-    expect(quit).not.toHaveBeenCalled();
   });
 
   /** The release's signing, and gpgv, for real: a throwaway key signs the statement, gpgv holds it with
@@ -229,6 +202,127 @@ describe("Linux AppImage updates (ADR-DESK-059)", () => {
       rmSync(folder, { recursive: true, force: true });
     }
   });
+});
+
+/** What an AppImage update leaves, driven through `electron-updater`'s own install lifecycle (its
+ * quit handler and `install`), with the app's install in place of the library's: the update at the
+ * AppImage's own path, or, when anything fails, the old AppImage as it was. Never neither. */
+describe("installing an AppImage update (ADR-DESK-059)", () => {
+  /** An AppImage named with its version (as the release's GitHub copies are), the next version
+   * downloaded to the library's cache, and gpgv holding (`proven`) or refusing it. */
+  function setUpInstall(folder: string, proven = true) {
+    const apps = join(folder, "Apps");
+    mkdirSync(apps);
+    const appImage = join(apps, "TabMail-Voice-1.0.0-linux-x86_64.AppImage");
+    writeFileSync(appImage, "the old AppImage", { mode: 0o755 });
+    mkdirSync(join(folder, "cache"));
+    const update = download(join(folder, "cache"), "the new AppImage");
+    let onQuit: ((exitCode: number) => void) | null = null;
+    const adapter = { version: "1.0.0", name: "TabMail Voice", isPackaged: true, whenReady: () => Promise.resolve(), userDataPath: folder, baseCachePath: folder, onQuit: (listener: (exitCode: number) => void) => (onQuit = listener), quit: () => {} };
+    const source = new AppImageInstaller(appImage, adapter);
+    source.logger = null;
+    source.on("error", () => {});
+    // What the library holds once it has downloaded an update, and the quit handler it then adds.
+    (source as unknown as { downloadedUpdateHelper: unknown }).downloadedUpdateHelper = { file: update.path, downloadedFileInfo: { fileName: basename(update.path) } };
+    const events: string[] = [];
+    const platform = appImageUpdatePlatform({
+      source,
+      appImage,
+      keyring,
+      arch: "x64",
+      args: ["--ozone-platform=x11"],
+      run: () => Promise.resolve({ code: proven ? 0 : 1, stdout: "" }),
+      quit: () => events.push("quit"),
+      relaunch: (options) => events.push(`open ${options.executable}`),
+    });
+    const quitApp = () => {
+      source.autoInstallOnAppQuit = true;
+      (source as unknown as { addQuitHandler(): void }).addQuitHandler();
+      onQuit?.(0);
+    };
+    const verify = () => platform.verify({ version: "1.0.1", signature: "c2ln", downloadedFile: update.path });
+    return { appImage, apps, update, platform, events, verify, quitApp };
+  }
+
+  function inFolder(run: (folder: string) => Promise<void>) {
+    return async () => {
+      const folder = mkdtempSync(join(tmpdir(), "voice-appimage-install-"));
+      const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+      try {
+        await run(folder);
+      } finally {
+        logged.mockRestore();
+        chmodSync(folder, 0o700);
+        for (const name of ["Apps", "cache"]) if (existsSync(join(folder, name))) chmodSync(join(folder, name), 0o700);
+        rmSync(folder, { recursive: true, force: true });
+      }
+    };
+  }
+
+  test("Later, then quit: the AppImage's own path holds the update, as runnable, and nothing opens", inFolder(async (folder) => {
+    const { appImage, apps, events, verify, quitApp } = setUpInstall(folder);
+    await verify();
+
+    quitApp();
+
+    expect(readFileSync(appImage, "utf8")).toBe("the new AppImage");
+    if (process.platform !== "win32") expect(statSync(appImage).mode & 0o777).toBe(0o755);
+    // The same name, though the download's carries its version: the launcher entries still open it.
+    expect(readdirSync(apps)).toEqual([basename(appImage)]);
+    expect(events).toEqual([]);
+  }));
+
+  test("Restart Now: the AppImage's own path holds the update, which opens once the app has quit", inFolder(async (folder) => {
+    const { appImage, apps, platform, events, verify } = setUpInstall(folder);
+    await verify();
+
+    await platform.install({ version: "1.0.1" });
+
+    expect(readFileSync(appImage, "utf8")).toBe("the new AppImage");
+    expect(readdirSync(apps)).toEqual([basename(appImage)]);
+    expect(events).toEqual([`open ${appImage}`, "quit"]);
+  }));
+
+  test.each([
+    ["the download is gone from the cache", (update: { path: string }) => rmSync(update.path)],
+    ["the download changed since gpgv held it", (update: { path: string }) => writeFileSync(update.path, "another AppImage")],
+  ])("%s: nothing is installed, and the old AppImage stays as it was", (_case, change) => inFolder(async (folder) => {
+    const { appImage, apps, update, platform, events, verify, quitApp } = setUpInstall(folder);
+    await verify();
+    change(update);
+
+    expect((await refusal(platform.install({ version: "1.0.1" }))).message).toBe("The update couldn't replace TabMail Voice.");
+    quitApp();
+
+    expect(readFileSync(appImage, "utf8")).toBe("the old AppImage");
+    expect(readdirSync(apps)).toEqual([basename(appImage)]);
+    expect(events).toEqual([]);
+  })());
+
+  test("a download gpgv refused is never installed, at the quit or with Restart Now", inFolder(async (folder) => {
+    const { appImage, apps, platform, events, verify, quitApp } = setUpInstall(folder, false);
+    await refusal(verify());
+
+    await refusal(platform.install({ version: "1.0.1" }));
+    quitApp();
+
+    expect(readFileSync(appImage, "utf8")).toBe("the old AppImage");
+    expect(readdirSync(apps)).toEqual([basename(appImage)]);
+    expect(events).toEqual([]);
+  }));
+
+  // A folder the user can't write: root writes anywhere, and Windows has no such mode.
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a folder the update can't be written to keeps the old AppImage", inFolder(async (folder) => {
+    const { appImage, apps, platform, events, verify } = setUpInstall(folder);
+    await verify();
+    chmodSync(apps, 0o555);
+
+    await refusal(platform.install({ version: "1.0.1" }));
+
+    expect(readFileSync(appImage, "utf8")).toBe("the old AppImage");
+    expect(readdirSync(apps)).toEqual([basename(appImage)]);
+    expect(events).toEqual([]);
+  }));
 });
 
 /** The updated app opens from a shell of the app's own, never Electron's relauncher (which leaves it
