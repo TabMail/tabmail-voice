@@ -188,9 +188,23 @@ vi.mock("electron-updater", async () => {
       app.autoUpdater = this;
     }
   }
+  /** The Linux AppImage's: it installs by replacing the AppImage, and says whether it did. */
+  class AppImageUpdater extends FakeAutoUpdater {
+    constructor() {
+      super();
+      this.kind = "appimage";
+      app.autoUpdater = this;
+    }
+    install(...args: unknown[]) {
+      this.installs += 1;
+      this.installedWith = args;
+      return true;
+    }
+  }
   // A fresh one for each test's launch: the mocked module outlives `vi.resetModules`.
   return {
     NsisUpdater,
+    AppImageUpdater,
     get autoUpdater() {
       app.autoUpdater ??= new FakeAutoUpdater();
       return app.autoUpdater;
@@ -1641,6 +1655,71 @@ describe("main process wiring", () => {
 
       expect(app.autoUpdater).toBeNull();
       expect(app.trayState?.().update).toBeNull();
+    });
+
+    /** The AppImage (ADR-DESK-059): no package, so it puts itself on the desktop and updates itself. */
+    describe("the Linux AppImage", () => {
+      let folder: string;
+      const environment = { APPIMAGE: process.env.APPIMAGE, XDG_DATA_HOME: process.env.XDG_DATA_HOME };
+      const argv = process.argv;
+      const arch = Object.getOwnPropertyDescriptor(process, "arch")!;
+      afterEach(() => {
+        for (const [name, value] of Object.entries(environment)) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+        process.argv = argv;
+        Object.defineProperty(process, "arch", arch);
+        rmSync(folder, { recursive: true, force: true });
+        vi.doUnmock("../../src/main/native/linux/update.js");
+      });
+      /** Launches the AppImage at `appImage` with `args`, its resources and the user's data folder in a
+       * temporary folder; returns what it asked to open once it quit. */
+      async function launchAppImage(args: string[]): Promise<{ executable: string; args: string[] }[]> {
+        folder = mkdtempSync(join(tmpdir(), "voice-appimage-"));
+        const resources = join(folder, "resources");
+        mkdirSync(join(resources, "linux", "icons"), { recursive: true });
+        mkdirSync(join(resources, "linux", "gnome", "voice-caret@tabmail.ai"), { recursive: true });
+        writeFileSync(join(resources, "linux", "icons", "256x256.png"), "icon");
+        writeFileSync(join(resources, "linux", "gnome", "voice-caret@tabmail.ai", "metadata.json"), "{}");
+        process.env.APPIMAGE = "/home/user/TabMail-Voice-latest-linux-arm64.AppImage";
+        process.env.XDG_DATA_HOME = join(folder, "share");
+        process.argv = ["/tmp/.mount_TabMail/tabmail-voice", ...args];
+        Object.defineProperty(process, "arch", { value: "arm64", configurable: true });
+        const relaunches: { executable: string; args: string[] }[] = [];
+        vi.doMock("../../src/main/native/linux/update.js", async (original) => ({
+          ...(await original<typeof import("../../src/main/native/linux/update.js")>()),
+          relaunchAfterExit: (options: { executable: string; args: string[] }) => relaunches.push({ executable: options.executable, args: options.args }),
+        }));
+        await launchPackaged("linux", resources);
+        return relaunches;
+      }
+
+      test("it updates itself from its architecture's feed, and is on the desktop as the app", async () => {
+        const relaunches = await launchAppImage(["--ozone-platform=x11", "--no-sandbox"]);
+        const updater = app.autoUpdater;
+
+        expect(app.exits).toEqual([]);
+        expect(updater?.kind).toBe("appimage");
+        expect(updater?.logger).toBeNull();
+        expect(updater?.feed).toEqual({ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-arm64", useMultipleRangeRequest: false });
+        expect(updater?.allowDowngrade).toBe(false);
+        expect(app.trayState?.().update).toEqual({ kind: "idle" });
+        expect(readFileSync(join(folder, "share", "applications", "ai.tabmail.voice.desktop"), "utf8")).toContain('Exec="/home/user/TabMail-Voice-latest-linux-arm64.AppImage" --ozone-platform=x11 %U\n');
+        expect(readFileSync(join(folder, "share", "gnome-shell", "extensions", "voice-caret@tabmail.ai", "metadata.json"), "utf8")).toBe("{}");
+        expect(relaunches).toEqual([]);
+      });
+
+      /** Opened from Files, the AppImage's launcher passes no arguments: Electron has already chosen
+       * its display backend, so the app opens itself again with the X11 one, and starts nothing. */
+      test("opened without the X11 argument, it opens itself again with it", async () => {
+        const relaunches = await launchAppImage(["--no-sandbox"]);
+
+        expect(app.exits).toEqual([0]);
+        expect(relaunches).toEqual([{ executable: "/home/user/TabMail-Voice-latest-linux-arm64.AppImage", args: ["--no-sandbox", "--ozone-platform=x11"] }]);
+        expect(app.autoUpdater).toBeNull();
+        expect(app.helpers.size).toBe(0);
+      });
     });
 
     test("a debug build has no updater and no update item", async () => {

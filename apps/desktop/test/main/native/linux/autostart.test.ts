@@ -30,3 +30,18 @@ test("Exec treats field codes and shell metacharacters as literal path text", ()
   expect(() => desktopExec("/app\nExec=other")).toThrow();
   expect(() => desktopExec("/app\0other")).toThrow();
 });
+test("an AppImage's login entry follows it when it moves, and stays off once turned off", () => {
+  const directory = mkdtempSync(join(tmpdir(), "voice-autostart-"));
+  try {
+    const path = join(directory, "autostart", "ai.tabmail.voice.desktop");
+    new LinuxAutostart(directory, "/home/user/TabMail-Voice-1.0.0-linux-x86_64.AppImage").enabled = true;
+    const moved = new LinuxAutostart(directory, "/home/user/TabMail-Voice-1.0.1-linux-x86_64.AppImage");
+    expect(moved.enabled).toBe(false);
+    moved.refresh();
+    expect(moved.enabled).toBe(true);
+    expect(readFileSync(path, "utf8")).toContain('Exec="/home/user/TabMail-Voice-1.0.1-linux-x86_64.AppImage" --ozone-platform=x11\n');
+    moved.enabled = false;
+    moved.refresh();
+    expect(moved.enabled).toBe(false);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});

@@ -29,6 +29,9 @@
     }
   ],
   "asar": true,
+  "toolsets": {
+    "appimage": "1.0.3"
+  },
   "publish": [
     {
       "provider": "generic",
@@ -99,7 +102,10 @@
     ]
   },
   "linux": {
-    "target": "deb",
+    "target": [
+      "deb",
+      "AppImage"
+    ],
     "executableArgs": [
       "--ozone-platform=x11"
     ],
@@ -116,6 +122,17 @@
       {
         "from": "native/linux/gnome/voice-caret@tabmail.ai",
         "to": "linux/gnome/voice-caret@tabmail.ai"
+      },
+      {
+        "from": "resources/linux/tabmail-voice-archive-keyring.gpg",
+        "to": "linux/tabmail-voice-archive-keyring.gpg"
+      },
+      {
+        "from": "resources/linux/icons",
+        "to": "linux/icons",
+        "filter": [
+          "*.png"
+        ]
       },
       {
         "from": "dist/helpers",
@@ -166,6 +183,15 @@
       "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai",
       "resources/linux/tabmail-voice-archive-keyring.gpg=/etc/apt/keyrings/tabmail-voice-archive-keyring.gpg",
       "resources/linux/tabmail-voice.sources=/etc/apt/sources.list.d/tabmail-voice.sources"
+    ]
+  },
+  "appImage": {
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://cdn.tabmail.ai/releases/voice/linux-${arch}",
+        "useMultipleRangeRequest": false
+      }
     ]
   },
   "nsis": {

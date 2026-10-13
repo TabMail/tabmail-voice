@@ -34,4 +34,9 @@ export class LinuxAutostart {
     writeFileSync(temporary, this.entry, { mode: 0o600 });
     renameSync(temporary, this.path);
   }
+  /** An entry an earlier launch wrote that names another file (the AppImage moved, or an update
+   * renamed it) names this one again; one the user removed stays removed. */
+  refresh(): void {
+    if (existsSync(this.path) && !this.enabled) this.enabled = true;
+  }
 }

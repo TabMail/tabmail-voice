@@ -75,7 +75,7 @@ apps/desktop/
 │   │   ├── audioCapture.ts          The microphone, one session per try of a dictation's start (a failed start is tried again for about two seconds): through `voice-microphone` on macOS, Windows and Linux, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── documents/               A local file the user approved, for agent mode (ADR-DESK-051): `localDocument.ts` (home folder only, no symlinks, the same file read); the PDF parsed in a disposable utility process (`pdfProcess.ts`, `pdfWorker.ts`) inside a fixed-memory interpreter (`pdfRealm.ts`, `pdfRealmPrelude.ts`, `pdfExtraction.ts`); `pdfReader.ts` (its text redacted in the helper)
-│   │   ├── updater.ts               Packaged macOS and Windows builds: updates from cdn.tabmail.ai: when to look, the download, the states, the question, failures and retries (ADR-DESK-041, ADR-DESK-050); each OS's proof and install in `native/<os>/update.ts` (Linux has none: apt updates it, ADR-DESK-058)
+│   │   ├── updater.ts               Packaged macOS and Windows builds, and the Linux AppImage: updates from cdn.tabmail.ai: when to look, the download, the states, the question, failures and retries (ADR-DESK-041, ADR-DESK-050); each OS's proof and install in `native/<os>/update.ts` (the Linux package has none: apt updates it, ADR-DESK-058; the AppImage's, ADR-DESK-059)
 │   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts (at once for a helper that exits to be started afresh)
 │   │   │   ├── microphone.ts         Shared native audio wire adapter and chunk decoder
@@ -83,7 +83,7 @@ apps/desktop/
 │   │   │   ├── fieldReader.ts        The focused field read after a paste (`CorrectionWatch`'s `FieldSource`), by `voice-field-reader`, a program of its own on every platform: the paste's own target by an identity both helpers share (the process on macOS and Linux, the window's handle on Windows), restarted when a read is superseded or stuck (ADR-DESK-053, amended 2026-10-07 and 2026-10-08)
 │   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters; update.ts (Squirrel.Mac's proof)
 │   │   │   ├── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters; update.ts (the installer's Authenticode signature, through `voice-windows.exe --verify-update`)
-│   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters (no updater: apt updates the package, ADR-DESK-058)
+│   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters; appImage.ts (the AppImage's launcher entry, icons and extension in the user's data folder) and update.ts (the AppImage's updates, `gpgv` over the release's signed statement; the package has none: apt updates it, ADR-DESK-058, ADR-DESK-059)
 │   │   └── storage/                 keychainSessionStore.ts (the sign-in; windows/sessionCredential.ts stores compressed binary sessions within Credential Manager’s blob bound), jsonFileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
 │   ├── preload/index.ts     `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks

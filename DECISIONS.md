@@ -3350,6 +3350,10 @@ above is superseded: a packaged Linux build has no updater and no update item; a
 package from the signed repository at `cdn.tabmail.ai/releases/voice`, as the second consequence
 above foresaw for a `.deb`. Install Version… and Installing Version… are gone.
 
+**Amendment 2026-10-13 — the Linux AppImage updates itself (ADR-DESK-059).** The package still has
+no updater; the AppImage, for those who can't install it, has the same one as macOS and Windows,
+with a Linux adapter (`src/main/native/linux/update.ts`) and the same question and states.
+
 **Amendment 2026-10-11 — each Mac app reads the feed of the architecture it runs as
 (ADR-DESK-032's amendment).** The app sets its feed when it starts the updater:
 `https://cdn.tabmail.ai/releases/voice/macos-<process.arch>` (`macUpdateFeedURL` in `config.ts`,
@@ -5169,7 +5173,8 @@ off the website until this ships.
   signatures with `gpgv` against that keyring, never replaces a newer version with an older one, and
   writes `InRelease` last.
 - **The app has no Linux updater:** no update item in the tray or Settings, no feed (`linux.publish`
-  is null, so no `app-update.yml`). `apt update` offers new versions, and Ubuntu's Software Updater
+  is null, so no `app-update.yml`). *(Amended by ADR-DESK-059, 2026-10-13: the package still has none; the
+  AppImage updates itself from a feed of its own, its updates signed with this repository's key.)* `apt update` offers new versions, and Ubuntu's Software Updater
   shows them as it shows Chrome's.
 - **Keys** are created, rotated and replaced by the backup with
   a script of TabMail's private operations repository. The keyring holds the backup from the first release, so a leaked or lost primary is replaced by
@@ -5189,3 +5194,73 @@ off the website until this ships.
   has no source and reinstalls once; that build never had updates.
 - Tested in the Ubuntu VM with a test key and a local repository: the 0.2.1 package installs the
   keyring and source, `apt upgrade` brings a later version, and a tampered `InRelease` is refused.
+
+---
+
+## ADR-DESK-059: The Linux AppImage, for those who can't install the package
+
+**Context:** The `.deb` needs an administrator (`sudo apt install`, ADR-DESK-058). Owner, 2026-10-13:
+offer a version for a user without one, and say on the download page that it's for that case; the
+package stays the main download. Researched how open-source apps ship a no-administrator Linux
+install: Signal Desktop (an AppImage that replaces itself, its updates signed with a key the app
+carries), Joplin (an AppImage in the user's folder plus a launcher entry of its own), Telegram and
+Firefox (an unpacked folder that updates itself, each update signed). Measured on a fresh Ubuntu
+26.04 as a user with no `sudo`: a static-runtime AppImage mounts with the stock `fuse3`; Ubuntu's
+unprivileged user namespace restriction leaves Chromium no sandbox outside an AppArmor profile, which
+only an administrator can install, so electron-builder's launcher starts it with `--no-sandbox`
+(owner, 2026-10-12: accepted for the AppImage); `gpgv` is there; replacing the AppImage file while the
+old version runs works.
+
+**Decision:**
+- **An AppImage per architecture** (`TabMail-Voice-<version>-linux-x86_64.AppImage`, `…-arm64…`),
+  built beside the `.deb` from the same app (`linux.target`), on electron-builder's static AppImage
+  runtime (`toolsets.appimage` 1.0.3): the older runtime needs a `libz.so` stock Ubuntu doesn't have.
+  The website links `TabMail-Voice-latest-linux-<arch>.AppImage`, a copy the release writes, under
+  "No administrator (sudo) rights?"; the package stays the main Linux download.
+- **On the desktop by itself.** At each launch the AppImage writes, in the user's own data folder
+  (`$XDG_DATA_HOME`, else `~/.local/share`), only what differs: the launcher entry
+  `applications/ai.tabmail.voice.desktop` (the app ID the desktop portal registers it by, so its
+  shortcuts and permissions work as the package's), its icons in `icons/hicolor`, and the GNOME
+  extension (ADR-DESK-052) in `gnome-shell/extensions`, which GNOME loads at the next sign-in. A
+  login item that names an earlier path of the AppImage is rewritten to name this one. Nothing is
+  removed with the AppImage; deleting it leaves a launcher entry that no longer opens, as Joplin's does.
+- **The X11 argument.** Opened from Files or a terminal, the AppImage's launcher passes no argument,
+  and Electron chooses its display backend before the app's code runs. The app then opens itself
+  again with `--ozone-platform=x11` (as every launcher entry passes it) and quits before starting
+  anything else.
+- **It updates itself**, through the same `Updater` as macOS and Windows (ADR-DESK-050), with
+  `electron-updater`'s `AppImageUpdater`: the feed `https://cdn.tabmail.ai/releases/voice/linux-<arch>`
+  (`latest-linux.yml` on x64, `latest-linux-arm64.yml` on ARM, beside the packages), one byte range per
+  request (the CDN refuses several), a differential download from the blockmap the AppImage carries.
+- **Signed with the apt repository's key.** The feed carries `signature`: a detached OpenPGP signature,
+  base64, made by the release with the key that signs the repository (ADR-DESK-058), over
+  `TabMail Voice update\npackage: tabmail-voice-appimage\narchitecture: <arch>\nversion: <x.y.z>\nsha512: <base64>\n`
+  (ADR-DESK-050's form, naming the AppImage). The app computes the download's SHA-512 itself, writes
+  that statement and the signature to a fresh temporary folder, and runs `gpgv` with that folder as
+  its home and only the keyring the app carries
+  (`resources/linux/tabmail-voice-archive-keyring.gpg`, the package's), as apt checks the repository.
+  The update is ready only when `gpgv` holds it; otherwise "Version x.y.z isn't signed by TabMail, so
+  it wasn't installed." `Updater` already refuses a version that isn't newer. Key rotation is the
+  repository's: the keyring the AppImage carries is the one the package installs, replaced with each
+  release.
+- **Install.** It installs when the app quits, or at once with Restart Now (the question is macOS's and
+  Windows': "It installs when TabMail Voice quits. Restart now to update?"). The library replaces the
+  AppImage file (same path, unless the file's name carries a version, when it takes the update's name)
+  and runs the new one with `APPIMAGE_EXIT_AFTER_INSTALL`, which its launcher answers by exiting
+  without starting the app. After Restart Now the app opens the new AppImage from a shell of its own
+  once it has quit (`relaunchAfterExit`), never `app.relaunch()` (no_new_privs, ADR-DESK-050, would
+  stop `fusermount3` mounting it); an install that didn't happen fails, and nothing quits or reopens.
+- **Release** (`tabmail-release-helpers`): CI builds and checks the AppImage with the package; the
+  publish signs each architecture's statement with `VOICE_APT_SIGNING_KEY`, checks it with `gpgv`
+  against the package's keyring, writes `signature` into the feed, and uploads the AppImage, then the
+  feed (never one older than the CDN's), then the `latest` copy.
+
+**Consequences:**
+- The AppImage runs without Chromium's sandbox, as any AppImage does on Ubuntu 24.04 and later
+  without an administrator; the package keeps it (its AppArmor profile).
+- No dependency is installed: the AppImage needs what a stock Ubuntu 26.04 desktop has (measured:
+  every library the app links), and `fuse3`, which it has.
+- A user with both the package and the AppImage has one launcher entry, the AppImage's (the user's
+  own folder comes first).
+- The AppImage updates only while it runs; one not run for a long time updates on its next launch.
+

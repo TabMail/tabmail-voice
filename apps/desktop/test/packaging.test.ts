@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
+import { x11Argument } from "../src/main/native/linux/appImage.js";
 
 const root = join(__dirname, "..");
 
@@ -151,6 +152,21 @@ describe("the Mac app's packaging", () => {
     ]);
     expect(builder.linux.extraResources.map(resource => resource.from)).not.toContain("resources/linux/install-update");
     expect(builder.deb.depends).not.toContain("pkexec");
+  });
+
+  /** The AppImage, for those who can't install the package (ADR-DESK-059): built on the static
+   * runtime (the older one needs a libz.so a stock Ubuntu doesn't have), with an update feed of its
+   * own beside the packages, and the apt keyring to check its updates' signatures with. */
+  test("Linux also builds an AppImage, with its own feed and the keys that sign its updates", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { toolsets: { appimage: string }; linux: { target: string[]; executableArgs: string[]; extraResources: { from: string; to: string; filter?: string[] }[] }; appImage: { publish: unknown } };
+
+    expect(builder.linux.target).toEqual(["deb", "AppImage"]);
+    expect(builder.toolsets.appimage).toBe("1.0.3");
+    expect(builder.appImage.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
+    expect(`${config.linuxUpdateFeedURL}-\${arch}`).toBe("https://cdn.tabmail.ai/releases/voice/linux-${arch}");
+    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/tabmail-voice-archive-keyring.gpg", to: "linux/tabmail-voice-archive-keyring.gpg" });
+    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/icons", to: "linux/icons", filter: ["*.png"] });
+    expect(builder.linux.executableArgs).toEqual([x11Argument]);
   });
 
   /** The keyring is binary OpenPGP (what apt's Signed-By reads) holding two public keys, the one
