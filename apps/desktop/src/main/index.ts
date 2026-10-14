@@ -70,6 +70,8 @@ import { NativeContactStore, NativeEventStore, NativeNoteStore, productivityRunn
 import { LinuxSystem } from "./native/linux/system.js";
 import { LinuxPermissions } from "./native/linux/permissions.js";
 import { LinuxAutostart } from "./native/linux/autostart.js";
+import { integrateAppImage, needsX11Relaunch, runningAppImage, x11Argument } from "./native/linux/appImage.js";
+import { AppImageInstaller, appImageUpdatePlatform, relaunchAfterExit } from "./native/linux/update.js";
 import { linuxFallbackAnchor } from "./native/linux/overlayArea.js";
 import { shellPlacementArea } from "./native/windows/overlayArea.js";
 import { ShellGeometry } from "./native/windows/shellGeometry.js";
@@ -97,7 +99,13 @@ const openableURLs: readonly string[] = [config.termsURL, config.privacyURL];
 // Linux launchers pass --ozone-platform=x11 before Electron initializes its display
 // backend. Appending it here is too late to select XWayland on a Wayland session.
 
-if (app.requestSingleInstanceLock()) {
+/** The AppImage this is, on Linux when not installed by the package (ADR-DESK-059). */
+const appImage = process.platform === "linux" && app.isPackaged ? runningAppImage(process.env, process.execPath) : undefined;
+
+if (needsX11Relaunch(appImage, process.argv)) {
+  relaunchAfterExit({ pid: process.pid, executable: appImage, args: [...process.argv.slice(1), x11Argument] });
+  app.exit(0);
+} else if (app.requestSingleInstanceLock()) {
   app.whenReady().then(launch, (error: unknown) => {
     log.error(`main: launch failed: ${errorName(error)}`);
   });
@@ -169,7 +177,14 @@ function launch(): void {
   // process's own, so there the reader is given its window's process.
   const fieldReader = new FieldReader(fieldReaderHelper, process.platform, system instanceof LinuxSystem ? (window) => system.appOf(window) : (target) => target);
   const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
-  const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), process.env.APPIMAGE ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
+  const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), appImage ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
+  if (appImage !== undefined) {
+    try {
+      integrateAppImage({ appImage, resources: process.resourcesPath, dataHome: process.env.XDG_DATA_HOME?.startsWith("/") ? process.env.XDG_DATA_HOME : join(homedir(), ".local", "share") });
+    } catch (error) {
+      log.error(`main: the AppImage's desktop entry couldn't be written: ${errorName(error)}`);
+    }
+  }
   // The microphone has a helper to itself on every platform, so nothing another helper waits on
   // can hold up or end a recording; it is started afresh after each dictation (ADR-DESK-032).
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
@@ -470,7 +485,8 @@ function launch(): void {
   }
 
   /** The platform's update adapter, its library's own log off (it writes to the console; ours says
-   * what failed). Linux has none: the package's apt source updates it (ADR-DESK-058). */
+   * what failed). The Linux package has none: its apt source updates it (ADR-DESK-058); the AppImage
+   * updates itself (ADR-DESK-059). */
   function makeUpdatePlatform(): UpdatePlatform | null {
     switch (process.platform) {
       case "darwin":
@@ -480,6 +496,20 @@ function launch(): void {
         const source = new NsisUpdater();
         source.logger = null;
         return windowsUpdatePlatform({ source, helper: join(helpers, "voice-windows.exe"), run: runFile });
+      }
+      case "linux": {
+        if (appImage === undefined) return null;
+        const source = new AppImageInstaller(appImage);
+        source.logger = null;
+        return appImageUpdatePlatform({
+          source,
+          appImage,
+          keyring: join(process.resourcesPath, "linux", "tabmail-voice-archive-keyring.gpg"),
+          arch: process.arch,
+          args: [x11Argument],
+          run: runFile,
+          quit: () => app.quit(),
+        });
       }
       default:
         return null;

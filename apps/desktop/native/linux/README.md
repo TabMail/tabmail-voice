@@ -162,7 +162,14 @@ use and its offline backup) and `/etc/apt/sources.list.d/tabmail-voice.sources`,
 files a user may edit or delete, kept by `apt remove` and removed by `apt purge` together, the
 source pointing at `https://cdn.tabmail.ai/releases/voice` (suite
 `stable`, component `main`). `apt update` and Ubuntu's Software Updater then offer each new release,
-whose `InRelease` is signed by one of those keys. The app has no updater of its own on Linux.
+whose `InRelease` is signed by one of those keys. The package has no updater of its own.
+
+The AppImage (ADR-DESK-059), for a user who can't install the package, updates itself: from
+`https://cdn.tabmail.ai/releases/voice/linux-<arch>`, each update checked with `gpgv` against the
+same keyring (carried in the AppImage) over a statement of its architecture, version and SHA-512. At
+each launch it writes its launcher entry, icons and the GNOME extension into the user's own data
+folder (`~/.local/share`), and runs without Chromium's sandbox, which Ubuntu allows only under an
+AppArmor profile an administrator installs.
 
 ## Upstream implementation references
 

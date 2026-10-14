@@ -29,6 +29,9 @@
     }
   ],
   "asar": true,
+  "toolsets": {
+    "appimage": "1.0.3"
+  },
   "publish": [
     {
       "provider": "generic",
@@ -99,7 +102,10 @@
     ]
   },
   "linux": {
-    "target": "deb",
+    "target": [
+      "deb",
+      "AppImage"
+    ],
     "executableArgs": [
       "--ozone-platform=x11"
     ],
@@ -118,6 +124,17 @@
         "to": "linux/gnome/voice-caret@tabmail.ai"
       },
       {
+        "from": "resources/linux/tabmail-voice-archive-keyring.gpg",
+        "to": "linux/tabmail-voice-archive-keyring.gpg"
+      },
+      {
+        "from": "resources/linux/icons",
+        "to": "linux/icons",
+        "filter": [
+          "*.png"
+        ]
+      },
+      {
         "from": "dist/helpers",
         "to": "helpers",
         "filter": [
@@ -131,7 +148,13 @@
         ]
       }
     ],
-    "publish": null,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://cdn.tabmail.ai/releases/voice/linux-${arch}",
+        "useMultipleRangeRequest": false
+      }
+    ],
     "desktop": {
       "entry": {
         "Name": "TabMail Voice",
@@ -141,6 +164,7 @@
     }
   },
   "deb": {
+    "publish": null,
     "appArmorProfile": "scripts/linux/apparmor-profile.tpl",
     "depends": [
       "libgtk-3-0t64",

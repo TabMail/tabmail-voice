@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -47,6 +47,8 @@ const app = vi.hoisted(() => ({
   hides: 0,
   /** The codes `app.exit` was called with. */
   exits: [] as number[],
+  /** How often the app asked Electron to quit. */
+  quits: 0,
   /** The windows other than the overlay that are open. */
   openWindows: [] as string[],
   /** What the history window does when it loses the focus. */
@@ -112,7 +114,9 @@ vi.mock("electron", async () => {
       on: (event: string, handler: (...args: unknown[]) => void) => {
         app.appEvents.set(event, handler);
       },
-      quit() {},
+      quit() {
+        app.quits += 1;
+      },
       exit: (code: number) => {
         app.exits.push(code);
       },
@@ -188,9 +192,23 @@ vi.mock("electron-updater", async () => {
       app.autoUpdater = this;
     }
   }
+  /** The Linux AppImage's: it installs by replacing the AppImage, and says whether it did. */
+  class AppImageUpdater extends FakeAutoUpdater {
+    constructor() {
+      super();
+      this.kind = "appimage";
+      app.autoUpdater = this;
+    }
+    install(...args: unknown[]) {
+      this.installs += 1;
+      this.installedWith = args;
+      return true;
+    }
+  }
   // A fresh one for each test's launch: the mocked module outlives `vi.resetModules`.
   return {
     NsisUpdater,
+    AppImageUpdater,
     get autoUpdater() {
       app.autoUpdater ??= new FakeAutoUpdater();
       return app.autoUpdater;
@@ -443,10 +461,10 @@ vi.mock("../../src/main/windows.js", () => ({
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 const execPathDescriptor = Object.getOwnPropertyDescriptor(process, "execPath")!;
 
-async function launch(platform: NodeJS.Platform): Promise<void> {
+async function launch(platform: NodeJS.Platform, linuxExecutable = "/opt/TabMail Voice/tabmail-voice"): Promise<void> {
   Object.defineProperty(process, "platform", { value: platform, configurable: true });
   // A Linux app runs from a POSIX path, whatever machine runs the tests (the Windows release build too).
-  if (platform === "linux") Object.defineProperty(process, "execPath", { value: "/opt/TabMail Voice/tabmail-voice", configurable: true });
+  if (platform === "linux") Object.defineProperty(process, "execPath", { value: linuxExecutable, configurable: true });
   vi.resetModules();
   await import("../../src/main/index.js");
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -498,6 +516,7 @@ afterEach(() => {
   app.dialogs = [];
   app.dialogResponse = 1;
   app.exits = [];
+  app.quits = 0;
   app.openDialogs = [];
   app.pickedPath = null;
 });
@@ -1569,10 +1588,10 @@ describe("main process wiring", () => {
 
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {
     /** A packaged build, launched with its resources where Electron puts them. */
-    async function launchPackaged(platform: NodeJS.Platform = "darwin", resources = "/nonexistent"): Promise<void> {
+    async function launchPackaged(platform: NodeJS.Platform = "darwin", resources = "/nonexistent", linuxExecutable?: string): Promise<void> {
       app.packaged = true;
       Object.defineProperty(process, "resourcesPath", { value: resources, configurable: true });
-      await launch(platform);
+      await launch(platform, linuxExecutable);
     }
     /** Lets the update's proof finish, and the question it schedules be asked. */
     const settle = async () => {
@@ -1641,6 +1660,192 @@ describe("main process wiring", () => {
 
       expect(app.autoUpdater).toBeNull();
       expect(app.trayState?.().update).toBeNull();
+    });
+
+    /** The AppImage (ADR-DESK-059): no package, so it puts itself on the desktop and updates itself. */
+    describe("the Linux AppImage", () => {
+      let folder: string;
+      const environment = { APPIMAGE: process.env.APPIMAGE, APPDIR: process.env.APPDIR, XDG_DATA_HOME: process.env.XDG_DATA_HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
+      const argv = process.argv;
+      const arch = Object.getOwnPropertyDescriptor(process, "arch")!;
+      const appImage = "/home/user/TabMail-Voice-latest-linux-arm64.AppImage";
+      afterEach(() => {
+        for (const [name, value] of Object.entries(environment)) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+        }
+        process.argv = argv;
+        Object.defineProperty(process, "arch", arch);
+        rmSync(folder, { recursive: true, force: true });
+        vi.doUnmock("../../src/main/native/linux/update.js");
+        vi.doUnmock("node:os");
+      });
+      /** Launches the AppImage at `appImage` with `args`, its resources, the home folder and the
+       * user's config folder in a temporary folder, the data folder `dataHome` gives (`folder/share`
+       * by default; undefined for none set), and the executable in the folder its runtime mounted
+       * (`APPDIR`); with `foreign`, the package's app started from another AppImage, which inherits
+       * that one's `APPIMAGE` and `APPDIR`. Returns what it asked to open once it quit. */
+      async function launchAppImage(args: string[], options: { packaged?: boolean; dataHome?: (folder: string) => string | undefined; loginEntry?: string; foreign?: boolean } = {}): Promise<{ executable: string; args: string[] }[]> {
+        folder = mkdtempSync(join(tmpdir(), "voice-appimage-"));
+        const resources = join(folder, "resources");
+        mkdirSync(join(resources, "linux", "icons"), { recursive: true });
+        mkdirSync(join(resources, "linux", "gnome", "voice-caret@tabmail.ai"), { recursive: true });
+        writeFileSync(join(resources, "linux", "icons", "256x256.png"), "icon");
+        writeFileSync(join(resources, "linux", "gnome", "voice-caret@tabmail.ai", "metadata.json"), "{}");
+        const home = join(folder, "home");
+        vi.doMock("node:os", async () => ({ ...await vi.importActual<typeof import("node:os")>("node:os"), homedir: () => home }));
+        process.env.APPIMAGE = appImage;
+        const mount = join(folder, ".mount_TabMail");
+        mkdirSync(mount);
+        process.env.APPDIR = mount;
+        const executable = options.foreign ? "/opt/TabMail Voice/tabmail-voice" : join(realpathSync(mount), "tabmail-voice");
+        const dataHome = options.dataHome ? options.dataHome(folder) : join(folder, "share");
+        if (dataHome === undefined) delete process.env.XDG_DATA_HOME;
+        else process.env.XDG_DATA_HOME = dataHome;
+        process.env.XDG_CONFIG_HOME = join(folder, "config");
+        if (options.loginEntry !== undefined) {
+          mkdirSync(join(folder, "config", "autostart"), { recursive: true });
+          writeFileSync(join(folder, "config", "autostart", "ai.tabmail.voice.desktop"), options.loginEntry);
+        }
+        process.argv = [executable, ...args];
+        Object.defineProperty(process, "arch", { value: "arm64", configurable: true });
+        const relaunches: { executable: string; args: string[] }[] = [];
+        vi.doMock("../../src/main/native/linux/update.js", async (original) => {
+          const real = await original<typeof import("../../src/main/native/linux/update.js")>();
+          const relaunch = (options: { executable: string; args: string[] }) => relaunches.push({ executable: options.executable, args: options.args });
+          return {
+            ...real,
+            relaunchAfterExit: relaunch,
+            // gpgv holds every update: the signature check itself is the update module's tests'.
+            appImageUpdatePlatform: (platformOptions: Parameters<typeof real.appImageUpdatePlatform>[0]) => real.appImageUpdatePlatform({ ...platformOptions, run: () => Promise.resolve({ code: 0, stdout: "" }), relaunch }),
+          };
+        });
+        if (options.packaged === false) {
+          Object.defineProperty(process, "resourcesPath", { value: resources, configurable: true });
+          await launch("linux", executable);
+        } else {
+          await launchPackaged("linux", resources, executable);
+        }
+        return relaunches;
+      }
+
+      test("it updates itself from its architecture's feed, and is on the desktop as the app", async () => {
+        const relaunches = await launchAppImage(["--ozone-platform=x11", "--no-sandbox"]);
+        const updater = app.autoUpdater;
+
+        expect(app.exits).toEqual([]);
+        expect(updater?.kind).toBe("appimage");
+        expect(updater?.logger).toBeNull();
+        expect(updater?.feed).toEqual({ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-arm64", useMultipleRangeRequest: false });
+        expect(updater?.allowDowngrade).toBe(false);
+        expect(app.trayState?.().update).toEqual({ kind: "idle" });
+        expect(readFileSync(join(folder, "share", "applications", "ai.tabmail.voice.desktop"), "utf8")).toContain(`Exec="${appImage}" --ozone-platform=x11 %U\n`);
+        expect(readFileSync(join(folder, "share", "gnome-shell", "extensions", "voice-caret@tabmail.ai", "metadata.json"), "utf8")).toBe("{}");
+        expect(relaunches).toEqual([]);
+      });
+
+      /** The XDG Base Directory rule: a data folder that isn't an absolute path is ignored. */
+      test.each([
+        ["unset", () => undefined],
+        ["relative", () => "relative/share"],
+      ])("with the data folder %s, it uses ~/.local/share", async (_case, dataHome) => {
+        await launchAppImage(["--ozone-platform=x11"], { dataHome });
+
+        expect(readFileSync(join(folder, "home", ".local", "share", "applications", "ai.tabmail.voice.desktop"), "utf8")).toContain(`Exec="${appImage}" `);
+        expect(existsSync(join(folder, "share"))).toBe(false);
+      });
+
+      /** The login item is the user's: a launch never rewrites it, whether it names an earlier path of
+       * the AppImage or the user turned it off. */
+      test.each([
+        ["names another path", `[Desktop Entry]\nType=Application\nName=TabMail Voice\nExec="/home/user/Old.AppImage" --ozone-platform=x11\nX-GNOME-Autostart-enabled=true\n`],
+        ["is turned off", `[Desktop Entry]\nType=Application\nName=TabMail Voice\nExec="${appImage}" --ozone-platform=x11\nX-GNOME-Autostart-enabled=true\nHidden=true\n`],
+      ])("a login item that %s is left as it is", async (_case, entry) => {
+        await launchAppImage(["--ozone-platform=x11"], { loginEntry: entry });
+
+        expect(readFileSync(join(folder, "config", "autostart", "ai.tabmail.voice.desktop"), "utf8")).toBe(entry);
+        expect(existsSync(join(folder, "share", "applications", "ai.tabmail.voice.desktop"))).toBe(true);
+      });
+
+      /** Opened from Files, the AppImage's launcher passes no arguments: Electron has already chosen
+       * its display backend, so the app opens itself again with the X11 one, and starts nothing. */
+      test("opened without the X11 argument, it opens itself again with it", async () => {
+        const relaunches = await launchAppImage(["--no-sandbox"]);
+
+        expect(app.exits).toEqual([0]);
+        expect(relaunches).toEqual([{ executable: appImage, args: ["--no-sandbox", "--ozone-platform=x11"] }]);
+        expect(app.autoUpdater).toBeNull();
+        expect(app.helpers.size).toBe(0);
+      });
+
+      /** Restart Now, once gpgv has held the download: the AppImage is replaced, the new one asked to
+       * open once the app is gone, and the app quits. */
+      test("Restart Now installs the proven update, opens it again and quits", async () => {
+        const relaunches = await launchAppImage(["--ozone-platform=x11"]);
+        const updater = app.autoUpdater;
+        const downloadedFile = join(folder, "update.AppImage");
+        writeFileSync(downloadedFile, "the new AppImage");
+
+        updater?.emit("update-available", { version: "9.9.9" });
+        updater?.emit("update-downloaded", { version: "9.9.9", downloadedFile, signature: "c2ln" });
+        expect(updater?.installs).toBe(0);
+        // The proof reads the download and runs gpgv: real file work, so more than a few turns.
+        expect(await eventually(() => (app.trayState?.().update as { kind: string } | null)?.kind === "ready")).toBe(true);
+        expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
+        expect(relaunches).toEqual([]);
+        expect(app.quits).toBe(0);
+
+        app.trayActions?.installUpdate();
+
+        expect(updater?.installs).toBe(1);
+        expect(updater?.installedWith).toEqual([true, false]);
+        expect(relaunches).toEqual([{ executable: appImage, args: ["--ozone-platform=x11"] }]);
+        expect(app.quits).toBe(1);
+      });
+
+      /** The desktop entry is a convenience: a data folder it can't be written to doesn't stop the app. */
+      test("a data folder that can't be written to still lets the app start", async () => {
+        await launchAppImage(["--ozone-platform=x11"], {
+          dataHome: (folder) => {
+            writeFileSync(join(folder, "share"), "a file, not a folder");
+            return join(folder, "share");
+          },
+        });
+
+        expect(readFileSync(join(folder, "share"), "utf8")).toBe("a file, not a folder");
+        expect(app.exits).toEqual([]);
+        expect(app.autoUpdater?.kind).toBe("appimage");
+        expect(app.helpers.size).toBeGreaterThan(0);
+      });
+
+      /** The package's app opened from another AppImage (a terminal or an editor packaged so) inherits
+       * that one's `APPIMAGE` and `APPDIR`: it isn't that AppImage, so it neither opens it, nor puts it
+       * on the desktop, nor ever replaces it with an update, and its login item names the package. */
+      test.each([
+        ["with the X11 argument", ["--ozone-platform=x11"]],
+        ["without it", ["--no-sandbox"]],
+      ])("the package's app started from another AppImage, %s, is the package's", async (_case, args) => {
+        const relaunches = await launchAppImage(args, { foreign: true });
+
+        expect(app.exits).toEqual([]);
+        expect(relaunches).toEqual([]);
+        expect(app.autoUpdater).toBeNull();
+        expect(app.trayState?.().update).toBeNull();
+        expect(existsSync(join(folder, "share"))).toBe(false);
+        await send({ type: "setOpenAtLogin", value: true });
+        expect(readFileSync(join(folder, "config", "autostart", "ai.tabmail.voice.desktop"), "utf8")).toContain(`Exec="/opt/TabMail Voice/tabmail-voice" `);
+      });
+
+      /** A development run started from an AppImage's shell inherits its `APPIMAGE`: it is not that
+       * AppImage, so it opens nothing again, writes nothing on the desktop and has no updater. */
+      test("a build that isn't packaged ignores an inherited APPIMAGE", async () => {
+        const relaunches = await launchAppImage(["--no-sandbox"], { packaged: false });
+
+        expect(app.exits).toEqual([]);
+        expect(relaunches).toEqual([]);
+        expect(app.autoUpdater).toBeNull();
+        expect(existsSync(join(folder, "share"))).toBe(false);
+      });
     });
 
     test("a debug build has no updater and no update item", async () => {

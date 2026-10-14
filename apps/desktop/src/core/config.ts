@@ -465,6 +465,14 @@ export const windowsUpdatePublisher = "Lisem AI LTD";
  * universal app's two halves must be built with the same `app-update.yml`, and the app appends the
  * architecture it runs as. */
 export const macUpdateFeedURL = "https://cdn.tabmail.ai/releases/voice/macos";
+/** What checks a Linux AppImage update's signature (ADR-DESK-059): GnuPG's `gpgv`, as apt checks
+ * the repository's, with the keys the app carries. Every Ubuntu Desktop has it (apt depends on it). */
+export const gpgvPath = "/usr/bin/gpgv";
+/** Where the Linux AppImage looks for updates, `-x64` or `-arm64` appended (ADR-DESK-059): the
+ * folders the packages are in. */
+export const linuxUpdateFeedURL = "https://cdn.tabmail.ai/releases/voice/linux";
+/** How often the shell that opens the updated AppImage looks whether the old app has quit (s). */
+export const linuxRelaunchPollSeconds = 0.2;
 
 // MARK: Welcome wizard
 

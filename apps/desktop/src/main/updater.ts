@@ -19,9 +19,11 @@ export const updateRequestHeaders = { "x-user-staging-id": "none" };
  * happened. */
 export const installingKey = "updateInstalling";
 
-/** What `electron-updater` says about the update it found and, once downloaded, where it is. */
+/** What `electron-updater` says about the update it found and, once downloaded, where it is. The
+ * Linux AppImage feed also carries `signature` (ADR-DESK-059). */
 export interface UpdateInfo {
   version: string;
+  signature?: string;
   downloadedFile?: string;
 }
 
@@ -51,7 +53,8 @@ export class UpdateError extends Error {
 /** What differs per OS (`native/<os>/update.ts`, ADR-DESK-050): how a downloaded update is proven
  * ours, and how it is installed. Everything else (when to look, the download, the states, the
  * question, failures and retries) is `Updater`'s, the same everywhere. A verified update installs
- * itself when the app quits. Linux has none: apt updates it (ADR-DESK-058). */
+ * itself when the app quits. The Linux package has none: apt updates it (ADR-DESK-058); the Linux
+ * AppImage does (ADR-DESK-059). */
 export interface UpdatePlatform {
   readonly source: UpdateSource;
   /** Resolves once the downloaded update is proven ours and to be `update.version`; rejects with an
