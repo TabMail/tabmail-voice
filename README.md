@@ -4,12 +4,13 @@
 
 [![Get TabMail](https://img.shields.io/badge/Get_TabMail-tabmail.ai-6D28D9)](https://tabmail.ai)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](./LICENSE)
-![Platform: macOS 15+](https://img.shields.io/badge/platform-macOS_15+-lightgrey)
+![Platforms: macOS 15+, Windows 10 and 11, Ubuntu 26.04](https://img.shields.io/badge/platforms-macOS_15+_%7C_Windows_10%2F11_%7C_Ubuntu_26.04-lightgrey)
 
-Dictation that knows what you're talking about. Hold **Right Option (⌥)**, speak,
-and let go: your words are transcribed into whatever you're writing in. With screen
-reading enabled, visible names, acronyms, and terms help the transcriber recognize
-what you say. There is no separate filler-word or grammar cleanup pass.
+Dictation that knows what you're talking about. Hold **Right Option (⌥)** on a Mac,
+or **Right Alt** on Windows and Linux, speak, and let go: your words are transcribed
+into whatever you're writing in. With screen reading enabled, visible names, acronyms,
+and terms help the transcriber recognize what you say. There is no separate filler-word or
+grammar cleanup pass.
 
 Switch to **agent mode** to dictate an intention. “Count me in” uses the
 conversation on screen to write a reply. Use Answer to check your calendar and
@@ -17,8 +18,12 @@ search the web, then ask Compose to write a reply using that conversation in the
 field you already have open. Review the result and send it yourself.
 Speech is transcribed by TabMail's servers and isn't stored.
 
-Requires macOS 15 or later and a TabMail account. Windows ([#61](https://github.com/TabMail/tabmail-voice/issues/61))
-and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to come.
+Runs on macOS 15 or later (Apple Silicon and Intel), Windows 10 and 11 (x64 and Arm64) and
+Ubuntu 26.04 with GNOME (x64 and Arm64), with a TabMail account.
+[Download it from tabmail.ai](https://tabmail.ai/download#voice-downloads). On Ubuntu, the `.deb`
+adds TabMail's signed apt repository, so updates come with your system updates; without admin
+(sudo) rights, use the AppImage, which updates itself. Setup for each platform:
+[Set up Voice](https://tabmail.ai/docs/voice/getting-started/).
 
 ## See it in action
 
@@ -32,26 +37,29 @@ Can't see the video? [Watch it on YouTube](https://youtu.be/q8aHxmUA8tE) · [Try
 
 ## Build
 
-The app is `apps/desktop/`, one Electron app for macOS, Windows and Linux (macOS first). Its
-dictation path (microphone, hotkey, paste) runs in native helpers, built from `native/<os>`
-(macOS today; the Windows and Linux helpers are to come). It needs Node 24 and, on macOS, Xcode
-for the helpers:
+The app is `apps/desktop/`, one Electron app for macOS, Windows and Linux. Its dictation path
+(microphone, hotkey, paste) runs in native helpers, built from `native/<os>`, which share one Rust
+core (`native/shared/rust`). It needs Node 24 and, for the helpers, Xcode on macOS; on Windows and
+Linux, see [`native/windows`](apps/desktop/native/windows/README.md) and
+[`native/linux`](apps/desktop/native/linux/README.md) for the toolchain and system packages:
 
 ```sh
 cd apps/desktop
 npx -y npm@11.19.1 install
 npm start          # builds the helpers, the main process and the windows, then runs the app
+                   # (on Linux: npm run start:linux)
 npm test           # unit tests; also: npm run typecheck, npm run lint, ./scripts/swift-errors.sh test
-npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is in the keychain)
+npm run dist       # on macOS, a DMG and a ZIP in release/ (signed when a Developer ID is in
+                   # the keychain); on Windows, an installer; on Linux, a .deb and an AppImage
 ```
 
 `npm run dist` builds the app for the kind of Mac it runs on. To build the Intel app on any Mac:
 `VOICE_MAC_ARCH=x64 npm run dist -- --x64` (and `arm64` likewise); for both in one,
 `VOICE_MAC_ARCH=universal npm run dist -- --universal`.
 
-An unpackaged build (what `npm start` runs) keeps a detailed log at
-`~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
-every request to the TabMail backend and its reply, and what was pasted. The access token and the
+An unpackaged build (what `npm start` runs) keeps a detailed log, `TabMail Voice.log` in Electron's
+logs folder (on macOS, `~/Library/Logs/TabMail Voice/`): what you dictated, the text read from
+your screen, every request to the TabMail backend and its reply, and what was pasted. The access token and the
 audio are never in it. Packaged builds keep no log file, except while debug mode is on, which only
 TabMail's own accounts can switch on.
 
@@ -60,11 +68,16 @@ signature, so an ad-hoc signed build loses them on every rebuild.
 
 ## First run
 
-TabMail lives in the menu bar. A welcome window asks for your consent to send dictations to
-TabMail, your name (for agent mode), whether to read the screen, and two permissions:
+TabMail lives in the menu bar (macOS) or the system tray (Windows and Linux). A welcome window
+asks for your consent to send dictations to TabMail, your name (for agent mode), whether to read
+the screen, and two permissions:
 
 - **Microphone**: to hear you while you dictate.
 - **Accessibility**: to notice the key from any app and to paste the text for you.
+
+Those two are macOS permissions. On Ubuntu, Voice instead turns on its GNOME integration, which
+holds the dictation key and places the pill at your cursor: log out and back in once when asked,
+then allow keyboard control when Ubuntu asks.
 
 Then sign in with your TabMail email in Settings (we email you a one-time code).
 
@@ -89,9 +102,9 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
   stays on your computer.
 - **Read the screen while dictating** (Settings › Dictation) sends the text in the window in
   front with your dictation, to help the transcriber recognize names and terms as they appear there. It isn't stored.
-- Choose Fn/Globe instead of Right Option in Settings. While it is the hotkey, TabMail Voice sets
-  System Settings › Keyboard › "Press 🌐 key to" to "Do Nothing", and puts your choice back when you
-  pick another key or quit.
+- Choose another dictation key in Settings: Fn/Globe on a Mac, Right Control on Windows, F8 or F9
+  on Linux. While Fn/Globe is the hotkey, TabMail Voice sets System Settings › Keyboard ›
+  "Press 🌐 key to" to "Do Nothing", and puts your choice back when you pick another key or quit.
 
 ## Privacy
 
