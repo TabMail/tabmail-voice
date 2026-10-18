@@ -238,8 +238,10 @@ describe("MemoryPage", () => {
     });
   });
 
-  test("removes one request and reads memory again", async () => {
+  test("removes one request, reads memory again, and the last change's line goes", async () => {
     await page.load();
+    await page.setSizeLimit(GB);
+    expect(page.state.status).not.toBeNull();
     await page.remove("turn:1");
     expect(memory.rows.map((row) => row.memId)).toEqual(["turn:0", "turn:2"]);
     expect(page.state.entries.map((entry) => entry.memId)).toEqual(["turn:2", "turn:0"]);
@@ -255,6 +257,33 @@ describe("MemoryPage", () => {
     await page.clear();
     expect(clear).toHaveBeenCalledTimes(1);
     expect(page.state.status).toBe("Memory cleared.");
+  });
+
+  test("says memory is cleared only once it is, never while a clear runs or after one that fails", async () => {
+    const error = vi.spyOn(log, "error").mockImplementation(() => {});
+    await page.load();
+    const said: (string | null)[] = [];
+    page.observe(() => said.push(page.state.status));
+    memory.clearFailing = true;
+    await expect(page.clear()).rejects.toThrow("Memory couldn't be cleared. Try again.");
+    expect(said).not.toContain("Memory cleared.");
+    memory.clearFailing = false;
+    let finish = () => {};
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const clear = memory.clear.bind(memory);
+    vi.spyOn(memory, "clear").mockImplementation(async () => {
+      await held;
+      await clear();
+    });
+    const clearing = page.clear();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(said).not.toContain("Memory cleared.");
+    finish();
+    await clearing;
+    expect(page.state.status).toBe("Memory cleared.");
+    error.mockRestore();
   });
 
   test("never says memory is cleared while it still holds requests", async () => {

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -221,6 +221,39 @@ describe("MemoryHelper", () => {
       await page.clear();
       expect(page.state.status).toBe("Memory cleared.");
       expect(existsSync(folders.databases)).toBe(false);
+    });
+
+    /** The embedding model is downloaded once; Clear All deletes only the database. */
+    test("keeps the embedding model", async () => {
+      const memory = make();
+      const folders = memoryFolders(directory);
+      await memory.index(rows, 1 << 30);
+      mkdirSync(folders.models, { recursive: true });
+      const model = join(folders.models, "model.onnx");
+      writeFileSync(model, "the model");
+      await memory.clear();
+      expect(existsSync(folders.databases)).toBe(false);
+      expect(readFileSync(model, "utf8")).toBe("the model");
+    });
+
+    /** A delete can fail (a file still locked, a folder that can't be written): the requests waiting
+     * on it go ahead, and the delete's error, which names memory's folder, reaches none of them. */
+    test.skipIf(process.platform === "win32")("a request made while a Clear All that fails runs still goes ahead, naming no folder", async () => {
+      const memory = make(["--linger", "200"]);
+      const folders = memoryFolders(directory);
+      await memory.index(rows, 1 << 30);
+      chmodSync(folders.databases, 0o500);
+      try {
+        const cleared = memory.clear();
+        const read = new MemoryTools(memory).run("memory_read", { timestamp: rows[2]?.dateMs });
+        await expect(cleared).rejects.toThrow();
+        const answer = await read;
+        expect(answer).not.toContain(directory);
+        expect(answer).toContain("answer 2");
+        expect(starts()).toBe(2);
+      } finally {
+        chmodSync(folders.databases, 0o700);
+      }
     });
 
     test("with no helper running, still deletes what memory holds", async () => {

@@ -5,6 +5,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { isJSONObject } from "../../core/agent/connectors/contract.js";
 import * as config from "../../core/config.js";
 import { errorName, log } from "../../core/log.js";
 import { type AgentMemory, type MemoryHit, MemoryError, type MemoryRow, type MemorySearch, type MemoryStats, type MemoryTrim } from "../../core/memory/store.js";
@@ -90,14 +91,14 @@ export class MemoryHelper implements AgentMemory {
 
   async stats(): Promise<MemoryStats> {
     const result = await this.request("memoryStats", {});
-    const fields = isObject(result) ? result : {};
+    const fields = isJSONObject(result) ? result : {};
     if (typeof fields.docs !== "number" || typeof fields.usedBytes !== "number") throw new HelperError("failed", "memoryStats", "unexpected reply");
     return { docs: fields.docs, usedBytes: fields.usedBytes };
   }
 
   async trim(maxBytes: number): Promise<MemoryTrim> {
     const result = await this.request("memoryTrim", { maxBytes });
-    if (!isObject(result) || typeof result.trimmed !== "number" || typeof result.withinLimit !== "boolean") {
+    if (!isJSONObject(result) || typeof result.trimmed !== "number" || typeof result.withinLimit !== "boolean") {
       throw new HelperError("failed", "memoryTrim", "unexpected reply");
     }
     return { removed: result.trimmed, withinLimit: result.withinLimit };
@@ -105,7 +106,7 @@ export class MemoryHelper implements AgentMemory {
 
   async remove(memIDs: readonly string[]): Promise<number> {
     const result = await this.request("memoryRemoveBatch", { ids: memIDs });
-    return isObject(result) && typeof result.count === "number" ? result.count : 0;
+    return isJSONObject(result) && typeof result.count === "number" ? result.count : 0;
   }
 
   /** Removes everything memory holds by deleting its database, with the helper ended first: the
@@ -180,7 +181,7 @@ export class MemoryHelper implements AgentMemory {
     this.endsWhenIdle = false;
     const initialized = this.send("init", { profilePath: database, modelDir: models }, this.options.initTimeout ?? config.memoryInitTimeout).then(
       (result: unknown) => {
-        this.endsWhenIdle = isObject(result) && result.hasEmbeddings === true;
+        this.endsWhenIdle = isJSONObject(result) && result.hasEmbeddings === true;
         log.debug(`MemoryHelper: ready (model ${this.endsWhenIdle ? "loaded" : "not loaded"})`);
         // An idle end that came while it was starting was skipped; the wait starts now.
         if (this.initialized === initialized) this.idleSoon();
@@ -268,7 +269,7 @@ export class MemoryHelper implements AgentMemory {
       log.error("MemoryHelper: a reply that isn't JSON");
       return;
     }
-    if (!isObject(message) || typeof message.id !== "string") return;
+    if (!isJSONObject(message) || typeof message.id !== "string") return;
     const pending = this.pending.get(message.id);
     if (pending === undefined) return;
     this.pending.delete(message.id);
@@ -326,15 +327,11 @@ export class MemoryHelper implements AgentMemory {
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** The exchanges a search or a read answered. */
 function hits(result: unknown, method: string): MemoryHit[] {
   if (!Array.isArray(result)) throw new HelperError("failed", method, "unexpected reply");
   return result.flatMap((item: unknown) =>
-    isObject(item) && typeof item.content === "string"
+    isJSONObject(item) && typeof item.content === "string"
       ? [{ memId: typeof item.memId === "string" ? item.memId : "", content: item.content, snippet: typeof item.snippet === "string" ? item.snippet : null, dateMs: typeof item.dateMs === "number" ? item.dateMs : 0 }]
       : [],
   );
