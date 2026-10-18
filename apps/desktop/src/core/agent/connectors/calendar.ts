@@ -333,7 +333,7 @@ function spokenRecurrence(recurrence: EventRecurrence): string {
 
 /** The `recurrence` argument as the backend's tool definition describes it (an RRULE's fields), or
  * null for `{}`, which ends the repeating where that is allowed. */
-function recurrenceArgument(value: unknown, start: Date): EventRecurrence | null {
+function recurrenceArgument(value: unknown, start: Date | null): EventRecurrence | null {
   if (!isJSONObject(value)) throw new ToolArgumentError("recurrence is not an object.");
   if (Object.keys(value).length === 0) return null;
   const frequency = typeof value.freq === "string" ? value.freq.toUpperCase() : value.freq;
@@ -352,7 +352,7 @@ function recurrenceArgument(value: unknown, start: Date): EventRecurrence | null
     if (parsed === null) throw ToolArgumentError.notADate("recurrence.until");
     // A day repeats through its end.
     until = parsed.hasTime ? parsed.date : new Date(LocalDateTime.addingDays(parsed.date, 1).getTime() - 1);
-    if (until < start) throw new ToolArgumentError("recurrence.until is before the event starts.");
+    if (start !== null && until < start) throw new ToolArgumentError("recurrence.until is before the event starts.");
   }
   if (count !== null && until !== null) throw new ToolArgumentError("recurrence takes count or until, not both.");
   const recurrence: EventRecurrence = {
@@ -653,7 +653,10 @@ export class CalendarEventEditTool implements ConnectorTool {
     changes.uninvite = removedAttendees(args, current);
     if (args.recurrence !== undefined && args.recurrence !== null) {
       if (scope === "thisOnly") throw new ToolArgumentError("One occurrence can't repeat on its own: give edit_scope all or this_and_following to change how the event repeats.");
-      changes.recurrence = recurrenceArgument(args.recurrence, changes.start ?? current.start);
+      // The rule is written from the occurrence named, or for the whole series from its first, which a
+      // later occurrence named doesn't give: a last day before that occurrence then shortens the series.
+      const from = scope === "all" && occurrence !== null ? null : changes.start ?? current.start;
+      changes.recurrence = recurrenceArgument(args.recurrence, from);
     }
     // A rule that picks its days would no longer match a series moved to another day, counted where
     // Calendar counts the rule's days: in the event's zone, which can be another than the Mac's.

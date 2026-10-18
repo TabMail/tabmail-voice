@@ -439,6 +439,20 @@ final class StubEvent: EKEvent {
 final class ServerCalendar: EKCalendar {
     override var type: EKCalendarType { .calDAV }
     override var supportedEventAvailabilities: EKCalendarEventAvailabilityMask { [.busy, .free] }
+    override var source: EKSource! {
+        get { ServerAccount() }
+        set {}
+    }
+}
+
+/// The account a server calendar is in, as Calendar names it.
+final class ServerAccount: EKSource {
+    override var title: String { "Team account" }
+}
+
+/// An Exchange calendar, made as `ServerCalendar` is: it sends invitations too.
+final class ExchangeCalendar: EKCalendar {
+    override var type: EKCalendarType { .exchange }
 }
 
 /// A calendar that can't be changed, made as `ServerCalendar` is.
@@ -601,6 +615,7 @@ extension EventKitTests {
             let calendars = try await store(fake).calendars()
             #expect(calendars.map(\.title) == ["Work", "Team"])
             #expect(calendars.map(\.isDefault) == [true, false])
+            #expect(calendars.map(\.account) == ["", "Team account"])
             #expect(calendars.first?.id == fake.calendar.calendarIdentifier)
         }
 
@@ -1228,6 +1243,26 @@ extension EventKitTests {
             #expect(first.startDate == movedFirst && first.endDate == movedFirst + 3600)
         }
 
+        /// An Exchange calendar sends invitations as a CalDAV one does: people are invited to a new
+        /// event and added to the user's own.
+        @Test
+        func anExchangeCalendarInvites() async throws {
+            let fake = FakeEventStore()
+            object_setClass(fake.sharedCalendar, ExchangeCalendar.self)
+            var event = CalendarEvent(title: "Planning", start: start, end: start + 1800, isAllDay: false, calendar: "", location: nil, notes: nil)
+            event.calendarId = fake.sharedCalendar.calendarIdentifier
+            event.attendees = [EventAttendee(email: "alex@example.com", name: "Alex")]
+            let added = try await store(fake).add(event)
+            #expect(fake.saved.first?.calendar === fake.sharedCalendar && added.attendees.contains { $0.email == "alex@example.com" })
+
+            let own = fake.occurrence("Review", id: "event-1", start: start, repeats: false, in: fake.sharedCalendar)
+            fake.byID = ["event-1": own]
+            var changes = EventChanges()
+            changes.invite = [EventAttendee(email: "sam@example.com", name: "Sam")]
+            let edited = try await store(fake).edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+            #expect(fake.saved.last === own && edited.attendees.contains { $0.email == "sam@example.com" })
+        }
+
         /// An all-day series moved from a later occurrence keeps the days confirmed: every occurrence
         /// moves by as many days and lasts as many as the one named was given.
         @Test
@@ -1306,14 +1341,18 @@ extension EventKitTests {
             event.attendees = [EventAttendee(email: "alex@example.com", name: "Alex"), EventAttendee(email: "sam@example.com", name: nil)]
 
             let organizer = try #require(class_getInstanceMethod(EKEvent.self, NSSelectorFromString("addOrganizerAndSelfAttendeeForNewInvitation")))
-            let calls = OSAllocatedUnfairLock(initialState: 0)
-            let recording: @convention(block) (AnyObject) -> Void = { _ in calls.withLock { $0 += 1 } }
+            // The people already on the event each time the organizer is added: none, once.
+            let calls = OSAllocatedUnfairLock<[Int]>(initialState: [])
+            let recording: @convention(block) (AnyObject) -> Void = { event in
+                let present = (event as? EKEvent)?.attendees?.count ?? 0
+                calls.withLock { $0.append(present) }
+            }
             do {
                 let original = replace(organizer, with: recording)
                 defer { method_setImplementation(organizer, original) }
                 _ = try await store(fake).add(event)
             }
-            #expect(calls.withLock { $0 } == 1 && fake.saved.count == 1)
+            #expect(calls.withLock { $0 } == [0] && fake.saved.count == 1)
 
             let attendeeClass: AnyClass = try #require(NSClassFromString("EKAttendee"))
             let factory = try #require(class_getClassMethod(attendeeClass, NSSelectorFromString("attendeeWithName:emailAddress:")))

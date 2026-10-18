@@ -468,6 +468,7 @@ describe("calendar_read with single-event access", () => {
    * it shows as free or was an invitation; the first page lists the calendars events can go in. */
   test("events carry their ids, repeating, attendees and the calendars", async () => {
     const editor = new FakeEditor();
+    editor.calendarList = [...editor.calendarList, { id: "calendar-team", title: "Team", account: "Exchange", isDefault: false }];
     const store = editableStore(editor);
     const invitation = { ...event("Review", at(14), at(15)), id: "event-2", availability: "free" as const, organizer: { email: "pat@example.com", name: "Pat" }, attendees: [{ email: "pat@example.com", name: "Pat", status: "accepted" }], isInvitation: true };
     store.storedEvents = [standup(), invitation, { ...event("Lunch", at(12), at(13)), id: "event-3", recurrence: { ...weekly, interval: 2, days: [{ weekday: 2, week: 1 }, { weekday: 4, week: -1 }], count: 5 }, isDetached: true }];
@@ -480,6 +481,7 @@ describe("calendar_read with single-event access", () => {
       `- Lunch: ${describeDate(at(12))} to ${describeDate(at(13))} (Work) [event_id event-3; repeats FREQ=WEEKLY;INTERVAL=2;BYDAY=1MO,-1WE;COUNT=5; this occurrence changed on its own]`,
       "Calendars events can be added to (for calendar_id):",
       "- Work (iCloud), the default: calendar-work",
+      "- Team (Exchange): calendar-team",
     ]);
   });
 
@@ -654,6 +656,8 @@ describe("calendar_event_create with single-event access", () => {
     );
     expect(await tool.confirmation({ title: "Review", start_iso: iso(at(10)), recurrence: { freq: "YEARLY", byMonth: [3] } })).toContain("Repeats every year in March");
     expect(await tool.confirmation({ title: "Review", start_iso: iso(at(10)), recurrence: { freq: "MONTHLY", byMonthDay: [15] } })).toContain("Repeats every month on day 15");
+    // A week with no word of its own is said by its number.
+    expect(await tool.confirmation({ title: "Review", start_iso: iso(at(10)), recurrence: { freq: "YEARLY", byDay: ["20MO"] } })).toContain("Repeats every year on the week 20 Monday");
     // `{}` is no recurrence for a new event.
     expect(draft({})).toBeUndefined();
   });
@@ -888,11 +892,16 @@ describe("calendar_event_edit", () => {
     expect(lastChanges()?.recurrence).toBeNull();
     expect(await tool.confirmation({ event_id: "series-1", recurrence: {} })).toContain("Stops repeating");
     await expect(confirmed(tool, { event_id: "series-1", recurrence_id: iso(at(10)), recurrence: { freq: "DAILY" } }, live)).rejects.toBeInstanceOf(ToolArgumentError);
-    // A new last day is checked against the series' new start: one before it ends the series before it begins.
-    const moving = { event_id: "series-1", recurrence_id: iso(at(10)), edit_scope: "all", start_iso: iso(at(10, 0, 14)) };
-    await expect(confirmed(tool, { ...moving, recurrence: { freq: "WEEKLY", until: iso(at(0, 0, 7), false) } }, live)).rejects.toEqual(new ToolArgumentError("recurrence.until is before the event starts."));
-    await confirmed(tool, { ...moving, recurrence: { freq: "WEEKLY", until: iso(at(0, 0, 21), false) } }, live);
+    // A new last day is checked against the start the rule is written from: from an occurrence on, its
+    // new start, so one before it would end those occurrences before they begin.
+    const following = { event_id: "series-1", recurrence_id: iso(at(10)), edit_scope: "this_and_following", start_iso: iso(at(10, 0, 14)) };
+    await expect(confirmed(tool, { ...following, recurrence: { freq: "WEEKLY", until: iso(at(0, 0, 7), false) } }, live)).rejects.toEqual(new ToolArgumentError("recurrence.until is before the event starts."));
+    await confirmed(tool, { ...following, recurrence: { freq: "WEEKLY", until: iso(at(0, 0, 21), false) } }, live);
     expect(lastChanges()).toMatchObject({ start: at(10, 0, 14), recurrence: { frequency: "WEEKLY" } });
+    // The whole series named from a later occurrence starts before it: a last day between the two shortens it.
+    editor.byID.set(`series-1@${at(10, 0, 14).getTime()}`, { ...standup(), start: at(10, 0, 14), end: at(10, 30, 14), occurrence: at(10, 0, 14) });
+    await confirmed(tool, { event_id: "series-1", recurrence_id: iso(at(10, 0, 14)), edit_scope: "all", recurrence: { freq: "WEEKLY", until: iso(at(0, 0, 10), false) } }, live);
+    expect(editor.edits.at(-1)).toMatchObject({ occurrence: at(10, 0, 14), scope: "all", changes: { recurrence: { until: new Date(at(0, 0, 11).getTime() - 1) } } });
 
     const dropped = [iso(at(10, 0, 7)), iso(at(10, 0, 14))];
     await confirmed(tool, { event_id: "series-1", exdates_add: dropped }, live);
