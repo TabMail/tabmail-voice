@@ -5287,3 +5287,69 @@ old version runs works.
   own folder comes first).
 - The AppImage updates only while it runs; one not run for a long time updates on its next launch.
 
+
+## ADR-DESK-060: Calendar events are edited, deleted and shared, at parity with Thunderbird and iOS
+
+**Context:** Owner, 2026-10-17 (issue #117): the calendar tools as Thunderbird's and iOS's are, and
+"we need to be able to edit calendar entries, not just add people": repeating events, invitations,
+the organizer, busy or free, the calendar an event goes in, `calendar_event_edit` (one occurrence or
+the series, and occurrences left out), `calendar_event_delete`, `calendar_event_read`, and
+`calendar_read` with pages, ids, attendees and recurrence; every create, edit and delete confirmed.
+EventKit reads an event's attendees but has no public way to write them. Tried on the owner's Mac
+before choosing: AppleScript (Calendar's `attendee` elements are read-only; making one fails), an
+`.ics` file opened in Calendar (it asks which calendar, imports, and sends nothing), CalDAV to each
+server directly (a second sign-in per account, which EventKit already has), and the methods Calendar
+itself invites with, which EventKit keeps to itself. The owner chose the last, checked at run time.
+
+**Decision:**
+- **Inviting through Calendar's own methods** (`Invitations.swift`): an attendee made by
+  `+[EKAttendee attendeeWithName:emailAddress:]`, added by `-[EKCalendarItem addAttendee:]`, removed by
+  `-[EKCalendarItem removeAttendee:]`, and, on an event's first invitation,
+  `addOrganizerAndSelfAttendeeForNewInvitation` (the organizer and the user, as Calendar adds them).
+  Each is looked up when used (`class_getClassMethod`/`class_getInstanceMethod`), never linked, so a
+  macOS without one refuses (`invitationsUnavailable`) instead of crashing. Once the event is saved,
+  its calendar's server emails the invitations, updates and cancellations, as it does for Calendar's
+  own; the helper sends nothing. Inviting needs a calendar a server shares (CalDAV, which Google and
+  iCloud are, or Exchange; `calendarNoInvitations` otherwise). Measured: Google sends the invitation
+  and its updates; an Exchange event saves with its attendee and keeps later edits.
+- **The wire.** `calendarEvent {id, occurrence}`, `calendars`, `calendarEdit` and `calendarDelete {id}`
+  beside `calendarEvents` and `calendarAdd`; `calendarAdd` also takes `calendarId`, `availability`,
+  `recurrence` (null for none) and `attendees`. An event crosses with its `id`
+  (`eventIdentifier`), `occurrence` (the occurrence's original start, ms), `calendarId`,
+  `availability` (`busy`/`free`), `attendees` (`{email, name, status}`), `organizer`, `recurrence`
+  (`{frequency, interval, count, until, days: [{weekday, week}], monthDays, months}`, what one
+  `EKRecurrenceRule` says; anything else is refused in core, where Calendar would drop or misread it),
+  `isDetached` and `isInvitation` (attendees, and an organizer who isn't the user). `calendarEdit`'s
+  `recurrence` absent keeps the rule and null clears it. Calendars come with whether each is the
+  default, and only those whose events can change.
+- **Finding an occurrence.** `event(withIdentifier:)` returns a series' first occurrence, so a repeating
+  or detached event is found by its id and `occurrence` among the events of its calendar within
+  `HelperConfig.eventOccurrenceSearchSpan` (31 days) of it, matched within
+  `eventOccurrenceTolerance` (a second). An occurrence changed on its own (detached) has an id of its
+  own (`<series>/RID=<seconds>`) and reports its moved start as its occurrence.
+- **Scope.** `edit_scope` `this_only` (the default with `recurrence_id`) saves with `.thisEvent`;
+  `this_and_following` with `.futureEvents` from that occurrence (EventKit splits the series); `all`
+  (the default without) edits the series from its first occurrence with `.futureEvents`, any new
+  times moved by as much as the target occurrence's. A recurrence change always saves `.futureEvents`.
+  A detached occurrence takes only `this_only` changes. `exdates_add` removes each occurrence named
+  (`.thisEvent`, committed together) before the rest of the edit; `calendar_event_delete` removes a
+  whole series (`.futureEvents` from its first) or, for a detached occurrence, that one.
+- **The confirmation says what changes**: each field, who is invited or uninvited ("emailed the
+  change"), the occurrences deleted, and for a series moved in time, "Every occurrence covered moves by
+  as much, and any deleted from the series come back": measured on Google, moving a series' time
+  restores the occurrences left out of it, as Google's own Calendar warns. Deleting an event the user
+  was invited to says it only leaves the user's calendar; one the user organized, that attendees are
+  emailed a cancellation. Changing an event the user was invited to is refused (`notOrganizer`).
+- **Without an editor** (Windows and Linux, which have no event store), the read, edit and delete
+  tools aren't offered, and a create with `calendar_id`, `transparency`, `attendees` or `recurrence`
+  is refused. `calendar_read` pages at `config.calendarReadPageSize` and lists the calendars on page 1.
+  The backend's schemas for this are `v0.2.5` (its ADR-017 amendment): an older app is never offered
+  them.
+
+**Consequences:**
+- The invitation methods are Apple's private API: a macOS update can remove or change them. The check
+  at run time turns removal into a refusal the model reports; a changed signature would not be
+  caught, so each macOS release is checked by hand (TESTS.md).
+- Measured on Google: renaming a series renames its detached occurrences, which keep their times;
+  deleting a series deletes them; a series split with `this_and_following` survives a later move of
+  the original.

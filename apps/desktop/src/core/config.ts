@@ -298,6 +298,11 @@ export const calendarReadMaxDays = 4 * 365;
 
 /** How long an event the user gave no end or duration for lasts, as Calendar's own default. */
 export const calendarEventDefaultDuration = 60 * 60 * 1_000;
+/** The most events one `calendar_read` page lists; the model reads the next with `page_index`. */
+export const calendarReadPageSize = 50;
+/** An event `calendar_event_read` looks up by `start_iso` starts within this long of it (ms): the
+ * model gives seconds, the calendar keeps finer times. */
+export const calendarEventStartTolerance = 1_000;
 /** The most contacts one search returns to the model; more say so, for a narrower search. */
 export const contactsSearchMaxResults = 10;
 /** The most items one file search returns to the model, newest first; more say so. */

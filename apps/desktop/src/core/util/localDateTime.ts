@@ -28,6 +28,12 @@ export const LocalDateTime = {
     return withTime ? `${day} ${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}` : day;
   },
 
+  /** `date` in the form the tools take it back in: "2025-01-17T14:00:00". */
+  iso(date: Date): string {
+    const day = `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}`;
+    return `${day}T${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}:${twoDigits(date.getSeconds())}`;
+  },
+
   /** `date` as the user reads it in a question to confirm: their locale's full date and short time. */
   spoken(date: Date, withTime = true): string {
     return date.toLocaleString(undefined, withTime ? { dateStyle: "full", timeStyle: "short" } : { dateStyle: "full" });

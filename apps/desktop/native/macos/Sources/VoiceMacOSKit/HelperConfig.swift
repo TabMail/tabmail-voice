@@ -92,4 +92,12 @@ enum HelperConfig {
     /// The most items Spotlight gathers for one file search before the newest are kept: a bound on a
     /// search as broad as one letter.
     static let filesSearchScanLimit = 500
+
+    // MARK: Calendar
+
+    /// An occurrence of a repeating event is looked for this far either side of its original start:
+    /// one changed on its own may have moved away from it.
+    static let eventOccurrenceSearchSpan: TimeInterval = 31 * 24 * 60 * 60
+    /// Two times this close name the same occurrence: the app's milliseconds against EventKit's dates.
+    static let eventOccurrenceTolerance: TimeInterval = 1
 }

@@ -330,7 +330,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
-      return this.replies.has(method) ? this.replies.get(method) : { value: null, events: [], contacts: [], items: [] };
+      return this.replies.has(method) ? this.replies.get(method) : { value: null, events: [], calendars: [], contacts: [], items: [] };
     }
   },
 }));
@@ -1077,13 +1077,13 @@ describe("main process wiring", () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "calendar_event_read", "calendar_event_edit", "calendar_event_delete", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.connectorTools.map((tool) => tool.connector))).toEqual(new Set(connectorIDs));
     await app.connectorTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
     await app.connectorTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal);
     await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal);
-    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "contactsSearch", "filesSearch"]));
+    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "calendars", "contactsSearch", "filesSearch"]));
     await app.connectorTools.find((tool) => tool.name === "notes_search")?.run({ query: "offsite" }, signal);
     await app.connectorTools.find((tool) => tool.name === "messages_send")?.run({ to: "sam@example.com", text: "Hi" }, signal);
     expect(app.scripts.map((script) => script.args)).toEqual([["offsite"], ["sam@example.com", "Hi"]]);
