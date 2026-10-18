@@ -66,6 +66,12 @@ test("a card's times and days show what they are asked to, with a year outside t
   const nextDay = new Date(year, 5, 11, 9, 52);
   const month = "Jun";
 
+  // The whole time, hours and minutes and morning or afternoon, in English.
+  const spaced = (text: string) => text.replace(/\s/gu, " ");
+  expect(spaced(LocalDateTime.timeRange(start, new Date(year, 5, 10, 10, 52), false))).toBe("9:47 – 10:52 AM");
+  expect(spaced(LocalDateTime.timeRange(new Date(year, 5, 10, 11, 30), new Date(year, 5, 10, 13, 5), false))).toBe("11:30 AM – 1:05 PM");
+  expect(spaced(LocalDateTime.timeRange(new Date(year, 5, 10, 23), new Date(year, 5, 11, 1), true))).toBe(`${englishWeekdays[start.getDay()]}, Jun 10, 11:00 PM – ${englishWeekdays[nextDay.getDay()]}, Jun 11, 1:00 AM`);
+  expect(spaced(LocalDateTime.shortDay(start, true))).toBe(`${englishWeekdays[start.getDay()]}, Jun 10, 9:47 AM`);
   const times = LocalDateTime.timeRange(start, end, false);
   expect(times).toContain("47");
   expect(times).toContain("52");
