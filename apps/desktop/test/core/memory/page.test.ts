@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
 import { formatBytes, MemoryPage } from "../../../src/core/memory/page.js";
+import { AppSettings } from "../../../src/core/settings.js";
+import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import { MemoryError, type MemoryHit, type MemoryStats, memoryRow } from "../../../src/core/memory/store.js";
 import { HelperError } from "../../../src/main/native/helperClient.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
@@ -212,6 +214,28 @@ describe("MemoryPage", () => {
       expect(trim).not.toHaveBeenCalled();
       expect(settings.memorySizeLimit).toBe(config.memorySizeLimitDefault);
     });
+
+    /** A limit the settings file couldn't keep is not applied: a relaunch would bring back the one
+     * saved, so nothing is trimmed to this one and Settings says it wasn't saved. */
+    test("refuses a valid limit the settings file can't keep, trimming nothing", async () => {
+      // As `JSONFileStore` when its file can't be written: the value is held, and reported unsaved.
+      class UnwritableStore extends MemoryStore {
+        override set(key: string, value: unknown): boolean {
+          super.set(key, value);
+          return false;
+        }
+      }
+      const app = new AppSettings(new UnwritableStore({ memorySizeLimit: config.memorySizeLimitDefault }), () => true);
+      const smaller = config.memorySizeLimitChoices[0] ?? 0;
+      page = new MemoryPage(memory, () => true, app);
+      const trim = vi.spyOn(memory, "trim");
+
+      await expect(page.setSizeLimit(smaller)).rejects.toThrow("That size limit couldn't be saved. Try again.");
+
+      expect(trim).not.toHaveBeenCalled();
+      expect(app.memorySizeLimit).toBe(config.memorySizeLimitDefault);
+      expect(page.state.status).toBeNull();
+    });
   });
 
   test("removes one request and reads memory again", async () => {
@@ -236,11 +260,15 @@ describe("MemoryPage", () => {
   test("never says memory is cleared while it still holds requests", async () => {
     const error = vi.spyOn(log, "error").mockImplementation(() => {});
     await page.load();
+    // Cleared once, then a request kept, then a clear that fails: "Memory cleared." goes.
+    await page.clear();
+    expect(page.state.status).toBe("Memory cleared.");
+    await memory.index([memoryRow("request after", "reply after", now, "after")], GB);
     memory.clearFailing = true;
     await expect(page.clear()).rejects.toThrow("Memory couldn't be cleared. Try again.");
     expect(page.state.status).toBeNull();
-    expect(page.state.usage?.docs).toBe(3);
-    expect(page.state.entries).toHaveLength(3);
+    expect(page.state.usage?.docs).toBe(1);
+    expect(page.state.entries.map((entry) => entry.memId)).toEqual(["turn:after"]);
     expect(error).toHaveBeenCalledWith("MemoryPage: memory couldn't be cleared: HelperError.exited(memoryClear)");
     error.mockRestore();
   });

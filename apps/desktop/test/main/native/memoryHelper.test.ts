@@ -281,6 +281,20 @@ describe("MemoryHelper", () => {
     expect(starts()).toBe(2);
   });
 
+  /** Started and ended all day long, it holds on to none of the helpers that have exited: what it
+   * keeps of helpers is bounded by those still running. */
+  test("keeps nothing of the helpers that have exited", async () => {
+    const memory = make([], { idleTimeout: 50 });
+    const running = () => (memory as unknown as { running: Map<unknown, unknown> }).running.size;
+    for (let cycle = 1; cycle <= 4; cycle += 1) {
+      await memory.stats();
+      expect(running()).toBe(1);
+      await vi.waitFor(() => expect(ends()).toBe(cycle));
+      await vi.waitFor(() => expect(running()).toBe(0));
+    }
+    expect(starts()).toBe(4);
+  });
+
   test("doesn't end while a request is under way", async () => {
     const memory = make(["--slow-on", "memorySearch", "400"], { idleTimeout: 100 });
     await memory.stats();

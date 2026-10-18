@@ -248,6 +248,13 @@ describe("memory's size limit", () => {
     expect(app.memorySizeLimit).toBe(choice);
   });
 
+  test("a choice the file can't keep is reported unsaved, and the limit is as it was", () => {
+    const app = settings(new UnsavedStore(), true);
+    const choice = config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0;
+    expect(app.setMemorySizeLimit(choice)).toBe(false);
+    expect(app.memorySizeLimit).toBe(config.memorySizeLimitDefault);
+  });
+
   test("a stored value not among the choices reads as the default", () => {
     expect(settings(new MemoryStore({ memorySizeLimit: 12_345 }), true).memorySizeLimit).toBe(config.memorySizeLimitDefault);
   });

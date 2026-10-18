@@ -5518,8 +5518,10 @@ Thunderbird's copy or its files.
   key-down, the helper removing the oldest exchanges first, measured as the pages its database uses.
   Choosing a smaller limit asks first, in place as Clear All does, whatever usage shows (it can be
   unread or out of date), then trims at once and says how many of the oldest went, and, if the
-  helper ran out of time, that more go as new requests are kept. A larger limit applies at once. Space freed is reused; the file keeps its
-  size (no `VACUUM`, which could take unbounded time).
+  helper ran out of time, that more go as new requests are kept. A larger limit applies at once. A
+  limit the settings file can't keep is put back and nothing is trimmed ("That size limit couldn't be
+  saved. Try again."), as an exclusion that can't be saved: a relaunch would bring back the saved
+  one. Space freed is reused; the file keeps its size (no `VACUUM`, which could take unbounded time).
 - **Settings › Memory** (`src/core/memory/page.ts`, a port of Thunderbird's Chat History tab, in
   Voice's style): a usage bar, "Memory used: X of <limit>", the limit, the requests newest first (at
   most `memoryListLimit`), a search, Remove on each, and Clear All with a confirmation. It reads
