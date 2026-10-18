@@ -190,7 +190,7 @@ function launch(): void {
   // The microphone has a helper to itself on every platform, so nothing another helper waits on
   // can hold up or end a recording; it is started afresh after each dictation (ADR-DESK-032).
   // Memory, kept by Thunderbird's search helper built for this app, in this app's own folder: per
-  // user of this computer, whoever is signed in (ADR-DESK-060).
+  // user of this computer, whoever is signed in (ADR-DESK-061).
   const memoryDirectory = join(app.getPath("userData"), "memory");
   const memory = new MemoryHelper({ executable: join(helpers, process.platform === "win32" ? "voice-memory.exe" : "voice-memory"), directory: memoryDirectory });
   // Settings › Memory reads nothing until memory's database exists: the helper creates it at its

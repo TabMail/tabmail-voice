@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// The memory helper, `voice-memory` (ADR-DESK-060): Thunderbird's search helper, built from its own
+// The memory helper, `voice-memory` (ADR-DESK-061): Thunderbird's search helper, built from its own
 // repository at the revision `native/memory/native-fts.json` pins, with that repository's
 // Cargo.lock. This app keeps no copy of its source; moving to a newer helper is a change of that
 // revision, and every change to the helper is made and reviewed in its repository.

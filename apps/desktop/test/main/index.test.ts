@@ -1601,7 +1601,7 @@ describe("main process wiring", () => {
     expect(ended()).toBe(2);
   });
 
-  /** Settings › Memory (ADR-DESK-060): memory is in the app's own folder, read only once something
+  /** Settings › Memory (ADR-DESK-061): memory is in the app's own folder, read only once something
    * was kept there, and each command of the section reaches it. */
   test("Settings › Memory's commands reach memory in the app's own folder", async () => {
     app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
@@ -1653,7 +1653,7 @@ describe("main process wiring", () => {
     expect(pushed.at(-1)?.status).toBe("Memory cleared.");
   });
 
-  /** Memory is the computer user's, not the account's (ADR-DESK-060): signing out and signing in
+  /** Memory is the computer user's, not the account's (ADR-DESK-061): signing out and signing in
    * with another account keep it, in the same folder; quitting ends its helper. */
   test("memory stays across sign-out and another account, and its helper ends at quit", async () => {
     const signIn = (id: string, email: string) => {
@@ -1685,7 +1685,7 @@ describe("main process wiring", () => {
     await vi.waitFor(() => expect(app.memory?.stops).toBe(1));
   });
 
-  /** ADR-DESK-060 (ADR-DESK-049's tip): what's new about memory is a tip shown once at a dictation, to a user
+  /** ADR-DESK-061 (ADR-DESK-049's tip): what's new about memory is a tip shown once at a dictation, to a user
    * who set the app up before; one still in the welcome wizard reads it on the consent page, and
    * never gets the tip. Nothing is shown at launch. */
   test.each([

@@ -20,7 +20,7 @@ import { type KeyValueStore, storedBool, storedInteger } from "../util/keyValueS
  *   as agent mode is switched on while no name is set, every time. Never learned: a name set ends it.
  * - `agentMemory`: what's new, once (owner, 2026-10-03: "an ordinary tooltip that shows with high
  *   priority only once"): agent mode keeps its requests on this computer and can look them up
- *   (ADR-DESK-060). First in line at the next dictation; learned at launch by a user still in the
+ *   (ADR-DESK-061). First in line at the next dictation; learned at launch by a user still in the
  *   welcome wizard, whose consent page says it. */
 export type DictationTip = "agentAndHistory" | "doubleTap" | "handsFree" | "setName" | "agentMemory";
 

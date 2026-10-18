@@ -47,7 +47,7 @@ export const DesktopAgent = {
    * tool that answers their questions for the user (`confirmationTool`) when there are any. An app with
    * no tools here (none off macOS) brings no backend tools either. The memory tools, which run here
    * and only read, come with every request, Answer on or off: an Edit or a Compose may draw on an
-   * earlier request too (ADR-DESK-060). */
+   * earlier request too (ADR-DESK-061). */
   loopTools(offered: readonly AgentToolID[], connectorTools: readonly ConnectorTool[]): string[] {
     const writing = offered.filter(isWritingTool);
     const memory = [config.memorySearchTool, config.memoryReadTool];

@@ -413,7 +413,7 @@ describe("Settings page", () => {
     });
   });
 
-  /** Settings › Memory (ADR-DESK-060): usage against the limit, the limit, the requests kept
+  /** Settings › Memory (ADR-DESK-061): usage against the limit, the limit, the requests kept
    * (searchable, each removable) and Clear All. */
   describe("memory", () => {
     const MB = 1_024 * 1_024;
@@ -966,7 +966,7 @@ describe("Settings page", () => {
       "On these websites, and their subdomains, TabMail Voice never reads the screen, whichever browser they are open in.",
       `Password managers’ websites are always excluded: ${config.builtInExcludedSites.join(", ")}.`,
       "No websites added yet.",
-      // Memory's, a port of Thunderbird's Chat History (ADR-DESK-060).
+      // Memory's, a port of Thunderbird's Chat History (ADR-DESK-061).
       "Agent mode’s requests, and what it answered or wrote, are kept on this computer so it can look back at them when you ask. Plain dictation isn’t kept.",
       "When memory reaches the limit, the oldest requests are removed first.",
       "No requests kept yet.",

@@ -18,7 +18,7 @@ const app = join(__dirname, "../..");
 const revision = "0123456789abcdef0123456789abcdef01234567";
 const repository = "https://example.com/native-fts.git";
 
-/** The memory helper (ADR-DESK-060) is Thunderbird's search helper built from its own repository at
+/** The memory helper (ADR-DESK-061) is Thunderbird's search helper built from its own repository at
  * one pinned commit, with that repository's lockfile: this app keeps none of its source. */
 describe("the memory helper build", () => {
   const roots: string[] = [];

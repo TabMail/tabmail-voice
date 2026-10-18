@@ -2435,7 +2435,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(used).toEqual([["write that we ship on Friday"]]);
     });
 
-    /** Memory (ADR-DESK-060): every agent-mode request is kept with what came of it, the text a
+    /** Memory (ADR-DESK-061): every agent-mode request is kept with what came of it, the text a
      * writing tool wrote with where it went, or the reply; plain dictation never is. */
     describe("memory", () => {
       const keptContent = () => memory.rows.map((row) => row.content);
@@ -5651,7 +5651,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
     });
 
-    /** What's new (now memory, ADR-DESK-060; the tip of ADR-DESK-049) is a tip, first in line, shown once (owner,
+    /** What's new (now memory, ADR-DESK-061; the tip of ADR-DESK-049) is a tip, first in line, shown once (owner,
      * 2026-10-03: "an ordinary tooltip that shows with high priority only once"). */
     test("the what's-new tip shows first at the next hold, once, then the hold's tips", async () => {
       tipStore = new MemoryStore();

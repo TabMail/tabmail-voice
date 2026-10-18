@@ -48,7 +48,7 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * Settings › Memory (ADR-DESK-060), a port of Thunderbird's Chat History tab: how much memory holds
+ * Settings › Memory (ADR-DESK-061), a port of Thunderbird's Chat History tab: how much memory holds
  * against the size limit, the limit to choose, the exchanges (searchable), each removable, and a
  * Clear All. Read when the page shows; before the helper first ran (agent mode never chosen) there is
  * nothing to read, and the helper isn't started for it (its first start downloads its model).

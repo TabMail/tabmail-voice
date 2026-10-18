@@ -1043,7 +1043,7 @@ that a long dictation is sent in parts (ADR-DESK-049's consent-page line), and t
 to TabMail and its AI providers.
 
 
-**Amendment 2026-10-18 — memory (ADR-DESK-060).** The consent page gains a line after agent mode's:
+**Amendment 2026-10-18 — memory (ADR-DESK-061).** The consent page gains a line after agent mode's:
 "Your past agent-mode requests, kept only on this computer so it can recall them. Remove them
 anytime in Settings." The closing "Nothing it sends is stored" stays true: it is about what is sent;
 memory is kept on this computer only. Users who consented before are told once, by the what's-new tip
@@ -1725,9 +1725,9 @@ one that ships.
 - Whether hover and the first click reach the never-focused overlay window on macOS is checked by
   hand; the tests drive the page's events and the window's calls.
 
-**Amendment 2026-10-18 — memory (ADR-DESK-060).** `AgentChat` is still the window's conversation, in
+**Amendment 2026-10-18 — memory (ADR-DESK-061).** `AgentChat` is still the window's conversation, in
 memory only and gone when the window closes. Each agent-mode request and what came of it is now also
-kept in memory on this computer (ADR-DESK-060), which the agent can search in later requests. The
+kept in memory on this computer (ADR-DESK-061), which the agent can search in later requests. The
 Answer tool's Settings description no longer says the follow-up's earlier requests "aren't stored".
 
 ## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
@@ -4418,7 +4418,7 @@ dictation, and agent mode carries out nothing of a request whose end was lost.
   try, refused, or after an account switch: the chunks before it pasted and the pill at rest; not
   pasted, the usual note; the seeded fuzz).
 
-**Amendment 2026-10-18 — the what's-new tip now tells of memory (ADR-DESK-060).** The one-time tip's
+**Amendment 2026-10-18 — the what's-new tip now tells of memory (ADR-DESK-061).** The one-time tip's
 place is taken by `agentMemory` ("New: agent mode remembers / past requests, on this computer"),
 first in line at the next dictation, shown once, and learned at launch by a user still in the welcome
 wizard, as before. The long-dictations tip is retired: a user who never saw it is not shown it now.
@@ -5443,7 +5443,7 @@ five candidates on a page, "Date tile looks awesome".
   event the edit reads anyway, so the user is never asked to confirm a change that can't be made
   (it was refused by the helper only after Save). The helper's refusal stays.
 
-## ADR-DESK-060: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
+## ADR-DESK-061: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
 
 **Context:** Owner, 2026-10-17: port the agent's memory from Thunderbird (the reference) and iOS to
 Voice, so agent mode can look back at earlier requests as Thunderbird's chat does with

@@ -330,7 +330,7 @@ export const webUserAgent = "TabMail/1.0 (macOS; +https://tabmail.app)";
  * encoding (at most 4 bytes a character), so an endless page never fills the memory. */
 export const webReadMaxBytes = webReadMaxCharacters * 4;
 
-// MARK: Memory (past agent-mode requests, on this computer: ADR-DESK-060)
+// MARK: Memory (past agent-mode requests, on this computer: ADR-DESK-061)
 
 /** The agent loop's memory tools, as the backend names them. */
 export const memorySearchTool = "memory_search";
@@ -742,7 +742,7 @@ export const setNameTip: TipSettings = {
   displayDuration: 4_000,
   maxDisplays: null,
 };
-/** What's new: agent mode keeps its requests on this computer and can look them up (ADR-DESK-060),
+/** What's new: agent mode keeps its requests on this computer and can look them up (ADR-DESK-061),
  * shown once, ahead of the other tips (owner, 2026-10-03: "really punchy"), long enough to read
  * twice. It took the place of the one for long dictations (ADR-DESK-049). */
 export const agentMemoryTip: TipSettings = {

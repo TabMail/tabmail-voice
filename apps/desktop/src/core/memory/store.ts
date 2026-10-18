@@ -6,7 +6,7 @@ import type { AgentToolID } from "../agent/tools.js";
 
 /**
  * Memory: every agent-mode request and what came of it, kept on this computer so the agent can
- * look back at it (`memory_search`, `memory_read`), and listed in Settings (ADR-DESK-060). Kept and
+ * look back at it (`memory_search`, `memory_read`), and listed in Settings (ADR-DESK-061). Kept and
  * searched by Thunderbird's own search helper, in rows shaped as Thunderbird's add-on writes them:
  * one per exchange, `[USER]: …` then `[AGENT]: …`. Plain dictation is never kept, nor the screen,
  * the selection being edited, the tools' calls and results, or audio.

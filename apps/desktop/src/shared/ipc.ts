@@ -129,7 +129,7 @@ export interface SettingsState {
   /** Where an update is, for Settings › General's update button; null where the app doesn't update
    * itself (a debug build). */
   update: UpdateState | null;
-  /** Settings › Memory: past agent-mode requests (ADR-DESK-060). */
+  /** Settings › Memory: past agent-mode requests (ADR-DESK-061). */
   memory: MemoryPageState;
 }
 

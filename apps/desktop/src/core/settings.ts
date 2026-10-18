@@ -303,7 +303,7 @@ export class AppSettings extends Observable {
 
   /** The most memory may take on this computer (bytes): one of `config.memorySizeLimitChoices`,
    * `config.memorySizeLimitDefault` until the user picks another. When memory reaches it, the oldest
-   * exchanges are removed first (ADR-DESK-060). */
+   * exchanges are removed first (ADR-DESK-061). */
   get memorySizeLimit(): number {
     const stored = storedInteger(this.store, Key.memorySizeLimit);
     return stored !== null && config.memorySizeLimitChoices.includes(stored) ? stored : config.memorySizeLimitDefault;

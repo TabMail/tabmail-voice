@@ -111,7 +111,7 @@ export interface DictationDependencies {
   /** The tools agent mode's model can call that run on this computer. */
   connectorTools: readonly ConnectorTool[];
   /** Memory: every agent-mode request and what came of it, which the agent can look back at
-   * (ADR-DESK-060). */
+   * (ADR-DESK-061). */
   memory: AgentMemory;
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;

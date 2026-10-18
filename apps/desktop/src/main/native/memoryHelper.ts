@@ -45,7 +45,7 @@ const lengthPrefix = 4;
 
 /**
  * Memory kept by `voice-memory`, Thunderbird's search helper (`tabmail-native-fts`) built for this
- * app from its repository at the revision `native/memory/native-fts.json` pins (ADR-DESK-060). It
+ * app from its repository at the revision `native/memory/native-fts.json` pins (ADR-DESK-061). It
  * speaks Thunderbird's native messaging: each message a 4-byte little-endian length, then that much
  * JSON; requests `{"id", "method", "params"}`, replies `{"id", "result"}` or `{"id", "error"}`, by
  * id. It starts when memory is first used, is told where everything goes (`init`; it makes the

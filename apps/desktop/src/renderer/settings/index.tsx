@@ -422,7 +422,7 @@ function AgentPane({ state }: { state: SettingsState }) {
   );
 }
 
-/** Past agent-mode requests (ADR-DESK-060), a port of Thunderbird's Chat History tab: memory used
+/** Past agent-mode requests (ADR-DESK-061), a port of Thunderbird's Chat History tab: memory used
  * against the size limit, as a bar, with the limit to choose; the requests, the newest first, with
  * a search; a remove button on each; and Clear All, confirmed in place. */
 function MemoryPane({ state }: { state: SettingsState }) {
