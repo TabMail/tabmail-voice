@@ -73,7 +73,7 @@ const app = vi.hoisted(() => ({
   /** `app.getPath("userData")`, the app's own folder (memory's is in it). */
   userData: "/nonexistent",
   /** Memory as the app made it: a stand-in that keeps it in a list. */
-  memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string } }) | null,
+  memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string }; stops: number }) | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
@@ -346,11 +346,14 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("../../src/main/native/memoryHelper.js")>()),
     MemoryHelper: class extends FakeMemory {
+      stops = 0;
       constructor(readonly options: { directory: string }) {
         super();
         app.memory = this;
       }
-      stop() {}
+      stop() {
+        this.stops += 1;
+      }
     },
   };
 });
@@ -1650,7 +1653,39 @@ describe("main process wiring", () => {
     expect(pushed.at(-1)?.status).toBe("Memory cleared.");
   });
 
-  /** ADR-DESK-049: what's new about long dictations is a tip shown once at a dictation, to a user
+  /** Memory is the computer user's, not the account's (ADR-DESK-060): signing out and signing in
+   * with another account keep it, in the same folder; quitting ends its helper. */
+  test("memory stays across sign-out and another account, and its helper ends at quit", async () => {
+    const signIn = (id: string, email: string) => {
+      app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id, email } });
+    };
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    signIn("user", "tester@example.com");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const directory = join(app.userData, "memory");
+    const database = memoryFolders(directory).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "kept");
+    memory.rows.push(memoryRow("asked about Friday", "the review", Date.now() - 1_000, "1"));
+    const clear = vi.spyOn(memory, "clear");
+
+    expect(await send({ type: "signOut" })).toEqual({ error: null });
+    expect(clear).not.toHaveBeenCalled();
+    expect(memory.rows.map((row) => row.memId)).toEqual(["turn:1"]);
+    expect(readFileSync(database, "utf8")).toBe("kept");
+
+    signIn("other-user", "other@example.com");
+    await launch("darwin");
+    expect(app.memory?.options.directory).toBe(directory);
+    expect(readFileSync(database, "utf8")).toBe("kept");
+
+    app.appEvents.get("before-quit")?.({ preventDefault() {} });
+    await vi.waitFor(() => expect(app.memory?.stops).toBe(1));
+  });
+
+  /** ADR-DESK-060 (ADR-DESK-049's tip): what's new about memory is a tip shown once at a dictation, to a user
    * who set the app up before; one still in the welcome wizard reads it on the consent page, and
    * never gets the tip. Nothing is shown at launch. */
   test.each([

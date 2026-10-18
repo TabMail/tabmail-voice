@@ -50,8 +50,8 @@ export function formatBytes(bytes: number): string {
 /**
  * Settings › Memory (ADR-DESK-060), a port of Thunderbird's Chat History tab: how much memory holds
  * against the size limit, the limit to choose, the exchanges (searchable), each removable, and a
- * Clear All. Read when the page shows; before any agent request was kept there is nothing to read,
- * and the helper isn't started for it (its first start downloads its model).
+ * Clear All. Read when the page shows; before the helper first ran (agent mode never chosen) there is
+ * nothing to read, and the helper isn't started for it (its first start downloads its model).
  */
 export class MemoryPage extends Observable {
   private current: MemoryPageState;
@@ -60,7 +60,7 @@ export class MemoryPage extends Observable {
 
   constructor(
     private readonly store: AgentMemory,
-    /** Whether memory has ever kept anything on this computer. */
+    /** Whether memory's database exists on this computer (the helper has ever run). */
     private readonly exists: () => boolean,
     private readonly settings: { readonly memorySizeLimit: number; setMemorySizeLimit(value: number): boolean },
   ) {

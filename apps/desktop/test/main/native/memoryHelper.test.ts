@@ -292,6 +292,37 @@ describe("MemoryHelper", () => {
     await memory.stats();
     await vi.waitFor(() => expect(ends()).toBe(1));
     expect(await memory.search({ query: "a", from: "", to: "", limit: 1 })).toEqual([]);
+    // The next helper is still the one in use, and is itself ended when unused: the first one's
+    // exit didn't make it forgotten (left running, and a third started beside it on the same files).
+    await memory.stats();
+    expect(starts()).toBe(2);
+    await vi.waitFor(() => expect(ends()).toBe(2), { timeout: 3_000 });
+  });
+
+  test("ends when unused after its latest request, not only its first", async () => {
+    const memory = make([], { idleTimeout: 150 });
+    await memory.stats();
+    await memory.stats();
+    await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    expect(starts()).toBe(1);
+  });
+
+  test("a request that timed out doesn't keep the helper from ending when unused", async () => {
+    const memory = make(["--silent-on", "memorySearch"], { requestTimeout: 100, idleTimeout: 100 });
+    await expect(memory.search({ query: "a", from: "", to: "", limit: 1 })).rejects.toMatchObject({ kind: "timeout" });
+    await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+  });
+
+  /** The helper died, and a request is written to it before its exit is seen: the write fails, which
+   * must fail that request, not throw in the app. */
+  test("a request written to a helper that just died fails, and the next starts another", async () => {
+    const memory = make();
+    await memory.stats();
+    process.kill(Number(lines("starts.log")[0]), "SIGKILL");
+    // Hold the event loop so the exit isn't seen before the next request is written.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+    await expect(memory.stats()).rejects.toMatchObject({ kind: "exited" });
+    expect(await memory.stats()).toEqual({ docs: 0, usedBytes: 0 });
     expect(starts()).toBe(2);
   });
 

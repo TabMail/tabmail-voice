@@ -2491,6 +2491,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(memory.prepared).toBeGreaterThanOrEqual(1);
       });
 
+      /** Agent mode chosen at key-down (a chat follow-up, or the agent hotkey) or by the second tap of
+       * a double tap starts the memory helper then too, not only Space during the hold. */
+      test.each(["startAgent", "startAgentHandsFree", "reused"] as const)("%s starts the memory helper as agent mode starts", async (action) => {
+        const { controller } = makeController({ capture: new CountingCapture(true) });
+        controller.captureContext = async () => selectionScreen("");
+        if (action === "reused") {
+          controller.handle("start");
+          controller.handle("finish");
+          expect(memory.prepared).toBe(0);
+          controller.handle("startAgentHandsFree");
+        } else controller.handle(action);
+        expect(controller.mode).toBe("agent");
+        expect(memory.prepared).toBe(1);
+        controller.handle("cancel");
+        expect(await eventually(() => settled(controller))).toBe(true);
+      });
+
       test("a request whose text couldn't be pasted keeps nothing", async () => {
         transcription.enqueue(200, { text: request });
         completions.enqueue(200, writes("compose", "We ship on Friday."));
@@ -3793,6 +3810,39 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await holdAndRelease(controller, "agent");
             expect(await eventually(() => memory.searches.length === 2 && completions.requests.length === 4)).toBe(true);
             expect(JSON.parse(told(3)[0] ?? "{}")).toMatchObject({ totalItems: 0 });
+          });
+
+          /** A canceled request's memory search ends late: it clears nothing of the next request's
+           * chat window, whose own tool is still running. */
+          test("a canceled request's memory search leaves the next request's tool showing", async () => {
+            const searching = deferred<void>();
+            const searched = deferred<void>();
+            const search = memory.search.bind(memory);
+            memory.search = async (request) => {
+              searching.resolve();
+              await searched.promise;
+              return search(request);
+            };
+            const next = new FakeLoopTool("example_read", "Checking your calendar");
+            const nextDone = deferred<void>();
+            next.during = () => nextDone.promise;
+            const { controller, done } = await ask([next], [calling(["memory_search", JSON.stringify({ query: "launch" })])]);
+            await searching.promise;
+            controller.handle("cancel");
+            await done;
+            transcription.enqueue(200, { text: "what is on today" });
+            completions.enqueue(200, calling(["example_read", "{}"]));
+            completions.enqueue(200, reply("Nothing today."));
+
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => next.runs.length === 1)).toBe(true);
+            expect(controller.chat?.activity).toBe("Checking your calendar");
+            searched.resolve();
+            await sleep(100);
+
+            expect(controller.chat?.activity).toBe("Checking your calendar");
+            nextDone.resolve();
+            expect(await eventually(() => controller.chat?.turns.length === 1)).toBe(true);
           });
 
           test("arguments that aren't a JSON object are refused without reading memory", async () => {
@@ -5601,7 +5651,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
     });
 
-    /** What's new about long dictations (ADR-DESK-049) is a tip, first in line, shown once (owner,
+    /** What's new (now memory, ADR-DESK-060; the tip of ADR-DESK-049) is a tip, first in line, shown once (owner,
      * 2026-10-03: "an ordinary tooltip that shows with high priority only once"). */
     test("the what's-new tip shows first at the next hold, once, then the hold's tips", async () => {
       tipStore = new MemoryStore();

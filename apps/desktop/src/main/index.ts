@@ -193,7 +193,8 @@ function launch(): void {
   // user of this computer, whoever is signed in (ADR-DESK-060).
   const memoryDirectory = join(app.getPath("userData"), "memory");
   const memory = new MemoryHelper({ executable: join(helpers, process.platform === "win32" ? "voice-memory.exe" : "voice-memory"), directory: memoryDirectory });
-  // Settings › Memory reads nothing until a request was kept: the database the helper creates then.
+  // Settings › Memory reads nothing until memory's database exists: the helper creates it at its
+  // first start, when agent mode is first chosen.
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
 

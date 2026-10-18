@@ -5480,8 +5480,9 @@ Thunderbird's copy or its files.
   self-update: the app ships the build it runs), and registers no native-messaging host. Thunderbird's
   helper, its database, models and logs, and `~/.tabmail` are never named, so never touched (the
   helper's tests hash them before and after). The first start downloads the embedding model (about
-  87 MB, from cdn.tabmail.ai, checked by its hash) into Voice's own model folder; until then search
-  is by keyword, as on Thunderbird and iOS.
+  87 MB, from cdn.tabmail.ai, checked by its hash) into Voice's own model folder, before `init`
+  answers, so memory's requests wait for that first download; if it fails, search is by keyword
+  only, as on Thunderbird and iOS.
 - **What the helper logs.** Its log file names what memory was asked (each search's query), so it is
   kept only as the app's debug log is (ADR-DESK-015): `--log-level debug` while debug logging is on,
   `off` otherwise, decided when the helper starts (ADR-DESK-017's snapshot rule); at `off` it writes
@@ -5505,7 +5506,10 @@ Thunderbird's copy or its files.
   rephrase it rather than repeat it; any other failure (no helper, a timeout) as `memory search
   failed`, naming nothing more; a read the helper refuses, `memory read failed: <reason>`. The
   backend's Voice loop carries their schemas and Thunderbird's memory rules; their results are
-  model input like any tool's, under the backend's web-read guard.
+  model input like any tool's, under the backend's web-read guard. They replay the agent's own
+  earlier replies and written text, so that guard gives a URL found in them no provenance (for every
+  client): a link known only from memory is not opened. The backend change ships
+  before, or with, the Voice loop's memory tools.
 - **The size limit.** A Settings value (`memorySizeLimitChoices`: 100 MB to 5 GB; 1 GB by default),
   part of the key-down snapshot (ADR-DESK-017): each row is kept within the limit of its request's
   key-down, the helper removing the oldest exchanges first, measured as the pages its database uses.

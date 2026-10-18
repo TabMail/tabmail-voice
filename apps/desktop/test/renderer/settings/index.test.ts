@@ -413,7 +413,6 @@ describe("Settings page", () => {
     });
   });
 
-  /** A sign-out the credential store only half did is said, not swallowed (owner, 2026-09-27). */
   /** Settings › Memory (ADR-DESK-060): usage against the limit, the limit, the requests kept
    * (searchable, each removable) and Clear All. */
   describe("memory", () => {
@@ -563,6 +562,7 @@ describe("Settings page", () => {
     });
   });
 
+  /** A sign-out the credential store only half did is said, not swallowed (owner, 2026-09-27). */
   test("Sign Out shows what the sign-out reply says", async () => {
     const warning = "Signed out, but your saved sign-in couldn't be removed.";
     const page = await settingsPage({ error: warning }, { ...signedIn, email: null });
