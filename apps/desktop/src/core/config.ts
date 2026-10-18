@@ -335,8 +335,10 @@ export const webReadMaxBytes = webReadMaxCharacters * 4;
 /** The agent loop's memory tools, as the backend names them. */
 export const memorySearchTool = "memory_search";
 export const memoryReadTool = "memory_read";
-/** The memory helper starts when memory is first used and ends after this long unused (ms): it
- * holds a large read cache and the embedding model, so it is never kept between uses. */
+/** The memory helper starts when memory is first used and ends after this long unused (ms), once
+ * its embedding model has loaded: it holds a large read cache and the model, so it is not kept
+ * between uses. One that started without the model (its download failed) is kept until the app
+ * quits, as each start downloads the model again. */
 export const memoryHelperIdleTimeout = 2 * 60 * 1_000;
 /** Longest the memory helper's `init` may take (ms): the first one downloads the embedding model
  * (about 87 MB) before it answers. */

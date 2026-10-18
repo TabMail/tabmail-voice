@@ -2491,6 +2491,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(memory.prepared).toBeGreaterThanOrEqual(1);
       });
 
+      test("a request whose text couldn't be pasted keeps nothing", async () => {
+        transcription.enqueue(200, { text: request });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        await carryOut(selectionScreen(""), undefined, () => {}, {
+          paste: async () => {
+            throw new Error("the paste failed");
+          },
+        });
+        expect(await throughout(100, () => memory.rows.length === 0)).toBe(true);
+      });
+
       test("a request that pasted nothing keeps nothing", async () => {
         transcription.enqueue(200, { text: request });
         completions.enqueue(200, Fixtures.toolCalls([]));
@@ -3767,6 +3778,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(memory.searches).toEqual([{ query: "launch review", from: "", to: "", limit: Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax) }]);
           });
 
+          test("each request searches memory afresh, so a search after Clear All finds nothing", async () => {
+            memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
+            const search = calling(["memory_search", JSON.stringify({ query: "launch review" })]);
+            const { done } = await ask([], [search, reply("It was on Friday.")]);
+            const { controller } = await done;
+            expect(JSON.parse(told(1)[0] ?? "{}")).toMatchObject({ totalItems: 1 });
+            controller.closeChat();
+            // Memory emptied, as Clear All leaves it; the next request asks the same.
+            memory.rows.length = 0;
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, search);
+            completions.enqueue(200, reply("Nothing kept."));
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => memory.searches.length === 2 && completions.requests.length === 4)).toBe(true);
+            expect(JSON.parse(told(3)[0] ?? "{}")).toMatchObject({ totalItems: 0 });
+          });
+
           test("arguments that aren't a JSON object are refused without reading memory", async () => {
             const { done } = await ask([], [calling(["memory_search", "[1]"]), reply("Sorry.")]);
             await done;
@@ -3778,7 +3806,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             memory.failing = true;
             const { done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })]), reply("I couldn't look that up.")]);
             const { controller } = await done;
-            expect(JSON.parse(told(1)[0] ?? "{}")).toEqual({ error: "memory search failed: Something went wrong. Try again." });
+            expect(JSON.parse(told(1)[0] ?? "{}")).toEqual({ error: "memory search failed" });
             expect(controller.chat?.turns.at(-1)?.reply).toBe("I couldn't look that up.");
           });
         });

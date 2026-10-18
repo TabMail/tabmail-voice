@@ -134,7 +134,7 @@ describe("MemoryTools", () => {
 
     test("reports a failed search as the tool's error", async () => {
       memory.failing = true;
-      expect(await run(config.memorySearchTool, { query: "budget" })).toEqual({ error: "memory search failed: Something went wrong. Try again." });
+      expect(await run(config.memorySearchTool, { query: "budget" })).toEqual({ error: "memory search failed" });
       // Not kept: the next call searches again.
       memory.failing = false;
       keep(1, "budget");

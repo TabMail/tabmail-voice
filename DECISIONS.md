@@ -5468,8 +5468,13 @@ Thunderbird's copy or its files.
   the caller's locations and a size limit.
 - **Where it is kept.** `MemoryHelper` (`src/main/native/memoryHelper.ts`) starts `voice-memory` on
   first use, with `--log-dir <userData>/memory/logs` and `--log-level`, and sends `init` with
-  `profilePath <userData>/memory/database` and `modelDir <userData>/memory/models`; it ends it after
-  `memoryHelperIdleTimeout` unused (it holds a reader cache and the model) and at quit. It speaks
+  `profilePath <userData>/memory/database` and `modelDir <userData>/memory/models`; the helper makes
+  those folders, the app makes none (a folder that can't be made fails `init`, and memory's requests
+  fail without naming it). Once its model has loaded (`init` answers `hasEmbeddings`), it ends it
+  after `memoryHelperIdleTimeout` unused (it holds a reader cache and the model); a helper whose model
+  didn't load (offline at its first start) is kept until quit, so it doesn't try the download again
+  at every start. It ends at quit either way. A helper that can't be spawned at all fails the
+  request, as a failed start does. It speaks
   Thunderbird's native messaging (a 4-byte little-endian length, then JSON; replies by id), sends
   only `init` and the memory methods, never `hello` or the update requests (no self-move, no
   self-update: the app ships the build it runs), and registers no native-messaging host. Thunderbird's
@@ -5497,7 +5502,8 @@ Thunderbird's copy or its files.
   they ask nothing, and the chat window says "Looking through past requests" while one runs. As
   Thunderbird's, a query the helper refuses (its full-text syntax can't take `re: invoice`, `50%`,
   `(x` or `x AND`) comes back as `memory search failed: <the helper's reason>`, so the model can
-  rephrase it rather than repeat it; a read the helper refuses, `memory read failed: <reason>`. The
+  rephrase it rather than repeat it; any other failure (no helper, a timeout) as `memory search
+  failed`, naming nothing more; a read the helper refuses, `memory read failed: <reason>`. The
   backend's Voice loop carries their schemas and Thunderbird's memory rules; their results are
   model input like any tool's, under the backend's web-read guard.
 - **The size limit.** A Settings value (`memorySizeLimitChoices`: 100 MB to 5 GB; 1 GB by default),
@@ -5513,6 +5519,8 @@ Thunderbird's copy or its files.
   nothing, and starts no helper, until a request was kept (the database exists). Usage and the list
   are read apart: a search the helper refuses empties only the list ("Couldn't search for …. Try
   other words."), with usage and Clear All still there, as Thunderbird's tab shows no results.
+  Clear All is off only while usage shows nothing kept: with usage unread it stays, as the way to
+  start memory afresh.
 - **Clear All** deletes memory's database folder (`memory/database/tabmail_fts`) and the helper's
   logs, after ending the helper and waiting for it to exit (ended outright after
   `memoryHelperExitTimeout`); requests made meanwhile wait, and the next starts a helper on an empty
@@ -5533,7 +5541,7 @@ Thunderbird's copy or its files.
   of about 87 MB).
 - The vector index frees its space 1,024 rows at a time (about 1.5 MB, under 2% of the smallest
   limit), so a trim can remove up to that many more of the oldest exchanges than the text alone
-  would need.
+  would need (owner decision pending).
 - The build fetches from GitHub; the pinned commit must be on `TabMail/tabmail-native-fts`'s main
   branch.
 - Tests: see `TESTS.md` (memory rows). The helper itself is tested in its repository.

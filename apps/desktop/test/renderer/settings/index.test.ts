@@ -527,11 +527,22 @@ describe("Settings page", () => {
 
     test.each([
       ["nothing kept", { usage: { docs: 0, usedBytes: 0 }, entries: [] }],
-      ["usage unreadable", { usage: null, unavailable: true, entries: [] }],
-      ["usage still being read", { usage: null, entries: [] }],
     ])("Clear All is off with %s", async (_name, memory) => {
       await open(withMemory(memory));
       expect(clearAll().disabled).toBe(true);
+    });
+
+    // What is kept can always be removed: Clear All needs no reading of memory, and is the way out
+    // of memory that can't be read (a damaged file).
+    test.each([
+      ["usage unreadable", { usage: null, unavailable: true, entries: [] }],
+      ["usage still being read", { usage: null, entries: [] }],
+    ])("Clear All works with %s", async (_name, memory) => {
+      const { commands } = await open(withMemory(memory));
+      expect(clearAll().disabled).toBe(false);
+      await act(async () => clearAll().click());
+      await act(async () => button("Clear All").click());
+      expect(sent(commands)).toEqual([{ type: "clearMemory" }]);
     });
 
     test("Clear All stays on when only the search failed", async () => {

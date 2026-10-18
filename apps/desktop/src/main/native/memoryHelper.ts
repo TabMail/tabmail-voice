@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import * as config from "../../core/config.js";
 import { errorName, isDebugLogging, log } from "../../core/log.js";
@@ -48,8 +48,11 @@ const lengthPrefix = 4;
  * app from its repository at the revision `native/memory/native-fts.json` pins (ADR-DESK-060). It
  * speaks Thunderbird's native messaging: each message a 4-byte little-endian length, then that much
  * JSON; requests `{"id", "method", "params"}`, replies `{"id", "result"}` or `{"id", "error"}`, by
- * id. It starts when memory is first used, is told where everything goes (`init`), and ends after
- * `idleTimeout` with nothing asked: closing its stdin ends it. It is never asked to update itself:
+ * id. It starts when memory is first used, is told where everything goes (`init`; it makes the
+ * folders), and ends after `idleTimeout` with nothing asked, once its embedding model has loaded:
+ * closing its stdin ends it. Its `init` downloads the model when it isn't there yet, so one that
+ * started without it is kept until the app quits, trying once per run as Thunderbird's does, rather
+ * than downloading again at every start. It is never asked to update itself:
  * the app ships the build it runs. It writes its own log file, which can hold what memory was asked,
  * only while debug logging is on (as the app's debug log), decided when it starts.
  */
@@ -57,6 +60,8 @@ export class MemoryHelper implements AgentMemory {
   private child: ChildProcessWithoutNullStreams | null = null;
   /** The running helper's `init`: every request waits for it. */
   private initialized: Promise<void> | null = null;
+  /** Whether the running helper ends when idle: once its `init` said the model loaded. */
+  private endsWhenIdle = false;
   private readonly pending = new Map<string, Pending>();
   private nextID = 1;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -167,10 +172,22 @@ export class MemoryHelper implements AgentMemory {
     if (this.stopped) return Promise.reject(new HelperError("exited", "init"));
     if (this.initialized !== null) return this.initialized;
     const { database, models, logs } = memoryFolders(this.options.directory);
-    for (const folder of [database, models]) mkdirSync(folder, { recursive: true });
-    this.launch(logs);
+    try {
+      this.launch(logs);
+    } catch (error) {
+      // Spawning can throw (too many open files): memory is unavailable, and the request fails as
+      // any failed start does, naming no path.
+      log.error(`MemoryHelper: couldn't run: ${errorName(error)}`);
+      return Promise.reject(new HelperError("failed", "init"));
+    }
+    this.endsWhenIdle = false;
     const initialized = this.send("init", { profilePath: database, modelDir: models }, this.options.initTimeout ?? config.memoryInitTimeout).then(
-      () => log.debug("MemoryHelper: ready"),
+      (result: unknown) => {
+        this.endsWhenIdle = isObject(result) && result.hasEmbeddings === true;
+        log.debug(`MemoryHelper: ready (model ${this.endsWhenIdle ? "loaded" : "not loaded"})`);
+        // An idle end that came while it was starting was skipped; the wait starts now.
+        if (this.initialized === initialized) this.idleSoon();
+      },
       (error: unknown) => {
         if (this.initialized === initialized) this.end();
         throw error;
@@ -181,12 +198,20 @@ export class MemoryHelper implements AgentMemory {
     return initialized;
   }
 
+  /** Starts a helper and makes it the running one. If wiring it up throws, it is ended and never
+   * becomes the running one. */
   private launch(logs: string): void {
     // Its log names what memory was asked: kept only while debug logging is on, as the app's debug
     // log; "off" writes no log file anywhere.
     const level = isDebugLogging() ? "debug" : "off";
     const child = spawn(this.options.executable, [...(this.options.args ?? []), "--log-dir", logs, "--log-level", level], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
-    this.child = child;
+    // A failed spawn (a missing executable) reports here only, with no exit: its requests fail now
+    // rather than at their timeouts, and the next request tries again. Listened to first, so a
+    // spawn that fails before its streams exist still reports here.
+    child.on("error", (error) => {
+      log.error(`voice-memory: could not run: ${error.name}`);
+      this.ended(child);
+    });
     this.running.set(
       child,
       new Promise<void>((resolve) => {
@@ -196,7 +221,17 @@ export class MemoryHelper implements AgentMemory {
         this.running.delete(child);
       }),
     );
+    try {
+      this.listen(child);
+    } catch (error) {
+      child.kill();
+      throw error;
+    }
+    this.child = child;
     log.debug("MemoryHelper: started");
+  }
+
+  private listen(child: ChildProcessWithoutNullStreams): void {
     let buffered = Buffer.alloc(0);
     child.stdout.on("data", (chunk: Buffer) => {
       buffered = Buffer.concat([buffered, chunk]);
@@ -210,12 +245,6 @@ export class MemoryHelper implements AgentMemory {
     });
     // Its warnings may name what it was asked: the debug log file only.
     onLines(child.stderr, (line) => log.content("voice-memory", line));
-    // A failed spawn (a missing executable) reports here only, with no exit: its requests fail now
-    // rather than at their timeouts, and the next request tries again.
-    child.on("error", (error) => {
-      log.error(`voice-memory: could not run: ${error.name}`);
-      this.ended(child);
-    });
     child.stdin.on("error", () => {});
     child.on("exit", (code, signal) => {
       log.debug(`MemoryHelper: ended (${signal ?? code})`);
@@ -264,6 +293,7 @@ export class MemoryHelper implements AgentMemory {
     if (this.child === null || this.stopped) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
+      if (!this.endsWhenIdle) return;
       if (this.pending.size > 0) return this.idleSoon();
       log.debug("MemoryHelper: idle; ending it");
       this.end();

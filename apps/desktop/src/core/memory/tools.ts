@@ -50,9 +50,9 @@ export class MemoryTools {
         hits = (await this.store.search({ query, from, to, limit })).slice(0, limit);
       } catch (error) {
         // As Thunderbird's tool: the helper's refusal (a query it can't parse) as it gave it, so the
-        // model can rephrase.
+        // model can rephrase; any other failure as only that it failed.
         log.error(`MemoryTools: ${config.memorySearchTool} failed: ${errorName(error)}`);
-        return { error: `memory search failed: ${error instanceof MemoryError ? error.reason : error instanceof Error ? error.message : String(error)}` };
+        return { error: error instanceof MemoryError ? `memory search failed: ${error.reason}` : "memory search failed" };
       }
       log.debug(`MemoryTools: ${config.memorySearchTool} found ${hits.length}`);
       this.searches.set(key, hits);

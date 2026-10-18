@@ -11,6 +11,9 @@
 // - a search refuses what its full-text query syntax can't take (`re: invoice`, `50%`, `(x`,
 //   `x AND`), with an error quoting the query, as SQLite's does;
 // - each search writes a warning naming the query to stderr;
+// - a search honours `from`/`to` (ISO dates; empty is no bound) unless `ignoreDate`;
+// - `init` makes the database folder, and exits without answering when it can't (the real helper's
+//   init failures end it); it says whether the embedding model loaded (`hasEmbeddings`);
 // - unless `--log-level off`, it writes a log file naming each query in its `--log-dir`, which it
 //   creates; at `off` it creates and writes nothing there.
 //
@@ -21,6 +24,8 @@
 //   --clear-keeps-rows      answers `memoryClear` ok and keeps every row, as the real helper does
 //                           when the files can't be deleted (Windows, with them open)
 //   --init-error            answers `init` with an error
+//   --no-model              answers `init` with `hasEmbeddings: false`, as when the model's download
+//                           failed
 //   --error-on <method>     answers <method> with an error
 //   --exit-on <method>      exits on <method> without answering
 //   --silent-on <method>    never answers <method>
@@ -74,11 +79,15 @@ function answer(method, params) {
     case "init": {
       writeFileSync(join(recordDir, "init.json"), JSON.stringify(params));
       const folder = join(params.profilePath, "tabmail_fts");
-      mkdirSync(folder, { recursive: true });
+      try {
+        mkdirSync(folder, { recursive: true });
+      } catch {
+        process.exit(4);
+      }
       memoryFile = join(folder, "memory.db");
       if (existsSync(memoryFile)) rows.push(...JSON.parse(readFileSync(memoryFile, "utf8")));
       save();
-      return { ok: true, memoryDocs: rows.length };
+      return { ok: true, memoryDocs: rows.length, hasEmbeddings: !args.includes("--no-model") };
     }
     case "memoryIndexBatch": {
       rows.push(...params.rows);
@@ -91,8 +100,11 @@ function answer(method, params) {
       logLine(`Memory search params: "${params.q}"`);
       if (refused(params.q)) throw new Error(`fts5: syntax error near "${params.q}"`);
       const words = params.q.toLowerCase().split(/\s+/).filter((word) => word !== "");
+      const bound = (date) => (params.ignoreDate || !date ? null : Date.parse(date));
+      const [from, to] = [bound(params.from), bound(params.to)];
       return rows
         .filter((row) => words.every((word) => row.content.toLowerCase().includes(word)))
+        .filter((row) => (from === null || row.dateMs >= from) && (to === null || row.dateMs <= to))
         .sort((a, b) => b.dateMs - a.dateMs)
         .slice(0, params.limit)
         .map(({ memId, content, dateMs }) => ({ memId, content, dateMs }));

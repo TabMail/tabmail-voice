@@ -2,12 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { configureLog, errorName, observeContent, setDebugMode } from "../../../src/core/log.js";
 import { MemoryError, memoryRow } from "../../../src/core/memory/store.js";
+import { MemoryTools } from "../../../src/core/memory/tools.js";
 import { MemoryHelper, type MemoryHelperOptions, memoryFolders } from "../../../src/main/native/memoryHelper.js";
 
 const fake = join(__dirname, "../../support/fakeMemoryHelper.mjs");
@@ -59,7 +60,8 @@ describe("MemoryHelper", () => {
     expect(await memory.stats()).toEqual({ docs: 0, usedBytes: 0 });
     const folders = memoryFolders(directory);
     expect(folders.databaseFile).toBe(join(directory, "database", "tabmail_fts", "memory.db"));
-    for (const folder of [folders.database, folders.models]) expect(existsSync(folder)).toBe(true);
+    // The helper makes the folders it is told.
+    expect(existsSync(folders.database)).toBe(true);
     expect(JSON.parse(readFileSync(join(record, "init.json"), "utf8"))).toEqual({ profilePath: folders.database, modelDir: folders.models });
     expect(lastArgs()).toEqual(expect.arrayContaining(["--log-dir", folders.logs]));
     expect(starts()).toBe(1);
@@ -291,6 +293,80 @@ describe("MemoryHelper", () => {
     await vi.waitFor(() => expect(ends()).toBe(1));
     expect(await memory.search({ query: "a", from: "", to: "", limit: 1 })).toEqual([]);
     expect(starts()).toBe(2);
+  });
+
+  test("a helper whose model didn't load is kept when unused, so it doesn't download it at every start", async () => {
+    const memory = make(["--no-model"], { idleTimeout: 50 });
+    await memory.stats();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(ends()).toBe(0);
+    await memory.stats();
+    expect(starts()).toBe(1);
+  });
+
+  test("an idle end that came while the helper was starting waits from when it answered", async () => {
+    const memory = make(["--slow-on", "init", "200"], { idleTimeout: 50 });
+    memory.prepare();
+    await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    expect(starts()).toBe(1);
+  });
+
+  test("a search within dates finds only the requests within them", async () => {
+    const memory = make();
+    const now = Date.now();
+    await memory.index([memoryRow("older budget", "a", now - 3 * day, "old"), memoryRow("newer budget", "b", now - day, "new")], 1 << 30);
+    const since = new Date(now - 2 * day).toISOString();
+    expect((await memory.search({ query: "budget", from: since, to: "", limit: 10 })).map((hit) => hit.memId)).toEqual(["turn:new"]);
+    const until = new Date(now - 2 * day).toISOString();
+    expect((await memory.search({ query: "budget", from: "", to: until, limit: 10 })).map((hit) => hit.memId)).toEqual(["turn:old"]);
+    expect((await memory.search({ query: "budget", from: "", to: "", limit: 10 })).map((hit) => hit.memId)).toEqual(["turn:new", "turn:old"]);
+  });
+
+  test("the agent key pressed while Clear All runs starts no helper on the files being deleted", async () => {
+    const memory = make(["--linger", "300"]);
+    await memory.index([memoryRow("old request", "old reply", Date.now() - 1_000, "old")], 1 << 30);
+    const cleared = memory.clear();
+    memory.prepare();
+    await cleared;
+    expect(starts()).toBe(1);
+    expect(await rowsOf(memory)).toEqual([]);
+  });
+
+  test("a reply that arrives after its request timed out is ignored", async () => {
+    const memory = make(["--slow-on", "memorySearch", "400"], { requestTimeout: 150 });
+    await memory.stats();
+    await expect(memory.search({ query: "a", from: "", to: "", limit: 1 })).rejects.toMatchObject({ kind: "timeout" });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(await memory.stats()).toEqual({ docs: 0, usedBytes: 0 });
+    expect(starts()).toBe(1);
+  });
+
+  describe("when memory's folder can't be used", () => {
+    // A file where the app's data folder should be: nothing under it can be made.
+    function blocked(): string {
+      const file = join(directory, "userData");
+      writeFileSync(file, "a file in the way");
+      return join(file, "memory");
+    }
+
+    test("the agent key doesn't throw, and memory's requests fail without naming the folder", async () => {
+      const memory = make([], { directory: blocked() });
+      expect(() => memory.prepare()).not.toThrow();
+      await expect(memory.stats()).rejects.toMatchObject({ name: "HelperError", method: "init" });
+      const tools = new MemoryTools(memory);
+      const searched = await tools.run("memory_search", { query: "invoice" });
+      const read = await tools.run("memory_read", { timestamp: Date.now() });
+      expect(JSON.parse(searched)).toEqual({ error: "memory search failed" });
+      expect(JSON.parse(read)).toEqual({ error: "Failed to read memory: Something went wrong. Try again." });
+      for (const text of [searched, read, ...errors]) expect(text).not.toContain(directory);
+    });
+
+    test("a helper that can't be spawned at all fails its requests, and the agent key doesn't throw", async () => {
+      helper = new MemoryHelper({ executable: "", directory });
+      expect(() => helper?.prepare()).not.toThrow();
+      await expect(helper.stats()).rejects.toMatchObject({ name: "HelperError", kind: "failed", method: "init" });
+      expect(errors.some((line) => line.includes("MemoryHelper: couldn't run"))).toBe(true);
+    });
   });
 
   test("once stopped, ends its helper and starts none again", async () => {

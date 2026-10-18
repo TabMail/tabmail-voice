@@ -1608,6 +1608,13 @@ describe("main process wiring", () => {
     const directory = join(app.userData, "memory");
     expect(memory.options.directory).toBe(directory);
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { memory: MemoryPageState }).memory;
+    // The Settings window learns the page's state only by push.
+    const pushed: MemoryPageState[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        if (name === "settings") pushed.push((state as { memory: MemoryPageState }).memory);
+      },
+    ]);
     const now = Date.now();
     memory.rows.push(memoryRow("asked about Friday", "the review", now - 1_000, "1"), memoryRow("other", "reply", now - 2_000, "2"));
 
@@ -1621,6 +1628,7 @@ describe("main process wiring", () => {
     writeFileSync(database, "");
     await send({ type: "loadMemory" });
     expect(page().usage?.docs).toBe(2);
+    expect(pushed.at(-1)?.usage?.docs).toBe(2);
     expect(page().entries.map((entry) => entry.memId)).toEqual(["turn:1", "turn:2"]);
 
     await send({ type: "searchMemory", query: "friday" });
@@ -1639,6 +1647,7 @@ describe("main process wiring", () => {
     await send({ type: "clearMemory" });
     expect(memory.rows).toEqual([]);
     expect(page().status).toBe("Memory cleared.");
+    expect(pushed.at(-1)?.status).toBe("Memory cleared.");
   });
 
   /** ADR-DESK-049: what's new about long dictations is a tip shown once at a dictation, to a user
