@@ -39,30 +39,32 @@ export const LocalDateTime = {
     return date.toLocaleString(undefined, withTime ? { dateStyle: "full", timeStyle: "short" } : { dateStyle: "full" });
   },
 
-  /** `date`'s day as a calendar page shows it, in the user's locale: "Oct", 21 and "Wed". */
+  /** `date`'s day as a calendar page shows it: "Oct", 21 and "Wed". A card's dates are English and
+   * Gregorian, the only language and calendar the app supports, so the page, the day and the year
+   * check all count the same calendar. */
   page(date: Date): { month: string; day: number; weekday: string } {
-    return { month: date.toLocaleString(undefined, { month: "short" }), day: date.getDate(), weekday: date.toLocaleString(undefined, { weekday: "short" }) };
+    return { month: date.toLocaleString(cardLocale, { month: "short" }), day: date.getDate(), weekday: date.toLocaleString(cardLocale, { weekday: "short" }) };
   },
 
-  /** From `start` to `end` as a question's card shows it, in the user's locale: the times alone
+  /** From `start` to `end` as a question's card shows it: the times alone
    * ("10:00 – 11:00 AM"), or with their days ("Thu, Oct 22, 3:00 PM – Fri, Oct 23, 9:00 AM"). A day
    * outside this year always shows, with its year: the card is what the user confirms by click. */
   timeRange(start: Date, end: Date, withDays: boolean): string {
     const time = { hour: "numeric", minute: "2-digit" } as const;
     const year = yearOf(start, end);
-    return new Intl.DateTimeFormat(undefined, withDays || year.year ? { weekday: "short", month: "short", day: "numeric", ...year, ...time } : time).formatRange(start, end);
+    return new Intl.DateTimeFormat(cardLocale, withDays || year.year ? { weekday: "short", month: "short", day: "numeric", ...year, ...time } : time).formatRange(start, end);
   },
 
-  /** The days from `first` to `last` as a question's card shows them, in the user's locale: "Oct 21",
+  /** The days from `first` to `last` as a question's card shows them: "Oct 21",
    * or "Oct 21 – 23", with the year when one is outside this year ("Jan 5, 2027"). */
   dayRange(first: Date, last: Date): string {
-    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", ...yearOf(first, last) }).formatRange(first, last);
+    return new Intl.DateTimeFormat(cardLocale, { month: "short", day: "numeric", ...yearOf(first, last) }).formatRange(first, last);
   },
 
-  /** `date` as a question's card names one day, in the user's locale: "Thu, Oct 22", with its time
+  /** `date` as a question's card names one day: "Thu, Oct 22", with its time
    * ("Thu, Oct 22, 3:00 PM") for a timed event's occurrence, and its year when it isn't this year. */
   shortDay(date: Date, withTime: boolean): string {
-    return date.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", ...yearOf(date), ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}) });
+    return date.toLocaleString(cardLocale, { weekday: "short", month: "short", day: "numeric", ...yearOf(date), ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}) });
   },
 
   /** Whether `date` is in this year, when a question's card can leave its year out. */
@@ -81,6 +83,9 @@ export const LocalDateTime = {
 };
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** The language a question's card writes its dates in, with the Gregorian calendar it uses. */
+const cardLocale = "en-US";
 
 /** The year option a card's date takes: none when every date is in this year. */
 function yearOf(...dates: Date[]): { year?: "numeric" } {

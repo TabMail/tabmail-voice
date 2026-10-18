@@ -1209,6 +1209,13 @@ describe("a question's card", () => {
     expect((await card(tool.confirmation({ event_id: "planning", all_day: true }))).newTime).toBe("All day");
     editor.byID.set("holiday", { ...event("Holiday", inThisYear(0), inThisYear(0), { allDay: true }), id: "holiday", attendees: [], organizer: null, recurrence: null });
     expect((await card(tool.confirmation({ event_id: "holiday", start_iso: iso(inThisYear(9)), all_day: false }))).newTime).toBe(LocalDateTime.timeRange(inThisYear(9), new Date(inThisYear(9).getTime() + config.calendarEventDefaultDuration), false));
+    // Notes given are shown in the accent, notes cleared are struck out, and each is what is written.
+    editor.byID.set("briefing", { ...event("Briefing", at(9), at(10)), id: "briefing", notes: "Old agenda", attendees: [], organizer: null, recurrence: null });
+    expect((await card(tool.confirmation({ event_id: "planning", notes: "Bring the deck" }))).lines).toEqual([line("notes", "Bring the deck", "added")]);
+    expect((await card(tool.confirmation({ event_id: "briefing", notes: "" }))).lines).toEqual([line("notes", "Old agenda", "removed")]);
+    await confirmed(tool, { event_id: "planning", notes: "Bring the deck" }, live);
+    await confirmed(tool, { event_id: "briefing", notes: "" }, live);
+    expect(editor.edits.map((edit) => [edit.id, edit.changes.notes])).toEqual([["planning", "Bring the deck"], ["briefing", ""]]);
     const movedDay = await card(tool.confirmation({ event_id: "holiday", start_iso: iso(inThisYear(0, 3), false) }));
     expect(movedDay).toMatchObject({ ...LocalDateTime.page(inThisYear(0)), time: "All day", newTime: `All day, ${LocalDateTime.dayRange(inThisYear(0, 3), inThisYear(0, 3))}` });
   });
@@ -1217,7 +1224,7 @@ describe("a question's card", () => {
    * one, and a day in this year is not: a wrong year is seen before the user confirms by click. */
   test("a day outside this year is named with its year", async () => {
     const thisYear = new Date().getFullYear();
-    const yearText = (year: number) => new Date(year, 0, 1).toLocaleString(undefined, { year: "numeric" });
+    const yearText = (year: number) => String(year);
     const nextYear = new Date(thisYear + 1, 0, 5, 10);
     const lastYear = new Date(thisYear - 1, 5, 1, 9);
     const create = new CalendarEventCreateTool(editableStore(new FakeEditor()));
@@ -1235,7 +1242,9 @@ describe("a question's card", () => {
     expect(changed.lines.find((line) => line.icon === "deleted")?.text).toContain(yearText(thisYear + 1));
   });
 
-  /** A deletion's card: every occurrence, or the one changed on its own, and who is told. */
+  /** A deletion's card: every occurrence, or the one changed on its own, and who is told. It does not
+   * restate a stored rule, which Calendar can hold in forms a summary would misread (the last weekday
+   * of the month as every weekday): its caption says every occurrence goes. */
   test("a deletion shows what goes and who is told", async () => {
     const editor = new FakeEditor();
     editor.byID.set("series-1", standup());
@@ -1251,8 +1260,11 @@ describe("a question's card", () => {
       newTitle: null,
       time: LocalDateTime.timeRange(at(10), at(10, 30), false),
       newTime: null,
-      lines: [line("repeat", "Every week on Monday"), line("mail", "Its attendees are emailed a cancellation.", "note")],
+      lines: [line("mail", "Its attendees are emailed a cancellation.", "note")],
     });
+    const lastWorkday: EventRecurrence = { ...weekly, frequency: "MONTHLY", days: [2, 3, 4, 5, 6].map((weekday) => ({ weekday, week: 0 })), positions: [-1] };
+    editor.byID.set("month-end", { ...standup(), id: "month-end", recurrence: lastWorkday, attendees: [] });
+    expect(await card(tool.confirmation({ event_id: "month-end" }))).toMatchObject({ caption: "Delete every occurrence", lines: [] });
     expect(await card(tool.confirmation({ event_id: "series-1/moved" }))).toMatchObject({ caption: "Delete this occurrence", lines: [line("mail", "Its attendees are emailed a cancellation.", "note")] });
     expect(await card(tool.confirmation({ event_id: "event-2" }))).toMatchObject({ caption: "Delete event", lines: [line("mail", "You were invited to it: it is removed from your calendar.", "note")] });
   });

@@ -56,7 +56,6 @@ const eventQuestions = {
     { icon: "mail", text: "Its attendees are emailed the change.", detail: null, tone: "note" },
   ] },
   delete: { action: "delete", caption: "Delete every occurrence", month: "Oct", day: 26, weekday: "Mon", title: "Weekly 1:1", newTitle: null, time: "9:00 – 9:30 AM", newTime: null, lines: [
-    { icon: "repeat", text: "Every week on Monday", detail: null, tone: "plain" },
     { icon: "mail", text: "Its attendees are emailed a cancellation.", detail: null, tone: "note" },
   ] },
 };

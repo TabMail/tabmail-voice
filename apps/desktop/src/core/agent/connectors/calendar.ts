@@ -860,7 +860,6 @@ export class CalendarEventDeleteTool implements ConnectorTool {
     const card: EventQuestionLine[] = [];
     const series = Boolean(event.recurrence) && !event.isDetached;
     if (series) lines.push("Every occurrence is deleted.");
-    if (event.recurrence && series) card.push(cardLine("repeat", capitalized(repetition(event.recurrence))));
     if (event.isDetached) lines.push("Only this occurrence is deleted: it was changed on its own.");
     let told: string | null = null;
     if (event.isInvitation) told = "You were invited to it: it is removed from your calendar.";
