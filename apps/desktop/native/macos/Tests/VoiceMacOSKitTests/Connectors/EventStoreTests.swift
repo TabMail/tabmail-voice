@@ -62,6 +62,19 @@ extension EventKitTests {
             #expect(EventRecurrence(json: event.json["recurrence"]!) == recurrence)
         }
 
+        /// A rule's JSON carries its count and every list, each entry where the app reads it.
+        @Test
+        func aRuleCarriesItsCountAndEveryList() {
+            let rule = EventRecurrence(
+                frequency: "YEARLY", interval: 1, count: 4, days: [.init(weekday: 2, week: 1)], monthDays: [1, -1], months: [3, 9], positions: [-1], yearWeeks: [20], yearDays: [100]
+            )
+            #expect(rule.json == [
+                "frequency": "YEARLY", "interval": 1, "count": 4, "until": nil, "days": [["weekday": 2, "week": 1]], "monthDays": [1, -1], "months": [3, 9],
+                "positions": [-1], "yearWeeks": [20], "yearDays": [100],
+            ])
+            #expect(EventRecurrence(json: rule.json) == rule)
+        }
+
         /// A rule as the app sends it becomes EventKit's, and reads back the same.
         @Test(arguments: [
             EventRecurrence(frequency: "MONTHLY", interval: 1, days: (2...6).map { .init(weekday: $0, week: 0) }, positions: [-1]),
@@ -193,6 +206,16 @@ extension EventKitTests {
             #expect(EventKitStore.reminderItem(saved) == reminder)
         }
 
+        /// An attendee is read with their answer to the invitation, any other as unknown.
+        @Test(arguments: [
+            (EKParticipantStatus.accepted, "accepted"), (.declined, "declined"), (.tentative, "tentative"), (.pending, "pending"), (.delegated, "unknown"), (.unknown, "unknown"),
+        ])
+        @MainActor
+        func anAttendeeIsReadWithTheirAnswer(status: EKParticipantStatus, read: String) throws {
+            let alex = answering(try #require(participant("alex@example.com")), status)
+            #expect(EventKitStore.eventAttendee(alex) == EventAttendee(email: "alex@example.com", name: nil, status: read))
+        }
+
         /// An event's free or busy, how it repeats and the people invited to it read back as saved.
         @Test
         @MainActor
@@ -210,7 +233,7 @@ extension EventKitTests {
 
             #expect(saved.availability == .free)
             #expect(read.availability == "free" && read.recurrence == recurrence)
-            #expect(read.attendees.contains(EventAttendee(email: "alex@example.com", name: "Alex", status: read.attendees.first { $0.email == "alex@example.com" }?.status ?? "")))
+            #expect(read.attendees.contains { $0.email == "alex@example.com" && $0.name == "Alex" })
             let alex = try #require(saved.attendees?.first { Invitations.email(of: $0) == "alex@example.com" })
             #expect(Invitations.uninvite(alex, from: saved))
             #expect(EventKitStore.calendarEvent(saved).attendees.contains { $0.email == "alex@example.com" } == false)
@@ -436,6 +459,21 @@ func resource(_ participant: EKParticipant, at url: URL) -> EKParticipant {
         guard let made = objc_allocateClassPair(base, name, 0) else { return nil }
         let answer: @convention(block) (AnyObject) -> NSURL = { _ in url as NSURL }
         class_addMethod(made, NSSelectorFromString("URL"), imp_implementationWithBlock(answer), "@@:")
+        objc_registerClassPair(made)
+        return made
+    }()
+    if let subclass { object_setClass(participant, subclass) }
+    return participant
+}
+
+/// `participant` as having answered `status`: a subclass made at run time, one for each answer.
+func answering(_ participant: EKParticipant, _ status: EKParticipantStatus) -> EKParticipant {
+    guard let base = object_getClass(participant) else { return participant }
+    let name = "VoiceTestAnswer\(status.rawValue)\(NSStringFromClass(base))"
+    let subclass: AnyClass? = NSClassFromString(name) ?? {
+        guard let made = objc_allocateClassPair(base, name, 0) else { return nil }
+        let answer: @convention(block) (AnyObject) -> Int = { _ in status.rawValue }
+        class_addMethod(made, NSSelectorFromString("participantStatus"), imp_implementationWithBlock(answer), "q@:")
         objc_registerClassPair(made)
         return made
     }()
@@ -938,6 +976,8 @@ extension EventKitTests {
                 #"{"id":7,"method":"calendarEdit","params":{"id":"series-1","scope":"all","recurrence":{"frequency":"HOURLY","interval":1}}}"#,
                 #"{"id":8,"method":"calendarAdd","params":{"title":"Offsite","start":\#(ms(start)),"end":\#(ms(start)),"isAllDay":false,"availability":"busy","attendees":[{"name":"Alex"}]}}"#,
                 #"{"id":9,"method":"calendarEdit","params":{"id":"series-1","scope":"all","invite":[{"name":"Alex"}]}}"#,
+                #"{"id":11,"method":"calendarEdit","params":{"id":"series-1","scope":"all","uninvite":[3]}}"#,
+                #"{"id":12,"method":"calendarEdit","params":{"id":"series-1","scope":"all","exclude":["soon"]}}"#,
             ]
             for request in requests { await channel.handle(line: Data(request.utf8)) }
 
@@ -954,6 +994,40 @@ extension EventKitTests {
             #expect(fake.removed.map(\.title) == ["Sync second", "Standup"])
             for index in 6..<requests.count { #expect(replies[index]["error"] != nil, "request \(index + 1) is refused") }
             #expect(fake.saved.count == 3)
+            withExtendedLifetime(service) {}
+        }
+
+        /// A `calendarEdit` request carries every change to the event saved: its title, times, place,
+        /// notes, free time, a counted rule (never one repeating for ever) and the people invited and
+        /// removed.
+        @Test
+        func anEditRequestCarriesEveryField() async throws {
+            let fake = FakeEventStore()
+            let own = fake.occurrence("Planning", id: "event-1", start: start, repeats: false, in: fake.sharedCalendar)
+            #expect(Invitations.invite("alex@example.com", name: "Alex", to: own))
+            own.stubOrganizer = currentUser(try #require(participant("me@example.com")))
+            fake.byID = ["event-1": own]
+            let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+            let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+            let service = MacService.register(on: channel, eventStore: store(fake), contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }))
+            let ms = { (date: Date) in Int(date.timeIntervalSince1970 * 1000) }
+            let moved = start + 86_400
+            let request = #"{"id":1,"method":"calendarEdit","params":{"id":"event-1","occurrence":null,"scope":"all","title":"Planning, moved","start":\#(ms(moved)),"end":\#(ms(moved + 5400)),"isAllDay":false,"location":"Room 9","notes":"the agenda","availability":"free","recurrence":{"frequency":"WEEKLY","interval":2,"count":4,"until":null,"days":[{"weekday":3,"week":0}],"monthDays":[],"months":[]},"invite":[{"email":"sam@example.com","name":"Sam"}],"uninvite":["Alex@Example.com"],"exclude":[]}}"#
+
+            await channel.handle(line: Data(request.utf8))
+
+            let reply = try #require(lines.withLock { $0 }.first.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+            let result = try #require(reply["result"] as? [String: Any])
+            #expect(own.title == "Planning, moved" && own.startDate == moved && own.endDate == moved + 5400 && !own.isAllDay)
+            #expect(own.location == "Room 9" && own.notes == "the agenda" && own.availability == .free)
+            let rule = try #require(own.recurrenceRules?.first)
+            #expect(rule.frequency == .weekly && rule.interval == 2 && rule.recurrenceEnd?.occurrenceCount == 4)
+            #expect(rule.daysOfTheWeek?.map(\.dayOfTheWeek) == [.tuesday])
+            #expect(Set((own.attendees ?? []).compactMap(Invitations.email(of:))) == ["sam@example.com"])
+            #expect(fake.saved.count == 1 && fake.spans == [.futureEvents])
+            let recurrence = try #require(result["recurrence"] as? [String: Any])
+            #expect((recurrence["count"] as? NSNumber)?.intValue == 4 && (recurrence["interval"] as? NSNumber)?.intValue == 2)
+            #expect(((result["attendees"] as? [[String: Any]]) ?? []).compactMap { $0["email"] as? String } == ["sam@example.com"])
             withExtendedLifetime(service) {}
         }
 

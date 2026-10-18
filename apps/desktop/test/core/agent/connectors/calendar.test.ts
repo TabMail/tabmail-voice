@@ -32,7 +32,6 @@ import { ToolArgumentError } from "../../../../src/core/agent/connectors/contrac
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 import { CancellationError } from "../../../../src/core/util/timeout.js";
-import { deferred } from "../../../support/stubs.js";
 
 /** Calendar and Reminders as the Answer prompt's tools, against a fake store: what the model asks for
  * in the backend's date forms, what the user is asked to confirm, and what the model reads back
@@ -386,8 +385,6 @@ class FakeEditor implements EventEditor {
   saved: CalendarEvent | null = null;
   /** What the next read throws, once: a helper that exited, a request that timed out. */
   failNext: Error | null = null;
-  /** What each read waits on before it answers. */
-  hold: Promise<void> | null = null;
 
   private failOnce(): void {
     const failure = this.failNext;
@@ -397,8 +394,11 @@ class FakeEditor implements EventEditor {
 
   async event(id: string, occurrence: Date | null): Promise<CalendarEvent> {
     this.reads.push([id, occurrence]);
-    if (this.hold) await this.hold;
     this.failOnce();
+    return this.find(id, occurrence);
+  }
+
+  private find(id: string, occurrence: Date | null): CalendarEvent {
     const found = this.byID.get(occurrence === null ? id : `${id}@${occurrence.getTime()}`) ?? this.byID.get(id);
     if (!found) throw new EventStoreError("noSuchEvent");
     return found;
@@ -411,7 +411,8 @@ class FakeEditor implements EventEditor {
 
   async edit(id: string, occurrence: Date | null, scope: EventScope, changes: EventChanges): Promise<CalendarEvent> {
     this.edits.push({ id, occurrence, scope, changes });
-    return this.saved ?? (await this.event(id, occurrence));
+    // The event saved, not a read: what the app reads is counted in `reads`.
+    return this.saved ?? this.find(id, occurrence);
   }
 
   async delete(id: string): Promise<void> {
@@ -425,6 +426,12 @@ function editableStore(editor: FakeEditor): FakeEventStore {
 
 /** The signal of a request still running. */
 const live = new AbortController().signal;
+
+/** Runs a write as the controller does: its question first, then the call the user confirmed. */
+async function confirmed(tool: CalendarEventEditTool | CalendarEventDeleteTool, args: Record<string, unknown>, signal = live): Promise<string> {
+  await tool.confirmation(args);
+  return tool.run(args, signal);
+}
 
 const weekly: EventRecurrence = { frequency: "WEEKLY", interval: 1, count: null, until: null, days: [{ weekday: 2, week: 0 }], monthDays: [], months: [], positions: [], yearWeeks: [], yearDays: [] };
 
@@ -562,7 +569,7 @@ describe("calendar_event_create with single-event access", () => {
     );
     const editor = new FakeEditor();
     editor.byID.set("event-1", { ...event("Focus", at(10), at(11)), id: "event-1", availability: "busy" });
-    expect(await new CalendarEventEditTool(editor).run({ event_id: "event-1", transparency: "free" }, live)).toBe(
+    expect(await confirmed(new CalendarEventEditTool(editor), { event_id: "event-1", transparency: "free" })).toBe(
       `Changed "Focus": ${describeDate(at(10))} to ${describeDate(at(11))} (event_id event-1). The calendar can't show events as free, so it shows as busy.`,
     );
   });
@@ -719,35 +726,35 @@ describe("calendar_event_edit", () => {
     expect(await tool.run(args, live)).toBe(`Changed "Launch review": ${describeDate(at(10))} to ${describeDate(at(10, 30))} (event_id event-1).`);
     expect(editor.edits).toEqual([{ id: "event-1", occurrence: null, scope: "all", changes: { start: at(15), end: at(15, 30), isAllDay: false, invite: [], uninvite: [], exclude: [] } }]);
 
-    await tool.run({ event_id: "event-1", end_iso: iso(at(12)) }, live);
+    await confirmed(tool, { event_id: "event-1", end_iso: iso(at(12)) }, live);
     expect(lastChanges()).toMatchObject({ start: at(11, 30), end: at(12) });
-    await tool.run({ event_id: "event-1", start_iso: iso(at(9)), end_iso: iso(at(11)) }, live);
+    await confirmed(tool, { event_id: "event-1", start_iso: iso(at(9)), end_iso: iso(at(11)) }, live);
     expect(lastChanges()).toMatchObject({ start: at(9), end: at(11) });
-    await expect(tool.run({ event_id: "event-1", start_iso: iso(at(9)), end_iso: iso(at(8)) }, live)).rejects.toEqual(new ToolArgumentError("end_iso is before start_iso."));
+    await expect(confirmed(tool, { event_id: "event-1", start_iso: iso(at(9)), end_iso: iso(at(8)) }, live)).rejects.toEqual(new ToolArgumentError("end_iso is before start_iso."));
   });
 
   /** A day makes a timed event all day (one day, unless an end is given); a time makes an all-day
    * event timed, lasting the default; an all-day event moved keeps its days. */
   test("between all day and timed", async () => {
-    await tool.run({ event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, live);
+    await confirmed(tool, { event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 1), end: at(0, 0, 1), isAllDay: true });
-    await tool.run({ event_id: "event-1", all_day: true }, live);
+    await confirmed(tool, { event_id: "event-1", all_day: true }, live);
     expect(lastChanges()).toMatchObject({ start: day, end: day, isAllDay: true });
 
     editor.byID.set("trip", { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" });
-    await tool.run({ event_id: "trip", start_iso: iso(at(0, 0, 7), false) }, live);
+    await confirmed(tool, { event_id: "trip", start_iso: iso(at(0, 0, 7), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 7), end: at(0, 0, 9), isAllDay: true });
-    await tool.run({ event_id: "trip", end_iso: iso(at(0, 0, 5), false) }, live);
+    await confirmed(tool, { event_id: "trip", end_iso: iso(at(0, 0, 5), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 3), end: at(0, 0, 5), isAllDay: true });
-    await tool.run({ event_id: "trip", start_iso: iso(at(0, 0, 10), false), end_iso: iso(at(0, 0, 13), false) }, live);
+    await confirmed(tool, { event_id: "trip", start_iso: iso(at(0, 0, 10), false), end_iso: iso(at(0, 0, 13), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 10), end: at(0, 0, 13), isAllDay: true });
-    await tool.run({ event_id: "trip", all_day: true }, live);
+    await confirmed(tool, { event_id: "trip", all_day: true }, live);
     expect(lastChanges()).toMatchObject({ start: day, end: at(0, 0, 2), isAllDay: true });
-    await tool.run({ event_id: "trip", start_iso: iso(at(9)) }, live);
+    await confirmed(tool, { event_id: "trip", start_iso: iso(at(9)) }, live);
     expect(lastChanges()).toMatchObject({ start: at(9), end: new Date(at(9).getTime() + config.calendarEventDefaultDuration), isAllDay: false });
-    await tool.run({ event_id: "trip", all_day: false }, live);
+    await confirmed(tool, { event_id: "trip", all_day: false }, live);
     expect(lastChanges()).toMatchObject({ start: day, end: new Date(day.getTime() + config.calendarEventDefaultDuration), isAllDay: false });
-    await tool.run({ event_id: "trip", end_iso: iso(at(18)) }, live);
+    await confirmed(tool, { event_id: "trip", end_iso: iso(at(18)) }, live);
     expect(lastChanges()).toMatchObject({ start: new Date(at(18).getTime() - config.calendarEventDefaultDuration), end: at(18), isAllDay: false });
   });
 
@@ -756,7 +763,7 @@ describe("calendar_event_edit", () => {
   test("the event's fields change as given", async () => {
     const args = { event_id: "event-1", title: "Kickoff", location: "", notes: "Bring https://example.com/deck", transparency: "free" };
     expect((await tool.confirmation(args))?.split("\n").slice(3)).toEqual(["New title: Kickoff", "Remove the location", "New notes: Bring https://example.com/deck", "Shown as free"]);
-    await tool.run(args, live);
+    await confirmed(tool, args, live);
     expect(lastChanges()).toEqual({ title: "Kickoff", location: "", notes: "Bring https://example.com/deck", availability: "free", invite: [], uninvite: [], exclude: [] });
     expect((await tool.confirmation({ event_id: "event-1", location: "Room 5", notes: " " }))?.split("\n").slice(3)).toEqual(["New location: Room 5", "Remove the notes"]);
   });
@@ -767,11 +774,11 @@ describe("calendar_event_edit", () => {
     const args = { event_id: "series-1", add_attendees: [{ email: "sam@example.com", name: "Sam" }], remove_attendees: [{ email: "ALEX@example.com" }, { email: "nobody@example.com" }] };
     const question = (await tool.confirmation(args))?.split("\n");
     expect(question?.slice(3)).toEqual(["Every occurrence", "Invite: Sam <sam@example.com>", "They are emailed an invitation.", "Remove: alex@example.com", "They are emailed that they are no longer invited.", "Its attendees are emailed the change."]);
-    await tool.run(args, live);
+    await confirmed(tool, args, live);
     expect(editor.edits.at(-1)).toMatchObject({ id: "series-1", occurrence: null, scope: "all", changes: { invite: [{ email: "sam@example.com", name: "Sam" }], uninvite: ["alex@example.com"] } });
-    await expect(tool.run({ event_id: "series-1", remove_attendees: [{ email: "*" }] }, live)).rejects.toEqual(new ToolArgumentError("Nothing to change: give the fields to change."));
-    await expect(tool.run({ event_id: "series-1", remove_attendees: [{ name: "Alex" }] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
-    await expect(tool.run({ event_id: "series-1", remove_attendees: "alex@example.com" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1", remove_attendees: [{ email: "*" }] }, live)).rejects.toEqual(new ToolArgumentError("Nothing to change: give the fields to change."));
+    await expect(confirmed(tool, { event_id: "series-1", remove_attendees: [{ name: "Alex" }] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1", remove_attendees: "alex@example.com" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
   });
 
   /** An event whose one attendee is its organizer, the user (as Calendar keeps an event once everyone
@@ -794,6 +801,17 @@ describe("calendar_event_edit", () => {
     expect(lastChanges()?.uninvite).toEqual(["alex@example.com"]);
   });
 
+  /** The change made is the one confirmed: an event changed in Calendar while the question is open
+   * gets the times the user was shown, and loses only the people the question named. */
+  test("an event changed while asked gets the change confirmed", async () => {
+    const args = { event_id: "event-1", start_iso: iso(at(14)), remove_attendees: [{ email: "sam@example.com" }] };
+    expect(await tool.confirmation(args)).toContain(`New time: ${LocalDateTime.spoken(at(14))} to ${LocalDateTime.spoken(at(14, 30))}`);
+    const sam = { email: "sam@example.com", name: "Sam", status: "pending" };
+    editor.byID.set("event-1", { ...editor.byID.get("event-1")!, end: at(13), attendees: [sam] });
+    await tool.run(args, live);
+    expect(lastChanges()).toMatchObject({ start: at(14), end: at(14, 30), uninvite: [] });
+  });
+
   /** The organizer, the user, is never removed from their own event, even when named. */
   test("the organizer is not removed", async () => {
     const args = { event_id: "series-1", remove_attendees: [{ email: "Me@example.com" }, { email: "alex@example.com" }] };
@@ -808,7 +826,7 @@ describe("calendar_event_edit", () => {
   /** The model hears of an invitee the calendar did not keep. */
   test("an invitation the calendar did not keep is reported", async () => {
     editor.saved = standup();
-    const result = await tool.run({ event_id: "series-1", add_attendees: [{ email: "sam@example.com" }, { email: "alex@example.com" }] }, live);
+    const result = await confirmed(tool, { event_id: "series-1", add_attendees: [{ email: "sam@example.com" }, { email: "alex@example.com" }] }, live);
     expect(result).toBe(`Changed "Team sync": ${describeDate(at(10))} to ${describeDate(at(10, 30))} (event_id series-1, recurrence_id ${iso(at(10))}). The calendar did not keep the invitation for sam@example.com: they were not invited.`);
   });
 
@@ -816,11 +834,11 @@ describe("calendar_event_edit", () => {
    * that occurrence; with none, the series. New times need the occurrence they are for. */
   test("a repeating event changes over the occurrences asked", async () => {
     const occurrence = iso(at(10));
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, title: "Sync" }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, title: "Sync" }, live);
     expect(editor.edits.at(-1)).toMatchObject({ occurrence: at(10), scope: "thisOnly" });
     expect((await tool.confirmation({ event_id: "series-1", recurrence_id: occurrence, title: "Sync" }))?.split("\n")[3]).toBe(`Only the occurrence on ${LocalDateTime.spoken(at(10), false)}`);
 
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "this_and_following", start_iso: iso(at(11)) }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, edit_scope: "this_and_following", start_iso: iso(at(11)) }, live);
     expect(editor.edits.at(-1)).toMatchObject({ occurrence: at(10), scope: "thisAndFollowing", changes: { start: at(11), end: at(11, 30) } });
     expect((await tool.confirmation({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "this_and_following", start_iso: iso(at(11)) }))?.split("\n").slice(3, 6)).toEqual([
       `The occurrence on ${LocalDateTime.spoken(at(10), false)} and every one after it`,
@@ -828,38 +846,38 @@ describe("calendar_event_edit", () => {
       "Every occurrence covered moves by as much, and any deleted from the series come back.",
     ]);
 
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", start_iso: iso(at(9)) }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", start_iso: iso(at(9)) }, live);
     expect(editor.edits.at(-1)).toMatchObject({ occurrence: at(10), scope: "all", changes: { start: at(9), end: at(9, 30) } });
 
-    await expect(tool.run({ event_id: "series-1", start_iso: iso(at(9)) }, live)).rejects.toEqual(
+    await expect(confirmed(tool, { event_id: "series-1", start_iso: iso(at(9)) }, live)).rejects.toEqual(
       new ToolArgumentError("A repeating event's new start_iso or end_iso needs recurrence_id: the occurrence those times are for."),
     );
-    await expect(tool.run({ event_id: "series-1", edit_scope: "this_only", title: "Sync" }, live)).rejects.toEqual(new ToolArgumentError("edit_scope this_only needs recurrence_id: the occurrence it starts from."));
-    await expect(tool.run({ event_id: "series-1", edit_scope: "some", title: "Sync" }, live)).rejects.toEqual(new ToolArgumentError("edit_scope must be all, this_only or this_and_following."));
+    await expect(confirmed(tool, { event_id: "series-1", edit_scope: "this_only", title: "Sync" }, live)).rejects.toEqual(new ToolArgumentError("edit_scope this_only needs recurrence_id: the occurrence it starts from."));
+    await expect(confirmed(tool, { event_id: "series-1", edit_scope: "some", title: "Sync" }, live)).rejects.toEqual(new ToolArgumentError("edit_scope must be all, this_only or this_and_following."));
     // A single event's scope is itself.
-    await tool.run({ event_id: "event-1", recurrence_id: iso(at(10)), edit_scope: "this_and_following", title: "Kickoff" }, live);
+    await confirmed(tool, { event_id: "event-1", recurrence_id: iso(at(10)), edit_scope: "this_and_following", title: "Kickoff" }, live);
     expect(editor.edits.at(-1)).toMatchObject({ id: "event-1", scope: "all" });
   });
 
   /** How an event repeats is set, changed or ended ({}) for the series or from an occurrence on, never
    * for one occurrence; occurrences are dropped by their starts. */
   test("repeating is set, ended, and occurrences dropped", async () => {
-    await tool.run({ event_id: "event-1", recurrence: { freq: "DAILY", count: 3 } }, live);
+    await confirmed(tool, { event_id: "event-1", recurrence: { freq: "DAILY", count: 3 } }, live);
     expect(lastChanges()?.recurrence).toEqual({ frequency: "DAILY", interval: 1, count: 3, until: null, days: [], monthDays: [], months: [], positions: [], yearWeeks: [], yearDays: [] });
     expect(await tool.confirmation({ event_id: "event-1", recurrence: { freq: "DAILY", count: 3 } })).toContain("Repeats every day, 3 times");
-    await tool.run({ event_id: "series-1", recurrence: {} }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence: {} }, live);
     expect(lastChanges()?.recurrence).toBeNull();
     expect(await tool.confirmation({ event_id: "series-1", recurrence: {} })).toContain("Stops repeating");
-    await expect(tool.run({ event_id: "series-1", recurrence_id: iso(at(10)), recurrence: { freq: "DAILY" } }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1", recurrence_id: iso(at(10)), recurrence: { freq: "DAILY" } }, live)).rejects.toBeInstanceOf(ToolArgumentError);
 
     const dropped = [iso(at(10, 0, 7)), iso(at(10, 0, 14))];
-    await tool.run({ event_id: "series-1", exdates_add: dropped }, live);
+    await confirmed(tool, { event_id: "series-1", exdates_add: dropped }, live);
     expect(lastChanges()?.exclude).toEqual([at(10, 0, 7), at(10, 0, 14)]);
     expect(await tool.confirmation({ event_id: "series-1", exdates_add: dropped })).toContain(`Delete the occurrences on: ${LocalDateTime.spoken(at(10, 0, 7))}; ${LocalDateTime.spoken(at(10, 0, 14))}`);
-    await expect(tool.run({ event_id: "event-1", exdates_add: dropped }, live)).rejects.toBeInstanceOf(ToolArgumentError);
-    await expect(tool.run({ event_id: "series-1", recurrence_id: iso(at(10)), exdates_add: [iso(at(10))] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
-    await expect(tool.run({ event_id: "series-1", exdates_add: ["soon"] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
-    await expect(tool.run({ event_id: "series-1", exdates_add: iso(at(10)) }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "event-1", exdates_add: dropped }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1", recurrence_id: iso(at(10)), exdates_add: [iso(at(10))] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1", exdates_add: ["soon"] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1", exdates_add: iso(at(10)) }, live)).rejects.toBeInstanceOf(ToolArgumentError);
   });
 
   /** An occurrence changed on its own (which Calendar gives its series' rule) changes alone through
@@ -867,18 +885,18 @@ describe("calendar_event_edit", () => {
   test("an occurrence changed on its own changes alone", async () => {
     editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", isDetached: true });
     expect((await tool.confirmation({ event_id: "series-1/moved", title: "Sync" })).split("\n").slice(3)).toEqual(["Only this occurrence: it was changed on its own", "New title: Sync", "Its attendees are emailed the change."]);
-    await tool.run({ event_id: "series-1/moved", title: "Sync" }, live);
+    await confirmed(tool, { event_id: "series-1/moved", title: "Sync" }, live);
     expect(editor.edits.at(-1)).toMatchObject({ id: "series-1/moved", occurrence: null, scope: "thisOnly", changes: { title: "Sync" } });
     const moved = { event_id: "series-1/moved", start_iso: iso(at(15, 0, 1)) };
     expect(await tool.confirmation(moved)).not.toMatch(/Every occurrence/);
-    await tool.run(moved, live);
+    await confirmed(tool, moved, live);
     expect(editor.edits.at(-1)).toMatchObject({ scope: "thisOnly", changes: { start: at(15, 0, 1), end: at(15, 30, 1) } });
-    await tool.run({ event_id: "series-1/moved", recurrence_id: iso(at(10)), edit_scope: "this_only", title: "Sync" }, live);
+    await confirmed(tool, { event_id: "series-1/moved", recurrence_id: iso(at(10)), edit_scope: "this_only", title: "Sync" }, live);
     expect(editor.edits.at(-1)).toMatchObject({ scope: "thisOnly" });
     for (const extra of [{ edit_scope: "all" }, { edit_scope: "this_and_following" }, { recurrence: { freq: "DAILY" } }]) {
-      await expect(tool.run({ event_id: "series-1/moved", title: "Sync", ...extra }, live)).rejects.toThrow(/changed on its own, so its event_id changes it alone/);
+      await expect(confirmed(tool, { event_id: "series-1/moved", title: "Sync", ...extra }, live)).rejects.toThrow(/changed on its own, so its event_id changes it alone/);
     }
-    await expect(tool.run({ event_id: "series-1/moved", exdates_add: [iso(at(10, 0, 7))] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, { event_id: "series-1/moved", exdates_add: [iso(at(10, 0, 7))] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(editor.edits).toHaveLength(3);
   });
 
@@ -891,24 +909,24 @@ describe("calendar_event_edit", () => {
     for (const scope of ["all", "this_and_following"]) {
       const args = { event_id: "series-1", recurrence_id: occurrence, edit_scope: scope, start_iso: iso(at(10, 0, 1)) };
       await expect(tool.confirmation(args)).rejects.toEqual(refused);
-      await expect(tool.run(args, live)).rejects.toEqual(refused);
+      await expect(confirmed(tool, args, live)).rejects.toEqual(refused);
     }
     expect(editor.edits).toEqual([]);
 
     const withDays = { event_id: "series-1", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all", recurrence: { freq: "WEEKLY", byDay: ["TU"] } };
     expect(await tool.confirmation(withDays)).toContain("Repeats every week on Tuesday");
-    await tool.run(withDays, live);
+    await confirmed(tool, withDays, live);
     expect(lastChanges()).toMatchObject({ start: at(10, 0, 1), recurrence: { days: [{ weekday: 3, week: 0 }] } });
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", start_iso: iso(at(16)) }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", start_iso: iso(at(16)) }, live);
     expect(lastChanges()).toMatchObject({ start: at(16) });
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "this_only", start_iso: iso(at(10, 0, 1)) }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, edit_scope: "this_only", start_iso: iso(at(10, 0, 1)) }, live);
     expect(lastChanges()).toMatchObject({ start: at(10, 0, 1) });
     for (const rule of [{ monthDays: [15] }, { positions: [-1] }, { months: [3] }, { yearWeeks: [20] }, { yearDays: [100] }]) {
       editor.byID.set("series-2", { ...standup(), id: "series-2", recurrence: { ...weekly, days: [], ...rule } });
-      await expect(tool.run({ event_id: "series-2", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+      await expect(confirmed(tool, { event_id: "series-2", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
     }
     editor.byID.set("series-2", { ...standup(), id: "series-2", recurrence: { ...weekly, days: [] } });
-    await tool.run({ event_id: "series-2", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all" }, live);
+    await confirmed(tool, { event_id: "series-2", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all" }, live);
     expect(editor.edits.at(-1)).toMatchObject({ id: "series-2", changes: { start: at(10, 0, 1) } });
     expect(editor.edits).toHaveLength(4);
   });
@@ -923,11 +941,11 @@ describe("calendar_event_edit", () => {
     editor.byID.set("series-1", { ...standup(), start: at(11), end: at(11, 30), occurrence: at(11), timeZone: zone });
     const args = { event_id: "series-1", recurrence_id: iso(at(11)), edit_scope: "all", start_iso: iso(at(13)) };
     await expect(tool.confirmation(args)).rejects.toBeInstanceOf(ToolArgumentError);
-    await expect(tool.run(args, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(confirmed(tool, args, live)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(editor.edits).toEqual([]);
 
     editor.byID.set("series-1", { ...standup(), start: at(11), end: at(11, 30), occurrence: at(11), timeZone: null });
-    await tool.run(args, live);
+    await confirmed(tool, args, live);
     expect(lastChanges()).toMatchObject({ start: at(13) });
   });
 
@@ -940,12 +958,12 @@ describe("calendar_event_edit", () => {
       await expect(tool.confirmation(args)).rejects.toEqual(
         new ToolArgumentError("exdates_add can't go with new times for the series, which bring deleted occurrences back: move it first, then read it and delete the occurrences at their new times."),
       );
-      await expect(tool.run(args, live)).rejects.toBeInstanceOf(ToolArgumentError);
+      await expect(confirmed(tool, args, live)).rejects.toBeInstanceOf(ToolArgumentError);
     }
     expect(editor.edits).toEqual([]);
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, start_iso: iso(at(11)), exdates_add: [iso(at(10, 0, 14))] }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, start_iso: iso(at(11)), exdates_add: [iso(at(10, 0, 14))] }, live);
     expect(editor.edits.at(-1)).toMatchObject({ scope: "thisOnly", changes: { start: at(11), exclude: [at(10, 0, 14)] } });
-    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", title: "Sync", exdates_add: [iso(at(10, 0, 14))] }, live);
+    await confirmed(tool, { event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", title: "Sync", exdates_add: [iso(at(10, 0, 14))] }, live);
     expect(editor.edits.at(-1)).toMatchObject({ scope: "all", changes: { title: "Sync", exclude: [at(10, 0, 14)] } });
   });
 
@@ -955,7 +973,7 @@ describe("calendar_event_edit", () => {
     "%j is neither asked about nor changed",
     async (args) => {
       await expect(tool.confirmation(args)).rejects.toThrow();
-      await expect(tool.run(args, live)).rejects.toBeInstanceOf(Error);
+      await expect(confirmed(tool, args, live)).rejects.toBeInstanceOf(Error);
       expect(editor.edits).toEqual([]);
     },
   );
@@ -986,14 +1004,14 @@ describe("calendar_event_delete", () => {
     // Its one attendee its organizer, the user: no one is emailed a cancellation.
     editor.byID.set("solo", { ...standup(), id: "solo", recurrence: null, attendees: [{ email: "Me@Example.com", name: null, status: "accepted" }] });
     expect((await tool.confirmation({ event_id: "solo" })).split("\n").slice(3)).toEqual([]);
-    expect(await tool.run({ event_id: "series-1" }, live)).toBe('Deleted "Team sync", every occurrence.');
-    expect(await tool.run({ event_id: "event-2" }, live)).toBe('Deleted "Review".');
-    expect(await tool.run({ event_id: "series-1/moved" }, live)).toBe('Deleted "Team sync".');
+    expect(await confirmed(tool, { event_id: "series-1" }, live)).toBe('Deleted "Team sync", every occurrence.');
+    expect(await confirmed(tool, { event_id: "event-2" }, live)).toBe('Deleted "Review".');
+    expect(await confirmed(tool, { event_id: "series-1/moved" }, live)).toBe('Deleted "Team sync".');
     expect(editor.deleted).toEqual(["series-1", "event-2", "series-1/moved"]);
 
     await expect(tool.confirmation({})).rejects.toThrow();
     await expect(tool.confirmation({ event_id: "gone" })).rejects.toThrow();
-    await expect(tool.run({ event_id: "gone" }, live)).rejects.toEqual(new EventStoreError("noSuchEvent"));
+    await expect(confirmed(tool, { event_id: "gone" }, live)).rejects.toEqual(new EventStoreError("noSuchEvent"));
     expect(editor.deleted).toEqual(["series-1", "event-2", "series-1/moved"]);
   });
 
@@ -1027,26 +1045,28 @@ describe("a write is never made unasked", () => {
     expect(await tool.confirmation(args)).toEqual(expect.any(String));
   });
 
-  /** Canceled while the event is read again, after the user confirmed, nothing changes; not canceled,
-   * the same call does. */
-  test.each(cases.slice(1))("%s canceled during its last read changes nothing", async (_name, make) => {
+  /** A write runs once for each question the user confirmed, and is never planned again: unasked or
+   * canceled it changes nothing, and the event isn't read when it runs. */
+  test.each(cases.slice(1))("%s runs only what the user confirmed", async (_name, make) => {
     const editor = new FakeEditor();
     editor.byID.set("series-1", standup());
     const { tool, args, written } = make(editor, editableStore(editor));
-    const release = deferred<void>();
-    editor.hold = release.promise;
     const request = new AbortController();
 
-    const running = tool.run(args, request.signal);
-    await Promise.resolve();
-    expect(editor.reads.length).toBeGreaterThan(0);
+    await expect(tool.run(args, live)).rejects.toThrow("needs a new confirmation");
+    expect(editor.reads).toEqual([]);
+    await tool.confirmation(args);
     request.abort();
-    release.resolve();
-    await expect(running).rejects.toBeInstanceOf(CancellationError);
+    await expect(tool.run(args, request.signal)).rejects.toBeInstanceOf(CancellationError);
+    await expect(tool.run(args, live)).rejects.toThrow("needs a new confirmation");
     expect(written()).toEqual([]);
 
-    editor.hold = null;
+    await tool.confirmation(args);
+    const reads = editor.reads.length;
     await tool.run(args, live);
+    expect(written()).toHaveLength(1);
+    expect(editor.reads).toHaveLength(reads);
+    await expect(tool.run(args, live)).rejects.toThrow("needs a new confirmation");
     expect(written()).toHaveLength(1);
   });
 });

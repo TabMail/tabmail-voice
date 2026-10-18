@@ -198,8 +198,12 @@ public enum MacService {
             let invite = (params["invite"]?.array ?? []).map(eventAttendee)
             guard !invite.contains(nil) else { throw HelperError("calendarEdit needs an email for every invitee") }
             changes.invite = invite.compactMap { $0 }
-            changes.uninvite = (params["uninvite"]?.array ?? []).compactMap { $0.string?.lowercased() }
-            changes.exclude = (params["exclude"]?.array ?? []).compactMap { $0.number.map(EventWire.date) }
+            let uninvite = (params["uninvite"]?.array ?? []).map { $0.string?.lowercased() }
+            let exclude = (params["exclude"]?.array ?? []).map { $0.number.map(EventWire.date) }
+            // An entry that doesn't read is refused, never dropped: the change would be other than the one confirmed.
+            guard !uninvite.contains(nil), !exclude.contains(nil) else { throw HelperError("calendarEdit needs an email for every person removed and a time for every occurrence deleted") }
+            changes.uninvite = uninvite.compactMap { $0 }
+            changes.exclude = exclude.compactMap { $0 }
             return try await eventStore.edit(id: id, occurrence: params["occurrence"]?.number.map(EventWire.date), scope: scope, changes: changes).json
         }
         channel.on("calendarDelete") { params in

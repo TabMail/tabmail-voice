@@ -568,18 +568,22 @@ interface EditPlan {
 const scopes: Record<string, EventScope> = { all: "all", this_only: "thisOnly", this_and_following: "thisAndFollowing" };
 
 /** Changes an event (`calendar_event_edit`) once the user confirms what the chat window shows: the
- * question and the change come from the same `plan`, over the event as it is now. Only the fields
- * given change; a new start alone keeps the event's length, as does a new end alone. */
+ * change made is the one the question was made from, never planned again over the event as it is
+ * when it runs. Only the fields given change; a new start alone keeps the event's length, as does a
+ * new end alone. */
 export class CalendarEventEditTool implements ConnectorTool {
   readonly name = "calendar_event_edit";
   readonly connector = "calendar";
   readonly progressLabel = "Changing the event";
 
+  private readonly prepared = new WeakMap<Record<string, unknown>, EditPlan>();
   constructor(private readonly editor: EventEditor) {}
 
   /** Throws for a change it can't make or an event it can't read, so nothing is changed unasked. */
   async confirmation(args: Record<string, unknown>): Promise<string> {
-    const { current, changes, scope, occurrence } = await this.plan(args);
+    const plan = await this.plan(args);
+    this.prepared.set(args, plan);
+    const { current, changes, scope, occurrence } = plan;
     const lines = ["Change this event?", current.title, spokenWhen(current)];
     if (current.isDetached) lines.push("Only this occurrence: it was changed on its own");
     else if (current.recurrence && occurrence !== null && scope === "thisOnly") lines.push(`Only the occurrence on ${LocalDateTime.spoken(occurrence, false)}`);
@@ -604,14 +608,16 @@ export class CalendarEventEditTool implements ConnectorTool {
   }
 
   async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
-    const { id, occurrence, scope, changes } = await this.plan(args);
-    // Canceled while the event was read again: the change the user confirmed is no longer wanted.
+    const plan = this.prepared.get(args);
+    this.prepared.delete(args);
+    if (plan === undefined) throw new Error("This change needs a new confirmation.");
     if (signal.aborted) throw new CancellationError();
+    const { id, occurrence, scope, changes } = plan;
     const saved = await this.editor.edit(id, occurrence, scope, changes);
     return `Changed "${saved.title}": ${describeWhen(saved)} (${eventIDs(saved).join(", ")}).${missingInvitees(changes.invite, saved)}${availabilityNotKept(changes.availability, saved)}`;
   }
 
-  /** The change the arguments ask for, over the event as it is now; throws for one it can't make. */
+  /** The change the arguments ask for, over the event as it is when asked; throws for one it can't make. */
   async plan(args: Record<string, unknown>): Promise<EditPlan> {
     const id = Arguments.text(args, "event_id");
     if (id === null) throw ToolArgumentError.missing("event_id");
@@ -751,11 +757,13 @@ export class CalendarEventDeleteTool implements ConnectorTool {
   readonly connector = "calendar";
   readonly progressLabel = "Deleting the event";
 
+  private readonly prepared = new WeakMap<Record<string, unknown>, CalendarEvent>();
   constructor(private readonly editor: EventEditor) {}
 
   /** Throws for an event it can't read, so nothing is deleted unasked. */
   async confirmation(args: Record<string, unknown>): Promise<string> {
     const event = await this.target(args);
+    this.prepared.set(args, event);
     const lines = ["Delete this event?", event.title, spokenWhen(event)];
     if (event.recurrence && !event.isDetached) lines.push("Every occurrence is deleted.");
     if (event.isDetached) lines.push("Only this occurrence is deleted: it was changed on its own.");
@@ -765,8 +773,10 @@ export class CalendarEventDeleteTool implements ConnectorTool {
   }
 
   async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
-    const event = await this.target(args);
-    // Canceled while the event was read again: the deletion the user confirmed is no longer wanted.
+    // The event the question named, never read again: deleted as the user was told.
+    const event = this.prepared.get(args);
+    this.prepared.delete(args);
+    if (event === undefined) throw new Error("This deletion needs a new confirmation.");
     if (signal.aborted) throw new CancellationError();
     await this.editor.delete(event.id ?? "");
     return `Deleted "${event.title}"${event.recurrence && !event.isDetached ? ", every occurrence" : ""}.`;

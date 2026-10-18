@@ -5325,8 +5325,8 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   helper refuses a rule with any field it can't read rather than reading it as absent, which for a
   count would repeat for ever),
   `isDetached` and `isInvitation` (attendees, and an organizer who isn't the user). People are removed
-  by their addresses only, those the user confirmed: a "remove everyone" read again when the edit runs
-  would also remove someone added meanwhile. `calendarEdit`'s
+  by their addresses only, those the user confirmed: a "remove everyone" would take in someone added
+  while the user is asked. `calendarEdit`'s
   `recurrence` absent keeps the rule and null clears it. Calendars come with whether each is the
   default, and only those whose events can change.
 - **Finding an occurrence.** `event(withIdentifier:)` returns a series' first occurrence, so an
@@ -5373,9 +5373,14 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
 - **Asked first, whatever fails.** A create, edit or delete whose question can't be made (its
   arguments, a read of the event or the calendars failing, the helper restarting) throws from
   `confirmation`, and the controller tells the model why and runs nothing: a question that comes
-  back empty would run the write unasked. Edit and delete read the event again when they run (the
-  event as it is then, not as it was when asked), and a request canceled during that read writes
-  nothing (`CancellationError`).
+  back empty would run the write unasked. Edit and delete run the change the question was made from
+  and never plan it again: `confirmation` keeps it for the arguments it was asked with (as
+  `PDFReadTool` does), and `run` takes it once, so an event changed in Calendar while the user is
+  asked gets the times and loses only the people the user was shown. A run with no question kept for
+  its arguments, or a request canceled before it writes, writes nothing; the helper still refuses an
+  event that is gone, read-only or not the user's when it saves. (Amended 2026-10-18: edit and delete
+  read the event again when they ran, so a duration changed meanwhile moved the end past the one
+  confirmed, and a person named but absent when asked was removed once added.)
 - **Without an editor** (Windows and Linux, which have no event store), the read, edit and delete
   tools aren't offered, and a create with `calendar_id`, `transparency`, `attendees` or `recurrence`
   is refused. `calendar_read` pages at `config.calendarReadPageSize` and lists the calendars on page 1.
