@@ -196,9 +196,12 @@ describe("helper wire contract", () => {
     const saved = {
       title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, calendar: "Work", location: "Room 4", notes: null,
       id: "event-1", occurrence: start.getTime(), calendarId: "calendar-1", availability: "busy", attendees, organizer: null,
-      recurrence: helperRecurrence, isDetached: false, isInvitation: false,
+      recurrence: helperRecurrence, isDetached: false, isInvitation: false, timeZone: "America/Los_Angeles",
     };
     const read = { ...saved, start, end, occurrence: start, recurrence };
+    // A single event (no occurrence, no rule, floating) and a series that never ends, as the helper sends them.
+    const single = { ...saved, id: "event-2", occurrence: null, recurrence: null, timeZone: null };
+    const forever = { ...saved, id: "event-3", recurrence: { ...helperRecurrence, count: null, until: null } };
     const calendars = [{ id: "calendar-1", title: "Work", account: "iCloud", isDefault: true }];
     const reminder = { title: "Send the deck", list: "Work", due: start.getTime(), dueHasTime: true, notes: "the short one" };
     let failure: Error | null = null;
@@ -206,7 +209,7 @@ describe("helper wire contract", () => {
       request: async (method: string, params?: unknown, timeout?: unknown) => {
         calls.push({ method, params, timeout });
         if (failure) throw failure;
-        if (method === "calendarEvents") return { events: [saved] };
+        if (method === "calendarEvents") return { events: [saved, single, forever] };
         if (method === "calendarAdd" || method === "calendarEvent" || method === "calendarEdit") return saved;
         if (method === "calendars") return { calendars };
         if (method === "calendarDelete") return {};
@@ -220,7 +223,11 @@ describe("helper wire contract", () => {
     const event = { title: "Launch review", start, end, isAllDay: false, calendar: "", location: "Room 4", notes: null };
     const changes = { start, end, invite: [{ email: "sam@example.com", name: null }], uninvite: ["alex@example.com"], exclude: [until] };
 
-    expect(await store.events(start, end)).toEqual([read]);
+    expect(await store.events(start, end)).toEqual([
+      read,
+      { ...read, id: "event-2", occurrence: null, recurrence: null, timeZone: null },
+      { ...read, id: "event-3", recurrence: { ...recurrence, count: null, until: null } },
+    ]);
     expect(await store.addEvent(event)).toEqual(read);
     expect(await store.addEvent({ ...event, calendarId: "calendar-1", availability: "free", recurrence, attendees: [{ email: "sam@example.com", name: null, status: "pending" }] })).toEqual(read);
     expect(await editor.event("event-1", start)).toEqual(read);

@@ -262,6 +262,7 @@ interface EventJSON {
   recurrence: RecurrenceJSON | null;
   isDetached: boolean;
   isInvitation: boolean;
+  timeZone: string | null;
 }
 
 type RecurrenceJSON = Omit<EventRecurrence, "until"> & { until: number | null };

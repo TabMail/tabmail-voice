@@ -32,6 +32,9 @@ export interface CalendarEvent {
   isDetached?: boolean;
   /** The user was invited to it by its organizer, someone else. */
   isInvitation?: boolean;
+  /** The time zone its times, and its rule's days, are counted in; null for one that floats (all
+   * day), counted in the Mac's. */
+  timeZone?: string | null;
 }
 
 export type Availability = "busy" | "free";
@@ -645,17 +648,28 @@ export class CalendarEventEditTool implements ConnectorTool {
       if (scope === "thisOnly") throw new ToolArgumentError("One occurrence can't repeat on its own: give edit_scope all or this_and_following to change how the event repeats.");
       changes.recurrence = recurrenceArgument(args.recurrence, changes.start ?? current.start);
     }
-    // A rule that picks its days would no longer match a series moved to another day.
-    if (current.recurrence && scope !== "thisOnly" && changes.start !== undefined && changes.recurrence === undefined && picksDays(current.recurrence) && changes.start.toDateString() !== current.start.toDateString()) {
+    // A rule that picks its days would no longer match a series moved to another day, counted where
+    // Calendar counts the rule's days: in the event's zone, which can be another than the Mac's.
+    const zone = current.timeZone ?? undefined;
+    if (current.recurrence && scope !== "thisOnly" && changes.start !== undefined && changes.recurrence === undefined && picksDays(current.recurrence) && dayIn(changes.start, zone) !== dayIn(current.start, zone)) {
       throw new ToolArgumentError(`This series repeats ${rrule(current.recurrence)}: to move it to another day, give recurrence with the days it moves to.`);
     }
     changes.exclude = excludedOccurrences(args, repeats, occurrence);
+    // Moved, the series has its deleted occurrences again: the ones named would come straight back.
+    if (changes.exclude.length > 0 && times !== null && scope !== "thisOnly") {
+      throw new ToolArgumentError("exdates_add can't go with new times for the series, which bring deleted occurrences back: move it first, then read it and delete the occurrences at their new times.");
+    }
     const asked = changes.title ?? changes.start ?? changes.location ?? changes.notes ?? changes.availability;
     if (asked === undefined && changes.recurrence === undefined && changes.invite.length === 0 && changes.uninvite.length === 0 && changes.exclude.length === 0) {
       throw new ToolArgumentError("Nothing to change: give the fields to change.");
     }
     return { id, occurrence, scope, current, changes };
   }
+}
+
+/** `date`'s day (2099-01-15) in the time zone `zone`, or the Mac's. */
+function dayIn(date: Date, zone: string | undefined): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 /** Whether `rule` names the days it falls on (BYDAY and the like), rather than repeating its start's. */
@@ -742,7 +756,7 @@ export class CalendarEventDeleteTool implements ConnectorTool {
   async confirmation(args: Record<string, unknown>): Promise<string> {
     const event = await this.target(args);
     const lines = ["Delete this event?", event.title, spokenWhen(event)];
-    if (event.recurrence) lines.push("Every occurrence is deleted.");
+    if (event.recurrence && !event.isDetached) lines.push("Every occurrence is deleted.");
     if (event.isDetached) lines.push("Only this occurrence is deleted: it was changed on its own.");
     if (event.isInvitation) lines.push("You were invited to it: it is removed from your calendar.");
     else if ((event.attendees ?? []).some((attendee) => attendee.email.toLowerCase() !== event.organizer?.email.toLowerCase())) lines.push("Its attendees are emailed a cancellation.");
@@ -754,7 +768,7 @@ export class CalendarEventDeleteTool implements ConnectorTool {
     // Canceled while the event was read again: the deletion the user confirmed is no longer wanted.
     if (signal.aborted) throw new CancellationError();
     await this.editor.delete(event.id ?? "");
-    return `Deleted "${event.title}"${event.recurrence ? ", every occurrence" : ""}.`;
+    return `Deleted "${event.title}"${event.recurrence && !event.isDetached ? ", every occurrence" : ""}.`;
   }
 
   private async target(args: Record<string, unknown>): Promise<CalendarEvent> {

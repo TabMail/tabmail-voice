@@ -5342,17 +5342,22 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   off, or an all-day series on the day before. A series whose rule names its days (`BYDAY`,
   `BYMONTHDAY`, `BYMONTH`, `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`) moved to another day is refused unless
   the edit gives the rule it moves to, which the user then confirms: the start would no longer be one
-  of the rule's days, which RFC 5545 leaves undefined. A detached occurrence carries its series' rule
+  of the rule's days, which RFC 5545 leaves undefined. The day is counted in the event's own zone
+  (the helper sends `timeZone`, null for a floating event, counted in the Mac's), where EventKit counts
+  the rule's days and the helper moves the series: a move within the Mac's day can cross one there. A detached occurrence carries its series' rule
   in EventKit, yet is changed alone, by its id with or without `recurrence_id`: the app sends it as
   `this_only`, and the helper saves it with `.thisEvent` whatever scope arrives (as delete does), since
   `.futureEvents` would save it over every later occurrence. It takes only `this_only` changes.
   `exdates_add` removes the occurrences named before the rest of the edit, once the edit is checked
   (the event editable, invitations possible) and every one of them found as an occurrence of the
-  series: a refusal removes none. Each removal commits at once (`.thisEvent`, `commit: true`), so none
+  series: a refusal removes none. It is refused with new times for the series (`all`,
+  `this_and_following`): the move would bring the deleted occurrences straight back (RFC 5545 excludes
+  only start times the moved rule still makes), so the model moves the series first, reads it, and
+  deletes the occurrences at their new times. Each removal commits at once (`.thisEvent`, `commit: true`), so none
   is left pending in the helper's long-lived `EKEventStore` for a later save to commit. A save that
   fails after them leaves them removed; the model is told to check the calendar before trying again.
   `calendar_event_delete` removes a whole series (`.futureEvents` from its first) or, for a detached
-  occurrence, that one.
+  occurrence, that one; the question and the result say "every occurrence" only for a series.
 - **The confirmation says what changes**: each field, who is invited or uninvited ("emailed the
   change"), the occurrences deleted, and for a series moved in time, "Every occurrence covered moves by
   as much, and any deleted from the series come back": measured on Google, moving a series' time

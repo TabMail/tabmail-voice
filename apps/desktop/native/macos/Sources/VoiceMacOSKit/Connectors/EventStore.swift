@@ -29,6 +29,8 @@ struct CalendarEvent: Equatable, Sendable {
     var isDetached: Bool = false
     /// The user was invited to it by someone else, who organizes it.
     var isInvitation: Bool = false
+    /// The zone its times, and its rule's days, are counted in; nil for one that floats (all day).
+    var timeZone: String? = nil
 
     /// What the app receives: its times in milliseconds since 1970.
     var json: JSON {
@@ -39,6 +41,7 @@ struct CalendarEvent: Equatable, Sendable {
             "calendarId": calendarId.map(JSON.string) ?? .null, "availability": .string(availability),
             "attendees": .array(attendees.map(\.json)), "organizer": organizer?.json ?? .null,
             "recurrence": recurrence?.json ?? .null, "isDetached": .bool(isDetached), "isInvitation": .bool(isInvitation),
+            "timeZone": timeZone.map(JSON.string) ?? .null,
         ]
     }
 }
@@ -507,7 +510,7 @@ final class EventKitStore {
             availability: event.availability == .free ? "free" : "busy",
             attendees: (event.attendees ?? []).compactMap(eventAttendee), organizer: event.organizer.flatMap(eventAttendee),
             recurrence: event.recurrenceRules?.first.flatMap(EventRecurrence.init), isDetached: event.isDetached,
-            isInvitation: isInvitation(event)
+            isInvitation: isInvitation(event), timeZone: event.timeZone?.identifier
         )
     }
 

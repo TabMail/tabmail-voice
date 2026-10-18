@@ -26,6 +26,7 @@ struct EventStoreTests {
             "title": "Launch review", "start": .number(start.timeIntervalSince1970 * 1000), "end": .number(end.timeIntervalSince1970 * 1000),
             "isAllDay": false, "calendar": "Work", "location": "Room 4", "notes": nil, "id": nil, "occurrence": nil, "calendarId": nil,
             "availability": "busy", "attendees": [], "organizer": nil, "recurrence": nil, "isDetached": false, "isInvitation": false,
+            "timeZone": nil,
         ])
     }
 
@@ -39,12 +40,13 @@ struct EventStoreTests {
             title: "Review", start: start, end: start + 3600, isAllDay: false, calendar: "Work", location: nil, notes: nil,
             id: "series-1", occurrence: start, calendarId: "calendar-1", availability: "free",
             attendees: [EventAttendee(email: "alex@example.com", name: "Alex", status: "accepted")], organizer: EventAttendee(email: "me@example.com", name: nil),
-            recurrence: recurrence, isDetached: true, isInvitation: true
+            recurrence: recurrence, isDetached: true, isInvitation: true, timeZone: "America/Los_Angeles"
         )
         let ms = { (date: Date) in JSON.number(date.timeIntervalSince1970 * 1000) }
 
         #expect(event.json["id"] == "series-1" && event.json["occurrence"] == ms(start) && event.json["calendarId"] == "calendar-1")
         #expect(event.json["availability"] == "free" && event.json["isDetached"] == true && event.json["isInvitation"] == true)
+        #expect(event.json["timeZone"] == "America/Los_Angeles")
         #expect(event.json["attendees"] == [["email": "alex@example.com", "name": "Alex", "status": "accepted"]])
         #expect(event.json["organizer"] == ["email": "me@example.com", "name": nil, "status": "unknown"])
         #expect(event.json["recurrence"] == [
@@ -135,7 +137,7 @@ struct EventStoreTests {
         #expect(Calendar.current.isDate(read.end, inSameDayAs: last))
     }
 
-    /// A timed event keeps its times to the second.
+    /// A timed event keeps its times to the second, in the Mac's zone, where EventKit puts a new one.
     @Test
     @MainActor
     func aTimedEventKeepsItsTimes() {
@@ -144,7 +146,9 @@ struct EventStoreTests {
 
         EventKitStore.fill(saved, from: event)
 
-        #expect(EventKitStore.calendarEvent(saved) == event)
+        var read = event
+        read.timeZone = TimeZone.current.identifier
+        #expect(EventKitStore.calendarEvent(saved) == read)
     }
 
     /// A reminder is added with its notes and its due date as EventKit keeps it, and read back as the
@@ -467,7 +471,7 @@ struct EventKitStoreTests {
         #expect(EventKitStore.calendarEvent(saved) == added)
         #expect(added == CalendarEvent(
             title: "Launch review", start: start, end: start + 1800, isAllDay: false, calendar: "Work", location: "Room 4", notes: "bring the deck",
-            calendarId: fake.calendar.calendarIdentifier
+            calendarId: fake.calendar.calendarIdentifier, timeZone: TimeZone.current.identifier
         ))
         #expect(fake.spans == [.thisEvent])
     }
@@ -876,6 +880,36 @@ struct EventKitStoreTests {
         #expect(moved.hasRecurrenceRules)
         #expect(fake.saved.count == 1 && fake.saved.first === moved && fake.spans == [.thisEvent])
         #expect(moved.title == "Sync once" && moved.startDate == start + 8 * 86_400 + 3600 && moved.endDate == start + 8 * 86_400 + 7200)
+    }
+
+    /// An event is read with the zone its times and its rule's days are counted in, none for one that floats.
+    @Test
+    func anEventIsReadWithItsTimeZone() {
+        let fake = FakeEventStore()
+        let zoned = fake.event("Sync", start: start, hours: 1)
+        zoned.timeZone = TimeZone(identifier: "Asia/Kolkata")
+        let floating = fake.event("Trip", start: start, hours: 1)
+        floating.timeZone = nil
+        #expect(EventKitStore.calendarEvent(zoned).timeZone == "Asia/Kolkata")
+        #expect(EventKitStore.calendarEvent(floating).timeZone == nil)
+    }
+
+    /// A single event made to repeat is saved for the following events: saved for itself, EventKit
+    /// rewrites the new rule as a daily one.
+    @Test
+    func aSingleEventMadeToRepeatIsSavedForTheFollowingEvents() async throws {
+        let fake = FakeEventStore()
+        let single = fake.occurrence("Planning", id: "event-1", start: start, repeats: false)
+        fake.byID = ["event-1": single]
+        fake.events = [single]
+        var changes = EventChanges()
+        let weekly = EventRecurrence(frequency: "WEEKLY", interval: 1, count: 4)
+        changes.recurrence = .set(weekly)
+
+        _ = try await store(fake).edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+
+        #expect(fake.saved.count == 1 && fake.saved.first === single && fake.spans == [.futureEvents])
+        #expect(single.recurrenceRules?.first.flatMap(EventRecurrence.init) == weekly)
     }
 
     /// A room, reached by a URL that is no email address, is no attendee the model can name or remove.

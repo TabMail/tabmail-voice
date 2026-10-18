@@ -735,6 +735,8 @@ describe("calendar_event_edit", () => {
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 7), end: at(0, 0, 9), isAllDay: true });
     await tool.run({ event_id: "trip", end_iso: iso(at(0, 0, 5), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 3), end: at(0, 0, 5), isAllDay: true });
+    await tool.run({ event_id: "trip", start_iso: iso(at(0, 0, 10), false), end_iso: iso(at(0, 0, 13), false) }, live);
+    expect(lastChanges()).toMatchObject({ start: at(0, 0, 10), end: at(0, 0, 13), isAllDay: true });
     await tool.run({ event_id: "trip", all_day: true }, live);
     expect(lastChanges()).toMatchObject({ start: day, end: at(0, 0, 2), isAllDay: true });
     await tool.run({ event_id: "trip", start_iso: iso(at(9)) }, live);
@@ -877,6 +879,42 @@ describe("calendar_event_edit", () => {
     expect(editor.edits).toHaveLength(4);
   });
 
+  /** The day a move lands on is counted in the event's own zone, where Calendar counts its rule's
+   * days: a move within the Mac's day can cross a day there. */
+  test("a series' day is counted in its own zone", async () => {
+    // A zone 12 hours off the Mac's (within the zones there are): 11:00 and 13:00 here are on two days there.
+    const hours = -at(11).getTimezoneOffset() / 60;
+    const offset = hours + 12 <= 14 ? hours + 12 : hours - 12;
+    const zone = `Etc/GMT${offset > 0 ? "-" : "+"}${Math.abs(Math.trunc(offset))}`;
+    editor.byID.set("series-1", { ...standup(), start: at(11), end: at(11, 30), occurrence: at(11), timeZone: zone });
+    const args = { event_id: "series-1", recurrence_id: iso(at(11)), edit_scope: "all", start_iso: iso(at(13)) };
+    await expect(tool.confirmation(args)).rejects.toBeInstanceOf(ToolArgumentError);
+    await expect(tool.run(args, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    expect(editor.edits).toEqual([]);
+
+    editor.byID.set("series-1", { ...standup(), start: at(11), end: at(11, 30), occurrence: at(11), timeZone: null });
+    await tool.run(args, live);
+    expect(lastChanges()).toMatchObject({ start: at(13) });
+  });
+
+  /** Occurrences are not deleted in the edit that moves their series, which would bring them back; one
+   * occurrence moved can go with others deleted. */
+  test("deleting occurrences doesn't go with moving the series", async () => {
+    const occurrence = iso(at(10));
+    for (const edit_scope of ["all", "this_and_following"]) {
+      const args = { event_id: "series-1", recurrence_id: occurrence, edit_scope, start_iso: iso(at(11)), exdates_add: [iso(at(10, 0, 14))] };
+      await expect(tool.confirmation(args)).rejects.toEqual(
+        new ToolArgumentError("exdates_add can't go with new times for the series, which bring deleted occurrences back: move it first, then read it and delete the occurrences at their new times."),
+      );
+      await expect(tool.run(args, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    }
+    expect(editor.edits).toEqual([]);
+    await tool.run({ event_id: "series-1", recurrence_id: occurrence, start_iso: iso(at(11)), exdates_add: [iso(at(10, 0, 14))] }, live);
+    expect(editor.edits.at(-1)).toMatchObject({ scope: "thisOnly", changes: { start: at(11), exclude: [at(10, 0, 14)] } });
+    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", title: "Sync", exdates_add: [iso(at(10, 0, 14))] }, live);
+    expect(editor.edits.at(-1)).toMatchObject({ scope: "all", changes: { title: "Sync", exclude: [at(10, 0, 14)] } });
+  });
+
   /** A call that changes nothing, names no event, or names one there isn't is not asked about and
    * changes nothing. */
   test.each<Record<string, unknown>>([{ event_id: "event-1" }, { title: "Kickoff" }, { event_id: "gone", title: "Kickoff" }, { event_id: "event-1", transparency: "maybe" }, { event_id: "event-1", exdates_add: [] }])(
@@ -907,17 +945,19 @@ describe("calendar_event_delete", () => {
       "Its attendees are emailed a cancellation.",
     ]);
     expect(await tool.confirmation({ event_id: "event-2" })).toContain("You were invited to it: it is removed from your calendar.");
-    editor.byID.set("series-1/moved", { ...standup(), recurrence: null, isDetached: true });
-    expect(await tool.confirmation({ event_id: "series-1/moved" })).toContain("Only this occurrence is deleted: it was changed on its own.");
+    // As the helper sends one: its own id, and its series' rule.
+    editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", isDetached: true });
+    expect((await tool.confirmation({ event_id: "series-1/moved" })).split("\n").slice(3)).toEqual(["Only this occurrence is deleted: it was changed on its own.", "Its attendees are emailed a cancellation."]);
     expect(await tool.confirmation({ event_id: "event-3" })).toBe(`Delete this event?\nFocus\n${LocalDateTime.spoken(at(16))} to ${LocalDateTime.spoken(at(17))}`);
     expect(await tool.run({ event_id: "series-1" }, live)).toBe('Deleted "Team sync", every occurrence.');
     expect(await tool.run({ event_id: "event-2" }, live)).toBe('Deleted "Review".');
-    expect(editor.deleted).toEqual(["series-1", "event-2"]);
+    expect(await tool.run({ event_id: "series-1/moved" }, live)).toBe('Deleted "Team sync".');
+    expect(editor.deleted).toEqual(["series-1", "event-2", "series-1/moved"]);
 
     await expect(tool.confirmation({})).rejects.toThrow();
     await expect(tool.confirmation({ event_id: "gone" })).rejects.toThrow();
     await expect(tool.run({ event_id: "gone" }, live)).rejects.toEqual(new EventStoreError("noSuchEvent"));
-    expect(editor.deleted).toEqual(["series-1", "event-2"]);
+    expect(editor.deleted).toEqual(["series-1", "event-2", "series-1/moved"]);
   });
 
   test("the refusals single-event access adds say what the model can do", () => {
