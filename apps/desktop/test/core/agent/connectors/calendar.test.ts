@@ -942,6 +942,10 @@ describe("calendar_event_edit", () => {
     const args = { event_id: "series-1", recurrence_id: iso(at(11)), edit_scope: "all", start_iso: iso(at(13)) };
     await expect(tool.confirmation(args)).rejects.toBeInstanceOf(ToolArgumentError);
     await expect(confirmed(tool, args, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    // The same zone as macOS names a zone that is only an offset.
+    const fixed = `GMT${offset > 0 ? "+" : "-"}${String(Math.abs(Math.trunc(offset))).padStart(2, "0")}00`;
+    editor.byID.set("series-1", { ...standup(), start: at(11), end: at(11, 30), occurrence: at(11), timeZone: fixed });
+    await expect(tool.confirmation(args)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(editor.edits).toEqual([]);
 
     editor.byID.set("series-1", { ...standup(), start: at(11), end: at(11, 30), occurrence: at(11), timeZone: null });

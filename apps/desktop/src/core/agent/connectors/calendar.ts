@@ -676,7 +676,10 @@ export class CalendarEventEditTool implements ConnectorTool {
 
 /** `date`'s day (2099-01-15) in the time zone `zone`, or the Mac's. */
 function dayIn(date: Date, zone: string | undefined): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  // A zone that is only an offset is named "GMT-0700" by macOS, which Intl takes as "-07:00".
+  const offset = zone === undefined ? null : /^GMT([+-]\d{2})(\d{2})$/u.exec(zone);
+  const timeZone = offset ? `${offset[1]}:${offset[2]}` : zone;
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 /** Whether `rule` names the days it falls on (BYDAY and the like), rather than repeating its start's. */
