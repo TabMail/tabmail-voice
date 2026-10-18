@@ -1233,6 +1233,11 @@ describe("a question's card", () => {
     expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(nextYear, false) }))).time).toContain(yearText(thisYear + 1));
     expect((await card(create.confirmation({ title: "Kickoff", start_iso: iso(inThisYear(10)) }))).time).not.toContain(yearText(thisYear));
     expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(inThisYear(0), false) }))).time).toBe("All day");
+    // Past midnight, the time names both days, still without this year.
+    const overnight = (await card(create.confirmation({ title: "Night shift", start_iso: iso(inThisYear(23)), end_iso: iso(inThisYear(1, 1)) }))).time;
+    expect(overnight).toContain("Jun 10");
+    expect(overnight).toContain("Jun 11");
+    expect(overnight).not.toContain(yearText(thisYear));
 
     const editor = new FakeEditor();
     editor.byID.set("old-series", { ...standup(), id: "old-series", start: lastYear, end: new Date(lastYear.getTime() + 30 * 60 * 1000) });
