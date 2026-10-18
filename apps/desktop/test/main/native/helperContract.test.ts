@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { configureLog } from "../../../src/core/log.js";
 import { hotkeyActions } from "../../../src/core/hotkey/bindings.js";
-import { EventStoreError } from "../../../src/core/agent/connectors/calendar.js";
+import { EventStoreError, type EventRecurrence } from "../../../src/core/agent/connectors/calendar.js";
 import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.js";
 import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
@@ -56,7 +56,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
+      return { text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, calendars: [], occurrence: null, recurrence: null };
     },
     on() {},
   } as unknown as HelperClient;
@@ -94,6 +94,12 @@ describe("helper wire contract", () => {
     const now = new Date();
     await mac.eventStore.events(now, now);
     await mac.eventStore.addEvent({ title: "Example", start: now, end: now, isAllDay: false, calendar: "", location: null, notes: null });
+    const editor = mac.eventStore.editor;
+    await editor?.event("event-1", now);
+    await editor?.calendars();
+    const recurrence: EventRecurrence = { frequency: "WEEKLY", interval: 1, count: null, until: now, days: [], monthDays: [], months: [], positions: [], yearWeeks: [], yearDays: [] };
+    await editor?.edit("event-1", now, "all", { title: "Example", start: now, end: now, isAllDay: false, location: "", notes: "", availability: "free", recurrence, invite: [], uninvite: [], exclude: [] });
+    await editor?.delete("event-1");
     await mac.eventStore.openReminders(null);
     await mac.eventStore.addReminder({ title: "Example", list: "", due: null, dueHasTime: false, notes: null });
     await mac.contactStore.search("Example", 1);
@@ -183,24 +189,62 @@ describe("helper wire contract", () => {
     const calls: { method: string; params: unknown; timeout: unknown }[] = [];
     const start = new Date(Date.now() + 7 * 24 * 3600 * 1000);
     const end = new Date(start.getTime() + 3600 * 1000);
-    const saved = { title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, calendar: "Work", location: "Room 4", notes: null };
+    const until = new Date(start.getTime() + 30 * 24 * 3600 * 1000);
+    const helperRecurrence = { frequency: "WEEKLY" as const, interval: 2, count: null, until: until.getTime(), days: [{ weekday: 2, week: 0 }], monthDays: [], months: [], positions: [], yearWeeks: [], yearDays: [] };
+    const recurrence: EventRecurrence = { ...helperRecurrence, until };
+    const attendees = [{ email: "alex@example.com", name: "Alex Example", status: "accepted" }];
+    const saved = {
+      title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, calendar: "Work", location: "Room 4", notes: null,
+      id: "event-1", occurrence: start.getTime(), calendarId: "calendar-1", availability: "busy", attendees, organizer: null,
+      recurrence: helperRecurrence, isDetached: false, isInvitation: false, timeZone: "America/Los_Angeles",
+    };
+    const read = { ...saved, start, end, occurrence: start, recurrence };
+    // A single event (no occurrence, no rule, floating) and a series that never ends, as the helper sends them.
+    const single = { ...saved, id: "event-2", occurrence: null, recurrence: null, timeZone: null };
+    const forever = { ...saved, id: "event-3", recurrence: { ...helperRecurrence, count: null, until: null } };
+    // An invitation's occurrence changed on its own, shown as free, repeating a counted number of times.
+    const theirs = { ...saved, id: "event-4", isDetached: true, isInvitation: true, organizer: { email: "pat@example.com", name: "Pat" }, availability: "free", recurrence: { ...helperRecurrence, count: 4, until: null } };
+    const calendars = [{ id: "calendar-1", title: "Work", account: "iCloud", isDefault: true }];
     const reminder = { title: "Send the deck", list: "Work", due: start.getTime(), dueHasTime: true, notes: "the short one" };
     let failure: Error | null = null;
     const helper = {
       request: async (method: string, params?: unknown, timeout?: unknown) => {
         calls.push({ method, params, timeout });
         if (failure) throw failure;
-        if (method === "calendarEvents") return { events: [saved] };
-        if (method === "calendarAdd") return saved;
+        if (method === "calendarEvents") return { events: [saved, single, forever, theirs] };
+        if (method === "calendarAdd" || method === "calendarEvent" || method === "calendarEdit") return saved;
+        if (method === "calendars") return { calendars };
+        if (method === "calendarDelete") return {};
         if (method === "reminders") return { reminders: [reminder, { ...reminder, due: null, dueHasTime: false }] };
         return reminder;
       },
     } as unknown as HelperClient;
     const store = new MacSystem(helper).eventStore;
+    const editor = store.editor;
+    if (!editor) throw new Error("the Mac's event store has an editor");
     const event = { title: "Launch review", start, end, isAllDay: false, calendar: "", location: "Room 4", notes: null };
+    const changes = { start, end, invite: [{ email: "sam@example.com", name: null }], uninvite: ["alex@example.com"], exclude: [until] };
 
-    expect(await store.events(start, end)).toEqual([{ ...saved, start, end }]);
-    expect(await store.addEvent(event)).toEqual({ ...saved, start, end });
+    expect(await store.events(start, end)).toEqual([
+      read,
+      { ...read, id: "event-2", occurrence: null, recurrence: null, timeZone: null },
+      { ...read, id: "event-3", recurrence: { ...recurrence, count: null, until: null } },
+      { ...read, id: "event-4", isDetached: true, isInvitation: true, organizer: { email: "pat@example.com", name: "Pat" }, availability: "free", recurrence: { ...recurrence, count: 4, until: null } },
+    ]);
+    expect(await store.addEvent(event)).toEqual(read);
+    expect(await store.addEvent({ ...event, calendarId: "calendar-1", availability: "free", recurrence, attendees: [{ email: "sam@example.com", name: null, status: "pending" }] })).toEqual(read);
+    expect(await editor.event("event-1", start)).toEqual(read);
+    expect(await editor.event("event-1", null)).toEqual(read);
+    expect(await editor.calendars()).toEqual(calendars);
+    expect(await editor.edit("event-1", start, "thisAndFollowing", changes)).toEqual(read);
+    expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], title: "Kickoff", recurrence: null })).toEqual(read);
+    expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], recurrence })).toEqual(read);
+    // A rule with a count and no last day goes with its end null, never a number read as a last day.
+    expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], recurrence: { ...recurrence, count: 4, until: null } })).toEqual(read);
+    expect(await editor.edit("event-1", null, "all", { invite: [{ email: "sam@example.com", name: "Sam Lee" }], uninvite: [], exclude: [], isAllDay: true, availability: "free" })).toEqual(read);
+    // A new place and notes cleared ("" removes them) go as confirmed.
+    expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], location: "Room 5", notes: "" })).toEqual(read);
+    await editor.delete("event-1");
     expect(await store.openReminders(end)).toEqual([
       { ...reminder, due: start },
       { ...reminder, due: null, dueHasTime: false },
@@ -210,16 +254,35 @@ describe("helper wire contract", () => {
     await store.addReminder({ title: "Call back", list: "", due: null, dueHasTime: false, notes: null });
 
     const timeout = config.eventStoreRequestTimeout;
+    const added = { title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, location: "Room 4", notes: null };
+    const unchanged = { title: undefined, start: undefined, end: undefined, isAllDay: undefined, location: undefined, notes: undefined, availability: undefined, invite: [], uninvite: [], exclude: [] };
     expect(calls).toEqual([
       { method: "calendarEvents", params: { start: start.getTime(), end: end.getTime() }, timeout },
-      { method: "calendarAdd", params: { title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, location: "Room 4", notes: null }, timeout },
+      { method: "calendarAdd", params: { ...added, calendarId: null, availability: "busy", recurrence: null, attendees: [] }, timeout },
+      { method: "calendarAdd", params: { ...added, calendarId: "calendar-1", availability: "free", recurrence: helperRecurrence, attendees: [{ email: "sam@example.com", name: null }] }, timeout },
+      { method: "calendarEvent", params: { id: "event-1", occurrence: start.getTime() }, timeout },
+      { method: "calendarEvent", params: { id: "event-1", occurrence: null }, timeout },
+      { method: "calendars", params: {}, timeout },
+      {
+        method: "calendarEdit",
+        params: { ...unchanged, id: "event-1", occurrence: start.getTime(), scope: "thisAndFollowing", start: start.getTime(), end: end.getTime(), invite: [{ email: "sam@example.com", name: null }], uninvite: ["alex@example.com"], exclude: [until.getTime()] },
+        timeout,
+      },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", title: "Kickoff", recurrence: null }, timeout },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", recurrence: helperRecurrence }, timeout },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", recurrence: { ...helperRecurrence, count: 4, until: null } }, timeout },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", isAllDay: true, availability: "free", invite: [{ email: "sam@example.com", name: "Sam Lee" }] }, timeout },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", location: "Room 5", notes: "" }, timeout },
+      { method: "calendarDelete", params: { id: "event-1" }, timeout },
       { method: "reminders", params: { dueBefore: end.getTime() }, timeout },
       { method: "reminders", params: { dueBefore: null }, timeout },
       { method: "reminderAdd", params: { title: "Send the deck", due: start.getTime(), dueHasTime: true, notes: "the short one" }, timeout },
       { method: "reminderAdd", params: { title: "Call back", due: null, dueHasTime: false, notes: null }, timeout },
     ]);
+    // Absent, the repeating is left as it is.
+    expect(calls.filter((call) => call.method === "calendarEdit").map((call) => Object.hasOwn(call.params as object, "recurrence"))).toEqual([false, true, true, true, false, false]);
 
-    for (const kind of ["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"] as const) {
+    for (const kind of ["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList", "noSuchEvent", "notOrganizer"] as const) {
       failure = new HelperError("failed", "calendarEvents", kind);
       await expect(store.events(start, end)).rejects.toEqual(new EventStoreError(kind));
     }
@@ -235,7 +298,18 @@ describe("helper wire contract", () => {
     const block = /enum Failure: String, Error \{([^}]*)\}/.exec(source)?.[1] ?? "";
     const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
 
-    expect(cases).toEqual(["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"]);
+    expect(cases).toEqual([
+      "calendarNoAccess",
+      "remindersNoAccess",
+      "noDefaultCalendar",
+      "noDefaultList",
+      "noSuchEvent",
+      "noSuchCalendar",
+      "calendarReadOnly",
+      "calendarNoInvitations",
+      "invitationsUnavailable",
+      "notOrganizer",
+    ]);
     expect(cases.every((name) => EventStoreError.isKind(name))).toBe(true);
     expect(EventStoreError.isKind("toString")).toBe(false);
   });

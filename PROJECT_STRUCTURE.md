@@ -45,7 +45,7 @@ apps/desktop/
 │   │       ├── Dictation/               Paste (`TextInserter`; the clipboard saved ahead and put back after by `ClipboardKeeper`, never read by the paste), the caret, the focused field read after a paste and its reader (`FieldReaderService`), the keyboard's language, the screen read and its reader
 │   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor` and `SharedContext`, thin adapters to the shared Rust core); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
-│   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
+│   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`; inviting through Calendar's own methods, `Invitations`, ADR-DESK-060), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
 │   └── Tests/                   One test target per library; `VoiceMacOSKitTests` in the same folders
 ├── native/windows/          CMake/MSVC helpers: Win32 hotkey (`voice-hotkey.exe`), UI Automation and paste (`voice-windows.exe`), WASAPI audio (`voice-microphone.exe`), the screen read (`voice-screen-reader.exe`); native tests and build instructions in README.md
 ├── src/

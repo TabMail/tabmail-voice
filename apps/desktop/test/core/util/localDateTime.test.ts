@@ -30,3 +30,15 @@ test("a day later keeps the time across a daylight-saving change", () => {
   expect([later.getDate(), later.getHours()]).toEqual([new Date(change.getFullYear(), change.getMonth(), change.getDate() + 1).getDate(), 12]);
   expect(LocalDateTime.addingDays(LocalDateTime.startOfDay(noon), 1)).toEqual(new Date(change.getFullYear(), change.getMonth(), change.getDate() + 1));
 });
+
+/** An occurrence's id is its start to the second, as the tools take it back: a time with seconds
+ * keeps them, so it names the same occurrence. */
+test("iso keeps the seconds, and reads back as the same time", () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  date.setHours(9, 5, 7, 0);
+  const iso = LocalDateTime.iso(date);
+
+  expect(iso).toMatch(/T09:05:07$/u);
+  expect(LocalDateTime.parse(iso)?.date.getTime()).toBe(date.getTime());
+});

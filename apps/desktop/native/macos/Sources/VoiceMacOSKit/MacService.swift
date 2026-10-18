@@ -31,8 +31,15 @@ import VoiceHelperSupport
 ///   `launch {path}`, `activate {bundleIdentifier}` → `{}`; `focusedElement {bundleIdentifier}` →
 ///   `{role, windowTitle}` or null; `openTabMailChat`, `pressReturn` → `{}`.
 /// - `calendarEvents {start, end}` → `{events}`: the events overlapping the range, oldest first;
-///   `calendarAdd {title, start, end, isAllDay, location, notes}` → the event as saved in the default
-///   calendar; `reminders {dueBefore}` → `{reminders}`: the open ones, due before `dueBefore` unless
+///   `calendarEvent {id, occurrence}` → the event, or the occurrence of a repeating one that started
+///   at `occurrence`; `calendars` → `{calendars}`: those events can be added to;
+///   `calendarAdd {title, start, end, isAllDay, location, notes, calendarId, availability, recurrence,
+///   attendees}` → the event as saved, in the default calendar unless `calendarId` is given, its
+///   attendees invited; `calendarEdit {id, occurrence, scope, title, start, end, isAllDay, location,
+///   notes, availability, recurrence, invite, uninvite, exclude}` → the event as saved: an absent field
+///   is left, a null `recurrence` ends the repeating, and `scope` (`all`, `thisOnly`,
+///   `thisAndFollowing`) says which occurrences change; `calendarDelete {id}` → `{}`, every occurrence
+///   of a repeating event. `reminders {dueBefore}` → `{reminders}`: the open ones, due before `dueBefore` unless
 ///   null; `reminderAdd {title, due, dueHasTime, notes}` → the reminder as saved in the default list.
 ///   Times are milliseconds since 1970 (`EventWire`); the first request asks macOS for access, and one
 ///   that can't be carried out fails with an `EventKitStore.Failure` name.
@@ -155,16 +162,54 @@ public enum MacService {
             guard let start = params["start"]?.number, let end = params["end"]?.number else { throw HelperError("calendarEvents needs start and end") }
             return ["events": .array(try await eventStore.events(from: EventWire.date(start), to: EventWire.date(end)).map(\.json))]
         }
+        channel.on("calendarEvent") { params in
+            guard let id = params["id"]?.string else { throw HelperError("calendarEvent needs id") }
+            return try await eventStore.event(id: id, occurrence: params["occurrence"]?.number.map(EventWire.date)).json
+        }
+        channel.on("calendars") { _ in ["calendars": .array(try await eventStore.calendars().map(\.json))] }
         channel.on("calendarAdd") { params in
             guard let title = params["title"]?.string, let start = params["start"]?.number, let end = params["end"]?.number,
-                  let isAllDay = params["isAllDay"]?.bool else {
-                throw HelperError("calendarAdd needs title, start, end and isAllDay")
+                  let isAllDay = params["isAllDay"]?.bool, let availability = params["availability"]?.string,
+                  let attendees = params["attendees"]?.array?.map(eventAttendee), !attendees.contains(nil)
+            else {
+                throw HelperError("calendarAdd needs title, start, end, isAllDay, availability and attendees")
             }
+            let recurrence = try params["recurrence"].flatMap { $0 == .null ? nil : try eventRecurrence($0) }
             let event = CalendarEvent(
                 title: title, start: EventWire.date(start), end: EventWire.date(end), isAllDay: isAllDay,
-                calendar: "", location: params["location"]?.string, notes: params["notes"]?.string
+                calendar: "", location: params["location"]?.string, notes: params["notes"]?.string,
+                calendarId: params["calendarId"]?.string, availability: availability, attendees: attendees.compactMap { $0 }, recurrence: recurrence
             )
             return try await eventStore.add(event).json
+        }
+        channel.on("calendarEdit") { params in
+            guard let id = params["id"]?.string, let scope = params["scope"]?.string.flatMap(EventScope.init(rawValue:)) else {
+                throw HelperError("calendarEdit needs id and a known scope")
+            }
+            var changes = EventChanges()
+            changes.title = params["title"]?.string
+            changes.start = params["start"]?.number.map(EventWire.date)
+            changes.end = params["end"]?.number.map(EventWire.date)
+            changes.isAllDay = params["isAllDay"]?.bool
+            changes.location = params["location"]?.string
+            changes.notes = params["notes"]?.string
+            changes.availability = params["availability"]?.string
+            if let recurrence = params["recurrence"] { changes.recurrence = recurrence == .null ? .clear : .set(try eventRecurrence(recurrence)) }
+            let invite = (params["invite"]?.array ?? []).map(eventAttendee)
+            guard !invite.contains(nil) else { throw HelperError("calendarEdit needs an email for every invitee") }
+            changes.invite = invite.compactMap { $0 }
+            let uninvite = (params["uninvite"]?.array ?? []).map { $0.string?.lowercased() }
+            let exclude = (params["exclude"]?.array ?? []).map { $0.number.map(EventWire.date) }
+            // An entry that doesn't read is refused, never dropped: the change would be other than the one confirmed.
+            guard !uninvite.contains(nil), !exclude.contains(nil) else { throw HelperError("calendarEdit needs an email for every person removed and a time for every occurrence deleted") }
+            changes.uninvite = uninvite.compactMap { $0 }
+            changes.exclude = exclude.compactMap { $0 }
+            return try await eventStore.edit(id: id, occurrence: params["occurrence"]?.number.map(EventWire.date), scope: scope, changes: changes).json
+        }
+        channel.on("calendarDelete") { params in
+            guard let id = params["id"]?.string else { throw HelperError("calendarDelete needs id") }
+            try await eventStore.delete(id: id)
+            return [:]
         }
         channel.on("reminders") { params in
             let dueBefore = params["dueBefore"]?.number.map(EventWire.date)
@@ -219,6 +264,16 @@ public enum MacService {
     private static func bundleIdentifier(_ params: JSON) throws -> String {
         guard let id = params["bundleIdentifier"]?.string else { throw HelperError("bundleIdentifier missing") }
         return id
+    }
+
+    /// `{email, name}`; nil without an email.
+    private static func eventAttendee(_ json: JSON) -> EventAttendee? {
+        json["email"]?.string.map { EventAttendee(email: $0, name: json["name"]?.string) }
+    }
+
+    private static func eventRecurrence(_ json: JSON) throws -> EventRecurrence {
+        guard let recurrence = EventRecurrence(json: json) else { throw HelperError("recurrence is malformed") }
+        return recurrence
     }
 }
 

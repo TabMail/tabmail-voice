@@ -2,7 +2,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CalendarEvent, type EventStore, EventStoreError, type ReminderItem } from "../../../core/agent/connectors/calendar.js";
+import {
+  type CalendarEvent,
+  type EventAttendee,
+  type EventCalendar,
+  type EventEditor,
+  type EventRecurrence,
+  type EventStore,
+  EventStoreError,
+  type ReminderItem,
+} from "../../../core/agent/connectors/calendar.js";
 import { type ContactCard, type ContactStore, ContactStoreError } from "../../../core/agent/connectors/contacts.js";
 import { type FileStore, FileStoreError, type FoundItem } from "../../../core/agent/connectors/files.js";
 import type { FocusedElement, ThunderbirdSystem } from "../../../core/agent/connectors/thunderbird/relay.js";
@@ -113,9 +122,40 @@ export class MacSystem {
     },
   };
 
+  /** Single events read, changed and deleted through EventKit in the helper, which invites people
+   * through Calendar's own methods (ADR-DESK-060). */
+  private readonly eventEditor: EventEditor = {
+    event: async (id, occurrence) => calendarEvent(await this.eventRequest<EventJSON>("calendarEvent", { id, occurrence: occurrence?.getTime() ?? null })),
+    calendars: async () => (await this.eventRequest<{ calendars: EventCalendar[] }>("calendars", {})).calendars,
+    edit: async (id, occurrence, scope, changes) => {
+      const params: Record<string, unknown> = {
+        id,
+        occurrence: occurrence?.getTime() ?? null,
+        scope,
+        title: changes.title,
+        start: changes.start?.getTime(),
+        end: changes.end?.getTime(),
+        isAllDay: changes.isAllDay,
+        location: changes.location,
+        notes: changes.notes,
+        availability: changes.availability,
+        invite: changes.invite.map(({ email, name }) => ({ email, name })),
+        uninvite: changes.uninvite,
+        exclude: changes.exclude.map((date) => date.getTime()),
+      };
+      // Absent leaves the repeating as it is; null ends it.
+      if (changes.recurrence !== undefined) params.recurrence = changes.recurrence === null ? null : recurrenceJSON(changes.recurrence);
+      return calendarEvent(await this.eventRequest<EventJSON>("calendarEdit", params));
+    },
+    delete: async (id) => {
+      await this.eventRequest("calendarDelete", { id });
+    },
+  };
+
   /** Calendar and Reminders through EventKit in the helper (ADR-DESK-024); dates cross the wire as
    * milliseconds since 1970. Each request may wait on macOS asking the user for access. */
   readonly eventStore: EventStore = {
+    editor: this.eventEditor,
     events: async (start, end) => {
       const { events } = await this.eventRequest<{ events: EventJSON[] }>("calendarEvents", { start: start.getTime(), end: end.getTime() });
       return events.map(calendarEvent);
@@ -129,6 +169,10 @@ export class MacSystem {
           isAllDay: event.isAllDay,
           location: event.location,
           notes: event.notes,
+          calendarId: event.calendarId ?? null,
+          availability: event.availability ?? "busy",
+          recurrence: event.recurrence ? recurrenceJSON(event.recurrence) : null,
+          attendees: (event.attendees ?? []).map(({ email, name }) => ({ email, name })),
         }),
       ),
     openReminders: async (dueBefore) => {
@@ -209,10 +253,32 @@ interface EventJSON {
   calendar: string;
   location: string | null;
   notes: string | null;
+  id: string | null;
+  occurrence: number | null;
+  calendarId: string | null;
+  availability: "busy" | "free";
+  attendees: EventAttendee[];
+  organizer: EventAttendee | null;
+  recurrence: RecurrenceJSON | null;
+  isDetached: boolean;
+  isInvitation: boolean;
+  timeZone: string | null;
 }
 
+type RecurrenceJSON = Omit<EventRecurrence, "until"> & { until: number | null };
+
 function calendarEvent(json: EventJSON): CalendarEvent {
-  return { ...json, start: new Date(json.start), end: new Date(json.end) };
+  return {
+    ...json,
+    start: new Date(json.start),
+    end: new Date(json.end),
+    occurrence: json.occurrence === null ? null : new Date(json.occurrence),
+    recurrence: json.recurrence === null ? null : { ...json.recurrence, until: json.recurrence.until === null ? null : new Date(json.recurrence.until) },
+  };
+}
+
+function recurrenceJSON(recurrence: EventRecurrence): RecurrenceJSON {
+  return { ...recurrence, until: recurrence.until?.getTime() ?? null };
 }
 
 /** A reminder as the helper sends it: its due time in milliseconds since 1970. */
