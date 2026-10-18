@@ -1337,6 +1337,52 @@ extension EventKitTests {
             #expect(calendar.isDate(first.endDate, inSameDayAs: day(4)))
         }
 
+        /// An all-day series keeps its days when the days confirmed are shorter than the ones it moves
+        /// to: the clock goes forward an hour in the days confirmed, not in the first occurrence's.
+        @Test
+        func anAllDaySeriesKeepsItsDaysAcrossAClockChange() async throws {
+            let saved = getenv("TZ").map { String(cString: $0) }
+            setenv("TZ", "America/Los_Angeles", 1)
+            tzset()
+            NSTimeZone.resetSystemTimeZone()
+            defer {
+                if let saved { setenv("TZ", saved, 1) } else { unsetenv("TZ") }
+                tzset()
+                NSTimeZone.resetSystemTimeZone()
+            }
+            let calendar = Calendar.current
+            let zone = calendar.timeZone
+            #expect(zone.identifier == "America/Los_Angeles")
+            // The next time the clock goes forward, found from today.
+            var forward = try #require(zone.nextDaylightSavingTimeTransition(after: Date()))
+            while zone.secondsFromGMT(for: forward) <= zone.secondsFromGMT(for: forward - 1) {
+                forward = try #require(zone.nextDaylightSavingTimeTransition(after: forward))
+            }
+            // The occurrence named starts the day before, so the three days confirmed are an hour short.
+            let named = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: forward))!
+            let day = { (days: Int) in calendar.date(byAdding: .day, value: days - 8, to: named)! }
+            #expect(day(11).timeIntervalSince(day(8)) == 3 * 86_400 - 3600)
+            #expect(day(4).timeIntervalSince(day(1)) == 3 * 86_400)
+            let fake = FakeEventStore()
+            let first = fake.occurrence("Offsite", id: "series-1", start: day(0))
+            let target = fake.occurrence("Offsite", id: "series-1", start: day(7))
+            for (event, from) in [(first, 0), (target, 7)] {
+                event.isAllDay = true
+                event.startDate = day(from)
+                event.endDate = day(from + 2)
+            }
+            fake.byID = ["series-1": first]
+            fake.events = [first, target]
+            var changes = EventChanges()
+            changes.start = day(8)
+            changes.end = day(11)
+
+            _ = try await store(fake).edit(id: "series-1", occurrence: day(7), scope: .all, changes: changes)
+
+            #expect(first.isAllDay && calendar.isDate(first.startDate, inSameDayAs: day(1)))
+            #expect(calendar.isDate(first.endDate, inSameDayAs: day(4)))
+        }
+
         /// The series moves by the days the named occurrence moves on the calendar, whatever the hours:
         /// later the same day stays that day, a few minutes past midnight is the next.
         @Test(arguments: [(from: 10, to: 23, toMinute: 0, nextDay: false), (from: 23, to: 0, toMinute: 30, nextDay: true)])
