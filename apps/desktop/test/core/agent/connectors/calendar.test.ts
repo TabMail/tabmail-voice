@@ -607,10 +607,11 @@ describe("calendar_event_create with single-event access", () => {
     expect(store.added).toEqual([]);
   });
 
-  /** Busy, the default, is no capability the store lacks: without single-event access it is added. */
-  test("without single-event access, busy is added", async () => {
+  /** Busy, the default, and no one invited ask for nothing the store lacks: without single-event
+   * access they are added. */
+  test.each<Record<string, unknown>>([{ transparency: "busy" }, { attendees: [] }])("without single-event access, %j is added", async (extra) => {
     const tool = new CalendarEventCreateTool(store);
-    const args = { title: "Planning", start_iso: iso(at(10)), transparency: "busy" };
+    const args = { title: "Planning", start_iso: iso(at(10)), ...extra };
     await expect(tool.confirmation(args)).resolves.toContain("Planning");
     await tool.run(args);
     expect(store.added).toHaveLength(1);
@@ -793,6 +794,14 @@ describe("calendar_event_edit", () => {
 
   /** Title, place, notes and free or busy change as given; "" removes a place or notes; every one is
    * shown to the user. */
+  test("empty lists change nothing more", async () => {
+    // The model may send every list, empty: a single event's title changes, nothing else asked of it.
+    const args = { event_id: "event-1", title: "Kickoff", exdates_add: [], add_attendees: [], remove_attendees: [] };
+    expect((await tool.confirmation(args))?.split("\n").slice(3)).toEqual(["New title: Kickoff"]);
+    await tool.run(args, live);
+    expect(lastChanges()).toEqual({ title: "Kickoff", invite: [], uninvite: [], exclude: [] });
+  });
+
   test("the event's fields change as given", async () => {
     const args = { event_id: "event-1", title: "Kickoff", location: "", notes: "Bring https://example.com/deck", transparency: "free" };
     expect((await tool.confirmation(args))?.split("\n").slice(3)).toEqual(["New title: Kickoff", "Remove the location", "New notes: Bring https://example.com/deck", "Shown as free"]);

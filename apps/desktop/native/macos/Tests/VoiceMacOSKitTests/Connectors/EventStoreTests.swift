@@ -782,6 +782,29 @@ extension EventKitTests {
             try await store(fake).delete(id: "series-1/moved")
             #expect(fake.removed.last?.title == "Sync moved" && fake.removed.last?.span == .thisEvent)
             await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { try await store(fake).delete(id: "gone") }
+            // An invitation, someone else's event with the user invited, is removed from the user's calendar.
+            let invitation = fake.occurrence("Their review", id: "event-2", start: start, repeats: false, in: fake.sharedCalendar)
+            #expect(Invitations.invite("me@example.com", name: nil, to: invitation))
+            invitation.stubOrganizer = participant("pat@example.com")
+            #expect(EventKitStore.isInvitation(invitation))
+            fake.byID["event-2"] = invitation
+            try await store(fake).delete(id: "event-2")
+            #expect(fake.removed.last?.title == "Their review")
+        }
+
+        /// An event with an organizer who isn't the user but nobody invited (one in someone else's shared
+        /// calendar) is no invitation: it is read as the user's and changes.
+        @Test
+        func anEventWithAnOrganizerAndNoAttendeesIsNoInvitation() async throws {
+            let fake = FakeEventStore()
+            let event = fake.occurrence("Review", id: "event-1", start: start, repeats: false, in: fake.sharedCalendar)
+            event.stubOrganizer = participant("pat@example.com")
+            fake.byID = ["event-1": event]
+            #expect(event.organizer?.isCurrentUser == false && !event.hasAttendees && !EventKitStore.calendarEvent(event).isInvitation)
+            var changes = EventChanges()
+            changes.title = "Kickoff"
+            _ = try await store(fake).edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+            #expect(fake.saved.count == 1 && event.title == "Kickoff")
         }
 
         /// Open reminders due before the day asked, each with its list's name.
