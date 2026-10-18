@@ -5332,9 +5332,10 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
 - **Finding an occurrence.** `event(withIdentifier:)` returns a series' first occurrence, so an
   occurrence of a repeating event is found by its id and `occurrence` among the events of its calendar
   within `HelperConfig.eventOccurrenceSearchSpan` (31 days) of it, matched within
-  `eventOccurrenceTolerance` (an hour): the app gives and takes an occurrence by its
-  local time, which in the hour a daylight-saving change repeats reads as the earlier of two instants,
-  and a series' occurrences are a day or more apart. An occurrence changed on its own (detached) has an id of its
+  `eventOccurrenceTolerance` (two hours, 2026-10-18; it was an hour): the app gives and takes an
+  occurrence by its local time, which in the hours a clock turned back repeats reads as the earlier of
+  two instants, as far before the later as the clock turned back, two hours at most (Antarctica/Troll);
+  and a series' occurrences are nearly a day or more apart. An occurrence changed on its own (detached) has an id of its
   own (`<series>/RID=<seconds>`), which names it alone, so it is returned by that id however far it
   moved (Apple documents its `occurrenceDate` as its original start; the live test read its moved
   start, and the lookup depends on neither). A single event is found only at its own start: an

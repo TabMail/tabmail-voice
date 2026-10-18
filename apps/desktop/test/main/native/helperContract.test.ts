@@ -202,6 +202,8 @@ describe("helper wire contract", () => {
     // A single event (no occurrence, no rule, floating) and a series that never ends, as the helper sends them.
     const single = { ...saved, id: "event-2", occurrence: null, recurrence: null, timeZone: null };
     const forever = { ...saved, id: "event-3", recurrence: { ...helperRecurrence, count: null, until: null } };
+    // An invitation's occurrence changed on its own, shown as free, repeating a counted number of times.
+    const theirs = { ...saved, id: "event-4", isDetached: true, isInvitation: true, organizer: { email: "pat@example.com", name: "Pat" }, availability: "free", recurrence: { ...helperRecurrence, count: 4, until: null } };
     const calendars = [{ id: "calendar-1", title: "Work", account: "iCloud", isDefault: true }];
     const reminder = { title: "Send the deck", list: "Work", due: start.getTime(), dueHasTime: true, notes: "the short one" };
     let failure: Error | null = null;
@@ -209,7 +211,7 @@ describe("helper wire contract", () => {
       request: async (method: string, params?: unknown, timeout?: unknown) => {
         calls.push({ method, params, timeout });
         if (failure) throw failure;
-        if (method === "calendarEvents") return { events: [saved, single, forever] };
+        if (method === "calendarEvents") return { events: [saved, single, forever, theirs] };
         if (method === "calendarAdd" || method === "calendarEvent" || method === "calendarEdit") return saved;
         if (method === "calendars") return { calendars };
         if (method === "calendarDelete") return {};
@@ -227,6 +229,7 @@ describe("helper wire contract", () => {
       read,
       { ...read, id: "event-2", occurrence: null, recurrence: null, timeZone: null },
       { ...read, id: "event-3", recurrence: { ...recurrence, count: null, until: null } },
+      { ...read, id: "event-4", isDetached: true, isInvitation: true, organizer: { email: "pat@example.com", name: "Pat" }, availability: "free", recurrence: { ...recurrence, count: 4, until: null } },
     ]);
     expect(await store.addEvent(event)).toEqual(read);
     expect(await store.addEvent({ ...event, calendarId: "calendar-1", availability: "free", recurrence, attendees: [{ email: "sam@example.com", name: null, status: "pending" }] })).toEqual(read);
@@ -239,6 +242,8 @@ describe("helper wire contract", () => {
     // A rule with a count and no last day goes with its end null, never a number read as a last day.
     expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], recurrence: { ...recurrence, count: 4, until: null } })).toEqual(read);
     expect(await editor.edit("event-1", null, "all", { invite: [{ email: "sam@example.com", name: "Sam Lee" }], uninvite: [], exclude: [], isAllDay: true, availability: "free" })).toEqual(read);
+    // A new place and notes cleared ("" removes them) go as confirmed.
+    expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], location: "Room 5", notes: "" })).toEqual(read);
     await editor.delete("event-1");
     expect(await store.openReminders(end)).toEqual([
       { ...reminder, due: start },
@@ -267,6 +272,7 @@ describe("helper wire contract", () => {
       { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", recurrence: helperRecurrence }, timeout },
       { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", recurrence: { ...helperRecurrence, count: 4, until: null } }, timeout },
       { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", isAllDay: true, availability: "free", invite: [{ email: "sam@example.com", name: "Sam Lee" }] }, timeout },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", location: "Room 5", notes: "" }, timeout },
       { method: "calendarDelete", params: { id: "event-1" }, timeout },
       { method: "reminders", params: { dueBefore: end.getTime() }, timeout },
       { method: "reminders", params: { dueBefore: null }, timeout },
@@ -274,7 +280,7 @@ describe("helper wire contract", () => {
       { method: "reminderAdd", params: { title: "Call back", due: null, dueHasTime: false, notes: null }, timeout },
     ]);
     // Absent, the repeating is left as it is.
-    expect(calls.filter((call) => call.method === "calendarEdit").map((call) => Object.hasOwn(call.params as object, "recurrence"))).toEqual([false, true, true, true, false]);
+    expect(calls.filter((call) => call.method === "calendarEdit").map((call) => Object.hasOwn(call.params as object, "recurrence"))).toEqual([false, true, true, true, false, false]);
 
     for (const kind of ["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList", "noSuchEvent", "notOrganizer"] as const) {
       failure = new HelperError("failed", "calendarEvents", kind);

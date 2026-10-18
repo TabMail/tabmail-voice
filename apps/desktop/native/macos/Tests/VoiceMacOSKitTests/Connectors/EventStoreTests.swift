@@ -934,25 +934,50 @@ extension EventKitTests {
             #expect(fake.accessRequests == [.event, .event, .event, .event])
         }
 
-        /// An occurrence in the hour a daylight-saving change repeats is named by a local time that reads
-        /// as the earlier instant, exactly an hour before it: it is still found.
+        /// An occurrence in the hours a clock turned back repeats is named by a local time that reads as
+        /// the earlier instant: at Antarctica/Troll, which turns it back two hours, the most any zone does,
+        /// the later instant is still found from its local time, read, changed and deleted by the series
+        /// and read as a single event, and a second further is another time.
         @Test
-        func anOccurrenceInTheRepeatedHourIsFound() async throws {
+        func anOccurrenceInTheRepeatedHoursIsFound() async throws {
+            let zone = try #require(TimeZone(identifier: "Antarctica/Troll"))
+            var transition = try #require(zone.nextDaylightSavingTimeTransition(after: Date()))
+            while zone.secondsFromGMT(for: transition) >= zone.secondsFromGMT(for: transition - 1) {
+                transition = try #require(zone.nextDaylightSavingTimeTransition(after: transition))
+            }
+            let fold = TimeInterval(zone.secondsFromGMT(for: transition - 1) - zone.secondsFromGMT(for: transition))
+            #expect(fold == 2 * 3600)
+            // The occurrence a quarter hour into the repeated hours, and the earlier instant of its local time.
+            let occurrence = transition + 15 * 60
+            let named = occurrence - fold
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            let local: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute]
+            #expect(calendar.dateComponents(local, from: named) == calendar.dateComponents(local, from: occurrence))
+
             let fake = FakeEventStore()
-            let later = fake.occurrence("Sync", id: "series-1", start: start + 86_400)
-            let first = fake.occurrence("Sync", id: "series-1", start: start)
+            let first = fake.occurrence("Sync", id: "series-1", start: occurrence - 7 * 86_400)
+            let later = fake.occurrence("Sync later", id: "series-1", start: occurrence)
             fake.byID = ["series-1": first]
             fake.events = [first, later]
             let events = store(fake)
+            #expect(try await events.event(id: "series-1", occurrence: named).title == "Sync later")
+            await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "series-1", occurrence: named - 1) }
+            await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "series-1", occurrence: occurrence - 86_400) }
+            // Changed alone, and deleted from the series, by the same name.
+            var renaming = EventChanges()
+            renaming.title = "Sync moved"
+            _ = try await events.edit(id: "series-1", occurrence: named, scope: .thisOnly, changes: renaming)
+            #expect(fake.saved.last === later && later.title == "Sync moved" && first.title == "Sync")
+            var excluding = EventChanges()
+            excluding.exclude = [named]
+            _ = try await events.edit(id: "series-1", occurrence: nil, scope: .all, changes: excluding)
+            #expect(fake.removed.map(\.title) == ["Sync moved"])
 
-            #expect(try await events.event(id: "series-1", occurrence: start + 86_400 - 3600).start == start + 86_400)
-            #expect(try await events.event(id: "series-1", occurrence: start + 3600).start == start)
-            await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "series-1", occurrence: start + 3600 + 1) }
-
-            let single = fake.occurrence("Review", id: "event-1", start: start + 86_400, repeats: false)
+            let single = fake.occurrence("Review", id: "event-1", start: occurrence, repeats: false)
             fake.byID["event-1"] = single
-            #expect(try await events.event(id: "event-1", occurrence: start + 86_400 - 3600).title == "Review")
-            await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "event-1", occurrence: start + 86_400 - 3600 - 1) }
+            #expect(try await events.event(id: "event-1", occurrence: named).title == "Review")
+            await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "event-1", occurrence: named - 1) }
         }
 
         /// Each of `voice-macos`'s Calendar and Reminders requests carries its fields to the store, and

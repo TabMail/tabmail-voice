@@ -99,7 +99,8 @@ enum HelperConfig {
     /// one changed on its own may have moved away from it.
     static let eventOccurrenceSearchSpan: TimeInterval = 31 * 24 * 60 * 60
     /// Two times no further apart than this name the same occurrence: the app names one by its local
-    /// time, which in the hour a daylight-saving change repeats reads as the earlier of two instants,
-    /// exactly an hour before the later. An hour is the most a clock moves, and a series' occurrences are a day or more apart.
-    static let eventOccurrenceTolerance: TimeInterval = 60 * 60
+    /// time, which in the hours a clock turned back repeats reads as the earlier of two instants, as far
+    /// before the later as the clock turned back. Two hours is the most any zone turns it back
+    /// (Antarctica/Troll), and a series' occurrences are nearly a day or more apart.
+    static let eventOccurrenceTolerance: TimeInterval = 2 * 60 * 60
 }
