@@ -5345,7 +5345,10 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   times moved by as much as the target occurrence's. A recurrence change always saves `.futureEvents`.
   Moving the series moves every occurrence by as many calendar days as the target moves, to its new
   time of day, never by a number of seconds: across a daylight-saving change that would land an hour
-  off, or an all-day series on the day before. A series whose rule names its days (`BYDAY`,
+  off, or an all-day series on the day before. The occurrence named itself takes the start and end
+  confirmed as they are (rebuilt from a time of day, one in the hour a fall-back change repeats would
+  be the earlier of its two), and a timed series moved from a later occurrence keeps the length
+  confirmed, an all-day one its days (2026-10-18). A series whose rule names its days (`BYDAY`,
   `BYMONTHDAY`, `BYMONTH`, `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`) moved to another day is refused unless
   the edit gives the rule it moves to, which the user then confirms: the start would no longer be one
   of the rule's days, which RFC 5545 leaves undefined. The day is counted in the event's own zone

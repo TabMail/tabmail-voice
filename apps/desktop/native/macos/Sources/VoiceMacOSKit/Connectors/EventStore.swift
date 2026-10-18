@@ -339,8 +339,8 @@ final class EventKitStore {
 
     /// Changes the event `id` names (the occurrence at `occurrence` of a repeating one) as `changes`
     /// says, over the occurrences `scope` covers, and returns it as saved. Its `start` and `end` are
-    /// the named occurrence's: for the whole series, every occurrence moves by as many days, to the
-    /// same time of day. The occurrences `changes.exclude` names are deleted first, at the times the
+    /// the named occurrence's, saved as they are: for the whole series, every occurrence moves by as
+    /// many days, to the same time of day, and keeps the length confirmed. The occurrences `changes.exclude` names are deleted first, at the times the
     /// user read them, once everything the edit needs has been checked.
     func edit(id: String, occurrence: Date?, scope: EventScope, changes: EventChanges) async throws -> CalendarEvent {
         try await requireAccess(to: .event)
@@ -370,11 +370,20 @@ final class EventKitStore {
         if changes.start != nil || changes.end != nil {
             let start = changes.start ?? target.startDate!
             let end = changes.end ?? target.endDate!
-            var calendar = Calendar.current
-            calendar.timeZone = edited.timeZone ?? .current
-            let editedStart = Self.moved(edited.startDate, as: target.startDate, moves: start, in: calendar)
-            edited.startDate = editedStart
-            edited.endDate = Self.moved(editedStart, as: start, moves: end, in: calendar)
+            if edited.startDate == target.startDate {
+                // The occurrence named takes the times confirmed, as instants: rebuilt from a time of
+                // day, one in the hour a clock repeats would be the earlier of its two.
+                edited.startDate = start
+                edited.endDate = end
+            } else {
+                var calendar = Calendar.current
+                calendar.timeZone = edited.timeZone ?? .current
+                let editedStart = Self.moved(edited.startDate, as: target.startDate, moves: start, in: calendar)
+                edited.startDate = editedStart
+                // A timed event keeps the length confirmed, an hour a clock repeats included; an all-day
+                // one, its days.
+                edited.endDate = edited.isAllDay ? Self.moved(editedStart, as: start, moves: end, in: calendar) : editedStart + end.timeIntervalSince(start)
+            }
         }
         if let location = changes.location { edited.location = location.isEmpty ? nil : location }
         if let notes = changes.notes { edited.notes = notes.isEmpty ? nil : notes }

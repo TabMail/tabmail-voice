@@ -295,6 +295,11 @@ final class FakeEventStore: EKEventStore, @unchecked Sendable {
     private(set) var removed: [(title: String, span: EKSpan, commit: Bool)] = []
     private(set) var spans: [EKSpan] = []
     private(set) var commits = 0
+    /// Every removal and save of an event, in order.
+    private(set) var writes: [String] = []
+    /// How many removals succeed before the next fails (nil: none fails), and whether a save fails.
+    var removalsBeforeFailure: Int?
+    var savesFail = false
 
     override var defaultCalendarForNewEvents: EKCalendar? { hasDefaults ? calendar : nil }
     override func event(withIdentifier identifier: String) -> EKEvent? { byID[identifier] }
@@ -304,7 +309,9 @@ final class FakeEventStore: EKEventStore, @unchecked Sendable {
     override func calendars(for entityType: EKEntityType) -> [EKCalendar] { entityType == .event ? [calendar, sharedCalendar, readOnlyCalendar] : [list] }
 
     override func remove(_ event: EKEvent, span: EKSpan, commit: Bool) throws {
+        if removalsBeforeFailure == removed.count { throw CocoaError(.fileWriteUnknown) }
         removed.append((event.title, span, commit))
+        writes.append("remove \(event.title ?? "")")
     }
 
     override func commit() throws {
@@ -348,8 +355,10 @@ final class FakeEventStore: EKEventStore, @unchecked Sendable {
 
     override func save(_ event: EKEvent, span: EKSpan, commit: Bool) throws {
         #expect(commit)
+        if savesFail { throw CocoaError(.fileWriteUnknown) }
         saved.append(event)
         spans.append(span)
+        writes.append("save \(event.title ?? "")")
     }
 
     override func save(_ reminder: EKReminder, commit: Bool) throws {
@@ -670,6 +679,7 @@ extension EventKitTests {
             let saved = try await store(fake).edit(id: "series-1", occurrence: nil, scope: .all, changes: changes)
 
             #expect(fake.removed.map(\.title) == ["Sync second", "Sync third"])
+            #expect(fake.writes == ["remove Sync second", "remove Sync third", "save Sync"])
             // Each committed as it goes: none left pending for a later save to commit.
             #expect(fake.removed.allSatisfy { $0.span == .thisEvent && $0.commit } && fake.commits == 0)
             #expect(saved.recurrence == EventRecurrence(frequency: "DAILY", interval: 1, count: 4) && fake.spans == [.futureEvents])
@@ -1031,6 +1041,35 @@ extension EventKitTests {
             withExtendedLifetime(service) {}
         }
 
+        /// The requests name the occurrence and the occurrences covered: a later one is read, changed
+        /// alone to all day, and with the following ones, and the first is left as it was.
+        @Test
+        func theRequestsNameTheOccurrenceAndScope() async throws {
+            let fake = FakeEventStore()
+            let first = fake.occurrence("Sync", id: "series-1", start: start)
+            let second = fake.occurrence("Sync second", id: "series-1", start: start + 7 * 86_400)
+            fake.byID = ["series-1": first]
+            fake.events = [first, second]
+            let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+            let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+            let service = MacService.register(on: channel, eventStore: store(fake), contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }))
+            let later = Int((start + 7 * 86_400).timeIntervalSince1970 * 1000)
+            let requests = [
+                #"{"id":1,"method":"calendarEvent","params":{"id":"series-1","occurrence":\#(later)}}"#,
+                #"{"id":2,"method":"calendarEdit","params":{"id":"series-1","occurrence":\#(later),"scope":"thisOnly","isAllDay":true,"invite":[],"uninvite":[],"exclude":[]}}"#,
+                #"{"id":3,"method":"calendarEdit","params":{"id":"series-1","occurrence":\#(later),"scope":"thisAndFollowing","title":"Sync later","invite":[],"uninvite":[],"exclude":[]}}"#,
+            ]
+            for request in requests { await channel.handle(line: Data(request.utf8)) }
+
+            let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+            #expect(replies.count == requests.count)
+            guard replies.count == requests.count else { return }
+            #expect((replies[0]["result"] as? [String: Any])?["title"] as? String == "Sync second")
+            #expect(second.isAllDay && second.title == "Sync later" && !first.isAllDay && first.title == "Sync")
+            #expect(fake.saved.count == 2 && fake.saved.allSatisfy { $0 === second } && fake.spans == [.thisEvent, .futureEvents])
+            withExtendedLifetime(service) {}
+        }
+
         /// An occurrence changed on its own is found by its own id, however far it moved from where it was.
         @Test
         func aDetachedOccurrenceIsFoundByItsOwnIDAfterALongMove() async throws {
@@ -1172,6 +1211,74 @@ extension EventKitTests {
             _ = try await store(fake).edit(id: "series-1", occurrence: targetStart, scope: .all, changes: changes)
 
             #expect(first.startDate == movedFirst && first.endDate == movedFirst + 3600)
+        }
+
+        /// A failed write leaves what was already committed, and nothing after it: an occurrence deleted
+        /// stays deleted, the change asked with it isn't saved, and the failure reaches the app.
+        @Test
+        func aFailedWriteKeepsWhatWasCommittedAndNothingAfter() async throws {
+            for failing in ["second removal", "save"] {
+                let fake = FakeEventStore()
+                let first = fake.occurrence("Sync", id: "series-1", start: start)
+                let second = fake.occurrence("Sync second", id: "series-1", start: start + 7 * 86_400)
+                let third = fake.occurrence("Sync third", id: "series-1", start: start + 14 * 86_400)
+                fake.byID = ["series-1": first]
+                fake.events = [first, second, third]
+                if failing == "save" { fake.savesFail = true } else { fake.removalsBeforeFailure = 1 }
+                var changes = EventChanges()
+                changes.title = "Standup"
+                changes.exclude = [start + 7 * 86_400, start + 14 * 86_400]
+
+                await #expect(throws: CocoaError.self, "the \(failing) fails") {
+                    _ = try await store(fake).edit(id: "series-1", occurrence: nil, scope: .all, changes: changes)
+                }
+                let deleted = failing == "save" ? ["Sync second", "Sync third"] : ["Sync second"]
+                #expect(fake.writes == deleted.map { "remove \($0)" }, "the \(failing) fails")
+                #expect(fake.saved.isEmpty && (failing == "save" || first.title == "Sync"), "the \(failing) fails")
+            }
+        }
+
+        /// An event moved into the hour a daylight-saving change repeats keeps the times confirmed, its
+        /// end too; the whole series moved onto that day keeps the length confirmed.
+        @Test
+        func timesInTheRepeatedHourAreKept() async throws {
+            let zone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            // The next change that turns the clock back: at it, the hour before it is repeated.
+            var transition = try #require(zone.nextDaylightSavingTimeTransition(after: Date()))
+            while zone.secondsFromGMT(for: transition) > zone.secondsFromGMT(for: transition - 1) {
+                transition = try #require(zone.nextDaylightSavingTimeTransition(after: transition))
+            }
+            // The second 01:15 of that day, an hour after the first.
+            let repeated = transition + 15 * 60
+
+            let fake = FakeEventStore()
+            let single = fake.occurrence("Review", id: "event-1", start: repeated - 86_400, repeats: false)
+            single.timeZone = zone
+            fake.byID = ["event-1": single]
+            var changes = EventChanges()
+            changes.start = repeated
+            changes.end = repeated + 5400
+            _ = try await store(fake).edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+            #expect(single.startDate == repeated && single.endDate == repeated + 5400)
+
+            // A weekly series whose first occurrence, at 10:00, is on that day, moved from its next one.
+            let day = calendar.startOfDay(for: transition)
+            let firstStart = try #require(calendar.date(bySettingHour: 10, minute: 0, second: 0, of: day))
+            let targetStart = try #require(calendar.date(byAdding: .day, value: 7, to: firstStart))
+            let first = fake.occurrence("Sync", id: "series-1", start: firstStart)
+            let target = fake.occurrence("Sync", id: "series-1", start: targetStart)
+            for event in [first, target] { event.timeZone = zone }
+            fake.byID["series-1"] = first
+            fake.events = [first, target]
+            let newStart = try #require(calendar.date(bySettingHour: 1, minute: 15, second: 0, of: targetStart))
+            var moving = EventChanges()
+            moving.start = newStart
+            moving.end = newStart + 5400
+            _ = try await store(fake).edit(id: "series-1", occurrence: targetStart, scope: .all, changes: moving)
+            #expect(calendar.dateComponents([.hour, .minute], from: first.startDate) == DateComponents(hour: 1, minute: 15))
+            #expect(first.endDate.timeIntervalSince(first.startDate) == 5400)
         }
 
         /// The series moves by days in its own zone, not the Mac's: one zone of the two has a
