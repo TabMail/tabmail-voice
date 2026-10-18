@@ -16,6 +16,6 @@ export function buildNative(root: string): void {
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });
   for (const helper of ["voice-hotkey", "voice-linux", "voice-microphone", "voice-screen-reader", "voice-field-reader", "voice-files", "voice-productivity"]) copyFileSync(join(build, helper), join(destination, helper));
-  copyFileSync(buildMemoryHelper(root, null), join(destination, "voice-memory"));
+  copyFileSync(buildMemoryHelper(root, process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"), join(destination, "voice-memory"));
   process.stdout.write(`Copied Linux helpers to ${destination}\n`);
 }

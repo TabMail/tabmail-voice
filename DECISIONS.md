@@ -5545,9 +5545,10 @@ Thunderbird's copy or its files.
   kept locally as Thunderbird's chat memory is.
 - A user with Thunderbird and Voice has two helpers and two copies of the model (one extra download
   of about 87 MB).
-- The vector index frees its space 1,024 rows at a time (about 1.5 MB, under 2% of the smallest
-  limit), so a trim can remove up to that many more of the oldest exchanges than the text alone
-  would need (owner decision pending).
+- The vector index frees its space 1,024 exchanges at a time (measured in the helper's repository:
+  about 7.8 MB with the text, 7.8% of the smallest limit and 0.73% of the default), so a trim can
+  remove up to that many more of the oldest exchanges than the text alone would need (owner
+  decision pending).
 - The build fetches from GitHub; the pinned commit must be on `TabMail/tabmail-native-fts`'s main
   branch.
 - Tests: see `TESTS.md` (memory rows). The helper itself is tested in its repository.

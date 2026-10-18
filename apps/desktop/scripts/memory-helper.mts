@@ -42,15 +42,15 @@ function source(root: string, pin: MemoryHelperPin): string {
   return checkout;
 }
 
-/** Builds the helper for one Rust target (the build machine's when null) and returns the built
- * executable's path. */
-export function buildMemoryHelper(root: string, target: string | null): string {
+/** Builds the helper for one Rust target and returns the built executable's path. The target is
+ * always named, as the app's Rust core does: the toolchain's own host can differ from the
+ * architecture being packaged (an x64 rustup on an arm64 Windows builder). */
+export function buildMemoryHelper(root: string, target: string): string {
   const pin = memoryHelperPin(root);
   const checkout = source(root, pin);
   const channel = toolchain(root);
   const env = { ...process.env, RUSTUP_TOOLCHAIN: channel, CARGO_TARGET_DIR: join(root, "native/memory/.build/target") };
-  if (target !== null) execFileSync("rustup", ["target", "add", "--toolchain", channel, target], { stdio: "inherit", env });
-  execFileSync("cargo", ["build", "--release", "--locked", "--bin", "fts_helper", ...(target === null ? [] : ["--target", target])], { cwd: checkout, stdio: "inherit", env });
-  const executable = process.platform === "win32" ? "fts_helper.exe" : "fts_helper";
-  return join(env.CARGO_TARGET_DIR, ...(target === null ? [] : [target]), "release", executable);
+  execFileSync("rustup", ["target", "add", "--toolchain", channel, target], { stdio: "inherit", env });
+  execFileSync("cargo", ["build", "--release", "--locked", "--bin", "fts_helper", "--target", target], { cwd: checkout, stdio: "inherit", env });
+  return join(env.CARGO_TARGET_DIR, target, "release", target.includes("-windows-") ? "fts_helper.exe" : "fts_helper");
 }

@@ -21,7 +21,7 @@ export function buildNative(root: string): void {
   for (const helper of ["voice-hotkey.exe", "voice-windows.exe", "voice-microphone.exe", "voice-screen-reader.exe", "voice-field-reader.exe", "voice-productivity.exe"]) {
     copyFileSync(join(build, "Release", helper), join(destination, helper));
   }
-  copyFileSync(buildMemoryHelper(root, null), join(destination, "voice-memory.exe"));
+  copyFileSync(buildMemoryHelper(root, process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"), join(destination, "voice-memory.exe"));
   process.stdout.write(`Copied Windows helpers to ${destination}\n`);
   const runtime = join(root, "dist/runtime");
   mkdirSync(runtime, { recursive: true });

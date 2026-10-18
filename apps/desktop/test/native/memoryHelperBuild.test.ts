@@ -17,7 +17,6 @@ vi.mock("node:child_process", async (importOriginal) => {
 const app = join(__dirname, "../..");
 const revision = "0123456789abcdef0123456789abcdef01234567";
 const repository = "https://example.com/native-fts.git";
-const executable = process.platform === "win32" ? "fts_helper.exe" : "fts_helper";
 
 /** The memory helper (ADR-DESK-060) is Thunderbird's search helper built from its own repository at
  * one pinned commit, with that repository's lockfile: this app keeps none of its source. */
@@ -56,7 +55,7 @@ describe("the memory helper build", () => {
     const checkout = join(root, "native/memory/.build/source");
     const target = join(root, "native/memory/.build/target");
 
-    expect(buildMemoryHelper(root, "x86_64-apple-darwin")).toBe(join(target, "x86_64-apple-darwin", "release", executable));
+    expect(buildMemoryHelper(root, "x86_64-apple-darwin")).toBe(join(target, "x86_64-apple-darwin", "release", "fts_helper"));
 
     expect(runs.map(({ command }) => command)).toEqual([
       gitIn(checkout, "init", "--quiet"),
@@ -72,23 +71,25 @@ describe("the memory helper build", () => {
     expect(cargo?.env).toMatchObject({ RUSTUP_TOOLCHAIN: "1.97.1", CARGO_TARGET_DIR: target });
   });
 
-  test("builds for the build machine when given no target, and fetches the pinned commit again over an earlier checkout", () => {
+  test("builds a Windows target's .exe, and fetches the pinned commit again over an earlier checkout", () => {
     const { root, runs } = checkoutPinning({ repository, revision });
     const checkout = join(root, "native/memory/.build/source");
     mkdirSync(join(checkout, ".git"), { recursive: true });
 
-    expect(buildMemoryHelper(root, null)).toBe(join(root, "native/memory/.build/target", "release", executable));
+    expect(buildMemoryHelper(root, "aarch64-pc-windows-msvc")).toBe(join(root, "native/memory/.build/target", "aarch64-pc-windows-msvc", "release", "fts_helper.exe"));
 
     const commands = runs.map(({ command }) => command);
     expect(commands).not.toContainEqual(gitIn(checkout, "init", "--quiet"));
     expect(commands).toContainEqual(gitIn(checkout, "fetch", "--quiet", "--depth", "1", repository, revision));
-    expect(commands.filter(([command]) => command === "rustup")).toEqual([]);
-    expect(commands.at(-1)).toEqual(["cargo", "build", "--release", "--locked", "--bin", "fts_helper"]);
+    expect(commands.slice(-2)).toEqual([
+      ["rustup", "target", "add", "--toolchain", "1.97.1", "aarch64-pc-windows-msvc"],
+      ["cargo", "build", "--release", "--locked", "--bin", "fts_helper", "--target", "aarch64-pc-windows-msvc"],
+    ]);
   });
 
   test("a checkout that is not at the pinned commit is never built", () => {
     const { root, runs } = checkoutPinning({ repository, revision }, "fedcba9876543210fedcba9876543210fedcba98");
-    expect(() => buildMemoryHelper(root, null)).toThrow(`The memory helper's checkout is not at ${revision}`);
+    expect(() => buildMemoryHelper(root, "x86_64-unknown-linux-gnu")).toThrow(`The memory helper's checkout is not at ${revision}`);
     expect(runs.filter(({ command }) => command[0] === "cargo")).toEqual([]);
   });
 
@@ -99,7 +100,7 @@ describe("the memory helper build", () => {
     ["no repository", { revision }, "names no repository"],
   ])("a pin naming %s is refused before anything is fetched", (_name, pin, message) => {
     const { root, runs } = checkoutPinning(pin);
-    expect(() => buildMemoryHelper(root, null)).toThrow(message);
+    expect(() => buildMemoryHelper(root, "x86_64-unknown-linux-gnu")).toThrow(message);
     expect(runs).toEqual([]);
   });
 

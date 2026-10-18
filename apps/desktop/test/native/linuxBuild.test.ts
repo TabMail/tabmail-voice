@@ -45,7 +45,8 @@ describe("the Linux helper build", () => {
     const destination = join(root, "dist/helpers");
     for (const helper of helpers) expect(readFileSync(join(destination, helper), "utf8")).toBe(`built ${helper}`);
     expect(readFileSync(join(destination, "voice-memory"), "utf8")).toBe("the pinned memory helper");
-    // Built for this machine: a Linux package is built on the architecture it ships for.
-    expect(vi.mocked(buildMemoryHelper).mock.calls).toEqual([[root, null]]);
+    // Built for this machine's architecture (a Linux package is built on the one it ships for),
+    // named, so the toolchain's own host can't decide it.
+    expect(vi.mocked(buildMemoryHelper).mock.calls).toEqual([[root, process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"]]);
   });
 });

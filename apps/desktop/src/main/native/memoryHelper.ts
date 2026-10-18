@@ -175,8 +175,9 @@ export class MemoryHelper implements AgentMemory {
     try {
       this.launch(logs);
     } catch (error) {
-      // Spawning can throw (too many open files): memory is unavailable, and the request fails as
-      // any failed start does, naming no path.
+      // Spawning throws for what Node doesn't report as an `error` event (out of memory, too long an
+      // argument list; a missing executable or too many open files are `error` events, below):
+      // memory is unavailable, and the request fails as any failed start does, naming no path.
       log.error(`MemoryHelper: couldn't run: ${errorName(error)}`);
       return Promise.reject(new HelperError("failed", "init"));
     }
@@ -198,8 +199,7 @@ export class MemoryHelper implements AgentMemory {
     return initialized;
   }
 
-  /** Starts a helper and makes it the running one. If wiring it up throws, it is ended and never
-   * becomes the running one. */
+  /** Starts a helper and makes it the running one. A spawn that throws starts none. */
   private launch(logs: string): void {
     // Its log names what memory was asked: kept only while debug logging is on, as the app's debug
     // log; "off" writes no log file anywhere.
@@ -221,12 +221,7 @@ export class MemoryHelper implements AgentMemory {
         this.running.delete(child);
       }),
     );
-    try {
-      this.listen(child);
-    } catch (error) {
-      child.kill();
-      throw error;
-    }
+    this.listen(child);
     this.child = child;
     log.debug("MemoryHelper: started");
   }

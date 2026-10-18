@@ -60,7 +60,7 @@ describe("the Windows helper build", () => {
     }) as typeof execFileSync);
     vi.mocked(buildMemoryHelper).mockReset().mockImplementation((_root, target) => {
       const built = join(root, "memory-build", "fts_helper.exe");
-      file(built, `voice-memory for ${target ?? "this machine"}`);
+      file(built, `voice-memory for ${target}`);
       return built;
     });
     return { root, build };
@@ -75,7 +75,7 @@ describe("the Windows helper build", () => {
     });
     buildNative(root);
     expect(readdirSync(join(root, "dist/helpers")).sort()).toEqual([...helpers, "voice-memory.exe"].sort());
-    expect(readFileSync(join(root, "dist/helpers/voice-memory.exe"), "utf8")).toBe("voice-memory for this machine");
+    expect(readFileSync(join(root, "dist/helpers/voice-memory.exe"), "utf8")).toBe(`voice-memory for ${process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"}`);
     for (const helper of helpers) expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`${helper} for ${cmakeArch}`);
     expect(readFileSync(join(root, "dist/runtime/vc_redist.exe"), "utf8")).toBe("14.50 runtime");
     expect(readdirSync(join(root, "dist/runtime"))).toEqual(["vc_redist.exe"]);
