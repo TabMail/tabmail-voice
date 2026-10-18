@@ -428,7 +428,7 @@ final class EventKitStore {
         guard let first = store.event(withIdentifier: id) else { throw Failure.noSuchEvent.helperError }
         guard let occurrence, !first.isDetached else { return first }
         guard first.hasRecurrenceRules else {
-            guard abs((first.occurrenceDate ?? first.startDate).timeIntervalSince(occurrence)) < HelperConfig.eventOccurrenceTolerance else {
+            guard abs((first.occurrenceDate ?? first.startDate).timeIntervalSince(occurrence)) <= HelperConfig.eventOccurrenceTolerance else {
                 throw Failure.noSuchEvent.helperError
             }
             return first
@@ -438,7 +438,7 @@ final class EventKitStore {
             withStart: occurrence.addingTimeInterval(-span), end: occurrence.addingTimeInterval(span), calendars: first.calendar.map { [$0] }
         )
         let found = store.events(matching: predicate).first {
-            $0.eventIdentifier == id && abs(($0.occurrenceDate ?? $0.startDate).timeIntervalSince(occurrence)) < HelperConfig.eventOccurrenceTolerance
+            $0.eventIdentifier == id && abs(($0.occurrenceDate ?? $0.startDate).timeIntervalSince(occurrence)) <= HelperConfig.eventOccurrenceTolerance
         }
         guard let found else { throw Failure.noSuchEvent.helperError }
         return found

@@ -794,6 +794,17 @@ describe("calendar_event_edit", () => {
     expect(lastChanges()?.uninvite).toEqual(["alex@example.com"]);
   });
 
+  /** The organizer, the user, is never removed from their own event, even when named. */
+  test("the organizer is not removed", async () => {
+    const args = { event_id: "series-1", remove_attendees: [{ email: "Me@example.com" }, { email: "alex@example.com" }] };
+    const question = await tool.confirmation(args);
+    expect(question).toContain("Remove: alex@example.com");
+    expect(question).not.toContain("me@example.com");
+    await tool.run(args, live);
+    expect(lastChanges()?.uninvite).toEqual(["alex@example.com"]);
+    await expect(tool.confirmation({ event_id: "series-1", remove_attendees: [{ email: "me@example.com" }] })).rejects.toThrow("Nothing to change");
+  });
+
   /** The model hears of an invitee the calendar did not keep. */
   test("an invitation the calendar did not keep is reported", async () => {
     editor.saved = standup();
