@@ -639,6 +639,8 @@ describe("calendar_event_create with single-event access", () => {
     [{ freq: "MONTHLY", byMonthDay: [32] }, "recurrence.byMonthDay has 32, which is not valid there."],
     [{ freq: "MONTHLY", byMonthDay: [0] }, "recurrence.byMonthDay has 0, which is not valid there."],
     [{ freq: "YEARLY", byDay: ["54MO"] }, 'recurrence.byDay has "54MO", which is not valid there.'],
+    [{ freq: "YEARLY", byDay: ["-54MO"] }, 'recurrence.byDay has "-54MO", which is not valid there.'],
+    [{ freq: "MONTHLY", byMonthDay: [-32] }, "recurrence.byMonthDay has -32, which is not valid there."],
     [{ freq: "MONTHLY", byMonth: [3] }, "recurrence.byMonth needs YEARLY."],
     [{ freq: "YEARLY", byMonth: [13] }, "recurrence.byMonth has 13, which is not valid there."],
     [{ freq: "YEARLY", byMonth: [0] }, "recurrence.byMonth has 0, which is not valid there."],
@@ -655,13 +657,17 @@ describe("calendar_event_create with single-event access", () => {
   });
 
   /** A monthly recurrence by weekday and week, a yearly one by month and a monthly one by day are
-   * kept as Calendar's rules say them; a timed until is exact. */
+   * kept as Calendar's rules say them; days may be lowercase, a week counts back to -53 and a day of the
+   * month to -31; a timed until is exact. */
   test("monthly and yearly recurrences", async () => {
     const tool = new CalendarEventCreateTool(editableStore(new FakeEditor()));
     const draft = (recurrence: unknown) => tool.draft({ title: "Review", start_iso: iso(at(10)), recurrence }).recurrence;
     expect(draft({ freq: "MONTHLY", byDay: ["-1FR", "+2TU"], count: 6 })).toMatchObject({ frequency: "MONTHLY", days: [{ weekday: 6, week: -1 }, { weekday: 3, week: 2 }], count: 6 });
     expect(draft({ freq: "MONTHLY", byMonthDay: [1, -1], interval: 3 })).toMatchObject({ monthDays: [1, -1], interval: 3 });
     expect(draft({ freq: "YEARLY", byMonth: [1, 7], until: iso(at(18, 0, 400)) })).toMatchObject({ months: [1, 7], until: at(18, 0, 400) });
+    expect(draft({ freq: "WEEKLY", byDay: ["mo", "fr"] })).toMatchObject({ days: [{ weekday: 2, week: 0 }, { weekday: 6, week: 0 }] });
+    expect(draft({ freq: "YEARLY", byDay: ["-53MO"] })).toMatchObject({ days: [{ weekday: 2, week: -53 }] });
+    expect(draft({ freq: "MONTHLY", byMonthDay: [-31] })).toMatchObject({ monthDays: [-31] });
     expect(await tool.confirmation({ title: "Review", start_iso: iso(at(10)), recurrence: { freq: "MONTHLY", byDay: ["-1FR"], interval: 2, count: 6 } })).toContain(
       "Repeats every 2 months on the last Friday, 6 times",
     );
