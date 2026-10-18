@@ -771,6 +771,15 @@ describe("calendar_event_edit", () => {
     await expect(tool.run({ event_id: "series-1", remove_attendees: "alex@example.com" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
   });
 
+  /** An event whose one attendee is its organizer, the user (as Calendar keeps an event once everyone
+   * else is removed), emails no one, and its question says nobody is. */
+  test("an event with only its organizer emails no one", async () => {
+    editor.byID.set("event-1", { ...standup(), id: "event-1", recurrence: null, attendees: [{ email: "Me@Example.com", name: null, status: "accepted" }] });
+    const question = await tool.confirmation({ event_id: "event-1", title: "Kickoff" });
+    expect(question.split("\n").slice(3)).toEqual(["New title: Kickoff"]);
+    expect(question).not.toContain("emailed");
+  });
+
   /** The model hears of an invitee the calendar did not keep. */
   test("an invitation the calendar did not keep is reported", async () => {
     editor.saved = standup();
@@ -949,6 +958,9 @@ describe("calendar_event_delete", () => {
     editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", isDetached: true });
     expect((await tool.confirmation({ event_id: "series-1/moved" })).split("\n").slice(3)).toEqual(["Only this occurrence is deleted: it was changed on its own.", "Its attendees are emailed a cancellation."]);
     expect(await tool.confirmation({ event_id: "event-3" })).toBe(`Delete this event?\nFocus\n${LocalDateTime.spoken(at(16))} to ${LocalDateTime.spoken(at(17))}`);
+    // Its one attendee its organizer, the user: no one is emailed a cancellation.
+    editor.byID.set("solo", { ...standup(), id: "solo", recurrence: null, attendees: [{ email: "Me@Example.com", name: null, status: "accepted" }] });
+    expect((await tool.confirmation({ event_id: "solo" })).split("\n").slice(3)).toEqual([]);
     expect(await tool.run({ event_id: "series-1" }, live)).toBe('Deleted "Team sync", every occurrence.');
     expect(await tool.run({ event_id: "event-2" }, live)).toBe('Deleted "Review".');
     expect(await tool.run({ event_id: "series-1/moved" }, live)).toBe('Deleted "Team sync".');
