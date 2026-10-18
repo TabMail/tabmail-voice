@@ -4,6 +4,7 @@
 
 import type { ReactNode } from "react";
 import type { ConnectorID } from "../../core/agent/connectors/index.js";
+import type { EventQuestionLine } from "../../core/agent/chat.js";
 import type { AgentToolID } from "../../core/agent/tools.js";
 import { palette } from "../../core/palette.js";
 
@@ -242,4 +243,58 @@ export function GearIcon({ size }: { size: number }) {
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
     </PlainIcon>
   );
+}
+
+const eventLinePaths: Record<EventQuestionLine["icon"], ReactNode> = {
+  // Two arrows chasing each other round.
+  repeat: <path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3" />,
+  // A map pin.
+  location: (
+    <>
+      <path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </>
+  ),
+  // A calendar page.
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </>
+  ),
+  // A person.
+  person: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+    </>
+  ),
+  // Lines of text.
+  notes: <path d="M5 6h14M5 10h14M5 14h14M5 18h9" />,
+  // A clock: when the user shows as busy or free.
+  availability: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  // An envelope.
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </>
+  ),
+  // A calendar page struck through: an occurrence dropped.
+  deleted: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4M9 13.5l6 5M15 13.5l-6 5" />
+    </>
+  ),
+};
+
+/** A line of a calendar question's card: its icon in the line's color. */
+export function EventLineIcon({ icon, size }: { icon: EventQuestionLine["icon"]; size: number }) {
+  return <PlainIcon size={size}>{eventLinePaths[icon]}</PlainIcon>;
 }

@@ -5,6 +5,7 @@
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { CancellationError } from "../../util/timeout.js";
+import type { EventQuestion, EventQuestionLine } from "../chat.js";
 import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, isJSONObject, ToolArgumentError } from "./contract.js";
 import { isAddress } from "./email.js";
 
@@ -319,8 +320,13 @@ function rrule(recurrence: EventRecurrence): string {
 
 /** `recurrence` as the user reads it in a question to confirm. */
 function spokenRecurrence(recurrence: EventRecurrence): string {
+  return `Repeats ${repetition(recurrence)}`;
+}
+
+/** How `recurrence` repeats, as a question says it: "every week on Wednesday, 6 times". */
+function repetition(recurrence: EventRecurrence): string {
   const unit = { DAILY: "day", WEEKLY: "week", MONTHLY: "month", YEARLY: "year" }[recurrence.frequency];
-  let text = recurrence.interval === 1 ? `Repeats every ${unit}` : `Repeats every ${recurrence.interval} ${unit}s`;
+  let text = recurrence.interval === 1 ? `every ${unit}` : `every ${recurrence.interval} ${unit}s`;
   if (recurrence.days.length > 0) {
     text += ` on ${recurrence.days.map((day) => `${day.week === 0 ? "" : `the ${ordinals[day.week] ?? `week ${day.week}`} `}${weekdayNames[day.weekday - 1]}`).join(", ")}`;
   }
@@ -421,6 +427,47 @@ function invitationLines(invite: EventAttendee[], uninvite: string[] = []): stri
   return lines;
 }
 
+/** A line of a question's card. */
+function cardLine(icon: EventQuestionLine["icon"], text: string, tone: EventQuestionLine["tone"] = "plain", detail: string | null = null): EventQuestionLine {
+  return { icon, text, detail, tone };
+}
+
+/** `text` begun with a capital, as a card's line starts. */
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function sameDay(first: Date, second: Date): boolean {
+  return LocalDateTime.startOfDay(first).getTime() === LocalDateTime.startOfDay(second).getTime();
+}
+
+/** When `event` is, as a question's card shows it beside the page for `day`: its times alone when it
+ * is all on that day, with their days when it isn't. The page has no year, so a day outside this
+ * year is always named, with its year. */
+function cardTime(event: Pick<CalendarEvent, "start" | "end" | "isAllDay">, day: Date): string {
+  if (event.isAllDay) return sameDay(event.start, event.end) && sameDay(event.start, day) && LocalDateTime.inThisYear(event.start) ? "All day" : `All day, ${LocalDateTime.dayRange(event.start, event.end)}`;
+  return LocalDateTime.timeRange(event.start, event.end, !(sameDay(event.start, day) && sameDay(event.end, day)));
+}
+
+/** A question's card for `event`, its page the day `event` starts. */
+function eventCard(action: EventQuestion["action"], caption: string, event: CalendarEvent, lines: EventQuestionLine[], changes: { title?: string; times?: Pick<CalendarEvent, "start" | "end" | "isAllDay"> } = {}): EventQuestion {
+  return {
+    action,
+    caption,
+    ...LocalDateTime.page(event.start),
+    title: event.title,
+    newTitle: changes.title ?? null,
+    time: cardTime(event, event.start),
+    newTime: changes.times ? cardTime(changes.times, event.start) : null,
+    lines,
+  };
+}
+
+/** A card's lines for the people a question invites, each with their address, and those it removes. */
+function peopleLines(invite: EventAttendee[], uninvite: string[], tone: "plain" | "added"): EventQuestionLine[] {
+  return [...invite.map((attendee) => cardLine("person", attendee.name ?? attendee.email, tone, attendee.name ? attendee.email : null)), ...uninvite.map((email) => cardLine("person", email, "removed"))];
+}
+
 /** Who `invite` asked for that the saved event does not have, as the model reads it: the
  * calendar's server keeps an invitation only if it can send it. */
 function missingInvitees(invite: EventAttendee[], saved: CalendarEvent): string {
@@ -450,7 +497,7 @@ export class CalendarEventCreateTool implements ConnectorTool {
 
   /** Throws for arguments it can't add and for a calendar it can't find, so nothing is added
    * unasked: the controller tells the model why and runs nothing. */
-  async confirmation(args: Record<string, unknown>): Promise<string> {
+  async confirmation(args: Record<string, unknown>): Promise<{ text: string; event: EventQuestion }> {
     const event = this.draft(args);
     let calendar: EventCalendar | undefined;
     if (event.calendarId) {
@@ -467,7 +514,16 @@ export class CalendarEventCreateTool implements ConnectorTool {
     // Every field the event is added with is shown: text the user never saw could carry anything.
     if (event.notes !== null) lines.push(event.notes);
     lines.push(...invitationLines(event.attendees ?? []));
-    return lines.join("\n");
+    const card: EventQuestionLine[] = [];
+    if (calendar) card.push(cardLine("calendar", calendar.title, "plain", calendar.account));
+    else if (this.writeDestination) card.push(cardLine("calendar", this.writeDestination));
+    if (event.recurrence) card.push(cardLine("repeat", capitalized(repetition(event.recurrence))));
+    if (event.location !== null) card.push(cardLine("location", event.location));
+    if (event.availability === "free") card.push(cardLine("availability", "Shown as free"));
+    if (event.notes !== null) card.push(cardLine("notes", event.notes));
+    card.push(...peopleLines(event.attendees ?? [], [], "plain"));
+    if ((event.attendees ?? []).length > 0) card.push(cardLine("mail", "Invitations are emailed.", "note"));
+    return { text: lines.join("\n"), event: eventCard("add", "New event", event, card) };
   }
 
   async run(args: Record<string, unknown>): Promise<string> {
@@ -581,7 +637,7 @@ export class CalendarEventEditTool implements ConnectorTool {
   constructor(private readonly editor: EventEditor) {}
 
   /** Throws for a change it can't make or an event it can't read, so nothing is changed unasked. */
-  async confirmation(args: Record<string, unknown>): Promise<string> {
+  async confirmation(args: Record<string, unknown>): Promise<{ text: string; event: EventQuestion }> {
     const plan = await this.plan(args);
     this.prepared.set(args, plan);
     const { current, changes, scope, occurrence } = plan;
@@ -605,7 +661,7 @@ export class CalendarEventEditTool implements ConnectorTool {
     lines.push(...invitationLines(changes.invite, changes.uninvite));
     const others = (current.attendees ?? []).filter((attendee) => attendee.email.toLowerCase() !== current.organizer?.email.toLowerCase());
     if (others.length > 0) lines.push("Its attendees are emailed the change.");
-    return lines.join("\n");
+    return { text: lines.join("\n"), event: editCard(plan, others.length > 0) };
   }
 
   async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
@@ -627,6 +683,8 @@ export class CalendarEventEditTool implements ConnectorTool {
     const named = typeof rawScope === "string" ? scopes[rawScope] : undefined;
     if (named === undefined) throw new ToolArgumentError("edit_scope must be all, this_only or this_and_following.");
     const current = await this.editor.event(id, occurrence);
+    // Refused before the question: the user is never asked to confirm a change that can't be made.
+    if (current.isInvitation) throw new EventStoreError("notOrganizer");
     // An occurrence changed on its own has an id of its own, which names it alone.
     if (current.isDetached && ((args.edit_scope !== undefined && named !== "thisOnly") || (args.recurrence !== undefined && args.recurrence !== null))) {
       throw new ToolArgumentError("This occurrence was changed on its own, so its event_id changes it alone. To change the series, use the event_id and recurrence_id of another occurrence.");
@@ -676,6 +734,33 @@ export class CalendarEventEditTool implements ConnectorTool {
     }
     return { id, occurrence, scope, current, changes };
   }
+}
+
+/** The card of an edit's question: what changes, new values in the accent and those removed struck out. */
+function editCard({ current, changes, scope, occurrence }: EditPlan, attendeesTold: boolean): EventQuestion {
+  const series = Boolean(current.recurrence) && !current.isDetached;
+  const caption =
+    current.isDetached || (series && occurrence !== null && scope === "thisOnly") ? "Change this occurrence"
+    : series && occurrence !== null && scope === "thisAndFollowing" ? "Change this and later occurrences"
+    : series ? "Change every occurrence"
+    : "Change event";
+  const times = changes.start !== undefined && changes.end !== undefined ? { start: changes.start, end: changes.end, isAllDay: changes.isAllDay ?? current.isAllDay } : undefined;
+  const lines: EventQuestionLine[] = [];
+  if (times && current.recurrence && scope !== "thisOnly") lines.push(cardLine("repeat", "Every occurrence covered moves by as much, and any deleted from the series come back.", "note"));
+  for (const [field, icon, removed] of [["location", "location", "Remove the location"], ["notes", "notes", "Remove the notes"]] as const) {
+    const value = changes[field];
+    if (value === undefined) continue;
+    if (value !== "") lines.push(cardLine(icon, value, "added"));
+    else lines.push(current[field] ? cardLine(icon, current[field], "removed") : cardLine(icon, removed, "note"));
+  }
+  if (changes.availability !== undefined) lines.push(cardLine("availability", `Shown as ${changes.availability}`, "added"));
+  if (changes.recurrence !== undefined) lines.push(cardLine("repeat", changes.recurrence === null ? "Stops repeating" : capitalized(repetition(changes.recurrence)), "added"));
+  lines.push(...changes.exclude.map((date) => cardLine("deleted", LocalDateTime.shortDay(date, !current.isAllDay), "removed")));
+  lines.push(...peopleLines(changes.invite, changes.uninvite, "added"));
+  if (changes.invite.length > 0) lines.push(cardLine("mail", "Invitations are emailed.", "note"));
+  if (changes.uninvite.length > 0) lines.push(cardLine("mail", "Those removed are emailed that they are no longer invited.", "note"));
+  if (attendeesTold) lines.push(cardLine("mail", "Its attendees are emailed the change.", "note"));
+  return eventCard("change", caption, current, lines, { ...(changes.title === undefined ? {} : { title: changes.title }), ...(times === undefined ? {} : { times }) });
 }
 
 /** `date`'s day (2099-01-15) in the time zone `zone`, or the Mac's. */
@@ -768,15 +853,23 @@ export class CalendarEventDeleteTool implements ConnectorTool {
   constructor(private readonly editor: EventEditor) {}
 
   /** Throws for an event it can't read, so nothing is deleted unasked. */
-  async confirmation(args: Record<string, unknown>): Promise<string> {
+  async confirmation(args: Record<string, unknown>): Promise<{ text: string; event: EventQuestion }> {
     const event = await this.target(args);
     this.prepared.set(args, event);
     const lines = ["Delete this event?", event.title, spokenWhen(event)];
-    if (event.recurrence && !event.isDetached) lines.push("Every occurrence is deleted.");
+    const card: EventQuestionLine[] = [];
+    const series = Boolean(event.recurrence) && !event.isDetached;
+    if (series) lines.push("Every occurrence is deleted.");
     if (event.isDetached) lines.push("Only this occurrence is deleted: it was changed on its own.");
-    if (event.isInvitation) lines.push("You were invited to it: it is removed from your calendar.");
-    else if ((event.attendees ?? []).some((attendee) => attendee.email.toLowerCase() !== event.organizer?.email.toLowerCase())) lines.push("Its attendees are emailed a cancellation.");
-    return lines.join("\n");
+    let told: string | null = null;
+    if (event.isInvitation) told = "You were invited to it: it is removed from your calendar.";
+    else if ((event.attendees ?? []).some((attendee) => attendee.email.toLowerCase() !== event.organizer?.email.toLowerCase())) told = "Its attendees are emailed a cancellation.";
+    if (told !== null) {
+      lines.push(told);
+      card.push(cardLine("mail", told, "note"));
+    }
+    const caption = series ? "Delete every occurrence" : event.isDetached ? "Delete this occurrence" : "Delete event";
+    return { text: lines.join("\n"), event: eventCard("delete", caption, event, card) };
   }
 
   async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {

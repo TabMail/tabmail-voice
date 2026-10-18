@@ -7,6 +7,7 @@
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
+import type { EventQuestion } from "../../../src/core/agent/chat.js";
 import { connectorByID } from "../../../src/core/agent/connectors/index.js";
 import { agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
@@ -542,7 +543,7 @@ describe("overlay page", () => {
     const tools: OverlayState["tools"] = ["compose", "answer"];
     const apps: OverlayState["connectors"] = ["calendar", "contacts", "email", "files"];
     const width = config.chatWidth + 2 * config.chatShadowMargin;
-    await page.show({ ...idle, mode: "agent", tools, connectors: apps, chat: { turns: [], pendingRequest: null, closesAt: null, touched: true, activity: null, confirmation: null, confirmationExpiresAt: null }, chatPlacement: { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: width / 2 + 40 } });
+    await page.show({ ...idle, mode: "agent", tools, connectors: apps, chat: { turns: [], pendingRequest: null, closesAt: null, touched: true, activity: null, confirmation: null, confirmationEvent: null, confirmationExpiresAt: null }, chatPlacement: { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: width / 2 + 40 } });
     const bubble = [...document.querySelectorAll<HTMLElement>(".bubble")].at(-1) as HTMLElement;
     await act(async () => {
       bubble.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
@@ -707,6 +708,7 @@ describe("the chat window", () => {
       touched,
       activity: null,
       confirmation: null,
+      confirmationEvent: null,
       confirmationExpiresAt: null,
     };
   }
@@ -1221,6 +1223,69 @@ describe("the chat window", () => {
     await act(async () => button?.click());
 
     expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed }]);
+  });
+
+  /** A question about a calendar event draws the event, not its words: the page for its day, its
+   * title and time (the old struck out by the new), each line with its icon and tone, and a button
+   * that says what confirming does, red for a delete. */
+  test.each<[EventQuestion["action"], string, boolean]>([
+    ["add", "Add", false],
+    ["change", "Save", false],
+    ["delete", "Delete", true],
+  ])("a %s question's event is drawn, and its button answers it", async (action, title, destructive) => {
+    const event: EventQuestion = {
+      action,
+      caption: "Change this occurrence",
+      month: "Oct",
+      day: 22,
+      weekday: "Thu",
+      title: "Team sync",
+      newTitle: "Kickoff",
+      time: "10:00 – 10:30 AM",
+      newTime: "3:00 – 3:30 PM",
+      lines: [
+        { icon: "person", text: "Pat Doe", detail: "pat@example.com", tone: "added" },
+        { icon: "person", text: "alex@example.com", detail: null, tone: "removed" },
+        { icon: "mail", text: "Invitations are emailed.", detail: null, tone: "note" },
+        { icon: "location", text: "Room 5", detail: null, tone: "plain" },
+      ],
+    };
+    const page = await overlayPage();
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), confirmation: "Change this event?", confirmationEvent: event } });
+
+    expect(document.querySelector(".chat-confirmation .chat-text")).toBeNull();
+    expect(document.querySelector(".event-card .chat-caption")?.textContent).toBe("Change this occurrence");
+    expect(document.querySelector(".event-card .chat-caption")?.classList.contains("event-deleting")).toBe(destructive);
+    expect(texts(".event-page span")).toEqual(["OCT", "22", "Thu"]);
+    expect(document.querySelector(".event-page")?.classList.contains("event-deleting")).toBe(destructive);
+    expect(texts(".event-title span")).toEqual(["Team sync", "Kickoff"]);
+    expect(texts(".event-time .event-removed")).toEqual(["10:00 – 10:30 AM"]);
+    expect(texts(".event-time .event-added")).toEqual(["3:00 – 3:30 PM"]);
+    const lines = [...document.querySelectorAll(".event-line")];
+    expect(lines.map((line) => line.className)).toEqual(["event-line added", "event-line removed", "event-line note", "event-line plain"]);
+    expect(lines.map((line) => line.querySelector(".event-line-text")?.textContent)).toEqual(["Pat Doe pat@example.com", "alex@example.com", "Invitations are emailed.", "Room 5"]);
+    expect(lines.every((line) => line.querySelector("svg") !== null)).toBe(true);
+    expect(texts(".event-line-detail")).toEqual([" pat@example.com"]);
+    expect(texts(".chat-confirmation button")).toEqual(["Cancel", title]);
+    const button = document.querySelector<HTMLElement>(".chat-confirmation .chat-confirm");
+    expect(button?.classList.contains("destructive")).toBe(destructive);
+    // The class alone colours it: red for a delete, the brand blue otherwise, nothing inline to beat it.
+    expect(button?.style.background).toBe("");
+    await act(async () => button?.click());
+
+    expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed: true }]);
+  });
+
+  /** An event with nothing new to say draws its title and time alone, with no lines. */
+  test("an event question with no lines draws only its page, title and time", async () => {
+    const page = await overlayPage();
+    const event: EventQuestion = { action: "add", caption: "New event", month: "Oct", day: 21, weekday: "Wed", title: "Focus", newTitle: null, time: "All day", newTime: null, lines: [] };
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), confirmation: "Add this event to your calendar?", confirmationEvent: event } });
+
+    expect(document.querySelector(".event-title")?.textContent).toBe("Focus");
+    expect(document.querySelector(".event-time")?.textContent).toBe("All day");
+    expect(document.querySelector(".event-lines")).toBeNull();
+    expect(document.querySelector(".event-removed")).toBeNull();
   });
 
   /** A question shows the time left to answer it as a bar along its own bottom edge, running down with

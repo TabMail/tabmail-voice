@@ -1473,7 +1473,9 @@ describe("main process wiring", () => {
     if (platform === "win32") {
       const create = app.connectorTools.find((tool) => tool.name === "calendar_event_create");
       const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" }, signal);
-      expect(confirmation).toContain("Destination: TabMail Voice calendar (local to this PC)");
+      // The words name where it goes, and so does the card the window draws.
+      expect(typeof confirmation === "object" && confirmation !== null ? confirmation.text : confirmation).toContain("Destination: TabMail Voice calendar (local to this PC)");
+      expect(typeof confirmation === "object" && confirmation !== null ? confirmation.event.lines[0] : null).toEqual({ icon: "calendar", text: "TabMail Voice calendar (local to this PC)", detail: null, tone: "plain" });
     }
     const expectedConnectors = ["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web"];
     expect(state("settings").connectors).toEqual(expectedConnectors);

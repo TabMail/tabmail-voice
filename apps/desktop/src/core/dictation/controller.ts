@@ -3,12 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
-import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "../agent/chat.js";
+import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion } from "../agent/chat.js";
 import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
 import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
-import { isJSONObject, parsedJSON, type ConnectorTool } from "../agent/connectors/contract.js";
+import { isJSONObject, parsedJSON, type ConnectorTool, type ToolQuestion } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
 import { AgentError, type AgentToolID, agentTools } from "../agent/tools.js";
 import { type AudioCapture, AudioRecorder, type RecordedChunk, recordingDuration } from "../audio/recorder.js";
@@ -1110,9 +1110,9 @@ export class DictationController extends Observable {
       log.error(`DictationController: ${tool.name} called with arguments that aren't a JSON object`);
       return "Error: the arguments were not a JSON object.";
     }
-    let question: string | null;
+    let asked: ToolQuestion | null;
     try {
-      question = await tool.confirmation(args, signal);
+      asked = await tool.confirmation(args, signal);
     } catch (error) {
       if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
       log.error(`DictationController: ${tool.name} preparation failed: ${errorName(error)}`);
@@ -1123,8 +1123,9 @@ export class DictationController extends Observable {
     if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
     // Closing the window or ending the request declines the question (`teardown`); the window is
     // open from the request's start.
-    if (question !== null) {
-      const answer = await this.confirm(question);
+    if (asked !== null) {
+      const question = typeof asked === "string" ? asked : asked.text;
+      const answer = await this.confirm(question, typeof asked === "string" ? null : asked.event);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
         this.questionsAnsweredAloud += 1;
@@ -1191,9 +1192,9 @@ export class DictationController extends Observable {
   /** Shows `question` in the chat window, and waits for the user to confirm or decline it
    * (`answerConfirmation`) or answer it aloud (`startSpokenAnswer`); closing the window or canceling
    * the request declines it, and so does leaving it unanswered for `confirmationTimeout`. */
-  private confirm(question: string): Promise<ConfirmationAnswer> {
+  private confirm(question: string, event: EventQuestion | null): Promise<ConfirmationAnswer> {
     this.confirmationShownAt = Date.now();
-    this.updateChat({ confirmation: question });
+    this.updateChat({ confirmation: question, confirmationEvent: event });
     return new Promise((resolve) => {
       this.confirmationReply = resolve;
       this.startConfirmationClock();
@@ -1230,7 +1231,7 @@ export class DictationController extends Observable {
     this.confirmationTimer = null;
     // Answered another way (a click, the window closing) while an answer was being spoken.
     this.endSpokenAnswer();
-    this.updateChat({ confirmation: null, confirmationExpiresAt: null });
+    this.updateChat({ confirmation: null, confirmationEvent: null, confirmationExpiresAt: null });
     reply(answer);
   }
 

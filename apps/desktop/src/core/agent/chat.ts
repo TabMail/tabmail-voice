@@ -35,13 +35,50 @@ export interface AgentChat {
   /** What the window asks before a tool sends or creates anything, until the user confirms or
    * declines it, or it goes unanswered until `confirmationExpiresAt`. */
   confirmation: string | null;
+  /** The calendar event the question is about, drawn as a card in place of its words; null for a
+   * question that is only words. */
+  confirmationEvent: EventQuestion | null;
   /** When the question is declined unless answered (epoch milliseconds); null with no question, and
    * while an answer to it is spoken. */
   confirmationExpiresAt: number | null;
 }
 
+/** A calendar event in a question to confirm, as the chat window draws it: a small calendar page for
+ * its day beside its title and time, then a line for everything else the question says (owner,
+ * 2026-10-18, chosen from a page of candidates). The question's words still say all of it, for the
+ * model when the user answers aloud. */
+export interface EventQuestion {
+  /** What confirming does: the button's word, and a delete's is red. */
+  action: "add" | "change" | "delete";
+  /** Above the page: "New event", "Change this occurrence", "Delete every occurrence". */
+  caption: string;
+  /** The page: the event's (or the occurrence's) day, as "Oct", 21 and "Wed". */
+  month: string;
+  day: number;
+  weekday: string;
+  title: string;
+  /** A new title, which strikes out `title`. */
+  newTitle: string | null;
+  /** Its time on that day ("10:00 – 11:00 AM", "All day"), with the day when it ends on another. */
+  time: string;
+  /** A new time, which strikes out `time`. */
+  newTime: string | null;
+  lines: EventQuestionLine[];
+}
+
+/** One more thing a question about an event says, beside its icon. */
+export interface EventQuestionLine {
+  icon: "repeat" | "location" | "calendar" | "person" | "notes" | "availability" | "mail" | "deleted";
+  text: string;
+  /** Fainter, after the text: a person's address, a calendar's account. */
+  detail: string | null;
+  /** `added` for what the change brings (in the accent), `removed` for what it takes away (struck
+   * out), `note` for what happens as a result (secondary), `plain` for the event as it is. */
+  tone: "plain" | "added" | "removed" | "note";
+}
+
 /** The chat window as it opens: no turns yet, and untouched. */
-export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null, confirmationExpiresAt: null };
+export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null, confirmationEvent: null, confirmationExpiresAt: null };
 
 export function appendTurn(chat: AgentChat, request: string, tool: AgentToolID, reply: string): AgentChat {
   return { ...chat, turns: [...chat.turns, { id: chat.turns.length, request, tool, reply }], pendingRequest: null };

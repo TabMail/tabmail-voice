@@ -837,6 +837,29 @@ export const chatRevealRise = 4;
 export const chatThinkingLabel = "Thinking…";
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
+/** A calendar question's card (owner, 2026-10-18: the date tile, chosen from a page of candidates): a
+ * small calendar page for the event's day beside its title and time, then a line for each other
+ * thing, with an icon. Its button says what confirming does. */
+export const eventQuestionButtons = { add: "Add", change: "Save", delete: "Delete" } as const;
+export const eventPageWidth = 46;
+export const eventPageCornerRadius = 9;
+/** The page's month and weekday, and its day. */
+export const eventPageLabelFontSize = 9;
+export const eventPageDayFontSize = 19;
+/** The month's letters, apart by this share of their size, as a printed calendar's. */
+export const eventPageMonthTracking = 0.06;
+/** The page's lines sit close, as a printed page's. */
+export const eventPageLineHeight = 1.1;
+export const eventPagePadding = 4;
+/** Between the page and the title, and before each line's text. */
+export const eventPageGap = 10;
+export const eventLineIconGap = 6;
+export const eventTitleFontSize = 14;
+export const eventLineFontSize = 12;
+export const eventLineIconSize = 12;
+/** Between the card's caption, its page and its lines, and between lines. */
+export const eventCardGap = 6;
+export const eventLineGap = 4;
 /** The not-pasted note's x, which dismisses it: a faint glyph until the pointer is over it. */
 export const noteCloseButtonSize = 16;
 export const noteCloseFontSize = 10;

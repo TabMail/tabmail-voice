@@ -9,7 +9,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, test } from "vitest";
 import { connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import { agentToolIDs } from "../../../src/core/agent/tools.js";
-import { ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../../../src/renderer/shared/icons.js";
+import type { EventQuestionLine } from "../../../src/core/agent/chat.js";
+import { ConnectorIcon, EventLineIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../../../src/renderer/shared/icons.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,4 +43,19 @@ test("every tool and app icon is drawn in the one accent color, no gradient", as
     expect(svg.outerHTML).not.toContain("url(#");
     expect(svg.outerHTML).toContain("var(--accent)");
   }
+});
+
+/** Each line of a calendar question's card draws its own glyph: a shape with geometry, not an empty
+ * frame, and no two lines alike. */
+test("every calendar card line icon draws its own shape", async () => {
+  const icons = Object.keys({ repeat: 0, location: 0, calendar: 0, person: 0, notes: 0, availability: 0, mail: 0, deleted: 0 } satisfies Record<EventQuestionLine["icon"], 0>) as EventQuestionLine["icon"][];
+  const drawings: string[] = [];
+  for (const icon of icons) {
+    const svg = await drawn(<EventLineIcon icon={icon} size={12} />);
+    const shapes = [...svg.querySelectorAll("path, circle, rect, line, polyline")];
+    const hasGeometry = (shape: Element) => (shape.getAttribute("d") ?? "").trim() !== "" || Number(shape.getAttribute("r")) > 0 || Number(shape.getAttribute("width")) > 0 || shape.hasAttribute("points") || shape.hasAttribute("x2");
+    expect(shapes.some(hasGeometry), icon).toBe(true);
+    drawings.push(svg.innerHTML);
+  }
+  expect(new Set(drawings).size).toBe(icons.length);
 });

@@ -35,8 +35,31 @@ const conversation = {
   touched: true,
   activity: null,
   confirmation: null,
+  confirmationEvent: null,
   confirmationExpiresAt: null,
 };
+/** A calendar question's card for each write: a weekly event with people invited, one occurrence
+ * moved with someone added, and a series deleted. */
+const eventQuestions = {
+  add: { action: "add", caption: "New event", month: "Oct", day: 21, weekday: "Wed", title: "Design review", newTitle: null, time: "10:00 – 11:00 AM", newTime: null, lines: [
+    { icon: "calendar", text: "Work", detail: "iCloud", tone: "plain" },
+    { icon: "repeat", text: "Every week on Wednesday", detail: null, tone: "plain" },
+    { icon: "location", text: "Room 5", detail: null, tone: "plain" },
+    { icon: "person", text: "Alex Kim", detail: "alex@example.com", tone: "plain" },
+    { icon: "person", text: "Sam Lee", detail: "sam@example.com", tone: "plain" },
+    { icon: "mail", text: "Invitations are emailed.", detail: null, tone: "note" },
+  ] },
+  change: { action: "change", caption: "Change this occurrence", month: "Oct", day: 22, weekday: "Thu", title: "Team sync", newTitle: null, time: "10:00 – 10:30 AM", newTime: "3:00 – 3:30 PM", lines: [
+    { icon: "person", text: "Pat Doe", detail: "pat@example.com", tone: "added" },
+    { icon: "person", text: "alex@example.com", detail: null, tone: "removed" },
+    { icon: "mail", text: "Invitations are emailed.", detail: null, tone: "note" },
+    { icon: "mail", text: "Its attendees are emailed the change.", detail: null, tone: "note" },
+  ] },
+  delete: { action: "delete", caption: "Delete every occurrence", month: "Oct", day: 26, weekday: "Mon", title: "Weekly 1:1", newTitle: null, time: "9:00 – 9:30 AM", newTime: null, lines: [
+    { icon: "mail", text: "Its attendees are emailed a cancellation.", detail: null, tone: "note" },
+  ] },
+};
+const eventRequests = { add: "Set up a weekly design review on Wednesdays at 10 in Room 5 with Alex and Sam", change: "Move Thursday's team sync to 3, add Pat and drop Alex", delete: "Delete my weekly one-on-one" };
 const settings = {
   availableHotkeys: ["rightOption", "function"],
   email: null,
@@ -178,9 +201,11 @@ const shots: { name: string; page: string; size: { width: number; height: number
     // A follow-up that failed under the chat window: the widest message, its neon glow inside the window.
     ["overlay-chat-failed", { phase: { kind: "failed", message: "The selection holds what looks like a password or key, so it wasn't rewritten." }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: over }],
     // A tool's question in the chat window, a third of its 30 seconds gone.
-    ["overlay-chat-confirmation", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
+    ["overlay-chat-confirmation", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
+    // A calendar question for each write, as its card: the page, the title and time, and its lines.
+    ...(Object.entries(eventQuestions).map(([action, event]) => [`overlay-chat-event-${action}`, { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: eventRequests[action as keyof typeof eventRequests], confirmation: "Change this event?", confirmationEvent: event, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }])),
     // A chat long enough to scroll: the question keeps its height and its buttons show.
-    ["overlay-chat-confirmation-long", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [{ id: 0, request: "Can you add this to my calendar?", tool: "answer", reply: "Happy to add it. Which item on the screen do you mean: the date and time, the title, and any other details? What is on screen does not give me the specifics I need yet." }, { id: 1, request: "The launch review, tomorrow at ten.", tool: "answer", reply: "Here is the entry:\n\n- Title: Launch review\n- When: tomorrow at 10:00\n- No location given\n\nShall I go ahead?" }], pendingRequest: "Yes.", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar tomorrow at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }],
+    ["overlay-chat-confirmation-long", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [{ id: 0, request: "Can you add this to my calendar?", tool: "answer", reply: "Happy to add it. Which item on the screen do you mean: the date and time, the title, and any other details? What is on screen does not give me the specifics I need yet." }, { id: 1, request: "The launch review, tomorrow at ten.", tool: "answer", reply: "Here is the entry:\n\n- Title: Launch review\n- When: tomorrow at 10:00\n- No location given\n\nShall I go ahead?" }], pendingRequest: "Yes.", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar tomorrow at 10:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }],
     ] as [string, Record<string, unknown> & { whole?: string }][]
   ).map(([name, { whole, ...change }]) => ({ name, page: "overlay/index.html", size: chatWindowSize, state: { ...overlay, ...change }, transparent: true, ...(whole === undefined ? {} : { whole }) })),
   { name: "history", page: "history/index.html", size: historyWindowSize, state: history, transparent: true },
@@ -208,7 +233,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "welcome-accessibility-vscode", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true, vscodeFix: "needed" } },
 ];
 /** The overlay follows the system's light and dark (owner, 2026-10-09): these again, dark. */
-const darkOverlayShots = new Set(["overlay-listening", "overlay-tip-switch", "overlay-not-pasted", "overlay-failed-long", "overlay-agent-apps-running", "overlay-chat-answer", "overlay-chat-confirmation"]);
+const darkOverlayShots = new Set(["overlay-listening", "overlay-tip-switch", "overlay-not-pasted", "overlay-failed-long", "overlay-agent-apps-running", "overlay-chat-answer", "overlay-chat-confirmation", "overlay-chat-event-change", "overlay-chat-event-delete"]);
 shots.push(...shots.filter((shot) => darkOverlayShots.has(shot.name)).map((shot) => ({ ...shot, name: `${shot.name}-dark`, dark: true })));
 
 async function capture(shot: (typeof shots)[number]): Promise<void> {

@@ -5398,3 +5398,31 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
 - Measured on Google: renaming a series renames its detached occurrences, which keep their times;
   deleting a series deletes them; a series split with `this_and_following` survives a later move of
   the original.
+
+**Amendment 2026-10-18: the question draws the event, and an invitation is refused before it.**
+Owner: "Some of the contents are not really that apparent in the calendar entries. The iOS ones look
+more apparent though … a little bit of a more polished confirmation dialogue. Don't be too much"; of
+five candidates on a page, "Date tile looks awesome".
+- A calendar question's `confirmation` returns its words and an `EventQuestion` (`core/agent/chat.ts`):
+  the action, a caption naming the occurrences ("Change this occurrence", "Delete every
+  occurrence"), the page of the event's day (month, day, weekday), its title and time with the new
+  ones that strike them out, and a line per other thing it says, each with an icon and a tone (added
+  in the accent, removed struck out, a note of who is emailed in the secondary color). The chat
+  window (`AgentChat.confirmationEvent`) draws the card in place of the words: a small calendar page
+  beside the title and time, the lines under them, and a button that says what confirming does
+  ("Add", "Save", "Delete"), red for a delete with the page greyed and its month red. A person shows
+  with their address, so the user sees who is emailed.
+- The words still say all of it, and are what the model reads when the user answers aloud
+  (`connectorToolAnsweredAloud`); every other tool's question stays words alone. The card's dates
+  are English and Gregorian (`en-US`), the only language and calendar the app supports, so the page's
+  month, its day and the year check count one calendar; a time on another day than the page names
+  its days. A deletion's card does not restate a stored rule: Calendar can hold rules a summary
+  would misread (the last weekday of the month read as every weekday), and its caption already says
+  every occurrence goes.
+  The page has no year, so a day outside this year is always named with its year (the time, an
+  all-day event's days, an occurrence dropped), as Apple's Calendar does: a wrong year from the model
+  is seen before the user confirms by click. The confirm button's colour comes from its class alone
+  (brand blue, `destructive` red), so nothing inline can override it.
+- Changing an event the user was invited to is refused when the question is prepared, from the
+  event the edit reads anyway, so the user is never asked to confirm a change that can't be made
+  (it was refused by the helper only after Save). The helper's refusal stays.
