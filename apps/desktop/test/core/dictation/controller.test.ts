@@ -3951,6 +3951,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await done;
 
           expect(tool.runs).toEqual([{ title: "Launch review" }]);
+          // The very arguments asked about: a tool keeps what its question was made from by them, and a
+          // copy would run nothing (calendar edit and delete, PDF read).
+          expect(tool.runs[0]).toBe(tool.askedAbout[0]);
           expect(told(1)).toEqual(["Added."]);
           expect(controller.chat?.confirmation).toBeNull();
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
@@ -4160,6 +4163,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(told(1)[0]).toContain("Launch review");
             expect(told(1)[0]).toContain(config.confirmationTool);
             expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+            // The very arguments asked about, as when the question is answered with a click.
+            expect(tool.runs[0]).toBe(tool.askedAbout[0]);
             expect(told(2).at(-1)).toBe("Added.");
             expect(questions).toEqual([]);
             expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
