@@ -258,6 +258,8 @@ final class FakeEventStore: EKEventStore, @unchecked Sendable {
     var reminders: [EKReminder] = []
     private(set) var accessRequests: [EKEntityType] = []
     private(set) var eventRanges: [ClosedRange<Date>] = []
+    /// The calendars the last event predicate covers (nil: every one).
+    private var eventCalendars: [EKCalendar]?
     private(set) var reminderDueBefore: [Date?] = []
     private(set) var fetches = 0
     private(set) var saved: [EKCalendarItem] = []
@@ -334,12 +336,14 @@ final class FakeEventStore: EKEventStore, @unchecked Sendable {
 
     override func predicateForEvents(withStart startDate: Date, end endDate: Date, calendars: [EKCalendar]?) -> NSPredicate {
         eventRanges.append(startDate...endDate)
+        eventCalendars = calendars
         return super.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
     }
 
     override func events(matching predicate: NSPredicate) -> [EKEvent] {
         fetches += 1
-        return events
+        guard let eventCalendars else { return events }
+        return events.filter { event in eventCalendars.contains { $0 === event.calendar } }
     }
 
     override func predicateForIncompleteReminders(withDueDateStarting startDate: Date?, ending endDate: Date?, calendars: [EKCalendar]?) -> NSPredicate {
@@ -490,6 +494,12 @@ func answering(_ participant: EKParticipant, _ status: EKParticipantStatus) -> E
     return participant
 }
 
+/// Makes `method` answer as `block` does, returning its own implementation for the test to put back:
+/// what EventKit's private methods do, for the tests that need them to fail or to be seen.
+func replace(_ method: Method, with block: Any) -> IMP {
+    method_setImplementation(method, imp_implementationWithBlock(block))
+}
+
 func participant(_ email: String) -> EKParticipant? {
     _ = EKEvent(eventStore: EKEventStore())
     guard let attendeeClass = NSClassFromString("EKAttendee") as? NSObject.Type else { return nil }
@@ -638,6 +648,11 @@ extension EventKitTests {
             #expect(saved.title == "Kickoff" && saved.start == start + 3600 && saved.end == start + 5400)
             #expect(saved.location == nil && saved.notes == "Bring the deck" && saved.availability == "free")
             #expect(fake.spans == [.thisEvent] && fake.removed.isEmpty)
+
+            var clearing = EventChanges()
+            clearing.notes = ""
+            let cleared = try await store(fake).edit(id: "event-1", occurrence: nil, scope: .all, changes: clearing)
+            #expect(cleared.notes == nil && event.notes == nil)
         }
 
         /// For the whole series, the first occurrence moves by as much as the one named, saved for every
@@ -1211,6 +1226,104 @@ extension EventKitTests {
             _ = try await store(fake).edit(id: "series-1", occurrence: targetStart, scope: .all, changes: changes)
 
             #expect(first.startDate == movedFirst && first.endDate == movedFirst + 3600)
+        }
+
+        /// An all-day series moved from a later occurrence keeps the days confirmed: every occurrence
+        /// moves by as many days and lasts as many as the one named was given.
+        @Test
+        func anAllDaySeriesMovedKeepsItsDays() async throws {
+            let calendar = Calendar.current
+            let day = { (days: Int) in calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: self.start))! }
+            let fake = FakeEventStore()
+            let first = fake.occurrence("Offsite", id: "series-1", start: day(0))
+            let target = fake.occurrence("Offsite", id: "series-1", start: day(7))
+            for (event, from) in [(first, 0), (target, 7)] {
+                event.isAllDay = true
+                event.startDate = day(from)
+                event.endDate = day(from + 2)
+            }
+            fake.byID = ["series-1": first]
+            fake.events = [first, target]
+            var changes = EventChanges()
+            changes.start = day(8)
+            changes.end = day(11)
+
+            _ = try await store(fake).edit(id: "series-1", occurrence: day(7), scope: .all, changes: changes)
+
+            #expect(first.isAllDay && calendar.isDate(first.startDate, inSameDayAs: day(1)))
+            #expect(calendar.isDate(first.endDate, inSameDayAs: day(4)))
+        }
+
+        /// The series moves by the days the named occurrence moves on the calendar, whatever the hours:
+        /// later the same day stays that day, a few minutes past midnight is the next.
+        @Test(arguments: [(from: 10, to: 23, toMinute: 0, nextDay: false), (from: 23, to: 0, toMinute: 30, nextDay: true)])
+        func aSeriesMovesByCalendarDays(from: Int, to: Int, toMinute: Int, nextDay: Bool) async throws {
+            let zone = try #require(TimeZone(identifier: "UTC"))
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            let day = { (days: Int, hour: Int, minute: Int) in
+                calendar.date(bySettingHour: hour, minute: minute, second: 0, of: calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: self.start))!)!
+            }
+            let fake = FakeEventStore()
+            let first = fake.occurrence("Sync", id: "series-1", start: day(0, from, 0))
+            let target = fake.occurrence("Sync", id: "series-1", start: day(7, from, 0))
+            for event in [first, target] { event.timeZone = zone }
+            fake.byID = ["series-1": first]
+            fake.events = [first, target]
+            let newStart = day(nextDay ? 8 : 7, to, toMinute)
+            var changes = EventChanges()
+            changes.start = newStart
+            changes.end = newStart + 1800
+
+            _ = try await store(fake).edit(id: "series-1", occurrence: day(7, from, 0), scope: .all, changes: changes)
+
+            #expect(first.startDate == day(nextDay ? 1 : 0, to, toMinute) && first.endDate == first.startDate + 1800)
+        }
+
+        /// An occurrence is looked for in its own event's calendar: one of another calendar at the same
+        /// time, sharing the id, is not it.
+        @Test
+        func anOccurrenceIsLookedForInItsOwnCalendar() async throws {
+            let fake = FakeEventStore()
+            let first = fake.occurrence("Sync", id: "series-1", start: start)
+            let elsewhere = fake.occurrence("Elsewhere", id: "series-1", start: start + 7 * 86_400, in: fake.sharedCalendar)
+            let second = fake.occurrence("Sync second", id: "series-1", start: start + 7 * 86_400)
+            fake.byID = ["series-1": first]
+            fake.events = [elsewhere, second]
+
+            let read = try await store(fake).event(id: "series-1", occurrence: start + 7 * 86_400)
+
+            #expect(read.title == "Sync second")
+        }
+
+        /// The first person invited to an event with none makes the user its organizer, as Calendar does;
+        /// later ones don't again. One this macOS can't invite fails the create, saving nothing.
+        @Test
+        func invitingMakesTheUserOrganizerOnceAndAFailedInviteSavesNothing() async throws {
+            let fake = FakeEventStore()
+            var event = CalendarEvent(title: "Planning", start: start, end: start + 1800, isAllDay: false, calendar: "", location: nil, notes: nil)
+            event.calendarId = fake.sharedCalendar.calendarIdentifier
+            event.attendees = [EventAttendee(email: "alex@example.com", name: "Alex"), EventAttendee(email: "sam@example.com", name: nil)]
+
+            let organizer = try #require(class_getInstanceMethod(EKEvent.self, NSSelectorFromString("addOrganizerAndSelfAttendeeForNewInvitation")))
+            let calls = OSAllocatedUnfairLock(initialState: 0)
+            let recording: @convention(block) (AnyObject) -> Void = { _ in calls.withLock { $0 += 1 } }
+            do {
+                let original = replace(organizer, with: recording)
+                defer { method_setImplementation(organizer, original) }
+                _ = try await store(fake).add(event)
+            }
+            #expect(calls.withLock { $0 } == 1 && fake.saved.count == 1)
+
+            let attendeeClass: AnyClass = try #require(NSClassFromString("EKAttendee"))
+            let factory = try #require(class_getClassMethod(attendeeClass, NSSelectorFromString("attendeeWithName:emailAddress:")))
+            let refusing: @convention(block) (AnyObject, NSString?, NSString) -> AnyObject? = { _, _, _ in nil }
+            do {
+                let original = replace(factory, with: refusing)
+                defer { method_setImplementation(factory, original) }
+                await #expect(throws: EventKitStore.Failure.invitationsUnavailable.helperError) { _ = try await store(fake).add(event) }
+            }
+            #expect(fake.saved.count == 1)
         }
 
         /// A failed write leaves what was already committed, and nothing after it: an occurrence deleted

@@ -238,6 +238,7 @@ describe("helper wire contract", () => {
     expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], recurrence })).toEqual(read);
     // A rule with a count and no last day goes with its end null, never a number read as a last day.
     expect(await editor.edit("event-1", null, "all", { invite: [], uninvite: [], exclude: [], recurrence: { ...recurrence, count: 4, until: null } })).toEqual(read);
+    expect(await editor.edit("event-1", null, "all", { invite: [{ email: "sam@example.com", name: "Sam Lee" }], uninvite: [], exclude: [], isAllDay: true, availability: "free" })).toEqual(read);
     await editor.delete("event-1");
     expect(await store.openReminders(end)).toEqual([
       { ...reminder, due: start },
@@ -265,6 +266,7 @@ describe("helper wire contract", () => {
       { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", title: "Kickoff", recurrence: null }, timeout },
       { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", recurrence: helperRecurrence }, timeout },
       { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", recurrence: { ...helperRecurrence, count: 4, until: null } }, timeout },
+      { method: "calendarEdit", params: { ...unchanged, id: "event-1", occurrence: null, scope: "all", isAllDay: true, availability: "free", invite: [{ email: "sam@example.com", name: "Sam Lee" }] }, timeout },
       { method: "calendarDelete", params: { id: "event-1" }, timeout },
       { method: "reminders", params: { dueBefore: end.getTime() }, timeout },
       { method: "reminders", params: { dueBefore: null }, timeout },
@@ -272,7 +274,7 @@ describe("helper wire contract", () => {
       { method: "reminderAdd", params: { title: "Call back", due: null, dueHasTime: false, notes: null }, timeout },
     ]);
     // Absent, the repeating is left as it is.
-    expect(calls.filter((call) => call.method === "calendarEdit").map((call) => Object.hasOwn(call.params as object, "recurrence"))).toEqual([false, true, true, true]);
+    expect(calls.filter((call) => call.method === "calendarEdit").map((call) => Object.hasOwn(call.params as object, "recurrence"))).toEqual([false, true, true, true, false]);
 
     for (const kind of ["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList", "noSuchEvent", "notOrganizer"] as const) {
       failure = new HelperError("failed", "calendarEvents", kind);
