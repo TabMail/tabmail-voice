@@ -405,6 +405,22 @@ func currentUser(_ participant: EKParticipant) -> EKParticipant {
     return participant
 }
 
+/// `participant` as a room or other resource Calendar reaches by a URL that is no email address: a
+/// subclass made at run time, answering `url` with `url`.
+func resource(_ participant: EKParticipant, at url: URL) -> EKParticipant {
+    guard let base = object_getClass(participant) else { return participant }
+    let name = "VoiceTestResource\(NSStringFromClass(base))"
+    let subclass: AnyClass? = NSClassFromString(name) ?? {
+        guard let made = objc_allocateClassPair(base, name, 0) else { return nil }
+        let answer: @convention(block) (AnyObject) -> NSURL = { _ in url as NSURL }
+        class_addMethod(made, NSSelectorFromString("URL"), imp_implementationWithBlock(answer), "@@:")
+        objc_registerClassPair(made)
+        return made
+    }()
+    if let subclass { object_setClass(participant, subclass) }
+    return participant
+}
+
 func participant(_ email: String) -> EKParticipant? {
     _ = EKEvent(eventStore: EKEventStore())
     guard let attendeeClass = NSClassFromString("EKAttendee") as? NSObject.Type else { return nil }
@@ -839,6 +855,37 @@ struct EventKitStoreTests {
 
         let found = try await store(fake).event(id: "series-1/RID=1", occurrence: start + 7 * 86_400)
         #expect(found.id == "series-1/RID=1" && found.start == start + 90 * 86_400 && found.isDetached)
+    }
+
+    /// An occurrence changed on its own, which carries its series' rule, is saved alone whatever scope
+    /// is asked: saved for the following events, every later occurrence would take its changes.
+    @Test(arguments: [EventScope.all, .thisAndFollowing, .thisOnly])
+    func aDetachedOccurrenceChangesAlone(scope: EventScope) async throws {
+        let fake = FakeEventStore()
+        let moved = fake.occurrence("Sync moved", id: "series-1/RID=1", start: start + 8 * 86_400, occurrence: start + 7 * 86_400)
+        moved.stubDetached = true
+        fake.byID = ["series-1/RID=1": moved]
+        fake.events = [moved]
+        var changes = EventChanges()
+        changes.title = "Sync once"
+        changes.start = start + 8 * 86_400 + 3600
+        changes.end = start + 8 * 86_400 + 7200
+
+        _ = try await store(fake).edit(id: "series-1/RID=1", occurrence: nil, scope: scope, changes: changes)
+
+        #expect(moved.hasRecurrenceRules)
+        #expect(fake.saved.count == 1 && fake.saved.first === moved && fake.spans == [.thisEvent])
+        #expect(moved.title == "Sync once" && moved.startDate == start + 8 * 86_400 + 3600 && moved.endDate == start + 8 * 86_400 + 7200)
+    }
+
+    /// A room, reached by a URL that is no email address, is no attendee the model can name or remove.
+    @Test
+    func aRoomIsNoAttendee() throws {
+        let room = resource(try #require(participant("room-4@example.com")), at: try #require(URL(string: "urn:example:room-4")))
+        #expect(Invitations.email(of: room) == nil)
+        #expect(EventKitStore.eventAttendee(room) == nil)
+        let person = try #require(participant("Alex@Example.com"))
+        #expect(Invitations.email(of: person) == "alex@example.com")
     }
 
     /// An occurrence named while the event still repeated deletes nothing once it is a single event:

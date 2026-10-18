@@ -334,7 +334,9 @@ final class EventKitStore {
         for occurrence in excluded { try store.remove(occurrence, span: .thisEvent, commit: true) }
         // Found again: the deletions changed the series.
         let target = try find(id: id, occurrence: occurrence)
-        let repeats = target.hasRecurrenceRules
+        // An occurrence changed on its own is changed alone, as it is deleted: saved for the following
+        // events, it would be saved over every later occurrence.
+        let repeats = target.hasRecurrenceRules && !target.isDetached
         let edited = repeats && scope == .all ? try find(id: id, occurrence: nil) : target
         var span: EKSpan = repeats && scope != .thisOnly ? .futureEvents : .thisEvent
 

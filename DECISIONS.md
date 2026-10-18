@@ -5339,7 +5339,13 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   times moved by as much as the target occurrence's. A recurrence change always saves `.futureEvents`.
   Moving the series moves every occurrence by as many calendar days as the target moves, to its new
   time of day, never by a number of seconds: across a daylight-saving change that would land an hour
-  off, or an all-day series on the day before. A detached occurrence takes only `this_only` changes.
+  off, or an all-day series on the day before. A series whose rule names its days (`BYDAY`,
+  `BYMONTHDAY`, `BYMONTH`, `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`) moved to another day is refused unless
+  the edit gives the rule it moves to, which the user then confirms: the start would no longer be one
+  of the rule's days, which RFC 5545 leaves undefined. A detached occurrence carries its series' rule
+  in EventKit, yet is changed alone, by its id with or without `recurrence_id`: the app sends it as
+  `this_only`, and the helper saves it with `.thisEvent` whatever scope arrives (as delete does), since
+  `.futureEvents` would save it over every later occurrence. It takes only `this_only` changes.
   `exdates_add` removes the occurrences named before the rest of the edit, once the edit is checked
   (the event editable, invitations possible) and every one of them found as an occurrence of the
   series: a refusal removes none. Each removal commits at once (`.thisEvent`, `commit: true`), so none

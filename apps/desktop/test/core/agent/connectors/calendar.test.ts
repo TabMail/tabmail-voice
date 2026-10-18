@@ -605,6 +605,8 @@ describe("calendar_event_create with single-event access", () => {
     [{ freq: "MONTHLY", byDay: "MO" }, "recurrence.byDay is not a list."],
     [{ freq: "WEEKLY", byMonthDay: [15] }, "recurrence.byMonthDay needs MONTHLY."],
     [{ freq: "MONTHLY", byMonthDay: [32] }, "recurrence.byMonthDay has 32, which is not valid there."],
+    [{ freq: "MONTHLY", byMonthDay: [0] }, "recurrence.byMonthDay has 0, which is not valid there."],
+    [{ freq: "YEARLY", byDay: ["54MO"] }, 'recurrence.byDay has "54MO", which is not valid there.'],
     [{ freq: "MONTHLY", byMonth: [3] }, "recurrence.byMonth needs YEARLY."],
     [{ freq: "YEARLY", byMonth: [13] }, "recurrence.byMonth has 13, which is not valid there."],
   ])("recurrence %j is refused", async (recurrence, message) => {
@@ -824,17 +826,55 @@ describe("calendar_event_edit", () => {
     await expect(tool.run({ event_id: "series-1", exdates_add: iso(at(10)) }, live)).rejects.toBeInstanceOf(ToolArgumentError);
   });
 
-  /** An occurrence changed on its own changes alone through its own id: not the series, nor how it
-   * repeats. */
+  /** An occurrence changed on its own (which Calendar gives its series' rule) changes alone through
+   * its own id, with a recurrence_id or without: not the series, nor how it repeats. */
   test("an occurrence changed on its own changes alone", async () => {
-    editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", recurrence: null, isDetached: true });
-    await tool.run({ event_id: "series-1/moved", recurrence_id: iso(at(10)), title: "Sync" }, live);
-    expect(editor.edits.at(-1)).toMatchObject({ id: "series-1/moved", scope: "all", changes: { title: "Sync" } });
+    editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", isDetached: true });
+    expect((await tool.confirmation({ event_id: "series-1/moved", title: "Sync" })).split("\n").slice(3)).toEqual(["Only this occurrence: it was changed on its own", "New title: Sync", "Its attendees are emailed the change."]);
+    await tool.run({ event_id: "series-1/moved", title: "Sync" }, live);
+    expect(editor.edits.at(-1)).toMatchObject({ id: "series-1/moved", occurrence: null, scope: "thisOnly", changes: { title: "Sync" } });
+    const moved = { event_id: "series-1/moved", start_iso: iso(at(15, 0, 1)) };
+    expect(await tool.confirmation(moved)).not.toMatch(/Every occurrence/);
+    await tool.run(moved, live);
+    expect(editor.edits.at(-1)).toMatchObject({ scope: "thisOnly", changes: { start: at(15, 0, 1), end: at(15, 30, 1) } });
     await tool.run({ event_id: "series-1/moved", recurrence_id: iso(at(10)), edit_scope: "this_only", title: "Sync" }, live);
+    expect(editor.edits.at(-1)).toMatchObject({ scope: "thisOnly" });
     for (const extra of [{ edit_scope: "all" }, { edit_scope: "this_and_following" }, { recurrence: { freq: "DAILY" } }]) {
       await expect(tool.run({ event_id: "series-1/moved", title: "Sync", ...extra }, live)).rejects.toThrow(/changed on its own, so its event_id changes it alone/);
     }
-    expect(editor.edits).toHaveLength(2);
+    await expect(tool.run({ event_id: "series-1/moved", exdates_add: [iso(at(10, 0, 7))] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    expect(editor.edits).toHaveLength(3);
+  });
+
+  /** A series whose rule names its days (Mondays, the first Monday) moves to another day only with
+   * the days it moves to, which the user then confirms; at another time of the same day, or with a
+   * rule that repeats its start's day, it moves as asked. */
+  test("a series moved to another day needs the days it moves to", async () => {
+    const occurrence = iso(at(10));
+    const refused = new ToolArgumentError("This series repeats FREQ=WEEKLY;BYDAY=MO: to move it to another day, give recurrence with the days it moves to.");
+    for (const scope of ["all", "this_and_following"]) {
+      const args = { event_id: "series-1", recurrence_id: occurrence, edit_scope: scope, start_iso: iso(at(10, 0, 1)) };
+      await expect(tool.confirmation(args)).rejects.toEqual(refused);
+      await expect(tool.run(args, live)).rejects.toEqual(refused);
+    }
+    expect(editor.edits).toEqual([]);
+
+    const withDays = { event_id: "series-1", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all", recurrence: { freq: "WEEKLY", byDay: ["TU"] } };
+    expect(await tool.confirmation(withDays)).toContain("Repeats every week on Tuesday");
+    await tool.run(withDays, live);
+    expect(lastChanges()).toMatchObject({ start: at(10, 0, 1), recurrence: { days: [{ weekday: 3, week: 0 }] } });
+    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "all", start_iso: iso(at(16)) }, live);
+    expect(lastChanges()).toMatchObject({ start: at(16) });
+    await tool.run({ event_id: "series-1", recurrence_id: occurrence, edit_scope: "this_only", start_iso: iso(at(10, 0, 1)) }, live);
+    expect(lastChanges()).toMatchObject({ start: at(10, 0, 1) });
+    for (const rule of [{ monthDays: [15] }, { positions: [-1] }, { months: [3] }, { yearWeeks: [20] }, { yearDays: [100] }]) {
+      editor.byID.set("series-2", { ...standup(), id: "series-2", recurrence: { ...weekly, days: [], ...rule } });
+      await expect(tool.run({ event_id: "series-2", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
+    }
+    editor.byID.set("series-2", { ...standup(), id: "series-2", recurrence: { ...weekly, days: [] } });
+    await tool.run({ event_id: "series-2", recurrence_id: occurrence, start_iso: iso(at(10, 0, 1)), edit_scope: "all" }, live);
+    expect(editor.edits.at(-1)).toMatchObject({ id: "series-2", changes: { start: at(10, 0, 1) } });
+    expect(editor.edits).toHaveLength(4);
   });
 
   /** A call that changes nothing, names no event, or names one there isn't is not asked about and
@@ -941,10 +981,15 @@ test("a rule read from Calendar is described in full", async () => {
   const store = editableStore(editor);
   const until = new Date(at(23, 30, 60).getTime() + 45 * 1_000);
   const lastWeekday: EventRecurrence = { ...weekly, frequency: "MONTHLY", days: [2, 3, 4, 5, 6].map((weekday) => ({ weekday, week: 0 })), positions: [-1], until };
-  store.storedEvents = [{ ...standup(), recurrence: lastWeekday }, { ...standup(), id: "series-2", recurrence: { ...weekly, frequency: "YEARLY", days: [], yearWeeks: [20], yearDays: [100] } }];
+  store.storedEvents = [
+    { ...standup(), recurrence: lastWeekday },
+    { ...standup(), id: "series-2", recurrence: { ...weekly, frequency: "YEARLY", days: [], yearWeeks: [20], yearDays: [100] } },
+    { ...standup(), id: "series-3", recurrence: { ...weekly, frequency: "YEARLY", days: [], monthDays: [15, -1], months: [3, 9] } },
+  ];
 
   const lines = (await new CalendarReadTool(store, () => at(8)).run({})).split("\n");
 
   expect(lines[1]).toContain(`repeats FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;UNTIL=${LocalDateTime.iso(until)}`);
   expect(lines[2]).toContain("repeats FREQ=YEARLY;BYWEEKNO=20;BYYEARDAY=100");
+  expect(lines[3]).toContain("repeats FREQ=YEARLY;BYMONTHDAY=15,-1;BYMONTH=3,9");
 });

@@ -577,7 +577,8 @@ export class CalendarEventEditTool implements ConnectorTool {
   async confirmation(args: Record<string, unknown>): Promise<string> {
     const { current, changes, scope, occurrence } = await this.plan(args);
     const lines = ["Change this event?", current.title, spokenWhen(current)];
-    if (current.recurrence && occurrence !== null && scope === "thisOnly") lines.push(`Only the occurrence on ${LocalDateTime.spoken(occurrence, false)}`);
+    if (current.isDetached) lines.push("Only this occurrence: it was changed on its own");
+    else if (current.recurrence && occurrence !== null && scope === "thisOnly") lines.push(`Only the occurrence on ${LocalDateTime.spoken(occurrence, false)}`);
     else if (current.recurrence && occurrence !== null && scope === "thisAndFollowing") lines.push(`The occurrence on ${LocalDateTime.spoken(occurrence, false)} and every one after it`);
     else if (current.recurrence) lines.push("Every occurrence");
     if (changes.title !== undefined) lines.push(`New title: ${changes.title}`);
@@ -619,8 +620,9 @@ export class CalendarEventEditTool implements ConnectorTool {
     if (current.isDetached && ((args.edit_scope !== undefined && named !== "thisOnly") || (args.recurrence !== undefined && args.recurrence !== null))) {
       throw new ToolArgumentError("This occurrence was changed on its own, so its event_id changes it alone. To change the series, use the event_id and recurrence_id of another occurrence.");
     }
-    const repeats = Boolean(current.recurrence);
-    const scope = repeats ? named : "all";
+    // Changed alone, whether or not a recurrence_id names it: Calendar saves it over every later one otherwise.
+    const repeats = Boolean(current.recurrence) && !current.isDetached;
+    const scope = current.isDetached ? "thisOnly" : repeats ? named : "all";
     if (repeats && scope !== "all" && occurrence === null) throw new ToolArgumentError(`edit_scope ${String(rawScope)} needs recurrence_id: the occurrence it starts from.`);
 
     const changes: EventChanges = { invite: attendeesArgument(args, "add_attendees"), uninvite: [], exclude: [] };
@@ -643,6 +645,10 @@ export class CalendarEventEditTool implements ConnectorTool {
       if (scope === "thisOnly") throw new ToolArgumentError("One occurrence can't repeat on its own: give edit_scope all or this_and_following to change how the event repeats.");
       changes.recurrence = recurrenceArgument(args.recurrence, changes.start ?? current.start);
     }
+    // A rule that picks its days would no longer match a series moved to another day.
+    if (current.recurrence && scope !== "thisOnly" && changes.start !== undefined && changes.recurrence === undefined && picksDays(current.recurrence) && changes.start.toDateString() !== current.start.toDateString()) {
+      throw new ToolArgumentError(`This series repeats ${rrule(current.recurrence)}: to move it to another day, give recurrence with the days it moves to.`);
+    }
     changes.exclude = excludedOccurrences(args, repeats, occurrence);
     const asked = changes.title ?? changes.start ?? changes.location ?? changes.notes ?? changes.availability;
     if (asked === undefined && changes.recurrence === undefined && changes.invite.length === 0 && changes.uninvite.length === 0 && changes.exclude.length === 0) {
@@ -650,6 +656,11 @@ export class CalendarEventEditTool implements ConnectorTool {
     }
     return { id, occurrence, scope, current, changes };
   }
+}
+
+/** Whether `rule` names the days it falls on (BYDAY and the like), rather than repeating its start's. */
+function picksDays(rule: EventRecurrence): boolean {
+  return [rule.days, rule.monthDays, rule.months, rule.positions, rule.yearWeeks, rule.yearDays].some((part) => part.length > 0);
 }
 
 /** The new start, end and all-day of an edit, or null when it changes none of them. A new start
