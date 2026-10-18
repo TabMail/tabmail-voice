@@ -340,7 +340,8 @@ function recurrenceArgument(value: unknown, start: Date): EventRecurrence | null
   if (!frequencies.includes(frequency as Frequency)) throw new ToolArgumentError("recurrence.freq must be DAILY, WEEKLY, MONTHLY or YEARLY.");
   const positive = (name: string, field: unknown): number | null => {
     if (field === undefined || field === null) return null;
-    if (typeof field !== "number" || !Number.isInteger(field) || field < 1) throw new ToolArgumentError(`recurrence.${name} is not a whole number of 1 or more.`);
+    // A safe integer, or the helper could not read it back as the number confirmed.
+    if (typeof field !== "number" || !Number.isSafeInteger(field) || field < 1) throw new ToolArgumentError(`recurrence.${name} is not a whole number of 1 or more.`);
     return field;
   };
   const interval = positive("interval", value.interval) ?? 1;
@@ -710,7 +711,8 @@ function editedTimes(args: Record<string, unknown>, current: CalendarEvent): { s
   return { ...times, isAllDay };
 }
 
-/** The emails `remove_attendees` names, lowercased; "*" names every attendee but the organizer. */
+/** The emails `remove_attendees` names that are the event's attendees (not its organizer),
+ * lowercased: each one the user is shown, never a "remove everyone" read again when the edit runs. */
 function removedAttendees(args: Record<string, unknown>, current: CalendarEvent): string[] {
   const value = args.remove_attendees;
   if (value === undefined || value === null) return [];
@@ -720,8 +722,7 @@ function removedAttendees(args: Record<string, unknown>, current: CalendarEvent)
   const removed = new Set<string>();
   for (const item of value as unknown[]) {
     const email = isJSONObject(item) ? Arguments.text(item, "email")?.toLowerCase() : undefined;
-    if (email === "*") present.forEach((attendee) => removed.add(attendee));
-    else if (email && present.includes(email)) removed.add(email);
+    if (email && present.includes(email)) removed.add(email);
     else if (!email) throw new ToolArgumentError("remove_attendees has an item without an email.");
   }
   return [...removed];

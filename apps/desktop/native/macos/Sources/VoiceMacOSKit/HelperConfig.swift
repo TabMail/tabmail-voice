@@ -98,6 +98,8 @@ enum HelperConfig {
     /// An occurrence of a repeating event is looked for this far either side of its original start:
     /// one changed on its own may have moved away from it.
     static let eventOccurrenceSearchSpan: TimeInterval = 31 * 24 * 60 * 60
-    /// Two times this close name the same occurrence: the app's milliseconds against EventKit's dates.
-    static let eventOccurrenceTolerance: TimeInterval = 1
+    /// Two times this close name the same occurrence: the app names one by its local time, which in
+    /// the hour a daylight-saving change repeats reads as the earlier of two instants, an hour before the
+    /// later. An hour is the most a clock moves, and a series' occurrences are a day or more apart.
+    static let eventOccurrenceTolerance: TimeInterval = 60 * 60
 }

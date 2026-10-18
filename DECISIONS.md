@@ -5321,14 +5321,20 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   yearWeeks, yearDays}`, what one `EKRecurrenceRule` says, read in full: "the last weekday" is Monday
   to Friday at position -1, and a rule read without its positions would say more occurrences than it
   has; the model's own rules take no positions or year fields, and anything else Calendar would drop
-  or misread is refused in core),
-  `isDetached` and `isInvitation` (attendees, and an organizer who isn't the user). `calendarEdit`'s
+  or misread is refused in core; a count past the largest safe integer is refused there, and the
+  helper refuses a rule with any field it can't read rather than reading it as absent, which for a
+  count would repeat for ever),
+  `isDetached` and `isInvitation` (attendees, and an organizer who isn't the user). People are removed
+  by their addresses only, those the user confirmed: a "remove everyone" read again when the edit runs
+  would also remove someone added meanwhile. `calendarEdit`'s
   `recurrence` absent keeps the rule and null clears it. Calendars come with whether each is the
   default, and only those whose events can change.
 - **Finding an occurrence.** `event(withIdentifier:)` returns a series' first occurrence, so an
   occurrence of a repeating event is found by its id and `occurrence` among the events of its calendar
   within `HelperConfig.eventOccurrenceSearchSpan` (31 days) of it, matched within
-  `eventOccurrenceTolerance` (a second). An occurrence changed on its own (detached) has an id of its
+  `eventOccurrenceTolerance` (an hour): the app gives and takes an occurrence by its
+  local time, which in the hour a daylight-saving change repeats reads as the earlier of two instants,
+  and a series' occurrences are a day or more apart. An occurrence changed on its own (detached) has an id of its
   own (`<series>/RID=<seconds>`), which names it alone, so it is returned by that id however far it
   moved (Apple documents its `occurrenceDate` as its original start; the live test read its moved
   start, and the lookup depends on neither). A single event is found only at its own start: an

@@ -78,6 +78,17 @@ struct EventStoreTests {
         ["frequency": "DAILY", "interval": 1, "count": 2, "until": 1_000],
         ["frequency": "WEEKLY", "interval": 1, "days": [["weekday": 8, "week": 0]]],
         ["frequency": "WEEKLY", "interval": 1, "days": [["weekday": 2]]],
+        // A field sent that doesn't read is refused, never read as absent: an endless rule, or more days.
+        ["frequency": "DAILY", "interval": 1, "count": 1e100],
+        ["frequency": "DAILY", "interval": 1, "count": 0],
+        ["frequency": "DAILY", "interval": 1, "count": "4"],
+        ["frequency": "DAILY", "interval": 1, "until": "soon"],
+        ["frequency": "WEEKLY", "interval": 1, "days": "MO"],
+        ["frequency": "MONTHLY", "interval": 1, "monthDays": [15, 1e100]],
+        ["frequency": "YEARLY", "interval": 1, "months": [3.5]],
+        ["frequency": "MONTHLY", "interval": 1, "positions": "-1"],
+        ["frequency": "YEARLY", "interval": 1, "yearWeeks": [1e100]],
+        ["frequency": "YEARLY", "interval": 1, "yearDays": [nil]],
     ])
     func aMalformedRecurrenceIsRefused(json: JSON) {
         #expect(EventRecurrence(json: json) == nil)
@@ -773,6 +784,64 @@ struct EventKitStoreTests {
         #expect(fake.accessRequests == (status == .notDetermined ? [.event, .event, .reminder, .reminder] : []))
     }
 
+    /// Without access, an event is neither read, changed nor deleted, nor the calendars listed: each
+    /// asks for access as its first step, when it hasn't been decided.
+    @Test(arguments: [(EKAuthorizationStatus.denied, true as Bool?), (.restricted, true), (.writeOnly, true), (.notDetermined, false), (.notDetermined, nil)])
+    func withoutAccessNoEventIsReadChangedOrDeleted(status: EKAuthorizationStatus, grants: Bool?) async {
+        let fake = FakeEventStore()
+        fake.grants = grants
+        let sync = fake.occurrence("Sync", id: "series-1", start: start)
+        fake.byID = ["series-1": sync]
+        fake.events = [sync]
+        let events = store(fake, status)
+        var changes = EventChanges()
+        changes.title = "Renamed"
+        changes.exclude = [start + 7 * 86_400]
+
+        await #expect(throws: EventKitStore.Failure.calendarNoAccess.helperError) { _ = try await events.event(id: "series-1", occurrence: nil) }
+        await #expect(throws: EventKitStore.Failure.calendarNoAccess.helperError) { _ = try await events.calendars() }
+        await #expect(throws: EventKitStore.Failure.calendarNoAccess.helperError) { _ = try await events.edit(id: "series-1", occurrence: nil, scope: .all, changes: changes) }
+        await #expect(throws: EventKitStore.Failure.calendarNoAccess.helperError) { try await events.delete(id: "series-1") }
+        #expect(fake.saved.isEmpty && fake.removed.isEmpty && fake.commits == 0 && sync.title == "Sync")
+        #expect(fake.accessRequests == (status == .notDetermined ? [.event, .event, .event, .event] : []))
+    }
+
+    /// Access granted when asked, the same requests read, list, change and delete: the refusals above
+    /// are access's. (The stand-in's status stays undetermined, so each asks.)
+    @Test
+    func withAccessTheEventIsReadChangedAndDeleted() async throws {
+        let fake = FakeEventStore()
+        let sync = fake.occurrence("Sync", id: "series-1", start: start)
+        fake.byID = ["series-1": sync]
+        fake.events = [sync]
+        let events = store(fake, .notDetermined)
+        var changes = EventChanges()
+        changes.title = "Renamed"
+
+        #expect(try await events.event(id: "series-1", occurrence: nil).title == "Sync")
+        #expect(try await events.calendars().isEmpty == false)
+        _ = try await events.edit(id: "series-1", occurrence: nil, scope: .all, changes: changes)
+        try await events.delete(id: "series-1")
+        #expect(sync.title == "Renamed" && fake.saved.count == 1 && fake.removed.count == 1)
+        #expect(fake.accessRequests == [.event, .event, .event, .event])
+    }
+
+    /// An occurrence in the hour a daylight-saving change repeats is named by a local time that reads
+    /// as the earlier instant, an hour before it: it is still found, and the nearest occurrence wins.
+    @Test
+    func anOccurrenceInTheRepeatedHourIsFound() async throws {
+        let fake = FakeEventStore()
+        let later = fake.occurrence("Sync", id: "series-1", start: start + 86_400)
+        let first = fake.occurrence("Sync", id: "series-1", start: start)
+        fake.byID = ["series-1": first]
+        fake.events = [first, later]
+        let events = store(fake)
+
+        #expect(try await events.event(id: "series-1", occurrence: start + 86_400 - 3600 + 1).start == start + 86_400)
+        #expect(try await events.event(id: "series-1", occurrence: start + 3600 - 1).start == start)
+        await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "series-1", occurrence: start + 3600) }
+    }
+
     /// Each of `voice-macos`'s Calendar and Reminders requests carries its fields to the store, and
     /// answers with what it read or saved, times in milliseconds.
     @Test
@@ -990,6 +1059,43 @@ struct EventKitStoreTests {
         _ = try await store(fake).edit(id: "series-1", occurrence: targetStart, scope: .all, changes: changes)
 
         #expect(first.startDate == movedFirst && first.endDate == movedFirst + 3600)
+    }
+
+    /// The series moves by days in its own zone, not the Mac's: one zone of the two has a
+    /// daylight-saving change between its first occurrence and the one moved, and the other none.
+    @Test
+    func aSeriesInAnotherZoneMovesByItsOwnDays() async throws {
+        let los = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let kolkata = try #require(TimeZone(identifier: "Asia/Kolkata"))
+        // The Mac's zone changes its clocks: the event's has none; otherwise the event's does.
+        let macChanges = TimeZone.current.nextDaylightSavingTimeTransition(after: Date()) != nil
+        let zone = macChanges ? kolkata : los
+        let transition = try #require((macChanges ? TimeZone.current : los).nextDaylightSavingTimeTransition(after: Date()))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let dayBefore = try #require(calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: transition)))
+        var times: [Int: Date] = [:]
+        for days in [-14, -11, 0, 3] {
+            let day = try #require(calendar.date(byAdding: .day, value: days, to: dayBefore))
+            times[days] = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: day)
+        }
+        let firstStart = try #require(times[-14]), movedFirst = try #require(times[-11])
+        let targetStart = try #require(times[0]), newStart = try #require(times[3])
+        let fake = FakeEventStore()
+        let first = fake.occurrence("Sync", id: "series-1", start: firstStart)
+        let target = fake.occurrence("Sync", id: "series-1", start: targetStart)
+        for event in [first, target] { event.timeZone = zone }
+        fake.byID = ["series-1": first]
+        fake.events = [first, target]
+        var changes = EventChanges()
+        changes.start = newStart
+        changes.end = newStart + 3600
+
+        _ = try await store(fake).edit(id: "series-1", occurrence: targetStart, scope: .all, changes: changes)
+
+        #expect(fake.saved.count == 1 && fake.saved.first === first)
+        #expect(first.startDate == movedFirst && first.endDate == movedFirst + 3600)
+        #expect(target.startDate == targetStart)
     }
 
     /// An event is made all day, and timed again, as asked.

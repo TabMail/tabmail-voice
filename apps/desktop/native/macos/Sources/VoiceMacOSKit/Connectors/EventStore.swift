@@ -94,22 +94,44 @@ struct EventRecurrence: Equatable, Sendable {
     /// The fields the app sent; nil for anything malformed (the app checks them first).
     init?(json: JSON) {
         guard let frequency = json["frequency"]?.string, Self.frequencies[frequency] != nil, let interval = json["interval"]?.integer, interval > 0 else { return nil }
+        // A field sent that doesn't read is refused, never read as absent: a count dropped repeats for
+        // ever, and a list of days dropped repeats on more days than asked.
+        guard let count = Self.field(json["count"], \.integer), (count ?? 1) > 0,
+              let until = Self.field(json["until"], { $0.number.map(EventWire.date) }),
+              count == nil || until == nil,
+              let days = Self.list(json["days"], { day -> Day? in
+                  guard let weekday = day["weekday"]?.integer, (1...7).contains(weekday), let week = day["week"]?.integer else { return nil }
+                  return Day(weekday: weekday, week: week)
+              }),
+              let monthDays = Self.list(json["monthDays"], \.integer), let months = Self.list(json["months"], \.integer),
+              let positions = Self.list(json["positions"], \.integer), let yearWeeks = Self.list(json["yearWeeks"], \.integer),
+              let yearDays = Self.list(json["yearDays"], \.integer)
+        else { return nil }
         self.frequency = frequency
         self.interval = interval
-        count = json["count"]?.integer
-        until = json["until"]?.number.map(EventWire.date)
-        if count != nil && until != nil { return nil }
-        let days = json["days"]?.array ?? []
-        self.days = days.compactMap { day in
-            guard let weekday = day["weekday"]?.integer, (1...7).contains(weekday), let week = day["week"]?.integer else { return nil }
-            return Day(weekday: weekday, week: week)
-        }
-        monthDays = (json["monthDays"]?.array ?? []).compactMap(\.integer)
-        months = (json["months"]?.array ?? []).compactMap(\.integer)
-        positions = (json["positions"]?.array ?? []).compactMap(\.integer)
-        yearWeeks = (json["yearWeeks"]?.array ?? []).compactMap(\.integer)
-        yearDays = (json["yearDays"]?.array ?? []).compactMap(\.integer)
-        if self.days.count != days.count { return nil }
+        self.count = count
+        self.until = until
+        self.days = days
+        self.monthDays = monthDays
+        self.months = months
+        self.positions = positions
+        self.yearWeeks = yearWeeks
+        self.yearDays = yearDays
+    }
+
+    /// `value` read by `read`: `.some(nil)` when it is absent or null, nil when it doesn't read.
+    private static func field<T>(_ value: JSON?, _ read: (JSON) -> T?) -> T?? {
+        guard let value, value != .null else { return .some(nil) }
+        return read(value).map { .some($0) }
+    }
+
+    /// Every item of the list `value` read by `read`, nil when one doesn't (or it is no list); empty when
+    /// it is absent or null.
+    private static func list<T>(_ value: JSON?, _ read: (JSON) -> T?) -> [T]? {
+        guard let value, value != .null else { return [] }
+        guard let items = value.array else { return nil }
+        let read = items.compactMap(read)
+        return read.count == items.count ? read : nil
     }
 
     init(
@@ -415,8 +437,8 @@ final class EventKitStore {
         let predicate = store.predicateForEvents(
             withStart: occurrence.addingTimeInterval(-span), end: occurrence.addingTimeInterval(span), calendars: first.calendar.map { [$0] }
         )
-        let found = store.events(matching: predicate).first { event in
-            event.eventIdentifier == id && abs((event.occurrenceDate ?? event.startDate).timeIntervalSince(occurrence)) < HelperConfig.eventOccurrenceTolerance
+        let found = store.events(matching: predicate).first {
+            $0.eventIdentifier == id && abs(($0.occurrenceDate ?? $0.startDate).timeIntervalSince(occurrence)) < HelperConfig.eventOccurrenceTolerance
         }
         guard let found else { throw Failure.noSuchEvent.helperError }
         return found

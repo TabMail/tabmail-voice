@@ -595,6 +595,8 @@ describe("calendar_event_create with single-event access", () => {
     [{ freq: "HOURLY" }, "recurrence.freq must be DAILY, WEEKLY, MONTHLY or YEARLY."],
     [{ freq: "DAILY", interval: 0 }, "recurrence.interval is not a whole number of 1 or more."],
     [{ freq: "DAILY", count: 2.5 }, "recurrence.count is not a whole number of 1 or more."],
+    [{ freq: "DAILY", count: 1e100 }, "recurrence.count is not a whole number of 1 or more."],
+    [{ freq: "DAILY", interval: 2 ** 53 }, "recurrence.interval is not a whole number of 1 or more."],
     [{ freq: "DAILY", count: 3, until: "2099-01-15" }, "recurrence takes count or until, not both."],
     [{ freq: "DAILY", until: "soon" }, "recurrence.until is not a date and time like 2025-01-15T14:00:00, or a day like 2025-01-15."],
     [{ freq: "DAILY", until: "2020-01-15" }, "recurrence.until is before the event starts."],
@@ -650,6 +652,8 @@ describe("calendar_event_read", () => {
 
     const result = await tool.run({ event_id: "series-1", recurrence_id: iso(at(10)) });
 
+    // Reading asks no question.
+    expect(tool.confirmation()).toBeNull();
     expect(editor.reads).toEqual([["series-1", at(10)]]);
     expect(result.split("\n")).toEqual([
       "Team sync",
@@ -757,16 +761,15 @@ describe("calendar_event_edit", () => {
     expect((await tool.confirmation({ event_id: "event-1", location: "Room 5", notes: " " }))?.split("\n").slice(3)).toEqual(["New location: Room 5", "Remove the notes"]);
   });
 
-  /** People are invited and removed by email, the user told they are emailed; "*" removes every
-   * attendee but the organizer; one not on the event is ignored. */
+  /** People are invited and removed by email, the user told they are emailed; one not on the event
+   * is ignored, and "*" names no one. */
   test("people are invited and removed", async () => {
     const args = { event_id: "series-1", add_attendees: [{ email: "sam@example.com", name: "Sam" }], remove_attendees: [{ email: "ALEX@example.com" }, { email: "nobody@example.com" }] };
     const question = (await tool.confirmation(args))?.split("\n");
     expect(question?.slice(3)).toEqual(["Every occurrence", "Invite: Sam <sam@example.com>", "They are emailed an invitation.", "Remove: alex@example.com", "They are emailed that they are no longer invited.", "Its attendees are emailed the change."]);
     await tool.run(args, live);
     expect(editor.edits.at(-1)).toMatchObject({ id: "series-1", occurrence: null, scope: "all", changes: { invite: [{ email: "sam@example.com", name: "Sam" }], uninvite: ["alex@example.com"] } });
-    await tool.run({ event_id: "series-1", remove_attendees: [{ email: "*" }] }, live);
-    expect(lastChanges()?.uninvite).toEqual(["alex@example.com"]);
+    await expect(tool.run({ event_id: "series-1", remove_attendees: [{ email: "*" }] }, live)).rejects.toEqual(new ToolArgumentError("Nothing to change: give the fields to change."));
     await expect(tool.run({ event_id: "series-1", remove_attendees: [{ name: "Alex" }] }, live)).rejects.toBeInstanceOf(ToolArgumentError);
     await expect(tool.run({ event_id: "series-1", remove_attendees: "alex@example.com" }, live)).rejects.toBeInstanceOf(ToolArgumentError);
   });
@@ -778,6 +781,17 @@ describe("calendar_event_edit", () => {
     const question = await tool.confirmation({ event_id: "event-1", title: "Kickoff" });
     expect(question.split("\n").slice(3)).toEqual(["New title: Kickoff"]);
     expect(question).not.toContain("emailed");
+  });
+
+  /** Only the people the user was shown are removed: someone invited in Calendar while the question
+   * is open stays invited. */
+  test("someone added while asked is not removed", async () => {
+    const args = { event_id: "series-1", remove_attendees: [{ email: "alex@example.com" }] };
+    expect(await tool.confirmation(args)).toContain("Remove: alex@example.com");
+    const sam = { email: "sam@example.com", name: "Sam", status: "pending" };
+    editor.byID.set("series-1", { ...standup(), attendees: [...(standup().attendees ?? []), sam] });
+    await tool.run(args, live);
+    expect(lastChanges()?.uninvite).toEqual(["alex@example.com"]);
   });
 
   /** The model hears of an invitee the calendar did not keep. */
