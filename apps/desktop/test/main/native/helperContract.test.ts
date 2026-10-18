@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { configureLog } from "../../../src/core/log.js";
 import { hotkeyActions } from "../../../src/core/hotkey/bindings.js";
-import { EventStoreError } from "../../../src/core/agent/connectors/calendar.js";
+import { EventStoreError, type EventRecurrence } from "../../../src/core/agent/connectors/calendar.js";
 import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.js";
 import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
@@ -97,7 +97,7 @@ describe("helper wire contract", () => {
     const editor = mac.eventStore.editor;
     await editor?.event("event-1", now);
     await editor?.calendars();
-    const recurrence = { frequency: "WEEKLY", interval: 1, count: null, until: now, days: [], monthDays: [], months: [] } as const;
+    const recurrence: EventRecurrence = { frequency: "WEEKLY", interval: 1, count: null, until: now, days: [], monthDays: [], months: [], positions: [], yearWeeks: [], yearDays: [] };
     await editor?.edit("event-1", now, "all", { title: "Example", start: now, end: now, isAllDay: false, location: "", notes: "", availability: "free", recurrence, invite: [], uninvite: [], exclude: [] });
     await editor?.delete("event-1");
     await mac.eventStore.openReminders(null);
@@ -190,8 +190,8 @@ describe("helper wire contract", () => {
     const start = new Date(Date.now() + 7 * 24 * 3600 * 1000);
     const end = new Date(start.getTime() + 3600 * 1000);
     const until = new Date(start.getTime() + 30 * 24 * 3600 * 1000);
-    const helperRecurrence = { frequency: "WEEKLY", interval: 2, count: null, until: until.getTime(), days: [{ weekday: 2, week: 0 }], monthDays: [], months: [] };
-    const recurrence = { ...helperRecurrence, until } as const;
+    const helperRecurrence = { frequency: "WEEKLY" as const, interval: 2, count: null, until: until.getTime(), days: [{ weekday: 2, week: 0 }], monthDays: [], months: [], positions: [], yearWeeks: [], yearDays: [] };
+    const recurrence: EventRecurrence = { ...helperRecurrence, until };
     const attendees = [{ email: "alex@example.com", name: "Alex Example", status: "accepted" }];
     const saved = {
       title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, calendar: "Work", location: "Room 4", notes: null,

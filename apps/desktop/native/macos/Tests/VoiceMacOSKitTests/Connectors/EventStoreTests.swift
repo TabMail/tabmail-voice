@@ -49,12 +49,16 @@ struct EventStoreTests {
         #expect(event.json["organizer"] == ["email": "me@example.com", "name": nil, "status": "unknown"])
         #expect(event.json["recurrence"] == [
             "frequency": "MONTHLY", "interval": 2, "count": nil, "until": ms(until), "days": [["weekday": 6, "week": -1]], "monthDays": [], "months": [],
+            "positions": [], "yearWeeks": [], "yearDays": [],
         ])
         #expect(EventRecurrence(json: event.json["recurrence"]!) == recurrence)
     }
 
     /// A rule as the app sends it becomes EventKit's, and reads back the same.
     @Test(arguments: [
+        EventRecurrence(frequency: "MONTHLY", interval: 1, days: (2...6).map { .init(weekday: $0, week: 0) }, positions: [-1]),
+        EventRecurrence(frequency: "YEARLY", interval: 1, yearWeeks: [20]),
+        EventRecurrence(frequency: "YEARLY", interval: 1, yearDays: [100, -1]),
         EventRecurrence(frequency: "DAILY", interval: 1, count: 5),
         EventRecurrence(frequency: "WEEKLY", interval: 2, days: [.init(weekday: 2, week: 0), .init(weekday: 4, week: 0)]),
         EventRecurrence(frequency: "MONTHLY", interval: 1, monthDays: [1, -1]),
@@ -385,6 +389,22 @@ final class ReadOnlyCalendar: EKCalendar {
 }
 
 /// Someone, as Calendar makes an attendee (the method `Invitations` uses), for an organizer.
+/// `participant` marked as the user, as EventKit marks the user's own address: a subclass made at run
+/// time (EventKit's attendee class is its own), answering `isCurrentUser` true.
+func currentUser(_ participant: EKParticipant) -> EKParticipant {
+    guard let base = object_getClass(participant) else { return participant }
+    let name = "VoiceTestCurrentUser\(NSStringFromClass(base))"
+    let subclass: AnyClass? = NSClassFromString(name) ?? {
+        guard let made = objc_allocateClassPair(base, name, 0) else { return nil }
+        let isCurrentUser: @convention(block) (AnyObject) -> Bool = { _ in true }
+        class_addMethod(made, NSSelectorFromString("isCurrentUser"), imp_implementationWithBlock(isCurrentUser), "B@:")
+        objc_registerClassPair(made)
+        return made
+    }()
+    if let subclass { object_setClass(participant, subclass) }
+    return participant
+}
+
 func participant(_ email: String) -> EKParticipant? {
     _ = EKEvent(eventStore: EKEventStore())
     guard let attendeeClass = NSClassFromString("EKAttendee") as? NSObject.Type else { return nil }
@@ -464,6 +484,12 @@ struct EventKitStoreTests {
             holidays.calendarId = fake.readOnlyCalendar.calendarIdentifier
             _ = try await events.add(holidays)
         }
+        // A reminders list is no calendar for events.
+        await #expect(throws: EventKitStore.Failure.noSuchCalendar.helperError) {
+            var errands = event
+            errands.calendarId = fake.list.calendarIdentifier
+            _ = try await events.add(errands)
+        }
         // A calendar on this Mac only has no server to send the invitations.
         await #expect(throws: EventKitStore.Failure.calendarNoInvitations.helperError) {
             var local = event
@@ -497,8 +523,10 @@ struct EventKitStoreTests {
         #expect(try await events.event(id: "series-1", occurrence: nil).start == start)
         let found = try await events.event(id: "series-1", occurrence: start + 7 * 86_400)
         #expect(found.start == moved.startDate && found.occurrence == start + 7 * 86_400 && found.id == "series-1")
-        // A single event is itself, whatever occurrence is given.
-        #expect(try await events.event(id: "event-2", occurrence: start + 86_400).title == "Review")
+        // A single event is found at its own start, and at no other: an occurrence named while it still
+        // repeated names nothing now.
+        #expect(try await events.event(id: "event-2", occurrence: start).title == "Review")
+        await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "event-2", occurrence: start + 86_400) }
         let span = HelperConfig.eventOccurrenceSearchSpan
         #expect(fake.eventRanges.last == (start + 7 * 86_400 - span)...(start + 7 * 86_400 + span))
         await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.event(id: "gone", occurrence: nil) }
@@ -566,7 +594,8 @@ struct EventKitStoreTests {
         let saved = try await store(fake).edit(id: "series-1", occurrence: nil, scope: .all, changes: changes)
 
         #expect(fake.removed.map(\.title) == ["Sync second", "Sync third"])
-        #expect(fake.removed.allSatisfy { $0.span == .thisEvent && !$0.commit } && fake.commits == 1)
+        // Each committed as it goes: none left pending for a later save to commit.
+        #expect(fake.removed.allSatisfy { $0.span == .thisEvent && $0.commit } && fake.commits == 0)
         #expect(saved.recurrence == EventRecurrence(frequency: "DAILY", interval: 1, count: 4) && fake.spans == [.futureEvents])
 
         var ending = EventChanges()
@@ -763,8 +792,9 @@ struct EventKitStoreTests {
     func theSingleEventRequestsReachTheStore() async throws {
         let fake = FakeEventStore()
         let first = fake.occurrence("Sync", id: "series-1", start: start)
+        let second = fake.occurrence("Sync second", id: "series-1", start: start + 7 * 86_400)
         fake.byID = ["series-1": first]
-        fake.events = [first]
+        fake.events = [first, second]
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
         let service = MacService.register(on: channel, eventStore: store(fake), contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }))
@@ -772,6 +802,7 @@ struct EventKitStoreTests {
         let requests = [
             #"{"id":1,"method":"calendarEvent","params":{"id":"series-1","occurrence":\#(ms(start))}}"#,
             #"{"id":2,"method":"calendars","params":{}}"#,
+            #"{"id":10,"method":"calendarEdit","params":{"id":"series-1","occurrence":null,"scope":"all","invite":[],"uninvite":[],"exclude":[\#(ms(start + 7 * 86_400))]}}"#,
             #"{"id":3,"method":"calendarEdit","params":{"id":"series-1","occurrence":null,"scope":"all","title":"Standup","location":"","recurrence":{"frequency":"DAILY","interval":1,"count":3,"until":null,"days":[],"monthDays":[],"months":[]},"invite":[],"uninvite":[],"exclude":[]}}"#,
             #"{"id":4,"method":"calendarEdit","params":{"id":"series-1","occurrence":null,"scope":"all","recurrence":null,"invite":[],"uninvite":[],"exclude":[]}}"#,
             #"{"id":5,"method":"calendarDelete","params":{"id":"series-1"}}"#,
@@ -788,11 +819,127 @@ struct EventKitStoreTests {
         let results = replies.map { $0["result"] as? [String: Any] }
         #expect(results[0]?["id"] as? String == "series-1" && (results[0]?["occurrence"] as? NSNumber)?.intValue == ms(start))
         #expect((results[1]?["calendars"] as? [[String: Any]])?.map { $0["title"] as? String } == ["Work", "Team"])
-        #expect(results[2]?["title"] as? String == "Standup" && results[2]?["location"] is NSNull)
-        #expect(results[3]?["recurrence"] is NSNull && first.recurrenceRules?.isEmpty != false)
-        #expect(fake.removed.map(\.title) == ["Standup"])
-        for index in 5..<requests.count { #expect(replies[index]["error"] != nil, "request \(index + 1) is refused") }
-        #expect(fake.saved.count == 2)
+        #expect(results[2]?["id"] as? String == "series-1")
+        #expect(results[3]?["title"] as? String == "Standup" && results[3]?["location"] is NSNull)
+        #expect(results[4]?["recurrence"] is NSNull && first.recurrenceRules?.isEmpty != false)
+        // The occurrence the request named is deleted, and only it, before the series' own deletion.
+        #expect(fake.removed.map(\.title) == ["Sync second", "Standup"])
+        for index in 6..<requests.count { #expect(replies[index]["error"] != nil, "request \(index + 1) is refused") }
+        #expect(fake.saved.count == 3)
         withExtendedLifetime(service) {}
+    }
+
+    /// An occurrence changed on its own is found by its own id, however far it moved from where it was.
+    @Test
+    func aDetachedOccurrenceIsFoundByItsOwnIDAfterALongMove() async throws {
+        let fake = FakeEventStore()
+        let moved = fake.occurrence("Sync moved", id: "series-1/RID=1", start: start + 90 * 86_400, occurrence: start + 7 * 86_400)
+        moved.stubDetached = true
+        fake.byID = ["series-1/RID=1": moved]
+
+        let found = try await store(fake).event(id: "series-1/RID=1", occurrence: start + 7 * 86_400)
+        #expect(found.id == "series-1/RID=1" && found.start == start + 90 * 86_400 && found.isDetached)
+    }
+
+    /// An occurrence named while the event still repeated deletes nothing once it is a single event:
+    /// not a later date, and not the event itself at its start.
+    @Test
+    func anOccurrenceOfAnEventThatStoppedRepeatingDeletesNothing() async throws {
+        let fake = FakeEventStore()
+        let single = fake.occurrence("Keep as one", id: "event-1", start: start, repeats: false)
+        fake.byID = ["event-1": single]
+        fake.events = [single]
+        let events = store(fake)
+        for excluded in [start + 7 * 86_400, start] {
+            var changes = EventChanges()
+            changes.exclude = [excluded]
+            await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.edit(id: "event-1", occurrence: nil, scope: .all, changes: changes) }
+        }
+        #expect(fake.removed.isEmpty && fake.saved.isEmpty && fake.commits == 0)
+    }
+
+    /// An edit refused deletes none of the occurrences it names, and leaves none pending: one of them
+    /// not there, or an invitation the calendar can't send.
+    @Test
+    func aRefusedEditDeletesNoOccurrence() async throws {
+        let fake = FakeEventStore()
+        let first = fake.occurrence("Sync", id: "series-1", start: start)
+        let second = fake.occurrence("Sync second", id: "series-1", start: start + 7 * 86_400)
+        fake.byID = ["series-1": first]
+        fake.events = [first, second]
+        let events = store(fake)
+        var missing = EventChanges()
+        missing.exclude = [start + 7 * 86_400, start + 9 * 86_400]
+        var inviting = EventChanges()
+        inviting.exclude = [start + 7 * 86_400]
+        inviting.invite = [EventAttendee(email: "sam@example.com", name: nil)]
+
+        await #expect(throws: EventKitStore.Failure.noSuchEvent.helperError) { _ = try await events.edit(id: "series-1", occurrence: nil, scope: .all, changes: missing) }
+        await #expect(throws: EventKitStore.Failure.calendarNoInvitations.helperError) { _ = try await events.edit(id: "series-1", occurrence: nil, scope: .all, changes: inviting) }
+        #expect(fake.removed.isEmpty && fake.commits == 0 && fake.saved.isEmpty)
+    }
+
+    /// The whole series moved across a daylight-saving change keeps the time of day the user
+    /// confirmed: it moves by days, not by a number of seconds an hour off.
+    @Test
+    func aSeriesMovedAcrossADaylightSavingChangeKeepsItsTimeOfDay() async throws {
+        let zone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let transition = try #require(zone.nextDaylightSavingTimeTransition(after: Date()))
+        let dayBefore = try #require(calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: transition)))
+        // 10:00 on the day `days` from the day before the change.
+        var times: [Int: Date] = [:]
+        for days in [-14, -11, 0, 3] {
+            let day = try #require(calendar.date(byAdding: .day, value: days, to: dayBefore))
+            times[days] = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: day)
+        }
+        let firstStart = try #require(times[-14]), movedFirst = try #require(times[-11])
+        let targetStart = try #require(times[0]), newStart = try #require(times[3])
+        let fake = FakeEventStore()
+        let first = fake.occurrence("Sync", id: "series-1", start: firstStart)
+        let target = fake.occurrence("Sync", id: "series-1", start: targetStart)
+        for event in [first, target] { event.timeZone = zone }
+        fake.byID = ["series-1": first]
+        fake.events = [first, target]
+        var changes = EventChanges()
+        changes.start = newStart
+        changes.end = newStart + 3600
+
+        _ = try await store(fake).edit(id: "series-1", occurrence: targetStart, scope: .all, changes: changes)
+
+        #expect(first.startDate == movedFirst && first.endDate == movedFirst + 3600)
+    }
+
+    /// An event is made all day, and timed again, as asked.
+    @Test
+    func anEventBecomesAllDayAndTimedAgain() async throws {
+        let fake = FakeEventStore()
+        let event = fake.occurrence("Review", id: "event-1", start: start, repeats: false)
+        fake.byID = ["event-1": event]
+        let events = store(fake)
+        var changes = EventChanges()
+        changes.isAllDay = true
+        _ = try await events.edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+        #expect(event.isAllDay)
+        changes.isAllDay = false
+        _ = try await events.edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+        #expect(!event.isAllDay)
+    }
+
+    /// The user's own meeting with people invited is no invitation: it changes, and its people with it.
+    @Test
+    func theUsersOwnMeetingChanges() async throws {
+        let fake = FakeEventStore()
+        let own = fake.occurrence("Planning", id: "event-1", start: start, repeats: false, in: fake.sharedCalendar)
+        #expect(Invitations.invite("alex@example.com", name: nil, to: own))
+        own.stubOrganizer = currentUser(try #require(participant("me@example.com")))
+        fake.byID = ["event-1": own]
+        var changes = EventChanges()
+        changes.title = "Planning, moved"
+
+        #expect(!EventKitStore.calendarEvent(own).isInvitation)
+        let saved = try await store(fake).edit(id: "event-1", occurrence: nil, scope: .all, changes: changes)
+        #expect(saved.title == "Planning, moved" && !saved.isInvitation && fake.saved.count == 1)
     }
 }

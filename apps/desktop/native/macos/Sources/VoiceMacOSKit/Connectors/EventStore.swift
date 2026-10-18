@@ -69,6 +69,11 @@ struct EventRecurrence: Equatable, Sendable {
     var days: [Day] = []
     var monthDays: [Int] = []
     var months: [Int] = []
+    /// Which of the occurrences the rest selects in each period (-1 the last): "the last weekday" is
+    /// Monday to Friday at -1.
+    var positions: [Int] = []
+    var yearWeeks: [Int] = []
+    var yearDays: [Int] = []
 
     static let frequencies: [String: EKRecurrenceFrequency] = ["DAILY": .daily, "WEEKLY": .weekly, "MONTHLY": .monthly, "YEARLY": .yearly]
 
@@ -78,6 +83,8 @@ struct EventRecurrence: Equatable, Sendable {
             "until": until.map(EventWire.json) ?? .null,
             "days": .array(days.map { ["weekday": .number(Double($0.weekday)), "week": .number(Double($0.week))] }),
             "monthDays": .array(monthDays.map { .number(Double($0)) }), "months": .array(months.map { .number(Double($0)) }),
+            "positions": .array(positions.map { .number(Double($0)) }), "yearWeeks": .array(yearWeeks.map { .number(Double($0)) }),
+            "yearDays": .array(yearDays.map { .number(Double($0)) }),
         ]
     }
 
@@ -96,10 +103,16 @@ struct EventRecurrence: Equatable, Sendable {
         }
         monthDays = (json["monthDays"]?.array ?? []).compactMap(\.integer)
         months = (json["months"]?.array ?? []).compactMap(\.integer)
+        positions = (json["positions"]?.array ?? []).compactMap(\.integer)
+        yearWeeks = (json["yearWeeks"]?.array ?? []).compactMap(\.integer)
+        yearDays = (json["yearDays"]?.array ?? []).compactMap(\.integer)
         if self.days.count != days.count { return nil }
     }
 
-    init(frequency: String, interval: Int, count: Int? = nil, until: Date? = nil, days: [Day] = [], monthDays: [Int] = [], months: [Int] = []) {
+    init(
+        frequency: String, interval: Int, count: Int? = nil, until: Date? = nil, days: [Day] = [], monthDays: [Int] = [], months: [Int] = [],
+        positions: [Int] = [], yearWeeks: [Int] = [], yearDays: [Int] = []
+    ) {
         self.frequency = frequency
         self.interval = interval
         self.count = count
@@ -107,6 +120,9 @@ struct EventRecurrence: Equatable, Sendable {
         self.days = days
         self.monthDays = monthDays
         self.months = months
+        self.positions = positions
+        self.yearWeeks = yearWeeks
+        self.yearDays = yearDays
     }
 
     init?(_ rule: EKRecurrenceRule) {
@@ -118,6 +134,10 @@ struct EventRecurrence: Equatable, Sendable {
         days = (rule.daysOfTheWeek ?? []).map { Day(weekday: $0.dayOfTheWeek.rawValue, week: $0.weekNumber) }
         monthDays = (rule.daysOfTheMonth ?? []).map(\.intValue)
         months = (rule.monthsOfTheYear ?? []).map(\.intValue)
+        // Read in full: a rule read without them would say more occurrences than it has.
+        positions = (rule.setPositions ?? []).map(\.intValue)
+        yearWeeks = (rule.weeksOfTheYear ?? []).map(\.intValue)
+        yearDays = (rule.daysOfTheYear ?? []).map(\.intValue)
     }
 
     var rule: EKRecurrenceRule {
@@ -127,7 +147,9 @@ struct EventRecurrence: Equatable, Sendable {
             daysOfTheWeek: days.isEmpty ? nil : days.compactMap { day in EKWeekday(rawValue: day.weekday).map { EKRecurrenceDayOfWeek($0, weekNumber: day.week) } },
             daysOfTheMonth: monthDays.isEmpty ? nil : monthDays.map { NSNumber(value: $0) },
             monthsOfTheYear: months.isEmpty ? nil : months.map { NSNumber(value: $0) },
-            weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: end
+            weeksOfTheYear: yearWeeks.isEmpty ? nil : yearWeeks.map { NSNumber(value: $0) },
+            daysOfTheYear: yearDays.isEmpty ? nil : yearDays.map { NSNumber(value: $0) },
+            setPositions: positions.isEmpty ? nil : positions.map { NSNumber(value: $0) }, end: end
         )
     }
 }
@@ -264,7 +286,7 @@ final class EventKitStore {
     func calendars() async throws -> [EventCalendar] {
         try await requireAccess(to: .event)
         return store.calendars(for: .event).filter(\.allowsContentModifications).map { calendar in
-            EventCalendar(id: calendar.calendarIdentifier, title: calendar.title, account: calendar.source?.title ?? "", isDefault: calendar == store.defaultCalendarForNewEvents)
+            EventCalendar(id: calendar.calendarIdentifier, title: calendar.title, account: calendar.source?.title ?? "", isDefault: calendar.calendarIdentifier == store.defaultCalendarForNewEvents?.calendarIdentifier)
         }
     }
 
@@ -292,16 +314,24 @@ final class EventKitStore {
 
     /// Changes the event `id` names (the occurrence at `occurrence` of a repeating one) as `changes`
     /// says, over the occurrences `scope` covers, and returns it as saved. Its `start` and `end` are
-    /// the named occurrence's: for the whole series, every occurrence moves by as much. The
-    /// occurrences `changes.exclude` names are deleted first, at the times the user read them.
+    /// the named occurrence's: for the whole series, every occurrence moves by as many days, to the
+    /// same time of day. The occurrences `changes.exclude` names are deleted first, at the times the
+    /// user read them, once everything the edit needs has been checked.
     func edit(id: String, occurrence: Date?, scope: EventScope, changes: EventChanges) async throws -> CalendarEvent {
         try await requireAccess(to: .event)
         let named = try find(id: id, occurrence: occurrence)
         try requireEditable(named)
-        if !changes.exclude.isEmpty {
-            for start in changes.exclude { try store.remove(try find(id: id, occurrence: start), span: .thisEvent, commit: false) }
-            try store.commit()
+        if !changes.invite.isEmpty { try requireInvitations(in: named.calendar) }
+        if !changes.uninvite.isEmpty && !Invitations.available { throw Failure.invitationsUnavailable.helperError }
+        // Each still an occurrence of this series, all found before any is deleted: a refusal deletes
+        // none, and an occurrence named before the event stopped repeating deletes nothing.
+        let excluded = try changes.exclude.map { start in
+            let found = try find(id: id, occurrence: start)
+            guard found.hasRecurrenceRules else { throw Failure.noSuchEvent.helperError }
+            return found
         }
+        // Each committed as it goes, never left for a later save to commit.
+        for occurrence in excluded { try store.remove(occurrence, span: .thisEvent, commit: true) }
         // Found again: the deletions changed the series.
         let target = try find(id: id, occurrence: occurrence)
         let repeats = target.hasRecurrenceRules
@@ -313,9 +343,11 @@ final class EventKitStore {
         if changes.start != nil || changes.end != nil {
             let start = changes.start ?? target.startDate!
             let end = changes.end ?? target.endDate!
-            let editedStart = edited.startDate.addingTimeInterval(start.timeIntervalSince(target.startDate))
+            var calendar = Calendar.current
+            calendar.timeZone = edited.timeZone ?? .current
+            let editedStart = Self.moved(edited.startDate, as: target.startDate, moves: start, in: calendar)
             edited.startDate = editedStart
-            edited.endDate = editedStart.addingTimeInterval(end.timeIntervalSince(start))
+            edited.endDate = Self.moved(editedStart, as: start, moves: end, in: calendar)
         }
         if let location = changes.location { edited.location = location.isEmpty ? nil : location }
         if let notes = changes.notes { edited.notes = notes.isEmpty ? nil : notes }
@@ -353,11 +385,27 @@ final class EventKitStore {
         try store.remove(event, span: event.isDetached ? .thisEvent : .futureEvents, commit: true)
     }
 
+    /// `date` moved by as many calendar days as `from` is from `to`, to `to`'s time of day: across a
+    /// daylight-saving change, the same number of seconds would land an hour off, or on the day before.
+    static func moved(_ date: Date, as from: Date, moves to: Date, in calendar: Calendar) -> Date {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: from), to: calendar.startOfDay(for: to)).day ?? 0
+        let time = calendar.dateComponents([.hour, .minute, .second], from: to)
+        let day = calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: date))!
+        return calendar.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: time.second ?? 0, of: day)!
+    }
+
     /// The event `id` names: of a repeating one, the occurrence that started at `occurrence` (its
-    /// original start, which a change to it alone leaves), or the first.
+    /// original start, which a change to it alone leaves), or the first. An occurrence changed on its
+    /// own has an id of its own, which names it alone; a single event is found only at its own start.
     private func find(id: String, occurrence: Date?) throws -> EKEvent {
         guard let first = store.event(withIdentifier: id) else { throw Failure.noSuchEvent.helperError }
-        guard let occurrence, first.hasRecurrenceRules || first.isDetached else { return first }
+        guard let occurrence, !first.isDetached else { return first }
+        guard first.hasRecurrenceRules else {
+            guard abs((first.occurrenceDate ?? first.startDate).timeIntervalSince(occurrence)) < HelperConfig.eventOccurrenceTolerance else {
+                throw Failure.noSuchEvent.helperError
+            }
+            return first
+        }
         let span = HelperConfig.eventOccurrenceSearchSpan
         let predicate = store.predicateForEvents(
             withStart: occurrence.addingTimeInterval(-span), end: occurrence.addingTimeInterval(span), calendars: first.calendar.map { [$0] }

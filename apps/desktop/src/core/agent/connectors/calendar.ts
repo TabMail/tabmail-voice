@@ -4,6 +4,7 @@
 
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
+import { CancellationError } from "../../util/timeout.js";
 import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, isJSONObject, ToolArgumentError } from "./contract.js";
 import { isAddress } from "./email.js";
 
@@ -56,6 +57,11 @@ export interface EventRecurrence {
   days: { weekday: number; week: number }[];
   monthDays: number[];
   months: number[];
+  /** Which of the occurrences the rest selects in each period, -1 the last ("the last weekday":
+   * Monday to Friday at -1). Read from Calendar, never written from the model's rule. */
+  positions: number[];
+  yearWeeks: number[];
+  yearDays: number[];
 }
 
 /** A calendar events can be added to. */
@@ -300,6 +306,9 @@ function rrule(recurrence: EventRecurrence): string {
   if (recurrence.days.length > 0) parts.push(`BYDAY=${recurrence.days.map((day) => `${day.week === 0 ? "" : day.week}${weekdayCodes[day.weekday - 1]}`).join(",")}`);
   if (recurrence.monthDays.length > 0) parts.push(`BYMONTHDAY=${recurrence.monthDays.join(",")}`);
   if (recurrence.months.length > 0) parts.push(`BYMONTH=${recurrence.months.join(",")}`);
+  if (recurrence.yearWeeks.length > 0) parts.push(`BYWEEKNO=${recurrence.yearWeeks.join(",")}`);
+  if (recurrence.yearDays.length > 0) parts.push(`BYYEARDAY=${recurrence.yearDays.join(",")}`);
+  if (recurrence.positions.length > 0) parts.push(`BYSETPOS=${recurrence.positions.join(",")}`);
   if (recurrence.count !== null) parts.push(`COUNT=${recurrence.count}`);
   if (recurrence.until !== null) parts.push(`UNTIL=${LocalDateTime.iso(recurrence.until)}`);
   return parts.join(";");
@@ -355,6 +364,9 @@ function recurrenceArgument(value: unknown, start: Date): EventRecurrence | null
     }),
     monthDays: numbers(value.byMonthDay, "byMonthDay", (item) => (Number.isInteger(item) && item !== 0 && Math.abs(item as number) <= 31 ? (item as number) : null)),
     months: numbers(value.byMonth, "byMonth", (item) => (Number.isInteger(item) && (item as number) >= 1 && (item as number) <= 12 ? (item as number) : null)),
+    positions: [],
+    yearWeeks: [],
+    yearDays: [],
   };
   // What Calendar's rules can say: anything else it would drop or misread.
   if (recurrence.frequency === "DAILY" && recurrence.days.length > 0) throw new ToolArgumentError("recurrence.byDay needs WEEKLY, MONTHLY or YEARLY.");
@@ -432,18 +444,14 @@ export class CalendarEventCreateTool implements ConnectorTool {
     this.writeDestination = store.calendarWriteDestination;
   }
 
-  /** Null only for arguments `run` rejects before adding anything. */
-  async confirmation(args: Record<string, unknown>): Promise<string | null> {
-    let event: CalendarEvent;
+  /** Throws for arguments it can't add and for a calendar it can't find, so nothing is added
+   * unasked: the controller tells the model why and runs nothing. */
+  async confirmation(args: Record<string, unknown>): Promise<string> {
+    const event = this.draft(args);
     let calendar: EventCalendar | undefined;
-    try {
-      event = this.draft(args);
-      if (event.calendarId) {
-        calendar = (await this.store.editor?.calendars())?.find((candidate) => candidate.id === event.calendarId);
-        if (!calendar) return null;
-      }
-    } catch {
-      return null;
+    if (event.calendarId) {
+      calendar = (await this.store.editor?.calendars())?.find((candidate) => candidate.id === event.calendarId);
+      if (!calendar) throw new EventStoreError("noSuchCalendar");
     }
     const lines = ["Add this event to your calendar?", event.title];
     if (this.writeDestination) lines.push(`Destination: ${this.writeDestination}`);
@@ -565,15 +573,9 @@ export class CalendarEventEditTool implements ConnectorTool {
 
   constructor(private readonly editor: EventEditor) {}
 
-  /** Null only for a call `run` rejects before changing anything. */
-  async confirmation(args: Record<string, unknown>): Promise<string | null> {
-    let plan: EditPlan;
-    try {
-      plan = await this.plan(args);
-    } catch {
-      return null;
-    }
-    const { current, changes, scope, occurrence } = plan;
+  /** Throws for a change it can't make or an event it can't read, so nothing is changed unasked. */
+  async confirmation(args: Record<string, unknown>): Promise<string> {
+    const { current, changes, scope, occurrence } = await this.plan(args);
     const lines = ["Change this event?", current.title, spokenWhen(current)];
     if (current.recurrence && occurrence !== null && scope === "thisOnly") lines.push(`Only the occurrence on ${LocalDateTime.spoken(occurrence, false)}`);
     else if (current.recurrence && occurrence !== null && scope === "thisAndFollowing") lines.push(`The occurrence on ${LocalDateTime.spoken(occurrence, false)} and every one after it`);
@@ -596,8 +598,10 @@ export class CalendarEventEditTool implements ConnectorTool {
     return lines.join("\n");
   }
 
-  async run(args: Record<string, unknown>): Promise<string> {
+  async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
     const { id, occurrence, scope, changes } = await this.plan(args);
+    // Canceled while the event was read again: the change the user confirmed is no longer wanted.
+    if (signal.aborted) throw new CancellationError();
     const saved = await this.editor.edit(id, occurrence, scope, changes);
     return `Changed "${saved.title}": ${describeWhen(saved)} (${eventIDs(saved).join(", ")}).${missingInvitees(changes.invite, saved)}${availabilityNotKept(changes.availability, saved)}`;
   }
@@ -723,14 +727,9 @@ export class CalendarEventDeleteTool implements ConnectorTool {
 
   constructor(private readonly editor: EventEditor) {}
 
-  /** Null only for a call `run` rejects before deleting anything. */
-  async confirmation(args: Record<string, unknown>): Promise<string | null> {
-    let event: CalendarEvent;
-    try {
-      event = await this.target(args);
-    } catch {
-      return null;
-    }
+  /** Throws for an event it can't read, so nothing is deleted unasked. */
+  async confirmation(args: Record<string, unknown>): Promise<string> {
+    const event = await this.target(args);
     const lines = ["Delete this event?", event.title, spokenWhen(event)];
     if (event.recurrence) lines.push("Every occurrence is deleted.");
     if (event.isDetached) lines.push("Only this occurrence is deleted: it was changed on its own.");
@@ -739,8 +738,10 @@ export class CalendarEventDeleteTool implements ConnectorTool {
     return lines.join("\n");
   }
 
-  async run(args: Record<string, unknown>): Promise<string> {
+  async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
     const event = await this.target(args);
+    // Canceled while the event was read again: the deletion the user confirmed is no longer wanted.
+    if (signal.aborted) throw new CancellationError();
     await this.editor.delete(event.id ?? "");
     return `Deleted "${event.title}"${event.recurrence ? ", every occurrence" : ""}.`;
   }
