@@ -887,6 +887,33 @@ extension EventKitTests {
             withExtendedLifetime(service) {}
         }
 
+        /// A `calendarAdd` request carries what the user confirmed to the event saved: its calendar, its
+        /// rule (saved for the series), free time and the people invited.
+        @Test
+        func aCreateRequestCarriesEveryField() async throws {
+            let fake = FakeEventStore()
+            let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+            let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+            let service = MacService.register(on: channel, eventStore: store(fake), contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }))
+            let ms = { (date: Date) in Int(date.timeIntervalSince1970 * 1000) }
+            let calendarId = fake.sharedCalendar.calendarIdentifier
+            let request = #"{"id":1,"method":"calendarAdd","params":{"title":"Standup","start":\#(ms(start)),"end":\#(ms(start + 900)),"isAllDay":false,"location":null,"notes":null,"calendarId":"\#(calendarId)","availability":"free","recurrence":{"frequency":"WEEKLY","interval":1,"count":null,"until":null,"days":[{"weekday":2,"week":0}],"monthDays":[],"months":[]},"attendees":[{"email":"alex@example.com","name":"Alex"}]}}"#
+
+            await channel.handle(line: Data(request.utf8))
+
+            let reply = try #require(lines.withLock { $0 }.first.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+            let result = try #require(reply["result"] as? [String: Any])
+            let saved = try #require(fake.saved.first as? EKEvent)
+            #expect(saved.calendar === fake.sharedCalendar && fake.spans == [.futureEvents])
+            #expect(saved.availability == .free)
+            #expect(EventKitStore.calendarEvent(saved).recurrence == EventRecurrence(frequency: "WEEKLY", interval: 1, days: [EventRecurrence.Day(weekday: 2, week: 0)]))
+            #expect((saved.attendees ?? []).compactMap(Invitations.email(of:)) == ["alex@example.com"])
+            #expect(result["calendarId"] as? String == calendarId && result["availability"] as? String == "free")
+            #expect(((result["attendees"] as? [[String: Any]]) ?? []).map { $0["email"] as? String } == ["alex@example.com"])
+            #expect((result["recurrence"] as? [String: Any])?["frequency"] as? String == "WEEKLY")
+            withExtendedLifetime(service) {}
+        }
+
         /// The single-event requests carry their fields to the store: an absent change is left as it is,
         /// a null recurrence ends the repeating; a malformed request is refused before the store.
         @Test
