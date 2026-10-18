@@ -5385,8 +5385,8 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   read the event again when they ran, so a duration changed meanwhile moved the end past the one
   confirmed, and a person named but absent when asked was removed once added.)
 - **Without an editor** (Windows and Linux, which have no event store), the read, edit and delete
-  tools aren't offered, and a create with `calendar_id`, `transparency`, `attendees` or `recurrence`
-  is refused. `calendar_read` pages at `config.calendarReadPageSize` and lists the calendars on page 1.
+  tools aren't offered, and a create with `calendar_id`, `transparency` free, `attendees` or
+  `recurrence` is refused (busy, the default, goes ahead: 2026-10-18). `calendar_read` pages at `config.calendarReadPageSize` and lists the calendars on page 1.
   The backend's schemas for this are `v0.2.5` (its ADR-017 amendment): an older app is never offered
   them.
 

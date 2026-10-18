@@ -607,6 +607,16 @@ describe("calendar_event_create with single-event access", () => {
     expect(store.added).toEqual([]);
   });
 
+  /** Busy, the default, is no capability the store lacks: without single-event access it is added. */
+  test("without single-event access, busy is added", async () => {
+    const tool = new CalendarEventCreateTool(store);
+    const args = { title: "Planning", start_iso: iso(at(10)), transparency: "busy" };
+    await expect(tool.confirmation(args)).resolves.toContain("Planning");
+    await tool.run(args);
+    expect(store.added).toHaveLength(1);
+    expect(store.added[0]).toMatchObject({ title: "Planning", start: at(10) });
+  });
+
   /** Recurrences Calendar can't keep, or that aren't recurrences, and people without an address are
    * refused before anything is asked or added. */
   test.each<[unknown, string]>([

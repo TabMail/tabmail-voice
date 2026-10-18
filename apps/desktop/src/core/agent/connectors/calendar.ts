@@ -501,7 +501,8 @@ export class CalendarEventCreateTool implements ConnectorTool {
     const availability = availabilityArgument(args);
     const attendees = attendeesArgument(args, "attendees");
     const recurrence = args.recurrence === undefined || args.recurrence === null ? null : recurrenceArgument(args.recurrence, event.start);
-    if (calendarId === null && availability === undefined && attendees.length === 0 && recurrence === null) return event;
+    // Busy is what every calendar shows an event as: only free needs the editor.
+    if (calendarId === null && availability !== "free" && attendees.length === 0 && recurrence === null) return event;
     if (!this.store.editor) {
       throw new ToolArgumentError("The calendar on this computer can't invite people, repeat events, choose a calendar or show an event as free. Add it without calendar_id, transparency, attendees and recurrence, and tell the user what was left out.");
     }
