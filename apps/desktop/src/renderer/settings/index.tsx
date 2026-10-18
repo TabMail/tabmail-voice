@@ -578,7 +578,7 @@ function MemoryPane({ state }: { state: SettingsState }) {
         ) : (
           <div className="row">
             <span>{memory.usage ? `${memory.usage.docs} ${memory.usage.docs === 1 ? "request" : "requests"} kept` : "Requests kept"}</span>
-            <button disabled={memory.usage !== null && memory.usage.docs === 0} onClick={() => setConfirmingClear(true)}>
+            <button onClick={() => setConfirmingClear(true)}>
               Clear All…
             </button>
           </div>

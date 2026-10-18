@@ -5523,8 +5523,10 @@ Thunderbird's copy or its files.
   nothing, and starts no helper, until a request was kept (the database exists). Usage and the list
   are read apart: a search the helper refuses empties only the list ("Couldn't search for …. Try
   other words."), with usage and Clear All still there, as Thunderbird's tab shows no results.
-  Clear All is off only while usage shows nothing kept: with usage unread it stays, as the way to
-  start memory afresh.
+  Clear All is always available, and always asks memory to clear, whether or not its database
+  exists or usage can be read: it is the way to start memory afresh, and a clear cut short (the
+  database deleted, the helper's logs, which name what memory was asked, not) is finished by the
+  next.
 - **Clear All** deletes memory's database folder (`memory/database/tabmail_fts`) and the helper's
   logs, after ending the helper and waiting for it to exit (ended outright after
   `memoryHelperExitTimeout`); requests made meanwhile wait, and the next starts a helper on an empty

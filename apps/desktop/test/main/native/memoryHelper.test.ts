@@ -2,11 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { configureLog, errorName, observeContent, setDebugMode } from "../../../src/core/log.js";
+import { MemoryPage } from "../../../src/core/memory/page.js";
 import { MemoryError, memoryRow } from "../../../src/core/memory/store.js";
 import { MemoryTools } from "../../../src/core/memory/tools.js";
 import { MemoryHelper, type MemoryHelperOptions, memoryFolders } from "../../../src/main/native/memoryHelper.js";
@@ -220,6 +221,29 @@ describe("MemoryHelper", () => {
       expect(existsSync(memoryFolders(directory).logs)).toBe(true);
       await memory.clear();
       expect(existsSync(memoryFolders(directory).logs)).toBe(false);
+    });
+
+    /** A Clear All cut short after the database went (its logs, which name what memory was asked,
+     * couldn't be deleted) is finished by the next one from Settings. */
+    test.skipIf(process.platform === "win32")("a Clear All cut short is finished by the next, from Settings", async () => {
+      setDebugMode(true);
+      const memory = make();
+      const folders = memoryFolders(directory);
+      const page = new MemoryPage(memory, () => existsSync(folders.databaseFile), { memorySizeLimit: 1 << 30, setMemorySizeLimit: () => true });
+      await memory.index(rows, 1 << 30);
+      await memory.search({ query: "dentist appointment", from: "", to: "", limit: 5 });
+      // The logs' folder can't be emptied for now.
+      chmodSync(folders.logs, 0o500);
+      try {
+        await expect(page.clear()).rejects.toThrow("Memory couldn't be cleared. Try again.");
+        expect(existsSync(folders.databaseFile)).toBe(false);
+        expect(existsSync(folders.logs)).toBe(true);
+      } finally {
+        chmodSync(folders.logs, 0o700);
+      }
+      await page.clear();
+      expect(page.state.status).toBe("Memory cleared.");
+      expect(existsSync(folders.logs)).toBe(false);
     });
 
     test("with no helper running, still deletes what memory holds", async () => {

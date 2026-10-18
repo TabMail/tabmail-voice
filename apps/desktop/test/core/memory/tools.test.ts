@@ -76,6 +76,24 @@ describe("MemoryTools", () => {
       expect(text).toHaveLength(config.memorySearchPreviewLength);
     });
 
+    /** The helper gives the words around a match, which can lie past the start of a long exchange:
+     * that passage is what the result shows; without one, the start of the exchange. */
+    test("shows the passage the helper matched, or the exchange's start when it gives none", async () => {
+      const content = `[USER]: ${"earlier words ".repeat(60)}\n\n[AGENT]: the launch is on Friday`;
+      const snippet = "…the launch is on Friday";
+      vi.spyOn(memory, "search").mockResolvedValue([
+        { memId: "turn:matched", content, snippet, dateMs: now - day },
+        { memId: "turn:plain", content, snippet: "", dateMs: now - 2 * day },
+      ]);
+      const result = (await run(config.memorySearchTool, { query: "launch" })) as { results: string };
+      expect(result.results).toBe(
+        [
+          `1. [timestamp: ${now - day}] ${memoryDate(now - day)}\n${snippet}`,
+          `2. [timestamp: ${now - 2 * day}] ${memoryDate(now - 2 * day)}\n${content.slice(0, config.memorySearchPreviewLength)}`,
+        ].join("\n\n"),
+      );
+    });
+
     test("says when nothing matches", async () => {
       keep(3, "budget");
       expect(await run(config.memorySearchTool, { query: "holiday" })).toEqual({

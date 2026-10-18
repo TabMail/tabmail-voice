@@ -524,16 +524,11 @@ describe("Settings page", () => {
       expect(document.querySelector(".error")?.textContent).toBe("Memory couldn't be cleared. Try again.");
     });
 
+    // What is kept can always be removed: Clear All needs no reading of memory, and is the way out
+    // of memory that can't be read (a damaged file) and of a clear cut short (no requests left, but
+    // the helper's logs still there).
     test.each([
       ["nothing kept", { usage: { docs: 0, usedBytes: 0 }, entries: [] }],
-    ])("Clear All is off with %s", async (_name, memory) => {
-      await open(withMemory(memory));
-      expect(clearAll().disabled).toBe(true);
-    });
-
-    // What is kept can always be removed: Clear All needs no reading of memory, and is the way out
-    // of memory that can't be read (a damaged file).
-    test.each([
       ["usage unreadable", { usage: null, unavailable: true, entries: [] }],
       ["usage still being read", { usage: null, entries: [] }],
     ])("Clear All works with %s", async (_name, memory) => {

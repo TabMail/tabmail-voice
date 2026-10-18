@@ -120,17 +120,17 @@ export class MemoryPage extends Observable {
     await this.load();
   }
 
-  /** Removes everything memory holds; says so only once it is done. */
+  /** Removes everything memory holds; says so only once it is done. Asked of memory whether or not
+   * its database exists: a clear cut short can have deleted the database and left the helper's logs,
+   * which name what memory was asked, and the next Clear All must remove them. */
   async clear(): Promise<void> {
-    if (this.exists()) {
-      try {
-        await this.store.clear();
-      } catch (error) {
-        log.error(`MemoryPage: memory couldn't be cleared: ${errorName(error)}`);
-        this.update({ status: null });
-        await this.load();
-        throw new Error("Memory couldn't be cleared. Try again.", { cause: error });
-      }
+    try {
+      await this.store.clear();
+    } catch (error) {
+      log.error(`MemoryPage: memory couldn't be cleared: ${errorName(error)}`);
+      this.update({ status: null });
+      await this.load();
+      throw new Error("Memory couldn't be cleared. Try again.", { cause: error });
     }
     this.update({ status: "Memory cleared." });
     await this.load();

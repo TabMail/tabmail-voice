@@ -222,14 +222,15 @@ describe("MemoryPage", () => {
     expect(page.state.status).toBeNull();
   });
 
-  test("Clear All removes everything, and before anything is kept asks nothing", async () => {
+  test("Clear All removes everything, and asks memory even with no database (a clear cut short leaves logs)", async () => {
     await page.clear();
     expect(memory.rows).toEqual([]);
     expect(page.state).toMatchObject({ status: "Memory cleared.", usage: { docs: 0, usedBytes: 0 }, entries: [] });
     exists = false;
     const clear = vi.spyOn(memory, "clear");
     await page.clear();
-    expect(clear).not.toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(page.state.status).toBe("Memory cleared.");
   });
 
   test("never says memory is cleared while it still holds requests", async () => {
