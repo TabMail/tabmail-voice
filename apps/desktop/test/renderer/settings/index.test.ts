@@ -44,7 +44,7 @@ const signedIn: SettingsState = {
   debugMode: false,
   version: "1.2.3",
   update: { kind: "idle" },
-  memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], status: null },
+  memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
 };
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
@@ -414,6 +414,144 @@ describe("Settings page", () => {
   });
 
   /** A sign-out the credential store only half did is said, not swallowed (owner, 2026-09-27). */
+  /** Settings › Memory (ADR-DESK-060): usage against the limit, the limit, the requests kept
+   * (searchable, each removable) and Clear All. */
+  describe("memory", () => {
+    const MB = 1_024 * 1_024;
+    const GB = 1_024 * MB;
+    const now = Date.now();
+    const kept: SettingsState = {
+      ...signedIn,
+      memory: {
+        ...signedIn.memory,
+        usage: { docs: 2, usedBytes: 2 * MB },
+        entries: [
+          { memId: "turn:2", dateMs: now - 60_000, content: "[USER]: What's on Friday?\n\n[AGENT]: The review at 10:00." },
+          { memId: "turn:1", dateMs: now - 86_400_000, content: "[USER]: Make this formal\n\n[AGENT]: Replaced the selection:\nThank you." },
+        ],
+      },
+    };
+    const withMemory = (memory: Partial<SettingsState["memory"]>): SettingsState => ({ ...kept, memory: { ...kept.memory, ...memory } });
+    const searchField = () => document.querySelector<HTMLInputElement>('input[aria-label="Search past requests"]') as HTMLInputElement;
+    const clearAll = () => button("Clear All…");
+    const sent = (commands: Command[]) => commands.filter((command) => command.type !== "loadMemory");
+
+    async function open(initial: SettingsState, reply: CommandResult = { error: null }): Promise<{ commands: Command[] }> {
+      const page = await settingsPage(reply, initial, initial);
+      await act(async () => button("Memory").click());
+      return page;
+    }
+
+    test("reads memory when the section shows", async () => {
+      const { commands } = await open(kept);
+      expect(commands).toEqual([{ type: "loadMemory" }]);
+    });
+
+    test("lists each request with what the agent did, the newest first", async () => {
+      await open(kept);
+      const items = [...document.querySelectorAll('ul[aria-label="Past requests"] li')];
+      expect(items).toHaveLength(2);
+      expect(items[0]?.textContent).toContain("What's on Friday?");
+      expect(items[0]?.textContent).toContain("The review at 10:00.");
+      expect(visibleText()).toContain("Memory used: 2 MB of 1 GB");
+      expect(visibleText()).toContain("2 requests kept");
+    });
+
+    test("a search sends what was typed, trimmed", async () => {
+      const { commands } = await open(kept);
+      await act(async () => type(searchField(), "  friday review  "));
+      await act(async () => button("Search").click());
+      expect(sent(commands)).toEqual([{ type: "searchMemory", query: "friday review" }]);
+    });
+
+    test("Remove sends that request's id", async () => {
+      const { commands } = await open(kept);
+      const remove = [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Past requests"] button')];
+      expect(remove.map((element) => element.textContent)).toEqual(["Remove", "Remove"]);
+      await act(async () => remove[1]?.click());
+      expect(sent(commands)).toEqual([{ type: "removeMemory", memId: "turn:1" }]);
+    });
+
+    test("a larger size limit applies at once", async () => {
+      const { commands } = await open(kept);
+      await act(async () => pick(menu("Size limit"), String(2 * GB)));
+      expect(sent(commands)).toEqual([{ type: "setMemorySizeLimit", value: 2 * GB }]);
+      expect(visibleText()).not.toContain("Lower the limit");
+    });
+
+    test("a smaller size limit asks first, sending nothing until confirmed", async () => {
+      const { commands } = await open(kept);
+      await act(async () => pick(menu("Size limit"), String(100 * MB)));
+      expect(visibleText()).toContain("Lower the limit to 100 MB? The oldest requests above it are removed. This can’t be undone.");
+      expect(menu("Size limit").value).toBe(String(GB));
+      expect(sent(commands)).toEqual([]);
+
+      await act(async () => button("Cancel").click());
+      expect(visibleText()).not.toContain("Lower the limit");
+      expect(sent(commands)).toEqual([]);
+
+      // Stepping down the list asks for the last choice only.
+      await act(async () => pick(menu("Size limit"), String(500 * MB)));
+      await act(async () => pick(menu("Size limit"), String(250 * MB)));
+      expect(visibleText()).toContain("Lower the limit to 250 MB?");
+      expect(sent(commands)).toEqual([]);
+      await act(async () => button("Lower Limit").click());
+      expect(sent(commands)).toEqual([{ type: "setMemorySizeLimit", value: 250 * MB }]);
+      expect(visibleText()).not.toContain("Lower the limit");
+    });
+
+    test("asks before a smaller limit even when usage can't be read", async () => {
+      const { commands } = await open(withMemory({ usage: null, unavailable: true, entries: [] }));
+      await act(async () => pick(menu("Size limit"), String(100 * MB)));
+      expect(visibleText()).toContain("Lower the limit to 100 MB?");
+      expect(sent(commands)).toEqual([]);
+    });
+
+    test("Clear All asks first; Cancel sends nothing, Clear All clears", async () => {
+      const { commands } = await open(kept);
+      await act(async () => clearAll().click());
+      expect(visibleText()).toContain("Remove every request kept? This can’t be undone.");
+      await act(async () => button("Cancel").click());
+      expect(sent(commands)).toEqual([]);
+      await act(async () => clearAll().click());
+      await act(async () => button("Clear All").click());
+      expect(sent(commands)).toEqual([{ type: "clearMemory" }]);
+    });
+
+    test("Clear All shows why it failed", async () => {
+      await open(kept, { error: "Memory couldn't be cleared. Try again." });
+      await act(async () => clearAll().click());
+      await act(async () => button("Clear All").click());
+      expect(document.querySelector(".error")?.textContent).toBe("Memory couldn't be cleared. Try again.");
+    });
+
+    test.each([
+      ["nothing kept", { usage: { docs: 0, usedBytes: 0 }, entries: [] }],
+      ["usage unreadable", { usage: null, unavailable: true, entries: [] }],
+      ["usage still being read", { usage: null, entries: [] }],
+    ])("Clear All is off with %s", async (_name, memory) => {
+      await open(withMemory(memory));
+      expect(clearAll().disabled).toBe(true);
+    });
+
+    test("Clear All stays on when only the search failed", async () => {
+      await open(withMemory({ query: "re: invoice", entries: [], searchFailed: "refused" }));
+      expect(clearAll().disabled).toBe(false);
+    });
+
+    test.each([
+      ["memory unreadable", { usage: null, unavailable: true, entries: [] }, ["Memory used: unavailable (limit 1 GB)", "Memory can’t be read right now. Try again in a moment.", "Requests kept"]],
+      ["memory being read", { usage: null, entries: [] }, ["Memory used: reading…", "Reading…"]],
+      ["no match", { query: "invoice", entries: [] }, ["No requests found for “invoice”."]],
+      ["a search refused", { query: "re: invoice", entries: [], searchFailed: "refused" as const }, ["Memory used: 2 MB of 1 GB", "Couldn’t search for “re: invoice”. Try other words."]],
+      ["a list that failed", { entries: [], searchFailed: "failed" as const }, ["Memory used: 2 MB of 1 GB", "Requests can’t be listed right now. Try again in a moment."]],
+      ["a change made", { status: "Size limit set to 100 MB. Removed the oldest request." }, ["Size limit set to 100 MB. Removed the oldest request."]],
+    ])("says so with %s", async (_name, memory, texts) => {
+      await open(withMemory(memory));
+      for (const text of texts) expect(visibleText()).toContain(text);
+    });
+  });
+
   test("Sign Out shows what the sign-out reply says", async () => {
     const warning = "Signed out, but your saved sign-in couldn't be removed.";
     const page = await settingsPage({ error: warning }, { ...signedIn, email: null });
@@ -442,6 +580,7 @@ describe("Settings page", () => {
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
+      Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
     };

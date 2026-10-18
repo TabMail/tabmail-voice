@@ -91,7 +91,7 @@ const settings = {
   userName: "Alex Example",
   suggestedName: "Alex Example",
   enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
-  memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], status: null },
+  memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
 } satisfies SettingsState;
 /** Settings › Memory with requests kept: an answer, a Compose, and an older Edit, the newest first. */
 const memory = {
@@ -104,6 +104,7 @@ const memory = {
     { memId: "turn:2", dateMs: Date.now() - 3 * 3_600_000, content: "[USER]: Tell Sam I'll send the slides tonight\n\n[AGENT]: Pasted at the cursor in Messages:\nHi Sam, I'll send the slides over tonight." },
     { memId: "turn:1", dateMs: Date.now() - 2 * 86_400_000, content: "[USER]: Make this more formal\n\n[AGENT]: Replaced the selection in Mail:\nThank you for your patience. I have attached the revised proposal for your review and would welcome your comments by the end of the week." },
   ],
+  searchFailed: null,
   status: null,
 };
 const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
@@ -246,6 +247,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-memory-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },
   { name: "settings-memory-empty", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, usage: { docs: 0, usedBytes: 0 }, entries: [] } } },
   { name: "settings-memory-no-results", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, query: "invoice", entries: [] } } },
+  { name: "settings-memory-search-failed", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, query: "re: invoice", entries: [], searchFailed: "refused" } } },
   { name: "settings-memory-unavailable", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, usage: null, unavailable: true, entries: [] } } },
   { name: "settings-memory-limit-lowered", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, sizeLimit: 100 * 1_024 * 1_024, usage: { docs: 2, usedBytes: 92_000_000 }, entries: memory.entries.slice(0, 2), status: "Size limit set to 100 MB. Removed the oldest request." } } },
   { name: "settings-memory-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },

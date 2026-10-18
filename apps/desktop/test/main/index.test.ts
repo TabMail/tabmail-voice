@@ -12,6 +12,9 @@ import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
+import type { MemoryPageState } from "../../src/core/memory/page.js";
+import { memoryRow } from "../../src/core/memory/store.js";
+import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels } from "../../src/shared/ipc.js";
 import { eventually } from "../support/stubs.js";
 
@@ -67,6 +70,10 @@ const app = vi.hoisted(() => ({
   scripts: [] as { source: string; args: readonly string[] }[],
   /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
   appData: null as string | null,
+  /** `app.getPath("userData")`, the app's own folder (memory's is in it). */
+  userData: "/nonexistent",
+  /** Memory as the app made it: a stand-in that keeps it in a list. */
+  memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string } }) | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
@@ -106,7 +113,7 @@ vi.mock("electron", async () => {
       focus() {},
       requestSingleInstanceLock: () => true,
       whenReady: () => Promise.resolve(),
-      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
+      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
       getApplicationNameForProtocol: () => app.emailHandler,
@@ -334,6 +341,19 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     }
   },
 }));
+vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
+  const { FakeMemory } = await import("../support/fakeMemory.js");
+  return {
+    ...(await importOriginal<typeof import("../../src/main/native/memoryHelper.js")>()),
+    MemoryHelper: class extends FakeMemory {
+      constructor(readonly options: { directory: string }) {
+        super();
+        app.memory = this;
+      }
+      stop() {}
+    },
+  };
+});
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
@@ -504,6 +524,9 @@ afterEach(() => {
   app.scripts = [];
   if (app.appData !== null) rmSync(app.appData, { recursive: true, force: true });
   app.appData = null;
+  if (app.userData !== "/nonexistent") rmSync(app.userData, { recursive: true, force: true });
+  app.userData = "/nonexistent";
+  app.memory = null;
   app.fullName = null;
   app.trayActions = null;
   app.trayState = null;
@@ -1573,6 +1596,49 @@ describe("main process wiring", () => {
     expect(ended()).toBe(1);
     controller?.onNothingListening?.();
     expect(ended()).toBe(2);
+  });
+
+  /** Settings › Memory (ADR-DESK-060): memory is in the app's own folder, read only once something
+   * was kept there, and each command of the section reaches it. */
+  test("Settings › Memory's commands reach memory in the app's own folder", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const directory = join(app.userData, "memory");
+    expect(memory.options.directory).toBe(directory);
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { memory: MemoryPageState }).memory;
+    const now = Date.now();
+    memory.rows.push(memoryRow("asked about Friday", "the review", now - 1_000, "1"), memoryRow("other", "reply", now - 2_000, "2"));
+
+    // Nothing kept on disk yet: nothing is asked of memory.
+    await send({ type: "loadMemory" });
+    expect(page().usage).toEqual({ docs: 0, usedBytes: 0 });
+    expect(memory.searches).toEqual([]);
+
+    const database = memoryFolders(directory).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await send({ type: "loadMemory" });
+    expect(page().usage?.docs).toBe(2);
+    expect(page().entries.map((entry) => entry.memId)).toEqual(["turn:1", "turn:2"]);
+
+    await send({ type: "searchMemory", query: "friday" });
+    expect(memory.searches.at(-1)?.query).toBe("friday");
+    expect(page().entries.map((entry) => entry.memId)).toEqual(["turn:1"]);
+
+    const trim = vi.spyOn(memory, "trim");
+    const limit = config.memorySizeLimitChoices[0] ?? 0;
+    await send({ type: "setMemorySizeLimit", value: limit });
+    expect(app.stored.get("memorySizeLimit")).toBe(limit);
+    expect(trim).toHaveBeenCalledWith(limit);
+
+    await send({ type: "removeMemory", memId: "turn:2" });
+    expect(memory.rows.map((row) => row.memId)).toEqual(["turn:1"]);
+
+    await send({ type: "clearMemory" });
+    expect(memory.rows).toEqual([]);
+    expect(page().status).toBe("Memory cleared.");
   });
 
   /** ADR-DESK-049: what's new about long dictations is a tip shown once at a dictation, to a user

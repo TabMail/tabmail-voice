@@ -54,8 +54,27 @@ export interface MemorySearch {
   limit: number;
 }
 
+/**
+ * The memory helper refused a request (its error reply): `reason` is its text, which can quote what
+ * was asked (SQLite quotes a query it can't parse), so it goes to the model as Thunderbird's tools
+ * give it and never to the log; `description`, what `errorName` logs, names only the request.
+ */
+export class MemoryError extends Error {
+  constructor(
+    readonly method: string,
+    readonly reason: string,
+  ) {
+    super("Something went wrong. Try again.");
+    this.name = "MemoryError";
+  }
+
+  get description(): string {
+    return `MemoryError(${this.method})`;
+  }
+}
+
 /** Where memory is kept: the memory helper (`MemoryHelper`), or a stand-in in tests. Every method
- * rejects when the helper can't answer. */
+ * rejects when the helper can't answer, with `MemoryError` when it refused. */
 export interface AgentMemory {
   /** Starts the helper ahead of a request that may use it, so its start-up overlaps the request's
    * own wait. Best effort: nothing waits for it. */
@@ -71,6 +90,7 @@ export interface AgentMemory {
   trim(maxBytes: number): Promise<MemoryTrim>;
   /** Removes the exchanges `memIDs` names; how many there were. */
   remove(memIDs: readonly string[]): Promise<number>;
+  /** Removes every exchange; resolves only once none is left. */
   clear(): Promise<void>;
 }
 

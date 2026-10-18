@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import * as config from "../../core/config.js";
-import { errorName, log } from "../../core/log.js";
-import type { AgentMemory, MemoryHit, MemoryRow, MemorySearch, MemoryStats, MemoryTrim } from "../../core/memory/store.js";
+import { errorName, isDebugLogging, log } from "../../core/log.js";
+import { type AgentMemory, type MemoryHit, MemoryError, type MemoryRow, type MemorySearch, type MemoryStats, type MemoryTrim } from "../../core/memory/store.js";
 import { HelperError, onLines } from "./helperClient.js";
 
 export interface MemoryHelperOptions {
@@ -18,6 +18,7 @@ export interface MemoryHelperOptions {
    * in it. */
   directory: string;
   idleTimeout?: number;
+  exitTimeout?: number;
   initTimeout?: number;
   requestTimeout?: number;
 }
@@ -31,11 +32,12 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
-/** Memory's folder's layout: the helper's database folder (`profilePath`; it keeps the database at
- * `tabmail_fts/memory.db` in it), its model and its logs. */
-export function memoryFolders(directory: string): { database: string; models: string; logs: string; databaseFile: string } {
+/** Memory's folder's layout: the helper's database folder (`profilePath`; it keeps its databases in
+ * `tabmail_fts` there, memory's at `tabmail_fts/memory.db`), its model and its logs. */
+export function memoryFolders(directory: string): { database: string; databases: string; models: string; logs: string; databaseFile: string } {
   const database = join(directory, "database");
-  return { database, models: join(directory, "models"), logs: join(directory, "logs"), databaseFile: join(database, "tabmail_fts", "memory.db") };
+  const databases = join(database, "tabmail_fts");
+  return { database, databases, models: join(directory, "models"), logs: join(directory, "logs"), databaseFile: join(databases, "memory.db") };
 }
 
 /** The size of a native-messaging message's length prefix (bytes). */
@@ -48,7 +50,8 @@ const lengthPrefix = 4;
  * JSON; requests `{"id", "method", "params"}`, replies `{"id", "result"}` or `{"id", "error"}`, by
  * id. It starts when memory is first used, is told where everything goes (`init`), and ends after
  * `idleTimeout` with nothing asked: closing its stdin ends it. It is never asked to update itself:
- * the app ships the build it runs.
+ * the app ships the build it runs. It writes its own log file, which can hold what memory was asked,
+ * only while debug logging is on (as the app's debug log), decided when it starts.
  */
 export class MemoryHelper implements AgentMemory {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -58,10 +61,15 @@ export class MemoryHelper implements AgentMemory {
   private nextID = 1;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  /** Every helper started that hasn't exited yet, and its exit: one ended may still be writing. */
+  private readonly running = new Map<ChildProcessWithoutNullStreams, Promise<void>>();
+  /** Clear All under way: requests wait for it, so none reaches a helper on the files it deletes. */
+  private clearing: Promise<void> | null = null;
 
   constructor(private readonly options: MemoryHelperOptions) {}
 
   prepare(): void {
+    if (this.clearing !== null) return;
     this.started().catch((error: unknown) => log.error(`MemoryHelper: couldn't start: ${errorName(error)}`));
   }
 
@@ -97,8 +105,41 @@ export class MemoryHelper implements AgentMemory {
     return isObject(result) && typeof result.count === "number" ? result.count : 0;
   }
 
-  async clear(): Promise<void> {
-    await this.request("memoryClear", {});
+  /** Removes everything memory holds by deleting its database, with the helper ended first: the
+   * helper's own `memoryClear` deletes the files while its other connection holds them open, which
+   * Windows refuses, and it still answers ok. The helper's logs go too. The next request starts a
+   * helper on an empty database. */
+  clear(): Promise<void> {
+    if (this.clearing === null) {
+      this.clearing = this.deleteAll().finally(() => {
+        this.clearing = null;
+      });
+    }
+    return this.clearing;
+  }
+
+  private async deleteAll(): Promise<void> {
+    this.end();
+    await this.exits();
+    const { databases, logs } = memoryFolders(this.options.directory);
+    rmSync(databases, { recursive: true, force: true });
+    rmSync(logs, { recursive: true, force: true });
+    log.debug("MemoryHelper: cleared");
+  }
+
+  /** Waits for every helper started to exit, ending outright one still running `exitTimeout` after
+   * its stdin closed. */
+  private async exits(): Promise<void> {
+    await Promise.all(
+      [...this.running].map(async ([child, exited]) => {
+        const timer = setTimeout(() => {
+          log.error("MemoryHelper: still running after its stdin closed; ending it");
+          child.kill();
+        }, this.options.exitTimeout ?? config.memoryHelperExitTimeout);
+        await exited;
+        clearTimeout(timer);
+      }),
+    );
   }
 
   /** Ends the helper for good (the app quits): closing its stdin ends it once its work under way is
@@ -110,6 +151,7 @@ export class MemoryHelper implements AgentMemory {
 
   /** Asks the running helper, started and initialized first if it isn't. */
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+    while (this.clearing !== null) await this.clearing.catch(() => undefined);
     this.cancelIdle();
     try {
       await this.started();
@@ -125,7 +167,7 @@ export class MemoryHelper implements AgentMemory {
     if (this.stopped) return Promise.reject(new HelperError("exited", "init"));
     if (this.initialized !== null) return this.initialized;
     const { database, models, logs } = memoryFolders(this.options.directory);
-    for (const folder of [database, models, logs]) mkdirSync(folder, { recursive: true });
+    for (const folder of [database, models]) mkdirSync(folder, { recursive: true });
     this.launch(logs);
     const initialized = this.send("init", { profilePath: database, modelDir: models }, this.options.initTimeout ?? config.memoryInitTimeout).then(
       () => log.debug("MemoryHelper: ready"),
@@ -140,8 +182,20 @@ export class MemoryHelper implements AgentMemory {
   }
 
   private launch(logs: string): void {
-    const child = spawn(this.options.executable, [...(this.options.args ?? []), "--log-dir", logs], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    // Its log names what memory was asked: kept only while debug logging is on, as the app's debug
+    // log; "off" writes no log file anywhere.
+    const level = isDebugLogging() ? "debug" : "off";
+    const child = spawn(this.options.executable, [...(this.options.args ?? []), "--log-dir", logs, "--log-level", level], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     this.child = child;
+    this.running.set(
+      child,
+      new Promise<void>((resolve) => {
+        child.once("exit", () => resolve());
+        child.once("error", () => resolve());
+      }).then(() => {
+        this.running.delete(child);
+      }),
+    );
     log.debug("MemoryHelper: started");
     let buffered = Buffer.alloc(0);
     child.stdout.on("data", (chunk: Buffer) => {
@@ -200,7 +254,7 @@ export class MemoryHelper implements AgentMemory {
     if (pending === undefined) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timer);
-    if (message.error !== undefined && message.error !== null) pending.reject(new HelperError("failed", pending.method, String(message.error)));
+    if (message.error !== undefined && message.error !== null) pending.reject(new MemoryError(pending.method, String(message.error)));
     else pending.resolve(message.result);
   }
 

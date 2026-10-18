@@ -2508,7 +2508,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { controller, pastes } = await carryOut(selectionScreen(""));
           expect(pastes).toEqual(["We ship on Friday."]);
           expect(controller.phase).toEqual(idle);
-          expect(await eventually(() => errors.includes("DictationController: memory not kept: Error"))).toBe(true);
+          expect(await eventually(() => errors.includes("DictationController: memory not kept: HelperError.exited(memory)"))).toBe(true);
         } finally {
           configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
         }
@@ -3778,7 +3778,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             memory.failing = true;
             const { done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })]), reply("I couldn't look that up.")]);
             const { controller } = await done;
-            expect(JSON.parse(told(1)[0] ?? "{}")).toEqual({ error: "memory search failed: memory helper unavailable" });
+            expect(JSON.parse(told(1)[0] ?? "{}")).toEqual({ error: "memory search failed: Something went wrong. Try again." });
             expect(controller.chat?.turns.at(-1)?.reply).toBe("I couldn't look that up.");
           });
         });

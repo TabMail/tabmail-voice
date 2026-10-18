@@ -4,7 +4,7 @@
 
 import * as config from "../config.js";
 import { errorName, log } from "../log.js";
-import { type MemoryHit, type AgentMemory, memoryDate } from "./store.js";
+import { type MemoryHit, type AgentMemory, MemoryError, memoryDate } from "./store.js";
 
 /**
  * The agent loop's memory tools, run on this computer: `memory_search` finds past exchanges, and
@@ -49,8 +49,10 @@ export class MemoryTools {
       try {
         hits = (await this.store.search({ query, from, to, limit })).slice(0, limit);
       } catch (error) {
+        // As Thunderbird's tool: the helper's refusal (a query it can't parse) as it gave it, so the
+        // model can rephrase.
         log.error(`MemoryTools: ${config.memorySearchTool} failed: ${errorName(error)}`);
-        return { error: `memory search failed: ${error instanceof Error ? error.message : String(error)}` };
+        return { error: `memory search failed: ${error instanceof MemoryError ? error.reason : error instanceof Error ? error.message : String(error)}` };
       }
       log.debug(`MemoryTools: ${config.memorySearchTool} found ${hits.length}`);
       this.searches.set(key, hits);
@@ -92,6 +94,9 @@ export class MemoryTools {
       hits = await this.store.read(timestamp, minutes * 60 * 1_000);
     } catch (error) {
       log.error(`MemoryTools: ${config.memoryReadTool} failed: ${errorName(error)}`);
+      // As Thunderbird's tool: the helper's refusal as it gave it; a helper that couldn't answer as
+      // the error says it.
+      if (error instanceof MemoryError) return { error: `memory read failed: ${error.reason}` };
       return { error: `Failed to read memory: ${error instanceof Error ? error.message : String(error)}` };
     }
     log.debug(`MemoryTools: ${config.memoryReadTool} read ${hits.length}`);

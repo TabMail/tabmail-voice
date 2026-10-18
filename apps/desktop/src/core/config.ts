@@ -344,6 +344,10 @@ export const memoryInitTimeout = 5 * 60 * 1_000;
 /** Longest any other memory request may take (ms): Thunderbird's own limit for the same helper.
  * A size-limit trim stops itself well inside it. */
 export const memoryRequestTimeout = 60_000;
+/** Clear All ends the memory helper and deletes memory's files once it exits; a helper still running
+ * this long after its stdin closed (ms) is ended outright, so no file of memory's stays open (Windows
+ * deletes none that is). */
+export const memoryHelperExitTimeout = 10_000;
 /** The size limit offered in Settings (bytes), and its default: when memory reaches it, the oldest
  * exchanges are removed first. Thunderbird offers the same choices. */
 export const memorySizeLimitChoices: readonly number[] = [100, 250, 500, 1_024, 2_048, 5_120].map((megabytes) => megabytes * 1_024 * 1_024);

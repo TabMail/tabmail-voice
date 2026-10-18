@@ -5467,7 +5467,7 @@ Thunderbird's copy or its files.
   move to it is a change of the pinned commit. That repository's ADR-NF-008 makes the helper take
   the caller's locations and a size limit.
 - **Where it is kept.** `MemoryHelper` (`src/main/native/memoryHelper.ts`) starts `voice-memory` on
-  first use, with `--log-dir <userData>/memory/logs`, and sends `init` with
+  first use, with `--log-dir <userData>/memory/logs` and `--log-level`, and sends `init` with
   `profilePath <userData>/memory/database` and `modelDir <userData>/memory/models`; it ends it after
   `memoryHelperIdleTimeout` unused (it holds a reader cache and the model) and at quit. It speaks
   Thunderbird's native messaging (a 4-byte little-endian length, then JSON; replies by id), sends
@@ -5477,29 +5477,49 @@ Thunderbird's copy or its files.
   helper's tests hash them before and after). The first start downloads the embedding model (about
   87 MB, from cdn.tabmail.ai, checked by its hash) into Voice's own model folder; until then search
   is by keyword, as on Thunderbird and iOS.
+- **What the helper logs.** Its log file names what memory was asked (each search's query), so it is
+  kept only as the app's debug log is (ADR-DESK-015): `--log-level debug` while debug logging is on,
+  `off` otherwise, decided when the helper starts (ADR-DESK-017's snapshot rule); at `off` it writes
+  no log file anywhere. Its stderr goes to the debug log through `log.content` only. A helper's
+  error reply can quote the query (SQLite's errors do), so it becomes a `MemoryError` whose
+  `reason` goes to the model and whose logged description names only the request.
 - **What is kept.** After each agent-mode request, one row shaped as Thunderbird's add-on writes it:
   `[USER]: <the request as transcribed>` then `[AGENT]: <the reply>`, or for a writing tool the text
   it wrote with where it went and the app (`Pasted at the cursor in <app>:`, `Replaced the selection
   in <app>:`), under session `voice_agent`, dated now. Never: plain dictation, the screen read, the
   selection being edited, tools' calls and results, audio. A request that delivered nothing keeps
-  nothing. Keeping is best effort: nothing waits for it, and a failure is logged by type only.
+  nothing. Keeping is best effort: nothing waits for it, and a failure is logged by type and
+  request only.
   Agent mode needs consent and a sign-in, so nothing is kept without them.
 - **The tools.** `memory_search` and `memory_read` run on this computer, in the agent loop with
   every request (Answer on or off: an Edit or a Compose may draw on an earlier one), with
   Thunderbird's argument handling and result text (`src/core/memory/tools.ts`); they only read, so
-  they ask nothing, and the chat window says "Looking through past requests" while one runs. The
+  they ask nothing, and the chat window says "Looking through past requests" while one runs. As
+  Thunderbird's, a query the helper refuses (its full-text syntax can't take `re: invoice`, `50%`,
+  `(x` or `x AND`) comes back as `memory search failed: <the helper's reason>`, so the model can
+  rephrase it rather than repeat it; a read the helper refuses, `memory read failed: <reason>`. The
   backend's Voice loop carries their schemas and Thunderbird's memory rules; their results are
   model input like any tool's, under the backend's web-read guard.
 - **The size limit.** A Settings value (`memorySizeLimitChoices`: 100 MB to 5 GB; 1 GB by default),
   part of the key-down snapshot (ADR-DESK-017): each row is kept within the limit of its request's
   key-down, the helper removing the oldest exchanges first, measured as the pages its database uses.
-  Choosing a smaller limit trims at once and says how many of the oldest went, and, if the helper ran
-  out of time, that more go as new requests are kept. Space freed is reused; the file keeps its
+  Choosing a smaller limit asks first, in place as Clear All does, whatever usage shows (it can be
+  unread or out of date), then trims at once and says how many of the oldest went, and, if the
+  helper ran out of time, that more go as new requests are kept. A larger limit applies at once. Space freed is reused; the file keeps its
   size (no `VACUUM`, which could take unbounded time).
 - **Settings › Memory** (`src/core/memory/page.ts`, a port of Thunderbird's Chat History tab, in
   Voice's style): a usage bar, "Memory used: X of <limit>", the limit, the requests newest first (at
   most `memoryListLimit`), a search, Remove on each, and Clear All with a confirmation. It reads
-  nothing, and starts no helper, until a request was kept (the database exists).
+  nothing, and starts no helper, until a request was kept (the database exists). Usage and the list
+  are read apart: a search the helper refuses empties only the list ("Couldn't search for …. Try
+  other words."), with usage and Clear All still there, as Thunderbird's tab shows no results.
+- **Clear All** deletes memory's database folder (`memory/database/tabmail_fts`) and the helper's
+  logs, after ending the helper and waiting for it to exit (ended outright after
+  `memoryHelperExitTimeout`); requests made meanwhile wait, and the next starts a helper on an empty
+  database. Not the helper's `memoryClear`: it deletes the files while its own reader connection
+  holds them open, which Windows refuses (SQLite opens them without `FILE_SHARE_DELETE`), and it
+  still answers ok. Settings says "Memory cleared." only once that is done; otherwise it says it
+  couldn't be cleared.
 - **Consent.** The consent page says requests are kept on this computer and can be removed
   (ADR-DESK-010, amended); users who consented before are told once by the what's-new tip
   (ADR-DESK-049, amended).

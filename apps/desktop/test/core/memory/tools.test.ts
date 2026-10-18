@@ -2,9 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
-import { memoryDate, memoryRow } from "../../../src/core/memory/store.js";
+import { log } from "../../../src/core/log.js";
+import { MemoryError, memoryDate, memoryRow } from "../../../src/core/memory/store.js";
 import { MemoryTools } from "../../../src/core/memory/tools.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
 
@@ -133,11 +134,22 @@ describe("MemoryTools", () => {
 
     test("reports a failed search as the tool's error", async () => {
       memory.failing = true;
-      expect(await run(config.memorySearchTool, { query: "budget" })).toEqual({ error: "memory search failed: memory helper unavailable" });
+      expect(await run(config.memorySearchTool, { query: "budget" })).toEqual({ error: "memory search failed: Something went wrong. Try again." });
       // Not kept: the next call searches again.
       memory.failing = false;
       keep(1, "budget");
       expect(await run(config.memorySearchTool, { query: "budget" })).toMatchObject({ totalItems: 1 });
+    });
+
+    /** As Thunderbird's tool: a query the helper refuses comes back with the helper's reason, so the
+     * model can rephrase it rather than retry it; the reason quotes the query, so no error log line
+     * carries it. */
+    test.each(["50% discount", "re: invoice", "budget AND (meeting OR call)"])("gives the helper's reason for a query it refuses (%s)", async (query) => {
+      const error = vi.spyOn(log, "error").mockImplementation(() => {});
+      expect(await run(config.memorySearchTool, { query })).toEqual({ error: `memory search failed: fts5: syntax error near "${query}"` });
+      expect(error.mock.calls.flat().filter((line) => String(line).includes(query))).toEqual([]);
+      expect(error).toHaveBeenCalledWith(`MemoryTools: ${config.memorySearchTool} failed: MemoryError(memorySearch)`);
+      error.mockRestore();
     });
   });
 
@@ -185,7 +197,15 @@ describe("MemoryTools", () => {
 
     test("reports a failed read as the tool's error", async () => {
       memory.failing = true;
-      expect(await run(config.memoryReadTool, { timestamp: now })).toEqual({ error: "Failed to read memory: memory helper unavailable" });
+      expect(await run(config.memoryReadTool, { timestamp: now })).toEqual({ error: "Failed to read memory: Something went wrong. Try again." });
+    });
+
+    test("gives the helper's reason when it refuses a read, as Thunderbird's tool does", async () => {
+      const error = vi.spyOn(log, "error").mockImplementation(() => {});
+      memory.read = () => Promise.reject(new MemoryError("memoryRead", "database is locked"));
+      expect(await run(config.memoryReadTool, { timestamp: now })).toEqual({ error: "memory read failed: database is locked" });
+      expect(error).toHaveBeenCalledWith(`MemoryTools: ${config.memoryReadTool} failed: MemoryError(memoryRead)`);
+      error.mockRestore();
     });
   });
 });

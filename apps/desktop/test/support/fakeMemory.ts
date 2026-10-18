@@ -2,18 +2,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AgentMemory, MemoryHit, MemoryRow, MemorySearch, MemoryStats, MemoryTrim } from "../../src/core/memory/store.js";
+import { type AgentMemory, MemoryError, type MemoryHit, type MemoryRow, type MemorySearch, type MemoryStats, type MemoryTrim } from "../../src/core/memory/store.js";
+import { HelperError } from "../../src/main/native/helperClient.js";
 
 /**
  * Memory held in a list, as the memory helper keeps it: a search finds the rows whose content holds
  * every word of the query, the newest first (an empty query lists them all so); a read gives those
  * within the tolerance, the oldest first; a row's size is its content's length, and a limit removes
- * the oldest first. `failing` makes every call reject, as a helper that can't start.
+ * the oldest first. Its failures are `MemoryHelper`'s: a search its full-text query syntax can't take
+ * (`re: invoice`, `50%`, `(x`, `x AND`) is refused with a `MemoryError` quoting the query, as SQLite's
+ * error does; `failing` makes every call reject as a helper that can't start does (`HelperError`), and
+ * `clearFailing` only Clear All.
  */
 export class FakeMemory implements AgentMemory {
   rows: MemoryRow[] = [];
   prepared = 0;
   failing = false;
+  clearFailing = false;
   /** Every search asked, and every `maxBytes` an index was given. */
   readonly searches: MemorySearch[] = [];
   readonly limits: number[] = [];
@@ -32,6 +37,7 @@ export class FakeMemory implements AgentMemory {
   async search(search: MemorySearch): Promise<MemoryHit[]> {
     this.check();
     this.searches.push(search);
+    if (/[%():]/.test(search.query) || /(^|\s)(AND|OR|NOT|NEAR)(\s|$)/.test(search.query)) throw new MemoryError("memorySearch", `fts5: syntax error near "${search.query}"`);
     const words = search.query.toLowerCase().split(/\s+/).filter((word) => word !== "");
     return this.rows
       .filter((row) => words.every((word) => row.content.toLowerCase().includes(word)))
@@ -70,6 +76,7 @@ export class FakeMemory implements AgentMemory {
 
   async clear(): Promise<void> {
     this.check();
+    if (this.clearFailing) throw new HelperError("exited", "memoryClear");
     this.rows = [];
   }
 
@@ -88,7 +95,7 @@ export class FakeMemory implements AgentMemory {
   }
 
   private check(): void {
-    if (this.failing) throw new Error("memory helper unavailable");
+    if (this.failing) throw new HelperError("exited", "memory");
   }
 }
 

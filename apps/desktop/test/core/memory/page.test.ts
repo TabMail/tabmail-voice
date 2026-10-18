@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
 import { formatBytes, MemoryPage } from "../../../src/core/memory/page.js";
-import { type MemoryHit, type MemoryStats, memoryRow } from "../../../src/core/memory/store.js";
+import { MemoryError, type MemoryHit, type MemoryStats, memoryRow } from "../../../src/core/memory/store.js";
+import { HelperError } from "../../../src/main/native/helperClient.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
 
 const MB = 1_024 * 1_024;
@@ -41,6 +42,7 @@ describe("MemoryPage", () => {
     [0, "0 KB"],
     [512, "0.5 KB"],
     [12.34 * MB, "12.3 MB"],
+    [104.56 * MB, "105 MB"],
     [100 * MB, "100 MB"],
     [GB, "1 GB"],
     [1.5 * GB, "1.5 GB"],
@@ -83,7 +85,53 @@ describe("MemoryPage", () => {
     memory.failing = true;
     await page.load();
     expect(page.state).toMatchObject({ usage: null, unavailable: true, entries: [] });
-    expect(error).toHaveBeenCalledWith("MemoryPage: memory couldn't be read: Error");
+    expect(error).toHaveBeenCalledWith("MemoryPage: memory couldn't be read: HelperError.exited(memory)");
+    error.mockRestore();
+  });
+
+  /** Thunderbird's Chat History shows no results and keeps its stats for a search its helper
+   * refuses. Waiting doesn't help such a search, and Clear All stays available. */
+  test.each(["re: invoice", "50%", "(invoice", "invoice AND"])("a search the helper refuses (%s) empties only the list", async (query) => {
+    const error = vi.spyOn(log, "error").mockImplementation(() => {});
+    await page.load(query);
+    expect(page.state).toMatchObject({ query, usage: { docs: 3 }, unavailable: false, entries: [], searchFailed: "refused" });
+    expect(error.mock.calls.flat().filter((line) => String(line).includes(query))).toEqual([]);
+    expect(error).toHaveBeenCalledWith("MemoryPage: memory couldn't be searched: MemoryError(memorySearch)");
+    // The next search lists again.
+    await page.load("request");
+    expect(page.state).toMatchObject({ searchFailed: null, unavailable: false });
+    expect(page.state.entries).toHaveLength(3);
+    error.mockRestore();
+  });
+
+  test("a list the helper can't give, with usage read, says the list failed and keeps usage", async () => {
+    const error = vi.spyOn(log, "error").mockImplementation(() => {});
+    memory.search = () => Promise.reject(new HelperError("timeout", "memorySearch"));
+    await page.load();
+    expect(page.state).toMatchObject({ usage: { docs: 3 }, unavailable: false, entries: [], searchFailed: "failed" });
+    error.mockRestore();
+  });
+
+  test("usage the helper can't give, with the list read, says usage is unavailable and lists", async () => {
+    const error = vi.spyOn(log, "error").mockImplementation(() => {});
+    memory.stats = () => Promise.reject(new MemoryError("memoryStats", "database is locked"));
+    await page.load();
+    expect(page.state).toMatchObject({ usage: null, unavailable: true, searchFailed: null });
+    expect(page.state.entries).toHaveLength(3);
+    error.mockRestore();
+  });
+
+  test("an earlier read that fails late doesn't overwrite a later one", async () => {
+    const error = vi.spyOn(log, "error").mockImplementation(() => {});
+    const failures: Array<(error: Error) => void> = [];
+    const search = memory.search.bind(memory);
+    memory.search = (asked) => (asked.query === "old" ? new Promise<MemoryHit[]>((_resolve, reject) => failures.push(reject)) : search(asked));
+    const first = page.load("old");
+    await page.load("request");
+    failures[0]?.(new HelperError("timeout", "memorySearch"));
+    await first;
+    expect(page.state).toMatchObject({ query: "request", searchFailed: null, unavailable: false });
+    expect(page.state.entries).toHaveLength(3);
     error.mockRestore();
   });
 
@@ -182,5 +230,17 @@ describe("MemoryPage", () => {
     const clear = vi.spyOn(memory, "clear");
     await page.clear();
     expect(clear).not.toHaveBeenCalled();
+  });
+
+  test("never says memory is cleared while it still holds requests", async () => {
+    const error = vi.spyOn(log, "error").mockImplementation(() => {});
+    await page.load();
+    memory.clearFailing = true;
+    await expect(page.clear()).rejects.toThrow("Memory couldn't be cleared. Try again.");
+    expect(page.state.status).toBeNull();
+    expect(page.state.usage?.docs).toBe(3);
+    expect(page.state.entries).toHaveLength(3);
+    expect(error).toHaveBeenCalledWith("MemoryPage: memory couldn't be cleared: HelperError.exited(memoryClear)");
+    error.mockRestore();
   });
 });

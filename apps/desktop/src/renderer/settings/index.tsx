@@ -429,6 +429,8 @@ function MemoryPane({ state }: { state: SettingsState }) {
   const memory = state.memory;
   const [draft, setDraft] = useState("");
   const [confirmingClear, setConfirmingClear] = useState(false);
+  /** A lower size limit chosen, waiting to be confirmed: it removes the oldest requests for good. */
+  const [confirmingLimit, setConfirmingLimit] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const run = async (command: Command) => {
     setFailure(null);
@@ -438,6 +440,15 @@ function MemoryPane({ state }: { state: SettingsState }) {
   const search = (event: FormEvent) => {
     event.preventDefault();
     void run({ type: "searchMemory", query: draft.trim() });
+  };
+  const chooseLimit = (value: number) => {
+    // A lower limit can remove requests for good: asked first, as Clear All is, whatever memory is
+    // shown to hold. The list keeps the limit in force until then.
+    if (value < memory.sizeLimit) setConfirmingLimit(value);
+    else {
+      setConfirmingLimit(null);
+      void run({ type: "setMemorySizeLimit", value });
+    }
   };
   const used = memory.usage?.usedBytes;
   return (
@@ -463,7 +474,7 @@ function MemoryPane({ state }: { state: SettingsState }) {
         </div>
         <div className="row">
           <span>Size limit</span>
-          <select aria-label="Size limit" value={memory.sizeLimit} onChange={(event) => void run({ type: "setMemorySizeLimit", value: Number(event.target.value) })}>
+          <select aria-label="Size limit" value={memory.sizeLimit} onChange={(event) => chooseLimit(Number(event.target.value))}>
             {config.memorySizeLimitChoices.map((bytes) => (
               <option key={bytes} value={bytes}>
                 {formatBytes(bytes)}
@@ -471,6 +482,23 @@ function MemoryPane({ state }: { state: SettingsState }) {
             ))}
           </select>
         </div>
+        {confirmingLimit !== null && (
+          <div className="row stack">
+            <span>Lower the limit to {formatBytes(confirmingLimit)}? The oldest requests above it are removed. This can’t be undone.</span>
+            <div className="buttons">
+              <button onClick={() => setConfirmingLimit(null)}>Cancel</button>
+              <button
+                className="default"
+                onClick={() => {
+                  setConfirmingLimit(null);
+                  void run({ type: "setMemorySizeLimit", value: confirmingLimit });
+                }}
+              >
+                Lower Limit
+              </button>
+            </div>
+          </div>
+        )}
         {memory.status !== null && (
           <div className="row">
             <span className="caption">{memory.status}</span>
@@ -497,7 +525,17 @@ function MemoryPane({ state }: { state: SettingsState }) {
         {memory.entries.length === 0 ? (
           <div className="row">
             <span className="caption">
-              {memory.unavailable ? "Memory can’t be read right now. Try again in a moment." : memory.query !== "" ? `No requests found for “${memory.query}”.` : memory.usage === null ? "Reading…" : "No requests kept yet."}
+              {memory.unavailable
+                ? "Memory can’t be read right now. Try again in a moment."
+                : memory.searchFailed === "refused"
+                  ? `Couldn’t search for “${memory.query}”. Try other words.`
+                  : memory.searchFailed === "failed"
+                    ? "Requests can’t be listed right now. Try again in a moment."
+                  : memory.query !== ""
+                    ? `No requests found for “${memory.query}”.`
+                    : memory.usage === null
+                      ? "Reading…"
+                      : "No requests kept yet."}
             </span>
           </div>
         ) : (

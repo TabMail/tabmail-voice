@@ -5,7 +5,7 @@
 import * as config from "../config.js";
 import { errorName, log } from "../log.js";
 import { Observable } from "../util/observable.js";
-import type { MemoryStats, AgentMemory } from "./store.js";
+import { type AgentMemory, MemoryError, type MemoryStats } from "./store.js";
 
 /** An exchange Settings › Memory lists. */
 export interface MemoryEntry {
@@ -20,12 +20,16 @@ export interface MemoryPageState {
   sizeLimit: number;
   /** What memory holds; null while it is read, or when it couldn't be (`unavailable`). */
   usage: MemoryStats | null;
-  /** The memory helper couldn't answer. */
+  /** The memory helper couldn't say what memory holds. */
   unavailable: boolean;
   /** The search typed, empty for the newest exchanges. */
   query: string;
   /** The exchanges listed: the newest first, or the best matches. */
   entries: MemoryEntry[];
+  /** The list couldn't be read: `refused`, the helper refused the search (words its search can't
+   * take, such as "re: invoice" or "50%"); `failed`, it couldn't answer. What memory holds still
+   * shows. */
+  searchFailed: "refused" | "failed" | null;
   /** What the last change did ("Size limit set to 100 MB."), until the next. */
   status: string | null;
 }
@@ -61,31 +65,33 @@ export class MemoryPage extends Observable {
     private readonly settings: { readonly memorySizeLimit: number; setMemorySizeLimit(value: number): boolean },
   ) {
     super();
-    this.current = { sizeLimit: settings.memorySizeLimit, usage: null, unavailable: false, query: "", entries: [], status: null };
+    this.current = { sizeLimit: settings.memorySizeLimit, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null };
   }
 
   get state(): MemoryPageState {
     return this.current;
   }
 
-  /** Reads memory afresh, for the search shown (`query`; the one shown when omitted). */
+  /** Reads memory afresh, for the search shown (`query`; the one shown when omitted). What memory
+   * holds and the list are read apart: a search the helper refuses empties only the list. */
   async load(query = this.current.query): Promise<void> {
     this.reads += 1;
     const read = this.reads;
     this.update({ query, sizeLimit: this.settings.memorySizeLimit });
     if (!this.exists()) {
-      this.update({ usage: { docs: 0, usedBytes: 0 }, unavailable: false, entries: [] });
+      this.update({ usage: { docs: 0, usedBytes: 0 }, unavailable: false, entries: [], searchFailed: null });
       return;
     }
-    try {
-      const [usage, hits] = await Promise.all([this.store.stats(), this.store.search({ query: query.trim(), from: "", to: "", limit: config.memoryListLimit })]);
-      if (read !== this.reads) return;
-      this.update({ usage, unavailable: false, entries: hits.map(({ memId, dateMs, content }) => ({ memId, dateMs, content })) });
-    } catch (error) {
-      if (read !== this.reads) return;
-      log.error(`MemoryPage: memory couldn't be read: ${errorName(error)}`);
-      this.update({ usage: null, unavailable: true, entries: [] });
-    }
+    const [usage, hits] = await Promise.allSettled([this.store.stats(), this.store.search({ query: query.trim(), from: "", to: "", limit: config.memoryListLimit })]);
+    if (read !== this.reads) return;
+    if (usage.status === "rejected") log.error(`MemoryPage: memory couldn't be read: ${errorName(usage.reason)}`);
+    if (hits.status === "rejected") log.error(`MemoryPage: memory couldn't be searched: ${errorName(hits.reason)}`);
+    this.update({
+      usage: usage.status === "fulfilled" ? usage.value : null,
+      unavailable: usage.status === "rejected",
+      entries: hits.status === "fulfilled" ? hits.value.map(({ memId, dateMs, content }) => ({ memId, dateMs, content })) : [],
+      searchFailed: hits.status === "fulfilled" ? null : hits.reason instanceof MemoryError ? "refused" : "failed",
+    });
   }
 
   /** Keeps `value` as the size limit, and applies it now: the oldest exchanges go until memory fits,
@@ -114,8 +120,18 @@ export class MemoryPage extends Observable {
     await this.load();
   }
 
+  /** Removes everything memory holds; says so only once it is done. */
   async clear(): Promise<void> {
-    if (this.exists()) await this.store.clear();
+    if (this.exists()) {
+      try {
+        await this.store.clear();
+      } catch (error) {
+        log.error(`MemoryPage: memory couldn't be cleared: ${errorName(error)}`);
+        this.update({ status: null });
+        await this.load();
+        throw new Error("Memory couldn't be cleared. Try again.", { cause: error });
+      }
+    }
     this.update({ status: "Memory cleared." });
     await this.load();
   }
