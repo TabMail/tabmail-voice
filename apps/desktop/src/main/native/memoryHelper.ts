@@ -52,8 +52,7 @@ const lengthPrefix = 4;
  * closing its stdin ends it. Its `init` downloads the model when it isn't there yet, so one that
  * started without it is kept until the app quits, trying once per run as Thunderbird's does, rather
  * than downloading again at every start. It is never asked to update itself:
- * the app ships the build it runs. It writes its own log file, which can hold what memory was asked,
- * only while debug logging is on (as the app's debug log), decided when it starts.
+ * the app ships the build it runs. It writes no log file.
  */
 export class MemoryHelper implements AgentMemory {
   private child: ChildProcessWithoutNullStreams | null = null;

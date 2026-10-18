@@ -4453,6 +4453,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(told(rounds.length - 1).at(-1)).toBe(config.confirmationToolNothingWaiting);
           });
 
+          /** A spoken answer is for the model's very next call: memory read in between (text kept from
+           * earlier requests) uses it up, so the confirmation after runs nothing. */
+          test.each([
+            ["memory_search", { query: "launch review" }],
+            ["memory_read", { timestamp: Date.now() - 24 * 60 * 60 * 1_000 }],
+          ])("the model's confirmation after a %s call does nothing", async (name, args) => {
+            memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling([name, JSON.stringify(args)]), calling(confirming), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Yes, add it.");
+            await done;
+
+            expect(tool.runs).toEqual([]);
+            expect(told(3).at(-1)).toBe(config.confirmationToolNothingWaiting);
+          });
+
           /** One spoken answer is one answer: the model's tool a second time does nothing. */
           test("the model's confirmation a second time does nothing", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });

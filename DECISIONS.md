@@ -5523,7 +5523,8 @@ Thunderbird's copy or its files.
 - **Settings › Memory** (`src/core/memory/page.ts`, a port of Thunderbird's Chat History tab, in
   Voice's style): a usage bar, "Memory used: X of <limit>", the limit, the requests newest first (at
   most `memoryListLimit`), a search, Remove on each, and Clear All with a confirmation. It reads
-  nothing, and starts no helper, until a request was kept (the database exists). Usage and the list
+  nothing, and starts no helper, until the helper first ran (the database exists; the helper makes
+  it at its first start, when agent mode is first chosen). Usage and the list
   are read apart: a search the helper refuses empties only the list ("Couldn't search for …. Try
   other words."), with usage and Clear All still there, as Thunderbird's tab shows no results.
   Clear All is always available, and always asks memory to clear, whether or not its database

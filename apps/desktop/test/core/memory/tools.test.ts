@@ -203,8 +203,11 @@ describe("MemoryTools", () => {
       const turns = (text: unknown) => [...String(text).matchAll(/\[USER\]: turn (-?\d+)/g)].map((m) => Number(m[1]));
       expect(turns(await run(config.memoryReadTool, { timestamp: at }))).toEqual(Array.from({ length: config.memoryReadMaxTurns }, (_, i) => i - 10));
       expect(turns(await run(config.memoryReadTool, { timestamp: at + 2_000, max_turns: 3 }))).toEqual([1, 2, 3]);
-      // At the edge, the window still holds as many as asked.
+      // At either edge, the window still holds as many as asked.
       expect(turns(await run(config.memoryReadTool, { timestamp: at - 15_000, max_turns: 4.7 }))).toEqual([-15, -14, -13, -12]);
+      expect(turns(await run(config.memoryReadTool, { timestamp: at + 15_000, max_turns: 4 }))).toEqual([12, 13, 14, 15]);
+      // Less than one asked is one, as Thunderbird's tool gives.
+      expect(turns(await run(config.memoryReadTool, { timestamp: at, max_turns: 0.5 }))).toEqual([0]);
     });
 
     test("says when nothing is near, and marks an empty row", async () => {
