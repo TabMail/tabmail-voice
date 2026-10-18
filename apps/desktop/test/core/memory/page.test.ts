@@ -222,7 +222,7 @@ describe("MemoryPage", () => {
     expect(page.state.status).toBeNull();
   });
 
-  test("Clear All removes everything, and asks memory even with no database (a clear cut short leaves logs)", async () => {
+  test("Clear All removes everything, and asks memory even with no database (a clear cut short can leave its write-ahead log)", async () => {
     await page.clear();
     expect(memory.rows).toEqual([]);
     expect(page.state).toMatchObject({ status: "Memory cleared.", usage: { docs: 0, usedBytes: 0 }, entries: [] });

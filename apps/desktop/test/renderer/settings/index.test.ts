@@ -525,8 +525,8 @@ describe("Settings page", () => {
     });
 
     // What is kept can always be removed: Clear All needs no reading of memory, and is the way out
-    // of memory that can't be read (a damaged file) and of a clear cut short (no requests left, but
-    // the helper's logs still there).
+    // of memory that can't be read (a damaged file) and of a clear cut short (the database file gone,
+    // its write-ahead log still there).
     test.each([
       ["nothing kept", { usage: { docs: 0, usedBytes: 0 }, entries: [] }],
       ["usage unreadable", { usage: null, unavailable: true, entries: [] }],

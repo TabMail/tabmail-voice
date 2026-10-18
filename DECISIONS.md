@@ -5467,7 +5467,7 @@ Thunderbird's copy or its files.
   move to it is a change of the pinned commit. That repository's ADR-NF-008 makes the helper take
   the caller's locations and a size limit.
 - **Where it is kept.** `MemoryHelper` (`src/main/native/memoryHelper.ts`) starts `voice-memory` on
-  first use, with `--log-dir <userData>/memory/logs` and `--log-level`, and sends `init` with
+  first use, with `--log-level off`, and sends `init` with
   `profilePath <userData>/memory/database` and `modelDir <userData>/memory/models`; the helper makes
   those folders, the app makes none (a folder that can't be made fails `init`, and memory's requests
   fail without naming it). Once its model has loaded (`init` answers `hasEmbeddings`), it ends it
@@ -5483,10 +5483,13 @@ Thunderbird's copy or its files.
   87 MB, from cdn.tabmail.ai, checked by its hash) into Voice's own model folder, before `init`
   answers, so memory's requests wait for that first download; if it fails, search is by keyword
   only, as on Thunderbird and iOS.
-- **What the helper logs.** Its log file names what memory was asked (each search's query), so it is
-  kept only as the app's debug log is (ADR-DESK-015): `--log-level debug` while debug logging is on,
-  `off` otherwise, decided when the helper starts (ADR-DESK-017's snapshot rule); at `off` it writes
-  no log file anywhere. Its stderr goes to the debug log through `log.content` only. A helper's
+- **What the helper logs.** Nothing, in every build: `--log-level off` writes no log file anywhere
+  and nothing to stderr. Its log would name what memory was asked (each search's query), and a
+  helper outlives the debug switch and the account signed in, so a log level chosen when it starts
+  would go on logging after either changed (*Amended 2026-10-18: it was `debug` while debug
+  logging was on, decided at start*). Debugging memory loses the helper's own diagnostics; the app's
+  debug log still has each request and its reply. What the helper still writes to stderr (a crash's
+  message) goes to the debug log through `log.content` only. A helper's
   error reply can quote the query (SQLite's errors do), so it becomes a `MemoryError` whose
   `reason` goes to the model and whose logged description names only the request.
 - **What is kept.** After each agent-mode request, one row shaped as Thunderbird's add-on writes it:
@@ -5525,10 +5528,10 @@ Thunderbird's copy or its files.
   other words."), with usage and Clear All still there, as Thunderbird's tab shows no results.
   Clear All is always available, and always asks memory to clear, whether or not its database
   exists or usage can be read: it is the way to start memory afresh, and a clear cut short (the
-  database deleted, the helper's logs, which name what memory was asked, not) is finished by the
-  next.
-- **Clear All** deletes memory's database folder (`memory/database/tabmail_fts`) and the helper's
-  logs, after ending the helper and waiting for it to exit (ended outright after
+  database file deleted, its write-ahead log, which holds the latest exchanges, not) is finished by
+  the next.
+- **Clear All** deletes memory's database folder (`memory/database/tabmail_fts`), after ending the
+  helper and waiting for it to exit (ended outright after
   `memoryHelperExitTimeout`); requests made meanwhile wait, and the next starts a helper on an empty
   database. Not the helper's `memoryClear`: it deletes the files while its own reader connection
   holds them open, which Windows refuses (SQLite opens them without `FILE_SHARE_DELETE`), and it

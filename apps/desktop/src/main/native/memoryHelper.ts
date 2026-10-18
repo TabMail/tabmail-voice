@@ -6,7 +6,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import * as config from "../../core/config.js";
-import { errorName, isDebugLogging, log } from "../../core/log.js";
+import { errorName, log } from "../../core/log.js";
 import { type AgentMemory, type MemoryHit, MemoryError, type MemoryRow, type MemorySearch, type MemoryStats, type MemoryTrim } from "../../core/memory/store.js";
 import { HelperError, onLines } from "./helperClient.js";
 
@@ -14,8 +14,7 @@ export interface MemoryHelperOptions {
   executable: string;
   /** Arguments before the helper's own (a test runs a script under Node). */
   args?: readonly string[];
-  /** Memory's folder, this app's alone: the database, the embedding model and the helper's logs go
-   * in it. */
+  /** Memory's folder, this app's alone: the database and the embedding model go in it. */
   directory: string;
   idleTimeout?: number;
   exitTimeout?: number;
@@ -33,11 +32,11 @@ interface Pending {
 }
 
 /** Memory's folder's layout: the helper's database folder (`profilePath`; it keeps its databases in
- * `tabmail_fts` there, memory's at `tabmail_fts/memory.db`), its model and its logs. */
-export function memoryFolders(directory: string): { database: string; databases: string; models: string; logs: string; databaseFile: string } {
+ * `tabmail_fts` there, memory's at `tabmail_fts/memory.db`) and its model. */
+export function memoryFolders(directory: string): { database: string; databases: string; models: string; databaseFile: string } {
   const database = join(directory, "database");
   const databases = join(database, "tabmail_fts");
-  return { database, databases, models: join(directory, "models"), logs: join(directory, "logs"), databaseFile: join(databases, "memory.db") };
+  return { database, databases, models: join(directory, "models"), databaseFile: join(databases, "memory.db") };
 }
 
 /** The size of a native-messaging message's length prefix (bytes). */
@@ -112,8 +111,8 @@ export class MemoryHelper implements AgentMemory {
 
   /** Removes everything memory holds by deleting its database, with the helper ended first: the
    * helper's own `memoryClear` deletes the files while its other connection holds them open, which
-   * Windows refuses, and it still answers ok. The helper's logs go too. The next request starts a
-   * helper on an empty database. */
+   * Windows refuses, and it still answers ok. The next request starts a helper on an empty
+   * database. */
   clear(): Promise<void> {
     if (this.clearing === null) {
       this.clearing = this.deleteAll().finally(() => {
@@ -126,9 +125,7 @@ export class MemoryHelper implements AgentMemory {
   private async deleteAll(): Promise<void> {
     this.end();
     await this.exits();
-    const { databases, logs } = memoryFolders(this.options.directory);
-    rmSync(databases, { recursive: true, force: true });
-    rmSync(logs, { recursive: true, force: true });
+    rmSync(memoryFolders(this.options.directory).databases, { recursive: true, force: true });
     log.debug("MemoryHelper: cleared");
   }
 
@@ -171,9 +168,9 @@ export class MemoryHelper implements AgentMemory {
   private started(): Promise<void> {
     if (this.stopped) return Promise.reject(new HelperError("exited", "init"));
     if (this.initialized !== null) return this.initialized;
-    const { database, models, logs } = memoryFolders(this.options.directory);
+    const { database, models } = memoryFolders(this.options.directory);
     try {
-      this.launch(logs);
+      this.launch();
     } catch (error) {
       // Spawning throws for what Node doesn't report as an `error` event (out of memory, too long an
       // argument list; a missing executable or too many open files are `error` events, below):
@@ -200,11 +197,10 @@ export class MemoryHelper implements AgentMemory {
   }
 
   /** Starts a helper and makes it the running one. A spawn that throws starts none. */
-  private launch(logs: string): void {
-    // Its log names what memory was asked: kept only while debug logging is on, as the app's debug
-    // log; "off" writes no log file anywhere.
-    const level = isDebugLogging() ? "debug" : "off";
-    const child = spawn(this.options.executable, [...(this.options.args ?? []), "--log-dir", logs, "--log-level", level], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  private launch(): void {
+    // No log file, ever: the helper's log names what memory was asked, and a helper outlives the
+    // debug switch and the account signed in, so it would go on logging after either changed.
+    const child = spawn(this.options.executable, [...(this.options.args ?? []), "--log-level", "off"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     // A failed spawn (a missing executable) reports here only, with no exit: its requests fail now
     // rather than at their timeouts, and the next request tries again. Listened to first, so a
     // spawn that fails before its streams exist still reports here.

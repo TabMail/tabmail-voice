@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -64,7 +64,6 @@ describe("MemoryHelper", () => {
     // The helper makes the folders it is told.
     expect(existsSync(folders.database)).toBe(true);
     expect(JSON.parse(readFileSync(join(record, "init.json"), "utf8"))).toEqual({ profilePath: folders.database, modelDir: folders.models });
-    expect(lastArgs()).toEqual(expect.arrayContaining(["--log-dir", folders.logs]));
     expect(starts()).toBe(1);
   });
 
@@ -150,28 +149,22 @@ describe("MemoryHelper", () => {
     }
   });
 
-  test("writes no log file anywhere while debug logging is off", async () => {
-    const memory = make();
-    await memory.search({ query: "dentist appointment", from: "", to: "", limit: 5 });
-    expect(lastArgs()).toEqual(expect.arrayContaining(["--log-level", "off"]));
-    expect(existsSync(memoryFolders(directory).logs)).toBe(false);
-  });
-
-  test("logs while debug logging is on, as decided when the helper starts", async () => {
+  /** What memory was asked is never written down: a helper outlives the debug switch and the account
+   * signed in, so a log it kept would go on after either changed. */
+  test("writes no record of what memory was asked, with debug logging on, or turned off while it runs", async () => {
     setDebugMode(true);
     const memory = make();
     await memory.search({ query: "dentist appointment", from: "", to: "", limit: 5 });
-    expect(lastArgs()).toEqual(expect.arrayContaining(["--log-level", "debug"]));
-    expect(readFileSync(join(memoryFolders(directory).logs, "fts_helper.log"), "utf8")).toContain("dentist appointment");
-    // Turned off while it runs: the running helper keeps its level; the next one starts at "off".
     setDebugMode(false);
-    await memory.search({ query: "x", from: "", to: "", limit: 5 });
+    await memory.search({ query: "bravo invoice", from: "", to: "", limit: 5 });
     expect(starts()).toBe(1);
-    await memory.clear();
-    await memory.search({ query: "x", from: "", to: "", limit: 5 });
-    expect(starts()).toBe(2);
     expect(lastArgs()).toEqual(expect.arrayContaining(["--log-level", "off"]));
-    expect(existsSync(memoryFolders(directory).logs)).toBe(false);
+    const written = readdirSync(directory, { recursive: true, encoding: "utf8" })
+      .map((name) => join(directory, name))
+      .filter((path) => statSync(path).isFile())
+      .map((path) => readFileSync(path, "utf8"));
+    expect(written.length).toBeGreaterThan(0);
+    expect(written.filter((text) => text.includes("dentist") || text.includes("bravo"))).toEqual([]);
   });
 
   describe("Clear All", () => {
@@ -214,36 +207,20 @@ describe("MemoryHelper", () => {
       expect((await rowsOf(memory)).map((hit) => hit.memId)).toEqual(["turn:after"]);
     });
 
-    test("deletes the helper's logs", async () => {
-      setDebugMode(true);
-      const memory = make();
-      await memory.search({ query: "dentist appointment", from: "", to: "", limit: 5 });
-      expect(existsSync(memoryFolders(directory).logs)).toBe(true);
-      await memory.clear();
-      expect(existsSync(memoryFolders(directory).logs)).toBe(false);
-    });
-
-    /** A Clear All cut short after the database went (its logs, which name what memory was asked,
-     * couldn't be deleted) is finished by the next one from Settings. */
-    test.skipIf(process.platform === "win32")("a Clear All cut short is finished by the next, from Settings", async () => {
-      setDebugMode(true);
-      const memory = make();
+    /** A Clear All cut short after the database file went, leaving its write-ahead log (which holds
+     * the latest exchanges), is finished by the next one from Settings. */
+    test("a Clear All cut short is finished by the next, from Settings", async () => {
+      const memory = make([], { idleTimeout: 50 });
       const folders = memoryFolders(directory);
       const page = new MemoryPage(memory, () => existsSync(folders.databaseFile), { memorySizeLimit: 1 << 30, setMemorySizeLimit: () => true });
       await memory.index(rows, 1 << 30);
-      await memory.search({ query: "dentist appointment", from: "", to: "", limit: 5 });
-      // The logs' folder can't be emptied for now.
-      chmodSync(folders.logs, 0o500);
-      try {
-        await expect(page.clear()).rejects.toThrow("Memory couldn't be cleared. Try again.");
-        expect(existsSync(folders.databaseFile)).toBe(false);
-        expect(existsSync(folders.logs)).toBe(true);
-      } finally {
-        chmodSync(folders.logs, 0o700);
-      }
+      await vi.waitFor(() => expect(ends()).toBe(1));
+      // What the cut-short clear left.
+      rmSync(folders.databaseFile);
+      writeFileSync(`${folders.databaseFile}-wal`, "the latest exchanges");
       await page.clear();
       expect(page.state.status).toBe("Memory cleared.");
-      expect(existsSync(folders.logs)).toBe(false);
+      expect(existsSync(folders.databases)).toBe(false);
     });
 
     test("with no helper running, still deletes what memory holds", async () => {
@@ -279,9 +256,12 @@ describe("MemoryHelper", () => {
     expect(starts()).toBe(2);
   });
 
-  test("a helper that can't run fails at once, not at its timeout", async () => {
-    helper = new MemoryHelper({ executable: join(directory, "missing-helper"), directory, initTimeout: 60_000 });
+  test("a helper that can't run fails at once, not at its timeout, and Clear All doesn't wait on it", async () => {
+    helper = new MemoryHelper({ executable: join(directory, "missing-helper"), directory, initTimeout: 60_000, requestTimeout: 60_000, exitTimeout: 60_000 });
     const started = Date.now();
+    await expect(helper.stats()).rejects.toMatchObject({ kind: "exited" });
+    // It reported only an error, never an exit: Clear All, and the request after, still end.
+    await helper.clear();
     await expect(helper.stats()).rejects.toMatchObject({ kind: "exited" });
     expect(Date.now() - started).toBeLessThan(5_000);
   });

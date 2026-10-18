@@ -121,8 +121,8 @@ export class MemoryPage extends Observable {
   }
 
   /** Removes everything memory holds; says so only once it is done. Asked of memory whether or not
-   * its database exists: a clear cut short can have deleted the database and left the helper's logs,
-   * which name what memory was asked, and the next Clear All must remove them. */
+   * its database exists: a clear cut short can have deleted the database file and left its
+   * write-ahead log, which holds the latest exchanges, and the next Clear All must remove it. */
   async clear(): Promise<void> {
     try {
       await this.store.clear();
