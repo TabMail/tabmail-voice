@@ -6,9 +6,9 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../../../src/core/backend/account.js";
-import { type AgentChat, emptyChat } from "../../../src/core/agent/chat.js";
+import { type AgentChat, emptyChat, type EventQuestion } from "../../../src/core/agent/chat.js";
 import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
-import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
+import type { ConnectorTool, ToolQuestion } from "../../../src/core/agent/connectors/contract.js";
 import { AgentError, type AgentToolID, agentToolIDs, screenHiddenNote } from "../../../src/core/agent/tools.js";
 import { AudioRecorder } from "../../../src/core/audio/recorder.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
@@ -3550,6 +3550,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       describe("the answer's tools", () => {
         const toolRequest = "add the launch review to my calendar";
         const confirmationQuestion = "Add “Launch review” to your calendar on Friday at 10:00?";
+        /** The card a calendar question draws for `confirmationQuestion`. */
+        const confirmationEvent: EventQuestion = { action: "add", caption: "New event", month: "Oct", day: 23, weekday: "Fri", title: "Launch review", newTitle: null, time: "10:00 – 11:00 AM", newTime: null, lines: [] };
 
         /** A tool that runs on this computer, for the answer's loop: records the arguments of each run,
          * asks `question` first when set, and returns `result` (or throws `failure`). */
@@ -3558,7 +3560,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           /** How many times it was asked for its question, and the arguments it was asked about. */
           asked = 0;
           readonly askedAbout: Record<string, unknown>[] = [];
-          question: string | null = null;
+          question: ToolQuestion | null = null;
           result = "Added.";
           /** What its run throws: an `Error`, or (as JavaScript allows) any other value. */
           failure: Error | string | null = null;
@@ -3571,7 +3573,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             readonly connector: ConnectorID = "calendar",
           ) {}
 
-          confirmation(args: Record<string, unknown>): string | null {
+          confirmation(args: Record<string, unknown>): ToolQuestion | null {
             this.asked += 1;
             this.askedAbout.push(args);
             return this.question;
@@ -3959,6 +3961,28 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
         });
 
+        /** A question about a calendar event shows its card beside its words while it waits, and both
+         * go once it is answered; a question of words alone shows no card. */
+        test("a question's event card shows until it is answered", async () => {
+          const tool = new FakeLoopTool();
+          tool.question = { text: confirmationQuestion, event: confirmationEvent };
+          const { controller, done } = await ask([tool], [calling(["example_create", '{"title":"Launch review"}']), calling(["example_create", '{"title":"Launch party"}']), reply(answer)]);
+          expect(await eventually(() => controller.chat?.confirmationEvent === confirmationEvent)).toBe(true);
+          expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+
+          tool.question = "Add “Launch party”?";
+          controller.answerConfirmation(true);
+          expect(controller.chat?.confirmationEvent).toBeNull();
+          expect(await eventually(() => controller.chat?.confirmation === "Add “Launch party”?")).toBe(true);
+          expect(controller.chat?.confirmationEvent).toBeNull();
+          controller.answerConfirmation(true);
+          await done;
+
+          expect(tool.runs).toEqual([{ title: "Launch review" }, { title: "Launch party" }]);
+          expect(controller.chat?.confirmation).toBeNull();
+          expect(controller.chat?.confirmationEvent).toBeNull();
+        });
+
         /** Declined, the tool doesn't run; the model is told, and answers. */
         test("a declined tool does not run", async () => {
           const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
@@ -4142,6 +4166,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
             controller.handle("finish");
           }
 
+          /** A question with an event card is answered aloud from its words: the model reads them, not
+           * the card. */
+          test("the model reads an event question's words", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: { text: confirmationQuestion, event: confirmationEvent } });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmationEvent === confirmationEvent)).toBe(true);
+
+            await sayAloud(controller, "Yes, go ahead.");
+            await done;
+
+            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes, go ahead.", "q1")]);
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+            expect(controller.chat?.confirmationEvent).toBeNull();
+          });
+
           /** The hotkey answers the question: the model reads the question and the user's words, and
            * confirms for the user with its tool; the call that asked then runs as it was shown, with no
            * second question. */
@@ -4150,10 +4189,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
             // Every question the chat window asks from here on.
-            const asking = controller as unknown as { confirm: (question: string) => Promise<unknown> };
+            const asking = controller as unknown as { confirm: (question: string, event: EventQuestion | null) => Promise<unknown> };
             const confirm = asking.confirm.bind(controller);
             const questions: string[] = [];
-            asking.confirm = (question) => (questions.push(question), confirm(question));
+            asking.confirm = (question, event) => (questions.push(question), confirm(question, event));
 
             await sayAloud(controller, "Yes, go ahead.");
             await done;

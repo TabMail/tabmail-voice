@@ -300,6 +300,119 @@ body {
   color: var(--on-accent);
 }
 
+.chat-confirm.destructive {
+  background: var(--error);
+}
+
+/* A calendar question's event: a small calendar page beside its title and time, then its lines. */
+.event-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-head {
+  display: flex;
+  align-items: center;
+}
+
+.event-page {
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--group);
+  border: 1px solid var(--separator);
+  box-shadow: var(--card-shadow);
+}
+
+.event-page-month {
+  font-weight: 700;
+  color: var(--brand-blue);
+}
+
+.event-page-day {
+  font-weight: 600;
+}
+
+.event-page-weekday {
+  color: var(--secondary);
+}
+
+.event-page.event-deleting .event-page-month,
+.chat-caption.event-deleting {
+  color: var(--error);
+}
+
+.event-page.event-deleting .event-page-day {
+  color: var(--tertiary);
+}
+
+.event-summary {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.event-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.event-time {
+  color: var(--secondary);
+}
+
+.event-removed {
+  text-decoration: line-through;
+  color: var(--tertiary);
+}
+
+.event-added {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.event-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-line {
+  display: flex;
+  align-items: baseline;
+}
+
+.event-line .icon {
+  flex: none;
+  align-self: center;
+  color: var(--tertiary);
+}
+
+.event-line-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.event-line.added .event-line-text {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.event-line.removed .event-line-text {
+  text-decoration: line-through;
+  color: var(--tertiary);
+}
+
+.event-line.note {
+  color: var(--secondary);
+}
+
+.event-line-detail {
+  color: var(--tertiary);
+  font-weight: 400;
+}
+
 .chat-timeout-track {
   position: absolute;
   pointer-events: none;

@@ -39,6 +39,30 @@ export const LocalDateTime = {
     return date.toLocaleString(undefined, withTime ? { dateStyle: "full", timeStyle: "short" } : { dateStyle: "full" });
   },
 
+  /** `date`'s day as a calendar page shows it, in the user's locale: "Oct", 21 and "Wed". */
+  page(date: Date): { month: string; day: number; weekday: string } {
+    return { month: date.toLocaleString(undefined, { month: "short" }), day: date.getDate(), weekday: date.toLocaleString(undefined, { weekday: "short" }) };
+  },
+
+  /** From `start` to `end` as a question's card shows it, in the user's locale: the times alone
+   * ("10:00 – 11:00 AM"), or with their days ("Thu, Oct 22, 3:00 PM – Fri, Oct 23, 9:00 AM"). */
+  timeRange(start: Date, end: Date, withDays: boolean): string {
+    const time = { hour: "numeric", minute: "2-digit" } as const;
+    return new Intl.DateTimeFormat(undefined, withDays ? { weekday: "short", month: "short", day: "numeric", ...time } : time).formatRange(start, end);
+  },
+
+  /** The days from `first` to `last` as a question's card shows them, in the user's locale: "Oct 21",
+   * or "Oct 21 – 23". */
+  dayRange(first: Date, last: Date): string {
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).formatRange(first, last);
+  },
+
+  /** `date` as a question's card names one day, in the user's locale: "Thu, Oct 22", with its time
+   * ("Thu, Oct 22, 3:00 PM") for a timed event's occurrence. */
+  shortDay(date: Date, withTime: boolean): string {
+    return date.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}) });
+  },
+
   startOfDay(date: Date): Date {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   },

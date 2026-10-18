@@ -4,7 +4,7 @@
 
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { type AgentChat, type ChatTurn, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
+import { type AgentChat, type ChatTurn, type EventQuestion, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
 import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
@@ -17,7 +17,7 @@ import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
 import { brandBlue, brandColor, rgba } from "../shared/brand.js";
 import { brandGlow, glassShadow, glassStyle } from "../shared/glass.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { ClipboardIcon, ConnectorIcon, CopyIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
+import { ClipboardIcon, ConnectorIcon, CopyIcon, EventLineIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
 import { applyPalette } from "../shared/theme.js";
 import "./index.css";
 
@@ -453,7 +453,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
         ))}
         {chat.pendingRequest !== null && <RequestBubble text={chat.pendingRequest} />}
         {status !== null && <Activity label={status} />}
-        {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} expiresAt={chat.confirmationExpiresAt} />}
+        {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} event={chat.confirmationEvent} expiresAt={chat.confirmationExpiresAt} />}
       </div>
       {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} timeout={config.chatTimeout} inset={config.chatCornerRadius} />}
       <button
@@ -484,17 +484,18 @@ function Activity({ label }: { label: string }) {
 }
 
 /** What a tool asks before it sends or creates anything: it runs only on Confirm, and a bar along its
- * bottom edge shows the time left to answer. */
-function ConfirmationCard({ question, expiresAt }: { question: string; expiresAt: number | null }) {
+ * bottom edge shows the time left to answer. A question about a calendar event draws the event, and
+ * its button says what confirming does (red for a delete). */
+function ConfirmationCard({ question, event, expiresAt }: { question: string; event: EventQuestion | null; expiresAt: number | null }) {
   const button = (title: string, confirmed: boolean) => (
     <button
       type="button"
-      className={confirmed ? "chat-confirm" : "chat-cancel"}
+      className={confirmed ? `chat-confirm${event?.action === "delete" ? " destructive" : ""}` : "chat-cancel"}
       onClick={() => void send({ type: "answerConfirmation", confirmed })}
       style={{
         fontSize: config.chatCaptionFontSize,
         padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`,
-        ...(confirmed ? { background: brandBlue } : {}),
+        ...(confirmed && event?.action !== "delete" ? { background: brandBlue } : {}),
       }}
     >
       {title}
@@ -502,14 +503,73 @@ function ConfirmationCard({ question, expiresAt }: { question: string; expiresAt
   );
   return (
     <div className="chat-confirmation" style={{ gap: config.chatBubblePadding, padding: config.chatBubblePadding, borderRadius: config.chatBubbleCornerRadius }}>
-      <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
-        {question}
-      </div>
+      {event === null ? (
+        <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
+          {question}
+        </div>
+      ) : (
+        <EventCard event={event} />
+      )}
       <div className="chat-confirmation-buttons" style={{ gap: config.chatBubblePadding }}>
         {button("Cancel", false)}
-        {button("Confirm", true)}
+        {button(event === null ? "Confirm" : config.eventQuestionButtons[event.action], true)}
       </div>
       {expiresAt !== null && <TimeoutBar closesAt={expiresAt} timeout={config.chatConfirmationTimeout} inset={config.chatBubbleCornerRadius} />}
+    </div>
+  );
+}
+
+/** A calendar question's event: a small calendar page for its day beside its title and time, then a
+ * line for each other thing the question says, what it adds in the accent and what it removes struck
+ * out (owner, 2026-10-18: the date tile, chosen from a page of candidates). A delete's page is greyed,
+ * its month red. */
+function EventCard({ event }: { event: EventQuestion }) {
+  const deleting = event.action === "delete";
+  const changed = (old: string, now: string | null) =>
+    now === null ? (
+      old
+    ) : (
+      <>
+        <span className="event-removed">{old}</span> <span className="event-added">{now}</span>
+      </>
+    );
+  return (
+    <div className="event-card" style={{ gap: config.eventCardGap, fontSize: config.chatFontSize, lineHeight: config.chatLineHeight }}>
+      <div className={`chat-caption${deleting ? " event-deleting" : ""}`} style={{ fontSize: config.chatCaptionFontSize }}>
+        {event.caption}
+      </div>
+      <div className="event-head" style={{ gap: config.eventPageGap }}>
+        <div className={`event-page${deleting ? " event-deleting" : ""}`} style={{ width: config.eventPageWidth, borderRadius: config.eventPageCornerRadius, padding: config.eventPagePadding, lineHeight: config.eventPageLineHeight }}>
+          <span className="event-page-month" style={{ fontSize: config.eventPageLabelFontSize, letterSpacing: `${config.eventPageMonthTracking}em` }}>
+            {event.month.toUpperCase()}
+          </span>
+          <span className="event-page-day" style={{ fontSize: config.eventPageDayFontSize }}>
+            {event.day}
+          </span>
+          <span className="event-page-weekday" style={{ fontSize: config.eventPageLabelFontSize }}>
+            {event.weekday}
+          </span>
+        </div>
+        <div className="event-summary">
+          <div className="event-title" style={{ fontSize: config.eventTitleFontSize }}>
+            {changed(event.title, event.newTitle)}
+          </div>
+          <div className="event-time">{changed(event.time, event.newTime)}</div>
+        </div>
+      </div>
+      {event.lines.length > 0 && (
+        <div className="event-lines" style={{ gap: config.eventLineGap, paddingLeft: config.eventPageWidth + config.eventPageGap, fontSize: config.eventLineFontSize }}>
+          {event.lines.map((line, index) => (
+            <div key={index} className={`event-line ${line.tone}`} style={{ gap: config.eventLineIconGap }}>
+              <EventLineIcon icon={line.icon} size={config.eventLineIconSize} />
+              <span className="event-line-text">
+                {line.text}
+                {line.detail !== null && <span className="event-line-detail"> {line.detail}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
