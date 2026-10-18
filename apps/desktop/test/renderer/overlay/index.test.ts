@@ -1255,6 +1255,7 @@ describe("the chat window", () => {
 
     expect(document.querySelector(".chat-confirmation .chat-text")).toBeNull();
     expect(document.querySelector(".event-card .chat-caption")?.textContent).toBe("Change this occurrence");
+    expect(document.querySelector(".event-card .chat-caption")?.classList.contains("event-deleting")).toBe(destructive);
     expect(texts(".event-page span")).toEqual(["OCT", "22", "Thu"]);
     expect(document.querySelector(".event-page")?.classList.contains("event-deleting")).toBe(destructive);
     expect(texts(".event-title span")).toEqual(["Team sync", "Kickoff"]);
@@ -1268,6 +1269,8 @@ describe("the chat window", () => {
     expect(texts(".chat-confirmation button")).toEqual(["Cancel", title]);
     const button = document.querySelector<HTMLElement>(".chat-confirmation .chat-confirm");
     expect(button?.classList.contains("destructive")).toBe(destructive);
+    // The class alone colours it: red for a delete, the brand blue otherwise, nothing inline to beat it.
+    expect(button?.style.background).toBe("");
     await act(async () => button?.click());
 
     expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed: true }]);

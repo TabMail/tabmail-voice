@@ -42,3 +42,53 @@ test("iso keeps the seconds, and reads back as the same time", () => {
   expect(iso).toMatch(/T09:05:07$/u);
   expect(LocalDateTime.parse(iso)?.date.getTime()).toBe(date.getTime());
 });
+
+/** A question's card names days by the parts the user reads, not by indexes: the page is the date's
+ * day of the month with its short month and weekday, each day different from the next. */
+test("a calendar page shows the date's day, month and weekday", () => {
+  const year = new Date().getFullYear();
+  const first = new Date(year, 5, 10, 9, 47);
+  const second = new Date(year, 5, 11, 9, 47);
+
+  expect(LocalDateTime.page(first)).toEqual({ month: first.toLocaleString(undefined, { month: "short" }), day: 10, weekday: first.toLocaleString(undefined, { weekday: "short" }) });
+  expect(LocalDateTime.page(second).day).toBe(11);
+  expect(LocalDateTime.page(second).weekday).not.toBe(LocalDateTime.page(first).weekday);
+  expect(LocalDateTime.page(first).month.length).toBeLessThan(first.toLocaleString(undefined, { month: "long" }).length);
+});
+
+/** A card's times show their minutes, and their days only when asked or when a day is outside this
+ * year; a day's time shows only when asked; a range of days names both. */
+test("a card's times and days show what they are asked to, with a year outside this one", () => {
+  const year = new Date().getFullYear();
+  const yearText = (value: number) => new Date(value, 0, 1).toLocaleString(undefined, { year: "numeric" });
+  const start = new Date(year, 5, 10, 9, 47);
+  const end = new Date(year, 5, 10, 9, 52);
+  const nextDay = new Date(year, 5, 11, 9, 52);
+  const month = start.toLocaleString(undefined, { month: "short" });
+
+  const times = LocalDateTime.timeRange(start, end, false);
+  expect(times).toContain("47");
+  expect(times).toContain("52");
+  expect(times).not.toContain(month);
+  expect(times).not.toContain(yearText(year));
+  const days = LocalDateTime.timeRange(start, nextDay, true);
+  expect(days).toContain(month);
+  expect(days).toContain("10");
+  expect(days).toContain("11");
+  expect(days).not.toContain(yearText(year));
+
+  expect(LocalDateTime.shortDay(start, true)).toContain("47");
+  expect(LocalDateTime.shortDay(start, false)).not.toContain("47");
+  expect(LocalDateTime.shortDay(start, false)).toContain(month);
+  expect(LocalDateTime.dayRange(start, new Date(year, 5, 12))).toContain("12");
+  expect(LocalDateTime.dayRange(start, start)).not.toContain("12");
+
+  const later = new Date(year + 1, 0, 5, 9, 47);
+  const earlier = new Date(year - 1, 5, 10);
+  expect(LocalDateTime.timeRange(later, new Date(later.getTime() + 5 * 60 * 1000), false)).toContain(yearText(year + 1));
+  expect(LocalDateTime.timeRange(later, new Date(later.getTime() + 5 * 60 * 1000), false)).toContain(later.toLocaleString(undefined, { month: "short" }));
+  expect(LocalDateTime.shortDay(earlier, false)).toContain(yearText(year - 1));
+  expect(LocalDateTime.dayRange(earlier, earlier)).toContain(yearText(year - 1));
+  expect(LocalDateTime.dayRange(new Date(year, 11, 30), later)).toContain(yearText(year + 1));
+  expect([LocalDateTime.inThisYear(start), LocalDateTime.inThisYear(later), LocalDateTime.inThisYear(earlier)]).toEqual([true, false, false]);
+});

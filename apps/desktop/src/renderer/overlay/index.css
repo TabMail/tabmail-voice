@@ -297,6 +297,7 @@ body {
 }
 
 .chat-confirm {
+  background: var(--brand-blue);
   color: var(--on-accent);
 }
 

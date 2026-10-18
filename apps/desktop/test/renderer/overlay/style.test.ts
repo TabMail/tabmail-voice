@@ -27,3 +27,9 @@ test("a chat taller than its window scrolls, and nothing in it shrinks", () => {
   expect(body(".chat-scroll")).toMatch(/overflow-y:\s*auto;/);
   expect(body(".chat-scroll > *")).toMatch(/flex:\s*none;/);
 });
+
+// What a question's confirm button is coloured by: its class alone, red for a delete.
+test("the confirm button is the brand blue, and red for a delete", () => {
+  expect(body(".chat-confirm")).toMatch(/background:\s*var\(--brand-blue\);/);
+  expect(body(".chat-confirm.destructive")).toMatch(/background:\s*var\(--error\);/);
+});

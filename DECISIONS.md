@@ -5415,6 +5415,10 @@ five candidates on a page, "Date tile looks awesome".
 - The words still say all of it, and are what the model reads when the user answers aloud
   (`connectorToolAnsweredAloud`); every other tool's question stays words alone. Times on the card
   are the user's locale's, as the words' are; a time on another day than the page names its days.
+  The page has no year, so a day outside this year is always named with its year (the time, an
+  all-day event's days, an occurrence dropped), as Apple's Calendar does: a wrong year from the model
+  is seen before the user confirms by click. The confirm button's colour comes from its class alone
+  (brand blue, `destructive` red), so nothing inline can override it.
 - Changing an event the user was invited to is refused when the question is prepared, from the
   event the edit reads anyway, so the user is never asked to confirm a change that can't be made
   (it was refused by the helper only after Save). The helper's refusal stays.

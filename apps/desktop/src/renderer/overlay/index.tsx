@@ -495,7 +495,6 @@ function ConfirmationCard({ question, event, expiresAt }: { question: string; ev
       style={{
         fontSize: config.chatCaptionFontSize,
         padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`,
-        ...(confirmed && event?.action !== "delete" ? { background: brandBlue } : {}),
       }}
     >
       {title}

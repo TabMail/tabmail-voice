@@ -45,22 +45,29 @@ export const LocalDateTime = {
   },
 
   /** From `start` to `end` as a question's card shows it, in the user's locale: the times alone
-   * ("10:00 – 11:00 AM"), or with their days ("Thu, Oct 22, 3:00 PM – Fri, Oct 23, 9:00 AM"). */
+   * ("10:00 – 11:00 AM"), or with their days ("Thu, Oct 22, 3:00 PM – Fri, Oct 23, 9:00 AM"). A day
+   * outside this year always shows, with its year: the card is what the user confirms by click. */
   timeRange(start: Date, end: Date, withDays: boolean): string {
     const time = { hour: "numeric", minute: "2-digit" } as const;
-    return new Intl.DateTimeFormat(undefined, withDays ? { weekday: "short", month: "short", day: "numeric", ...time } : time).formatRange(start, end);
+    const year = yearOf(start, end);
+    return new Intl.DateTimeFormat(undefined, withDays || year.year ? { weekday: "short", month: "short", day: "numeric", ...year, ...time } : time).formatRange(start, end);
   },
 
   /** The days from `first` to `last` as a question's card shows them, in the user's locale: "Oct 21",
-   * or "Oct 21 – 23". */
+   * or "Oct 21 – 23", with the year when one is outside this year ("Jan 5, 2027"). */
   dayRange(first: Date, last: Date): string {
-    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).formatRange(first, last);
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", ...yearOf(first, last) }).formatRange(first, last);
   },
 
   /** `date` as a question's card names one day, in the user's locale: "Thu, Oct 22", with its time
-   * ("Thu, Oct 22, 3:00 PM") for a timed event's occurrence. */
+   * ("Thu, Oct 22, 3:00 PM") for a timed event's occurrence, and its year when it isn't this year. */
   shortDay(date: Date, withTime: boolean): string {
-    return date.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}) });
+    return date.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", ...yearOf(date), ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}) });
+  },
+
+  /** Whether `date` is in this year, when a question's card can leave its year out. */
+  inThisYear(date: Date): boolean {
+    return date.getFullYear() === new Date().getFullYear();
   },
 
   startOfDay(date: Date): Date {
@@ -74,6 +81,11 @@ export const LocalDateTime = {
 };
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** The year option a card's date takes: none when every date is in this year. */
+function yearOf(...dates: Date[]): { year?: "numeric" } {
+  return dates.every((date) => LocalDateTime.inThisYear(date)) ? {} : { year: "numeric" };
+}
 
 function twoDigits(value: number): string {
   return String(value).padStart(2, "0");

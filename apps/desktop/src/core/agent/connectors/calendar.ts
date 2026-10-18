@@ -442,9 +442,10 @@ function sameDay(first: Date, second: Date): boolean {
 }
 
 /** When `event` is, as a question's card shows it beside the page for `day`: its times alone when it
- * is all on that day, with their days when it isn't. */
+ * is all on that day, with their days when it isn't. The page has no year, so a day outside this
+ * year is always named, with its year. */
 function cardTime(event: Pick<CalendarEvent, "start" | "end" | "isAllDay">, day: Date): string {
-  if (event.isAllDay) return sameDay(event.start, event.end) && sameDay(event.start, day) ? "All day" : `All day, ${LocalDateTime.dayRange(event.start, event.end)}`;
+  if (event.isAllDay) return sameDay(event.start, event.end) && sameDay(event.start, day) && LocalDateTime.inThisYear(event.start) ? "All day" : `All day, ${LocalDateTime.dayRange(event.start, event.end)}`;
   return LocalDateTime.timeRange(event.start, event.end, !(sameDay(event.start, day) && sameDay(event.end, day)));
 }
 

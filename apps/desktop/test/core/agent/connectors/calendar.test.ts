@@ -1043,8 +1043,6 @@ describe("calendar_event_edit", () => {
     expect(editor.edits.at(-1)).toMatchObject({ scope: "all", changes: { title: "Sync", exclude: [at(10, 0, 14)] } });
   });
 
-  /** A call that changes nothing, names no event, or names one there isn't is not asked about and
-   * changes nothing. */
   /** An event the user was invited to can be changed only by its organizer: refused before the user
    * is asked, so they never confirm a change that can't be made. */
   test("an invitation is refused before it is asked about", async () => {
@@ -1054,6 +1052,8 @@ describe("calendar_event_edit", () => {
     expect(editor.edits).toEqual([]);
   });
 
+  /** A call that changes nothing, names no event, or names one there isn't is not asked about and
+   * changes nothing. */
   test.each<Record<string, unknown>>([{ event_id: "event-1" }, { title: "Kickoff" }, { event_id: "gone", title: "Kickoff" }, { event_id: "event-1", transparency: "maybe" }, { event_id: "event-1", exdates_add: [] }])(
     "%j is neither asked about nor changed",
     async (args) => {
@@ -1108,9 +1108,7 @@ describe("calendar_event_delete", () => {
   });
 });
 
-/** Nothing is written that the user wasn't asked about: a read failing while the question is made
- * (the helper exited, a request timed out) fails the call, which the controller reports without
- * running the tool, though the same read would succeed when run. */
+/** The card a calendar question draws in place of its words: what the user confirms by click. */
 describe("a question's card", () => {
   const line = (icon: EventQuestion["lines"][number]["icon"], text: string, tone: EventQuestion["lines"][number]["tone"] = "plain", detail: string | null = null) => ({ icon, text, detail, tone });
 
@@ -1202,6 +1200,32 @@ describe("a question's card", () => {
     // An occurrence changed on its own changes alone.
     editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", isDetached: true, attendees: [] });
     expect((await card(tool.confirmation({ event_id: "series-1/moved", title: "Sync" }))).caption).toBe("Change this occurrence");
+    // Made all day, the new time is the day; an all-day event given a time shows the time.
+    expect((await card(tool.confirmation({ event_id: "event-1", all_day: true }))).newTime).toBe("All day");
+    editor.byID.set("holiday", { ...event("Holiday", at(0), at(0), { allDay: true }), id: "holiday", attendees: [], organizer: null, recurrence: null });
+    expect((await card(tool.confirmation({ event_id: "holiday", start_iso: iso(at(9)), all_day: false }))).newTime).toBe(LocalDateTime.timeRange(at(9), new Date(at(9).getTime() + config.calendarEventDefaultDuration), false));
+  });
+
+  /** The page has no year, so a day outside this year is named with its year wherever the card shows
+   * one, and a day in this year is not: a wrong year is seen before the user confirms by click. */
+  test("a day outside this year is named with its year", async () => {
+    const thisYear = new Date().getFullYear();
+    const yearText = (year: number) => new Date(year, 0, 1).toLocaleString(undefined, { year: "numeric" });
+    const nextYear = new Date(thisYear + 1, 0, 5, 10);
+    const lastYear = new Date(thisYear - 1, 5, 1, 9);
+    const create = new CalendarEventCreateTool(editableStore(new FakeEditor()));
+
+    expect((await card(create.confirmation({ title: "Kickoff", start_iso: iso(nextYear) }))).time).toContain(yearText(thisYear + 1));
+    expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(nextYear, false) }))).time).toContain(yearText(thisYear + 1));
+    expect((await card(create.confirmation({ title: "Kickoff", start_iso: iso(at(10)) }))).time).not.toContain(yearText(thisYear));
+    expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(at(0), false) }))).time).toBe("All day");
+
+    const editor = new FakeEditor();
+    editor.byID.set("old-series", { ...standup(), id: "old-series", start: lastYear, end: new Date(lastYear.getTime() + 30 * 60 * 1000) });
+    const edit = new CalendarEventEditTool(editor);
+    const changed = await card(edit.confirmation({ event_id: "old-series", title: "Sync", exdates_add: [iso(nextYear)] }));
+    expect(changed.time).toContain(yearText(thisYear - 1));
+    expect(changed.lines.find((line) => line.icon === "deleted")?.text).toContain(yearText(thisYear + 1));
   });
 
   /** A deletion's card: every occurrence, or the one changed on its own, and who is told. */
@@ -1227,6 +1251,9 @@ describe("a question's card", () => {
   });
 });
 
+/** Nothing is written that the user wasn't asked about: a read failing while the question is made
+ * (the helper exited, a request timed out) fails the call, which the controller reports without
+ * running the tool, though the same read would succeed when run. */
 describe("a write is never made unasked", () => {
   const cases: [string, (editor: FakeEditor, store: FakeEventStore) => { tool: CalendarEventCreateTool | CalendarEventEditTool | CalendarEventDeleteTool; args: Record<string, unknown>; written: () => unknown[] }][] = [
     ["create", (_editor, store) => ({ tool: new CalendarEventCreateTool(store), args: { title: "Planning", start_iso: iso(at(10)), calendar_id: "calendar-work" }, written: () => store.added })],
