@@ -223,6 +223,18 @@ describe("MemoryHelper", () => {
       expect(existsSync(folders.databases)).toBe(false);
     });
 
+    /** A search the helper is still answering when Clear All starts would answer with what is being
+     * cleared: it fails instead. */
+    test("a request under way when it starts fails rather than answer with what it clears", async () => {
+      const memory = make(["--slow-on", "memorySearch", "300", "--linger", "1000"]);
+      await memory.index(rows, 1 << 30);
+      const search = memory.search({ query: "", from: "", to: "", limit: 5 });
+      search.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await memory.clear();
+      await expect(search).rejects.toMatchObject({ kind: "exited", method: "memorySearch" });
+    });
+
     /** The embedding model is downloaded once; Clear All deletes only the database. */
     test("keeps the embedding model", async () => {
       const memory = make();
