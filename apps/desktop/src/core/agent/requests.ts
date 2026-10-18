@@ -45,13 +45,16 @@ export const DesktopAgent = {
    * ones and, with Answer offered, the backend's date tools, the backend tools their apps bring (web
    * search), and `connectorTools`, those of the apps switched on that run on this computer, with the
    * tool that answers their questions for the user (`confirmationTool`) when there are any. An app with
-   * no tools here (none off macOS) brings no backend tools either. */
+   * no tools here (none off macOS) brings no backend tools either. The memory tools, which run here
+   * and only read, come with every request, Answer on or off: an Edit or a Compose may draw on an
+   * earlier request too (ADR-DESK-060). */
   loopTools(offered: readonly AgentToolID[], connectorTools: readonly ConnectorTool[]): string[] {
     const writing = offered.filter(isWritingTool);
-    if (!offered.includes("answer")) return writing;
+    const memory = [config.memorySearchTool, config.memoryReadTool];
+    if (!offered.includes("answer")) return writing.length === 0 ? [] : [...memory, ...writing];
     const serverTools = connectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector.id)).flatMap((connector) => connector.serverTools ?? []);
     const answering = connectorTools.length > 0 ? [config.confirmationTool] : [];
-    return [...config.answerServerTools, ...serverTools, ...answering, ...connectorTools.map((tool) => tool.name), ...writing];
+    return [...config.answerServerTools, ...serverTools, ...answering, ...connectorTools.map((tool) => tool.name), ...memory, ...writing];
   },
 
   /** Carries out `request` in the backend's tool loop: each round either replies, or calls tools,

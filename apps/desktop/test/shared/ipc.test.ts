@@ -66,6 +66,13 @@ describe("IPC", () => {
       { type: "copyHistoryEntry", id: 3 },
       { type: "closeHistory" },
       { type: "historyHeight", height: 120 },
+      { type: "loadMemory" },
+      { type: "clearMemory" },
+      { type: "searchMemory", query: "" },
+      { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength) },
+      ...config.memorySizeLimitChoices.map((value) => ({ type: "setMemorySizeLimit", value })),
+      { type: "removeMemory", memId: "turn:example" },
+      { type: "removeMemory", memId: "x".repeat(config.memoryIDMaxLength) },
     ]) {
       expect(isCommand(command), command.type).toBe(true);
     }
@@ -117,6 +124,16 @@ describe("IPC", () => {
     { type: "copyHistoryEntry", id: 1.5 },
     { type: "historyHeight", height: 0 },
     { type: "historyHeight", height: Number.NaN },
+    { type: "searchMemory" },
+    { type: "searchMemory", query: 1 },
+    { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength + 1) },
+    { type: "setMemorySizeLimit" },
+    { type: "setMemorySizeLimit", value: "1073741824" },
+    { type: "setMemorySizeLimit", value: (config.memorySizeLimitChoices[0] ?? 0) + 1 },
+    { type: "setMemorySizeLimit", value: 0 },
+    { type: "removeMemory" },
+    { type: "removeMemory", memId: 1 },
+    { type: "removeMemory", memId: "x".repeat(config.memoryIDMaxLength + 1) },
   ])("a malformed command is refused (%j)", (command) => {
     expect(isCommand(command)).toBe(false);
   });

@@ -68,6 +68,8 @@ const light = {
   switchOff: "#8E8E93",
   switchThumbShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
   cardShadow: "0 1px 2px rgba(0, 0, 0, 0.06)",
+  /** A usage bar's track (Settings › Memory), faint, so the accent filling it reads as the amount. */
+  usageTrack: "rgba(0, 0, 0, 0.1)",
 };
 
 /** A theme, one color for each of `light`'s. */
@@ -105,6 +107,7 @@ const dark: Theme = {
   switchOff: "rgba(120, 120, 128, 0.36)",
   switchThumbShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
   cardShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
+  usageTrack: "rgba(255, 255, 255, 0.12)",
 };
 
 export const palette = {

@@ -7,12 +7,16 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { buildMemoryHelper } from "../../scripts/memory-helper.mts";
 import { buildNative, runtimeInstaller } from "../../scripts/windows/build-native.mts";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return { ...actual, execFileSync: vi.fn() };
 });
+
+// The memory helper's own build is tested in memoryHelperBuild.test.ts.
+vi.mock("../../scripts/memory-helper.mts", () => ({ buildMemoryHelper: vi.fn() }));
 
 const helpers = ["voice-field-reader.exe", "voice-hotkey.exe", "voice-microphone.exe", "voice-productivity.exe", "voice-screen-reader.exe", "voice-windows.exe"];
 const otherArch = process.arch === "arm64" ? "x64" : "arm64";
@@ -54,6 +58,11 @@ describe("the Windows helper build", () => {
       }
       return Buffer.alloc(0);
     }) as typeof execFileSync);
+    vi.mocked(buildMemoryHelper).mockReset().mockImplementation((_root, target) => {
+      const built = join(root, "memory-build", "fts_helper.exe");
+      file(built, `voice-memory for ${target ?? "this machine"}`);
+      return built;
+    });
     return { root, build };
   }
 
@@ -65,7 +74,8 @@ describe("the Windows helper build", () => {
       "14.9.99999": { [process.arch]: "14.9 runtime" },
     });
     buildNative(root);
-    expect(readdirSync(join(root, "dist/helpers")).sort()).toEqual(helpers);
+    expect(readdirSync(join(root, "dist/helpers")).sort()).toEqual([...helpers, "voice-memory.exe"].sort());
+    expect(readFileSync(join(root, "dist/helpers/voice-memory.exe"), "utf8")).toBe("voice-memory for this machine");
     for (const helper of helpers) expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`${helper} for ${cmakeArch}`);
     expect(readFileSync(join(root, "dist/runtime/vc_redist.exe"), "utf8")).toBe("14.50 runtime");
     expect(readdirSync(join(root, "dist/runtime"))).toEqual(["vc_redist.exe"]);

@@ -1585,7 +1585,7 @@ describe("main process wiring", () => {
     app.stored.set("hasFinishedWelcome", finishedWelcome);
     await launch("darwin");
     expect(app.dialogs).toEqual([]);
-    expect(app.stored.get("tip.longDictations.learned") === true).toBe(!tipShows);
+    expect(app.stored.get("tip.agentMemory.learned") === true).toBe(!tipShows);
   });
 
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {

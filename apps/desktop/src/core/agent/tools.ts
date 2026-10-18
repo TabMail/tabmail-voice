@@ -198,7 +198,7 @@ export const ThunderbirdTool: AgentTool = {
 export const AnswerTool: AgentTool = {
   displayName: "Answer",
   symbolName: "text.bubble",
-  settingsDescription: "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
+  settingsDescription: "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up: your earlier requests and its replies go with the follow-up.",
   chatCaption: null,
   fitted: (text) => text,
 

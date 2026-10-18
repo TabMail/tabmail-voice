@@ -270,3 +270,65 @@ ul.dictionary {
 .learned {
   margin-left: 6px;
 }
+
+/* Settings › Memory: memory used against the size limit, as a bar in the accent on a faint track
+ * (Thunderbird's Chat History bar in this app's colors), at least a dot once anything is kept; each
+ * request kept is a row of the list's card, its text cut to a few lines. */
+.usage-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--usage-track);
+}
+
+.usage-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.usage-fill.some {
+  min-width: 6px;
+}
+
+.memory-entry {
+  align-items: flex-start;
+}
+
+.memory-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* What was asked, in the text color, then what the agent did, in the caption color. */
+.memory-request,
+.memory-reply {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.memory-request {
+  font-weight: 500;
+}
+
+.memory-reply {
+  color: var(--secondary);
+  -webkit-line-clamp: 3;
+}
+
+@media (forced-colors: active) {
+  .usage-bar {
+    border: 1px solid CanvasText;
+  }
+
+  .usage-fill {
+    background: Highlight;
+  }
+}

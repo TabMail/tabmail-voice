@@ -4,6 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { buildMemoryHelper } from "../memory-helper.mts";
 
 /** Build native Linux helpers using the current machine's ABI and system libraries. */
 export function buildNative(root: string): void {
@@ -15,5 +16,6 @@ export function buildNative(root: string): void {
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });
   for (const helper of ["voice-hotkey", "voice-linux", "voice-microphone", "voice-screen-reader", "voice-field-reader", "voice-files", "voice-productivity"]) copyFileSync(join(build, helper), join(destination, helper));
+  copyFileSync(buildMemoryHelper(root, null), join(destination, "voice-memory"));
   process.stdout.write(`Copied Linux helpers to ${destination}\n`);
 }

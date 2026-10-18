@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildMemoryHelper } from "../memory-helper.mts";
 
 /** Each app architecture (electron-builder's name) and what builds its helpers. */
 const architectures = {
@@ -77,9 +78,12 @@ export async function buildNative(root: string): Promise<void> {
   if (arch === "universal") {
     const built = (["arm64", "x64"] as const).map((thin) => buildHelpers(root, thin));
     for (const helper of helpers) execFileSync("lipo", ["-create", ...built.map((binPath) => join(binPath, helper)), "-output", join(destination, helper)], { stdio: "inherit" });
+    const memory = (["arm64", "x64"] as const).map((thin) => buildMemoryHelper(root, architectures[thin].rust));
+    execFileSync("lipo", ["-create", ...memory, "-output", join(destination, "voice-memory")], { stdio: "inherit" });
   } else {
     const binPath = buildHelpers(root, arch);
     for (const helper of helpers) copyFileSync(join(binPath, helper), join(destination, helper));
+    copyFileSync(buildMemoryHelper(root, architectures[arch].rust), join(destination, "voice-memory"));
   }
-  process.stdout.write(`Copied ${arch} ${helpers.join(", ")} to ${destination}\n`);
+  process.stdout.write(`Copied ${arch} ${[...helpers, "voice-memory"].join(", ")} to ${destination}\n`);
 }

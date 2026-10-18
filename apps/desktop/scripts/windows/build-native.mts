@@ -5,6 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildMemoryHelper } from "../memory-helper.mts";
 
 /** Builds for the current Windows guest's architecture with Visual Studio Build Tools, the newest
  * installed: CMake's default generator (the arm64 runner has Visual Studio 2026, not 2022). */
@@ -20,6 +21,7 @@ export function buildNative(root: string): void {
   for (const helper of ["voice-hotkey.exe", "voice-windows.exe", "voice-microphone.exe", "voice-screen-reader.exe", "voice-field-reader.exe", "voice-productivity.exe"]) {
     copyFileSync(join(build, "Release", helper), join(destination, helper));
   }
+  copyFileSync(buildMemoryHelper(root, null), join(destination, "voice-memory.exe"));
   process.stdout.write(`Copied Windows helpers to ${destination}\n`);
   const runtime = join(root, "dist/runtime");
   mkdirSync(runtime, { recursive: true });

@@ -9,11 +9,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildNative } from "../../scripts/macos/build-native.mts";
+import { buildMemoryHelper } from "../../scripts/memory-helper.mts";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
 });
+
+// The memory helper's own build is tested in memoryHelperBuild.test.ts: here it writes a file
+// marked with the Rust target it was given.
+vi.mock("../../scripts/memory-helper.mts", () => ({ buildMemoryHelper: vi.fn() }));
 
 /** The real `execFileSync` (the mock's first implementation), which runs `tar` for the fixtures. */
 const realExecFileSync = vi.mocked(execFileSync).getMockImplementation() ?? execFileSync;
@@ -73,6 +78,11 @@ describe("the macOS helper build", () => {
       for (const helper of helpers) file(join(bin, helper), `${helper} ${args[args.indexOf("--triple") + 1]} ${options?.env?.VOICE_RUST_TARGET}`);
       return Buffer.alloc(0);
     }) as typeof execFileSync);
+    vi.mocked(buildMemoryHelper).mockReset().mockImplementation((_root, target) => {
+      const built = join(root, "memory-build", target ?? "host", "fts_helper");
+      file(built, `voice-memory ${target}`);
+      return built;
+    });
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       fetched.push(url);
       const bytes = served[url];
@@ -109,6 +119,7 @@ describe("the macOS helper build", () => {
       ["cargo", "build", "--release", "--locked", "--target", "x86_64-apple-darwin"],
     ]);
     for (const helper of helpers) expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`${helper} x86_64-apple-macosx15.0 x86_64-apple-darwin`);
+    expect(readFileSync(join(root, "dist/helpers/voice-memory"), "utf8")).toBe("voice-memory x86_64-apple-darwin");
   });
 
   test("the universal app's helpers join both architectures' builds", async () => {
@@ -121,6 +132,7 @@ describe("the macOS helper build", () => {
     for (const helper of helpers) {
       expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`lipo of ${helper} arm64-apple-macosx15.0 aarch64-apple-darwin and ${helper} x86_64-apple-macosx15.0 x86_64-apple-darwin`);
     }
+    expect(readFileSync(join(root, "dist/helpers/voice-memory"), "utf8")).toBe("lipo of voice-memory aarch64-apple-darwin and voice-memory x86_64-apple-darwin");
   });
 
   /** With no VOICE_MAC_ARCH, electron-builder builds the build machine's app (the Mac targets name
@@ -147,6 +159,7 @@ describe("the macOS helper build", () => {
     expect(fetched).toEqual([]);
     expect(commands).toContainEqual(["swift", "build", "-c", "release", "--triple", triple, "--scratch-path", join(root, "native/macos/.build", host), "--package-path", join(root, "native/macos")]);
     for (const helper of helpers) expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`${helper} ${triple} ${rustTarget}`);
+    expect(readFileSync(join(root, "dist/helpers/voice-memory"), "utf8")).toBe(`voice-memory ${rustTarget}`);
   });
 
   test("a package whose tarball does not match the lockfile is refused, and no helper is built", async () => {
@@ -164,6 +177,7 @@ describe("the macOS helper build", () => {
 
     expect(existsSync(join(root, "node_modules/@napi-rs/keyring-darwin-x64"))).toBe(false);
     expect(commands).toEqual([]);
+    expect(buildMemoryHelper).not.toHaveBeenCalled();
   });
 
   /** An install that failed partway can leave the pinned version's package.json beside an
@@ -202,6 +216,7 @@ describe("the macOS helper build", () => {
     expect(fetched).toEqual([url]);
     expect(existsSync(join(root, "node_modules/@napi-rs/keyring-darwin-x64"))).toBe(false);
     expect(commands).toEqual([]);
+    expect(buildMemoryHelper).not.toHaveBeenCalled();
   });
 
   test("a download's scratch folder is removed, whether its package unpacks or not", async () => {

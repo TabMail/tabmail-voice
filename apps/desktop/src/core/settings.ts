@@ -11,7 +11,7 @@ import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dict
 import { type DictionaryEntry, dictionaryWord, isSameWord, leastRecentlyUsedLearned, nextUse, prioritizedWords, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { log } from "./log.js";
-import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
+import { type KeyValueStore, storedBool, storedInteger, storedString } from "./util/keyValueStore.js";
 import { Observable } from "./util/observable.js";
 
 const Key = {
@@ -29,6 +29,7 @@ const Key = {
   smartDictation: "smartDictation",
   excludedApps: "excludedApps",
   excludedSites: "excludedSites",
+  memorySizeLimit: "memorySizeLimit",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -67,6 +68,8 @@ export interface DictationSettings {
   /** Whether the dictation asks for the backend's cleanup (and a long dictation for its final polish);
    * off, the transcript is pasted as heard. */
   smartDictation: boolean;
+  /** The most memory may take (bytes; `memorySizeLimit`): the request is kept within it. */
+  memorySizeLimit: number;
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
@@ -298,6 +301,22 @@ export class AppSettings extends Observable {
     this.write(Key.smartDictation, value);
   }
 
+  /** The most memory may take on this computer (bytes): one of `config.memorySizeLimitChoices`,
+   * `config.memorySizeLimitDefault` until the user picks another. When memory reaches it, the oldest
+   * exchanges are removed first (ADR-DESK-060). */
+  get memorySizeLimit(): number {
+    const stored = storedInteger(this.store, Key.memorySizeLimit);
+    return stored !== null && config.memorySizeLimitChoices.includes(stored) ? stored : config.memorySizeLimitDefault;
+  }
+
+  /** Stores `value` if Settings offers it; false (nothing stored) otherwise. */
+  setMemorySizeLimit(value: number): boolean {
+    if (!config.memorySizeLimitChoices.includes(value)) return false;
+    this.store.set(Key.memorySizeLimit, value);
+    this.changed();
+    return true;
+  }
+
   /** The apps the user excludes from screen reading, in the order they were added; the built-in ones
    * (`config.builtInExcludedApps`) are not among them. */
   get excludedApps(): ExcludedApp[] {
@@ -435,6 +454,7 @@ export class AppSettings extends Observable {
       dictionary: prioritizedWords(this.dictionary),
       learnsWords: this.learnsWords,
       smartDictation: this.smartDictation,
+      memorySizeLimit: this.memorySizeLimit,
     };
   }
 

@@ -330,6 +330,44 @@ export const webUserAgent = "TabMail/1.0 (macOS; +https://tabmail.app)";
  * encoding (at most 4 bytes a character), so an endless page never fills the memory. */
 export const webReadMaxBytes = webReadMaxCharacters * 4;
 
+// MARK: Memory (past agent-mode requests, on this computer: ADR-DESK-060)
+
+/** The agent loop's memory tools, as the backend names them. */
+export const memorySearchTool = "memory_search";
+export const memoryReadTool = "memory_read";
+/** The memory helper starts when memory is first used and ends after this long unused (ms): it
+ * holds a large read cache and the embedding model, so it is never kept between uses. */
+export const memoryHelperIdleTimeout = 2 * 60 * 1_000;
+/** Longest the memory helper's `init` may take (ms): the first one downloads the embedding model
+ * (about 87 MB) before it answers. */
+export const memoryInitTimeout = 5 * 60 * 1_000;
+/** Longest any other memory request may take (ms): Thunderbird's own limit for the same helper.
+ * A size-limit trim stops itself well inside it. */
+export const memoryRequestTimeout = 60_000;
+/** The size limit offered in Settings (bytes), and its default: when memory reaches it, the oldest
+ * exchanges are removed first. Thunderbird offers the same choices. */
+export const memorySizeLimitChoices: readonly number[] = [100, 250, 500, 1_024, 2_048, 5_120].map((megabytes) => megabytes * 1_024 * 1_024);
+export const memorySizeLimitDefault = 1_024 * 1_024 * 1_024;
+/** `memory_search`: results per page, and how many pages' worth one search fetches up front (at
+ * most `memorySearchFetchMax` results), as Thunderbird's tool. */
+export const memorySearchPageSize = 20;
+export const memorySearchPrefetchPages = 100;
+export const memorySearchFetchMax = 10_000;
+/** A search result without a snippet shows this many characters of its exchange. */
+export const memorySearchPreviewLength = 400;
+/** `memory_read`: the window around the timestamp it is given (minutes), unless the model gives
+ * one, and the most exchanges it returns, centred on the closest, as Thunderbird's tool. */
+export const memoryReadToleranceMinutes = 10;
+export const memoryReadMaxTurns = 20;
+/** Settings' Memory list: how many exchanges it shows, newest first or best match first. */
+export const memoryListLimit = 200;
+/** The longest search Settings' Memory field takes (characters), and the longest exchange id it may
+ * name to remove (`turn:` and a UUID, with room). */
+export const memorySearchMaxLength = 500;
+export const memoryIDMaxLength = 100;
+/** What the chat window says while a memory tool runs. */
+export const memoryToolProgressLabel = "Looking through past requests";
+
 // MARK: Apps excluded from screen reading
 
 /** The password managers the screen is never read in, in every installation (owner, 2026-09-30), by
@@ -698,10 +736,11 @@ export const setNameTip: TipSettings = {
   displayDuration: 4_000,
   maxDisplays: null,
 };
-/** What's new: long dictations are sent in parts as the user talks (ADR-DESK-049), shown once, ahead
- * of the other tips (owner, 2026-10-03: "really punchy"), long enough to read twice. */
-export const longDictationsTip: TipSettings = {
-  lines: ["New: dictate up to 10 minutes,", "sent in parts as you talk"],
+/** What's new: agent mode keeps its requests on this computer and can look them up (ADR-DESK-060),
+ * shown once, ahead of the other tips (owner, 2026-10-03: "really punchy"), long enough to read
+ * twice. It took the place of the one for long dictations (ADR-DESK-049). */
+export const agentMemoryTip: TipSettings = {
+  lines: ["New: agent mode remembers", "past requests, on this computer"],
   displayDuration: 6_000,
   maxDisplays: 1,
 };

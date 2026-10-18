@@ -1043,6 +1043,12 @@ that a long dictation is sent in parts (ADR-DESK-049's consent-page line), and t
 to TabMail and its AI providers.
 
 
+**Amendment 2026-10-18 — memory (ADR-DESK-060).** The consent page gains a line after agent mode's:
+"Your past agent-mode requests, kept only on this computer so it can recall them. Remove them
+anytime in Settings." The closing "Nothing it sends is stored" stays true: it is about what is sent;
+memory is kept on this computer only. Users who consented before are told once, by the what's-new tip
+(ADR-DESK-049's way, its amendment of this date), and are not asked again.
+
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
 > The two calls (choose, then write) are superseded by one tool loop (ADR-DESK-055, 2026-10-05).
@@ -1718,6 +1724,11 @@ one that ships.
   backend context-length error for that follow-up.
 - Whether hover and the first click reach the never-focused overlay window on macOS is checked by
   hand; the tests drive the page's events and the window's calls.
+
+**Amendment 2026-10-18 — memory (ADR-DESK-060).** `AgentChat` is still the window's conversation, in
+memory only and gone when the window closes. Each agent-mode request and what came of it is now also
+kept in memory on this computer (ADR-DESK-060), which the agent can search in later requests. The
+Answer tool's Settings description no longer says the follow-up's earlier requests "aren't stored".
 
 ## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
 
@@ -4407,6 +4418,11 @@ dictation, and agent mode carries out nothing of a request whose end was lost.
   try, refused, or after an account switch: the chunks before it pasted and the pill at rest; not
   pasted, the usual note; the seeded fuzz).
 
+**Amendment 2026-10-18 — the what's-new tip now tells of memory (ADR-DESK-060).** The one-time tip's
+place is taken by `agentMemory` ("New: agent mode remembers / past requests, on this computer"),
+first in line at the next dictation, shown once, and learned at launch by a user still in the welcome
+wizard, as before. The long-dictations tip is retired: a user who never saw it is not shown it now.
+
 ## ADR-DESK-050: Windows and Linux update themselves too, from signed packages proven by the app
 
 > **Linux half SUPERSEDED by ADR-DESK-058 (owner 2026-10-11):** Linux updates through a signed apt
@@ -5426,3 +5442,78 @@ five candidates on a page, "Date tile looks awesome".
 - Changing an event the user was invited to is refused when the question is prepared, from the
   event the edit reads anyway, so the user is never asked to confirm a change that can't be made
   (it was refused by the helper only after Save). The helper's refusal stays.
+
+## ADR-DESK-060: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
+
+**Context:** Owner, 2026-10-17: port the agent's memory from Thunderbird (the reference) and iOS to
+Voice, so agent mode can look back at earlier requests as Thunderbird's chat does with
+`memory_search` and `memory_read`; Voice's own memory, not synced. Decisions (owner, 2026-10-17):
+memory is per user of the computer, in the app's data folder, and is not cleared at sign-out or a
+change of account; everything agent mode does is kept (Compose and Edit too: "most of the requests
+for voice will be compose or edit"), plain dictation never; a size limit in Settings, 1 GB by
+default (Thunderbird gets the same), the oldest exchanges removed first; and one codebase: Voice
+does not copy Thunderbird's search helper (`tabmail-native-fts`) but builds it from its repository
+at a pinned commit, telling it where its database, model and logs go, and never touching
+Thunderbird's copy or its files.
+
+**Decision:**
+- **The helper.** `voice-memory` is `tabmail-native-fts` (its `fts_helper`), built by
+  `scripts/memory-helper.mts` from `https://github.com/TabMail/tabmail-native-fts.git` at the one
+  commit `native/memory/native-fts.json` pins: fetched clean into `native/memory/.build` each build,
+  checked to be at that commit, built `--release --locked` (the helper's own Cargo.lock) with the
+  Rust toolchain the app's core pins. Every platform's `build-native.mts` puts it in `dist/helpers`
+  (on the universal Mac app both architectures joined by `lipo`), signed and notarized with the app.
+  Voice keeps no copy of its source; a helper change is made and reviewed in its repository, and a
+  move to it is a change of the pinned commit. That repository's ADR-NF-008 makes the helper take
+  the caller's locations and a size limit.
+- **Where it is kept.** `MemoryHelper` (`src/main/native/memoryHelper.ts`) starts `voice-memory` on
+  first use, with `--log-dir <userData>/memory/logs`, and sends `init` with
+  `profilePath <userData>/memory/database` and `modelDir <userData>/memory/models`; it ends it after
+  `memoryHelperIdleTimeout` unused (it holds a reader cache and the model) and at quit. It speaks
+  Thunderbird's native messaging (a 4-byte little-endian length, then JSON; replies by id), sends
+  only `init` and the memory methods, never `hello` or the update requests (no self-move, no
+  self-update: the app ships the build it runs), and registers no native-messaging host. Thunderbird's
+  helper, its database, models and logs, and `~/.tabmail` are never named, so never touched (the
+  helper's tests hash them before and after). The first start downloads the embedding model (about
+  87 MB, from cdn.tabmail.ai, checked by its hash) into Voice's own model folder; until then search
+  is by keyword, as on Thunderbird and iOS.
+- **What is kept.** After each agent-mode request, one row shaped as Thunderbird's add-on writes it:
+  `[USER]: <the request as transcribed>` then `[AGENT]: <the reply>`, or for a writing tool the text
+  it wrote with where it went and the app (`Pasted at the cursor in <app>:`, `Replaced the selection
+  in <app>:`), under session `voice_agent`, dated now. Never: plain dictation, the screen read, the
+  selection being edited, tools' calls and results, audio. A request that delivered nothing keeps
+  nothing. Keeping is best effort: nothing waits for it, and a failure is logged by type only.
+  Agent mode needs consent and a sign-in, so nothing is kept without them.
+- **The tools.** `memory_search` and `memory_read` run on this computer, in the agent loop with
+  every request (Answer on or off: an Edit or a Compose may draw on an earlier one), with
+  Thunderbird's argument handling and result text (`src/core/memory/tools.ts`); they only read, so
+  they ask nothing, and the chat window says "Looking through past requests" while one runs. The
+  backend's Voice loop carries their schemas and Thunderbird's memory rules; their results are
+  model input like any tool's, under the backend's web-read guard.
+- **The size limit.** A Settings value (`memorySizeLimitChoices`: 100 MB to 5 GB; 1 GB by default),
+  part of the key-down snapshot (ADR-DESK-017): each row is kept within the limit of its request's
+  key-down, the helper removing the oldest exchanges first, measured as the pages its database uses.
+  Choosing a smaller limit trims at once and says how many of the oldest went, and, if the helper ran
+  out of time, that more go as new requests are kept. Space freed is reused; the file keeps its
+  size (no `VACUUM`, which could take unbounded time).
+- **Settings › Memory** (`src/core/memory/page.ts`, a port of Thunderbird's Chat History tab, in
+  Voice's style): a usage bar, "Memory used: X of <limit>", the limit, the requests newest first (at
+  most `memoryListLimit`), a search, Remove on each, and Clear All with a confirmation. It reads
+  nothing, and starts no helper, until a request was kept (the database exists).
+- **Consent.** The consent page says requests are kept on this computer and can be removed
+  (ADR-DESK-010, amended); users who consented before are told once by the what's-new tip
+  (ADR-DESK-049, amended).
+
+**Consequences:**
+- Agent mode's requests and results are now written to disk, on this computer only, in the user's
+  app-data folder; they stay until removed, cleared or trimmed by the limit, across sign-out and
+  account changes. Root ADR-004 is about email content; Voice's memory is the user's own requests,
+  kept locally as Thunderbird's chat memory is.
+- A user with Thunderbird and Voice has two helpers and two copies of the model (one extra download
+  of about 87 MB).
+- The vector index frees its space 1,024 rows at a time (about 1.5 MB, under 2% of the smallest
+  limit), so a trim can remove up to that many more of the oldest exchanges than the text alone
+  would need.
+- The build fetches from GitHub; the pinned commit must be on `TabMail/tabmail-native-fts`'s main
+  branch.
+- Tests: see `TESTS.md` (memory rows). The helper itself is tested in its repository.

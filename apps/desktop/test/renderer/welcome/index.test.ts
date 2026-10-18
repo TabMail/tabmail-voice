@@ -100,14 +100,16 @@ describe("welcome wizard", () => {
   test("the consent step says what dictation may use", async () => {
     await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false });
     const sent = [...document.querySelectorAll(".sends li")].map((item) => item.textContent ?? "");
-    expect(sent).toHaveLength(5);
+    expect(sent).toHaveLength(6);
     expect(sent[0]).toBe("Your voice, only while you hold the dictation key.");
     // Screen reading says secrets are left out and that it can be switched off.
     expect(sent[1]).toContain("The text in the window you’re dictating into");
     expect(sent[1]).toContain("Passwords and secrets are left out, and you can switch this off.");
     expect(sent[2]).toContain("Your dictionary, so words are spelled your way.");
     expect(sent[3]).toBe("In agent mode, your request, the text you’ve selected, and whatever its tools need to help.");
-    expect(sent[4]).toBe("Only when you dictate, and only to help with it. Nothing it sends is stored.");
+    // Memory (ADR-DESK-060): agent-mode requests are kept, on this computer only, and can be removed.
+    expect(sent[4]).toBe("Your past agent-mode requests, kept only on this computer so it can recall them. Remove them anytime in Settings.");
+    expect(sent[5]).toBe("Only when you dictate, and only to help with it. Nothing it sends is stored.");
   });
 
   /** The name step offers the computer account's name while none is stored, filling it in when it

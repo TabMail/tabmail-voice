@@ -44,6 +44,7 @@ const signedIn: SettingsState = {
   debugMode: false,
   version: "1.2.3",
   update: { kind: "idle" },
+  memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], status: null },
 };
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
@@ -807,7 +808,7 @@ describe("Settings page", () => {
       "Uses the development server and shows debug items in the menu.",
       "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
-      "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
+      "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up: your earlier requests and its replies go with the follow-up.",
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
@@ -820,6 +821,10 @@ describe("Settings page", () => {
       "On these websites, and their subdomains, TabMail Voice never reads the screen, whichever browser they are open in.",
       `Password managers’ websites are always excluded: ${config.builtInExcludedSites.join(", ")}.`,
       "No websites added yet.",
+      // Memory's, a port of Thunderbird's Chat History (ADR-DESK-060).
+      "Agent mode’s requests, and what it answered or wrote, are kept on this computer so it can look back at them when you ask. Plain dictation isn’t kept.",
+      "When memory reaches the limit, the oldest requests are removed first.",
+      "No requests kept yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

@@ -12,7 +12,7 @@ import { WelcomeWizard } from "../../core/onboarding/welcomeWizard.js";
 import type { WelcomeState } from "../../shared/ipc.js";
 import icon from "../../../resources/icon.png";
 import { send, useWindowState } from "../shared/bridge.js";
-import { BookIcon, ConnectorIcon, LockShieldIcon, MicrophoneIcon, SparklesLineIcon, ToolIcon, ViewfinderIcon } from "../shared/icons.js";
+import { BookIcon, ConnectorIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, SparklesLineIcon, ToolIcon, ViewfinderIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
 import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
@@ -142,6 +142,10 @@ function ConsentPage({ state }: { state: WelcomeState }) {
         <li>
           <SparklesLineIcon size={config.welcomeLabelIconSize} />
           <span>In agent mode, your request, the text you’ve selected, and whatever its tools need to help.</span>
+        </li>
+        <li>
+          <HistoryIcon size={config.welcomeLabelIconSize} />
+          <span>Your past agent-mode requests, kept only on this computer so it can recall them. Remove them anytime in Settings.</span>
         </li>
         <li>
           <LockShieldIcon size={config.welcomeLabelIconSize} />

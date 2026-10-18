@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
@@ -12,16 +12,18 @@ import * as config from "../../core/config.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
+import { formatBytes } from "../../core/memory/page.js";
+import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
+import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
 import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
-type SectionName = "account" | "dictation" | "dictionary" | "agent" | "privacy" | "permissions" | "general";
+type SectionName = "account" | "dictation" | "dictionary" | "agent" | "memory" | "privacy" | "permissions" | "general";
 
 /** The sidebar's sections, in order, each with its title and icon. */
 const sections: { name: SectionName; title: string; icon: (size: number) => ReactNode }[] = [
@@ -29,6 +31,7 @@ const sections: { name: SectionName; title: string; icon: (size: number) => Reac
   { name: "dictation", title: "Dictation", icon: (size) => <MicrophoneIcon size={size} /> },
   { name: "dictionary", title: "Dictionary", icon: (size) => <BookIcon size={size} /> },
   { name: "agent", title: "Agent mode", icon: (size) => <SparklesLineIcon size={size} /> },
+  { name: "memory", title: "Memory", icon: (size) => <HistoryIcon size={size} /> },
   { name: "privacy", title: "Privacy", icon: (size) => <EyeOffIcon size={size} /> },
   { name: "permissions", title: "Permissions", icon: (size) => <LockShieldIcon size={size} /> },
   { name: "general", title: "General", icon: (size) => <GearIcon size={size} /> },
@@ -58,6 +61,10 @@ function needsAttention(name: SectionName, state: SettingsState): boolean {
 function Settings() {
   const state = useWindowState("settings");
   const [shown, setShown] = useState<SectionName>("account");
+  // Memory is read afresh each time its section shows: requests kept since are listed.
+  useEffect(() => {
+    if (shown === "memory") void send({ type: "loadMemory" });
+  }, [shown]);
   if (!state) return null;
   const section = sections.find((candidate) => candidate.name === shown) ?? sections[0];
   return (
@@ -93,6 +100,9 @@ function Settings() {
         </div>
         <div hidden={shown !== "agent"}>
           <AgentPane state={state} />
+        </div>
+        <div hidden={shown !== "memory"}>
+          <MemoryPane state={state} />
         </div>
         {isOffered("privacy", state) && (
           <div hidden={shown !== "privacy"}>
@@ -408,6 +418,134 @@ function AgentPane({ state }: { state: SettingsState }) {
       </Group>
       {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
       {offeredAgentToolIDs.includes("thunderbird") && <EmailClientPicker state={state} />}
+    </>
+  );
+}
+
+/** Past agent-mode requests (ADR-DESK-060), a port of Thunderbird's Chat History tab: memory used
+ * against the size limit, as a bar, with the limit to choose; the requests, the newest first, with
+ * a search; a remove button on each; and Clear All, confirmed in place. */
+function MemoryPane({ state }: { state: SettingsState }) {
+  const memory = state.memory;
+  const [draft, setDraft] = useState("");
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const run = async (command: Command) => {
+    setFailure(null);
+    const { error } = await send(command);
+    setFailure(error);
+  };
+  const search = (event: FormEvent) => {
+    event.preventDefault();
+    void run({ type: "searchMemory", query: draft.trim() });
+  };
+  const used = memory.usage?.usedBytes;
+  return (
+    <>
+      <Group
+        captions={[
+          "Agent mode’s requests, and what it answered or wrote, are kept on this computer so it can look back at them when you ask. Plain dictation isn’t kept.",
+          "When memory reaches the limit, the oldest requests are removed first.",
+        ]}
+      >
+        <div className="row stack">
+          <span>{memory.unavailable ? `Memory used: unavailable (limit ${formatBytes(memory.sizeLimit)})` : used === undefined ? "Memory used: reading…" : `Memory used: ${formatBytes(used)} of ${formatBytes(memory.sizeLimit)}`}</span>
+          <div
+            className="usage-bar"
+            role="progressbar"
+            aria-label="Memory used"
+            aria-valuemin={0}
+            aria-valuemax={memory.sizeLimit}
+            aria-valuenow={Math.min(used ?? 0, memory.sizeLimit)}
+          >
+            <div className={(used ?? 0) > 0 ? "usage-fill some" : "usage-fill"} style={{ width: `${(Math.min(used ?? 0, memory.sizeLimit) / memory.sizeLimit) * 100}%` }} />
+          </div>
+        </div>
+        <div className="row">
+          <span>Size limit</span>
+          <select aria-label="Size limit" value={memory.sizeLimit} onChange={(event) => void run({ type: "setMemorySizeLimit", value: Number(event.target.value) })}>
+            {config.memorySizeLimitChoices.map((bytes) => (
+              <option key={bytes} value={bytes}>
+                {formatBytes(bytes)}
+              </option>
+            ))}
+          </select>
+        </div>
+        {memory.status !== null && (
+          <div className="row">
+            <span className="caption">{memory.status}</span>
+          </div>
+        )}
+      </Group>
+      <Group>
+        <form className="row" onSubmit={search}>
+          <input
+            type="text"
+            placeholder="Search past requests"
+            aria-label="Search past requests"
+            maxLength={config.memorySearchMaxLength}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button type="submit">Search</button>
+        </form>
+        {failure !== null && (
+          <div className="row">
+            <span className="error">{failure}</span>
+          </div>
+        )}
+        {memory.entries.length === 0 ? (
+          <div className="row">
+            <span className="caption">
+              {memory.unavailable ? "Memory can’t be read right now. Try again in a moment." : memory.query !== "" ? `No requests found for “${memory.query}”.` : memory.usage === null ? "Reading…" : "No requests kept yet."}
+            </span>
+          </div>
+        ) : (
+          <ul className="dictionary" aria-label="Past requests">
+            {memory.entries.map((entry) => {
+              const { request, agent } = memoryExchange(entry.content);
+              return (
+                <li key={entry.memId} className="row memory-entry">
+                  <div className="memory-text">
+                    <span className="caption">{memoryDate(entry.dateMs)}</span>
+                    {request !== "" && <span className="memory-request">{request}</span>}
+                    <span className="memory-reply">{agent}</span>
+                  </div>
+                  <button className="link" aria-label={`Remove the request from ${memoryDate(entry.dateMs)}`} onClick={() => void run({ type: "removeMemory", memId: entry.memId })}>
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Group>
+      <Group>
+        {confirmingClear ? (
+          <div className="row stack">
+            <span>Remove every request kept? This can’t be undone.</span>
+            <div className="buttons">
+              <button onClick={() => setConfirmingClear(false)}>Cancel</button>
+              <button
+                className="default"
+                onClick={() => {
+                  setConfirmingClear(false);
+                  void run({ type: "clearMemory" });
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="row">
+            <span>{memory.usage ? `${memory.usage.docs} ${memory.usage.docs === 1 ? "request" : "requests"} kept` : "Requests kept"}</span>
+            <button disabled={memory.usage === null || memory.usage.docs === 0} onClick={() => setConfirmingClear(true)}>
+              Clear All…
+            </button>
+          </div>
+        )}
+      </Group>
     </>
   );
 }
