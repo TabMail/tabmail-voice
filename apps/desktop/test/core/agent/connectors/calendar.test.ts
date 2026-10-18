@@ -1110,6 +1110,9 @@ describe("calendar_event_delete", () => {
 
 /** The card a calendar question draws in place of its words: what the user confirms by click. */
 describe("a question's card", () => {
+  /** `hour` on a day certainly in this year, `dayOffset` days on: a card leaves this year's year out,
+   * and a week ahead is next year in late December. */
+  const inThisYear = (hour: number, dayOffset = 0) => new Date(new Date().getFullYear(), 5, 10 + dayOffset, hour);
   const line = (icon: EventQuestion["lines"][number]["icon"], text: string, tone: EventQuestion["lines"][number]["tone"] = "plain", detail: string | null = null) => ({ icon, text, detail, tone });
 
   /** A new event's card: its page and time, then everything it is added with, a person with their
@@ -1148,8 +1151,8 @@ describe("a question's card", () => {
     });
     // No one invited, no one emailed; an event over several days names them.
     const trip = await card(tool.confirmation({ title: "Trip", start_iso: iso(at(0), false), end_iso: iso(at(0, 0, 2), false) }));
-    expect(trip).toMatchObject({ time: `All day, ${LocalDateTime.dayRange(at(0), at(0, 0, 2))}`, lines: [] });
-    expect((await card(tool.confirmation({ title: "Focus", start_iso: iso(at(0), false) }))).time).toBe("All day");
+    expect(trip).toMatchObject({ ...LocalDateTime.page(at(0)), time: `All day, ${LocalDateTime.dayRange(at(0), at(0, 0, 2))}`, lines: [] });
+    expect((await card(tool.confirmation({ title: "Focus", start_iso: iso(inThisYear(0), false) }))).time).toBe("All day");
     // Without single-event access the calendar is the one the store writes to.
     const destination = new CalendarEventCreateTool(Object.assign(new FakeEventStore(), { calendarWriteDestination: "TabMail Voice calendar" }));
     expect((await card(destination.confirmation({ title: "Focus", start_iso: iso(at(10)) }))).lines).toEqual([line("calendar", "TabMail Voice calendar")]);
@@ -1200,10 +1203,14 @@ describe("a question's card", () => {
     // An occurrence changed on its own changes alone.
     editor.byID.set("series-1/moved", { ...standup(), id: "series-1/moved", isDetached: true, attendees: [] });
     expect((await card(tool.confirmation({ event_id: "series-1/moved", title: "Sync" }))).caption).toBe("Change this occurrence");
-    // Made all day, the new time is the day; an all-day event given a time shows the time.
-    expect((await card(tool.confirmation({ event_id: "event-1", all_day: true }))).newTime).toBe("All day");
-    editor.byID.set("holiday", { ...event("Holiday", at(0), at(0), { allDay: true }), id: "holiday", attendees: [], organizer: null, recurrence: null });
-    expect((await card(tool.confirmation({ event_id: "holiday", start_iso: iso(at(9)), all_day: false }))).newTime).toBe(LocalDateTime.timeRange(at(9), new Date(at(9).getTime() + config.calendarEventDefaultDuration), false));
+    // Made all day, the new time is the day; an all-day event given a time shows the time, and moved
+    // to another day names that day beside the old one's page.
+    editor.byID.set("planning", { ...event("Planning", inThisYear(10), inThisYear(11)), id: "planning", attendees: [], organizer: null, recurrence: null });
+    expect((await card(tool.confirmation({ event_id: "planning", all_day: true }))).newTime).toBe("All day");
+    editor.byID.set("holiday", { ...event("Holiday", inThisYear(0), inThisYear(0), { allDay: true }), id: "holiday", attendees: [], organizer: null, recurrence: null });
+    expect((await card(tool.confirmation({ event_id: "holiday", start_iso: iso(inThisYear(9)), all_day: false }))).newTime).toBe(LocalDateTime.timeRange(inThisYear(9), new Date(inThisYear(9).getTime() + config.calendarEventDefaultDuration), false));
+    const movedDay = await card(tool.confirmation({ event_id: "holiday", start_iso: iso(inThisYear(0, 3), false) }));
+    expect(movedDay).toMatchObject({ ...LocalDateTime.page(inThisYear(0)), time: "All day", newTime: `All day, ${LocalDateTime.dayRange(inThisYear(0, 3), inThisYear(0, 3))}` });
   });
 
   /** The page has no year, so a day outside this year is named with its year wherever the card shows
@@ -1217,8 +1224,8 @@ describe("a question's card", () => {
 
     expect((await card(create.confirmation({ title: "Kickoff", start_iso: iso(nextYear) }))).time).toContain(yearText(thisYear + 1));
     expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(nextYear, false) }))).time).toContain(yearText(thisYear + 1));
-    expect((await card(create.confirmation({ title: "Kickoff", start_iso: iso(at(10)) }))).time).not.toContain(yearText(thisYear));
-    expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(at(0), false) }))).time).toBe("All day");
+    expect((await card(create.confirmation({ title: "Kickoff", start_iso: iso(inThisYear(10)) }))).time).not.toContain(yearText(thisYear));
+    expect((await card(create.confirmation({ title: "Holiday", start_iso: iso(inThisYear(0), false) }))).time).toBe("All day");
 
     const editor = new FakeEditor();
     editor.byID.set("old-series", { ...standup(), id: "old-series", start: lastYear, end: new Date(lastYear.getTime() + 30 * 60 * 1000) });
