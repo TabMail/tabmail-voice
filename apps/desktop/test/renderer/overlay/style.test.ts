@@ -38,6 +38,7 @@ test("the confirm button is the brand blue, and red for a delete", () => {
 // reader hears take no room on screen; a new value is never underlined.
 test("a card's people, screen-reader words and new values are drawn as they should be", () => {
   expect(body(".event-people .event-line-detail")).toMatch(/color:\s*inherit;/);
+  expect(body(".event-people .event-line-detail")).toMatch(/font-weight:\s*inherit;/);
   expect(body(".sr-only")).toMatch(/position:\s*absolute;/);
   expect(body(".sr-only")).toMatch(/clip-path:\s*inset\(50%\);/);
   expect(body(".event-added")).toMatch(/text-decoration:\s*none;/);

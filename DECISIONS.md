@@ -5450,8 +5450,8 @@ five candidates on a page, "Date tile looks awesome".
   one tone); the card's data is unchanged. A screen reader hears what the strike-out, the accent and
   the icons show: the page as "Thu, Oct 22", "Title changes from … to …", "Invited: …",
   "Removed: …", a line's field where its icon names it ("New location: …", "Removed occurrence:
-  …"), and "New: …" on any other new line (a new repetition), with removed text in `<del>` and new
-  in `<ins>`; nothing changes on screen.
+  …"), and "New: …" on any other new line (a new repetition), with removed text in `<del>` and a
+  new title or time in `<ins>`; nothing changes on screen.
 
 ## ADR-DESK-061: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
 

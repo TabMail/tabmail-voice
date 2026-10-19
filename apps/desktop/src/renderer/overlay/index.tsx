@@ -598,8 +598,8 @@ function EventLineText({ line, children }: { line: EventQuestionLine; children: 
 const spokenFields: Partial<Record<EventQuestionLine["icon"], string>> = { calendar: "calendar", location: "location", notes: "notes", deleted: "occurrence" };
 
 /** What a screen reader hears before a line: its field, and whether it is new or removed ("New
- * location: ", "Removed occurrence: ", "New: Every day"); nothing for a plain or note line that
- * says it itself ("Shown as free"). */
+ * location: ", "Removed occurrence: ", "New: Every day"); a plain or note line its field alone
+ * ("Location: Room 5"), or nothing when no field is named ("Shown as free"). */
 function spokenField(line: EventQuestionLine): string {
   const field = spokenFields[line.icon];
   if (line.tone === "added") return field ? `New ${field}: ` : "New: ";
