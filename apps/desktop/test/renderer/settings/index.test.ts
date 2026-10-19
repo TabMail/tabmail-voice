@@ -26,6 +26,7 @@ const signedIn: SettingsState = {
   dictionary: [],
   learnsWords: true,
   smartDictation: false,
+  eventDuration: 45,
   canLearnWords: true,
   excludedApps: [],
   excludedSites: [],
@@ -947,6 +948,73 @@ describe("Settings page", () => {
       { type: "setConnectorEnabled", connector: "calendar", value: true },
       { type: "setConnectorEnabled", connector: "reminders", value: false },
     ]);
+  });
+
+  /** How long a new event lasts sits under the Calendar switch (owner, 2026-10-18), with
+   * Thunderbird's choices, and the one in force among them if agent mode set another. */
+  describe("the default event length", () => {
+    const withCalendar: SettingsState = { ...signedIn, connectors: ["calendar", "reminders"], enabledConnectors: ["calendar"] };
+    const picker = (): HTMLSelectElement => {
+      const label = [...document.querySelectorAll("label")].find((element) => element.textContent === "Default event length");
+      const select = label && document.getElementById(label.htmlFor);
+      if (!(select instanceof HTMLSelectElement)) throw new Error("no Default event length menu");
+      return select;
+    };
+    const options = () => [...picker().options].map((option) => [option.value, option.textContent]);
+
+    test("sits under the Calendar switch only, showing the one in force", async () => {
+      await settingsPage({ error: null }, withCalendar, withCalendar);
+      await act(async () => button("Agent mode").click());
+      expect(picker().closest(".toggle")?.querySelector("label")?.textContent).toBe("Calendar");
+      expect(document.querySelectorAll(".event-duration")).toHaveLength(1);
+      expect(picker().value).toBe("45");
+      expect(options()).toEqual([
+        ["15", "15 min"],
+        ["30", "30 min"],
+        ["45", "45 min"],
+        ["60", "1 hour"],
+        ["90", "1h 30m"],
+        ["120", "2 hours"],
+      ]);
+    });
+
+    test("isn't shown without the calendar", async () => {
+      await settingsPage({ error: null }, signedIn);
+      await act(async () => button("Agent mode").click());
+      expect(document.querySelector(".event-duration")).toBeNull();
+      expect(document.body.textContent).not.toContain("Default event length");
+    });
+
+    test("a duration agent mode set is listed in order, and shown", async () => {
+      const custom: SettingsState = { ...withCalendar, eventDuration: 50 };
+      await settingsPage({ error: null }, custom, custom);
+      await act(async () => button("Agent mode").click());
+      expect(picker().value).toBe("50");
+      expect(options().map(([value]) => value)).toEqual(["15", "30", "45", "50", "60", "90", "120"]);
+      expect(options()[3]?.[1]).toBe("50 min");
+    });
+
+    test("a choice is sent as minutes", async () => {
+      const page = await settingsPage({ error: null }, { ...withCalendar, eventDuration: 90 }, withCalendar);
+      await act(async () => button("Agent mode").click());
+      await act(async () => pick(picker(), "90"));
+      expect(page.commands).toEqual([{ type: "setEventDuration", value: 90 }]);
+      expect(picker().value).toBe("90");
+      expect(document.querySelector(".event-duration .error")).toBeNull();
+    });
+
+    test("a choice that couldn't be saved says so, and the next choice clears it", async () => {
+      const reply: CommandResult = { error: "The default event duration couldn't be saved. Check the disk and try again." };
+      await settingsPage(reply, withCalendar, withCalendar);
+      await act(async () => button("Agent mode").click());
+      await act(async () => pick(picker(), "30"));
+      expect(document.querySelector(".event-duration .error")?.textContent).toBe("The default event duration couldn't be saved. Check the disk and try again.");
+      expect(picker().value).toBe("45");
+
+      reply.error = null;
+      await act(async () => pick(picker(), "60"));
+      expect(document.querySelector(".event-duration .error")).toBeNull();
+    });
   });
 
   /** The notes are the Swift app's (typographic apostrophes aside) and no others: every state's

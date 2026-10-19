@@ -8,7 +8,7 @@ import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrde
 import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
-import { isJSONObject, parsedJSON, type ConnectorTool, type ToolQuestion } from "../agent/connectors/contract.js";
+import { isJSONObject, parsedJSON, type ConnectorTool, type ToolQuestion, type ToolSettings } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
 import { AgentError, type AgentToolID, agentTools } from "../agent/tools.js";
 import { type AudioCapture, AudioRecorder, type RecordedChunk, recordingDuration } from "../audio/recorder.js";
@@ -791,6 +791,8 @@ export class DictationController extends Observable {
         const connectorTools = offered.includes("answer") ? this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector)) : [];
         // This request's searches, for their later pages.
         const memoryTools = new MemoryTools(this.deps.memory);
+        // What the tools work with, from the settings read at key-down: a change meanwhile applies next time.
+        const toolSettings: ToolSettings = { eventDuration: settings.eventDuration };
         const { tool, text } = await DesktopAgent.run(
           transcript,
           context,
@@ -801,7 +803,7 @@ export class DictationController extends Observable {
           client,
           account,
           userID,
-          (call, round) => this.runConnectorTool(call, round, connectorTools, memoryTools, isCurrent, signal),
+          (call, round) => this.runConnectorTool(call, round, connectorTools, memoryTools, toolSettings, isCurrent, signal),
           (event) => this.serverToolRan(event, isCurrent),
           signal,
         );
@@ -1079,7 +1081,7 @@ export class DictationController extends Observable {
    * the call that asked runs as the user was shown it. The confirmation names the question it answers
    * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
    * about as usual. */
-  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], memoryTools: MemoryTools, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], memoryTools: MemoryTools, settings: ToolSettings, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     const waiting = this.answeredAloud;
     if (call.function.name === config.confirmationTool) {
       const answer = parsedJSON(call.function.arguments);
@@ -1104,7 +1106,7 @@ export class DictationController extends Observable {
         return config.confirmationToolNoAnswer;
       }
       log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
-      return answer.confirmed ? this.runTool(waiting.tool, waiting.args, isCurrent, signal) : config.connectorToolDeclined;
+      return answer.confirmed ? this.runTool(waiting.tool, waiting.args, settings, isCurrent, signal) : config.connectorToolDeclined;
     }
     // Any other call drops the call answered aloud: the answer covered only what its question showed.
     this.answeredAloud = null;
@@ -1121,7 +1123,7 @@ export class DictationController extends Observable {
     }
     let asked: ToolQuestion | null;
     try {
-      asked = await tool.confirmation(args, signal);
+      asked = await tool.confirmation(args, signal, settings);
     } catch (error) {
       if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
       log.error(`DictationController: ${tool.name} preparation failed: ${errorName(error)}`);
@@ -1147,7 +1149,7 @@ export class DictationController extends Observable {
         return answer === "declined" ? config.connectorToolDeclined : config.connectorToolUnanswered;
       }
     }
-    return this.runTool(tool, args, isCurrent, signal);
+    return this.runTool(tool, args, settings, isCurrent, signal);
   }
 
   /** Runs a memory tool: it only reads, so it asks nothing, and belongs to no app's bubble; the chat
@@ -1182,12 +1184,12 @@ export class DictationController extends Observable {
   }
 
   /** Runs `tool`, confirmed if it asks: the chat window says what it does, and its app's bubble runs. */
-  private async runTool(tool: ConnectorTool, args: Record<string, unknown>, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+  private async runTool(tool: ConnectorTool, args: Record<string, unknown>, settings: ToolSettings, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     log.debug(`DictationController: running ${tool.name}`);
     this.updateChat({ activity: tool.progressLabel });
     this.appStarted(tool.connector);
     try {
-      return await tool.run(args, signal);
+      return await tool.run(args, signal, settings);
     } catch (error) {
       log.error(`DictationController: ${tool.name} failed: ${errorName(error)}`);
       return `Error: ${error instanceof Error ? error.message : String(error)}`;

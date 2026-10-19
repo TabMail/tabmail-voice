@@ -12,10 +12,11 @@ import { emailConnector } from "./email.js";
 import { filesConnector } from "./files.js";
 import { messagesConnector } from "./macos/messages.js";
 import { notesConnector } from "./notes.js";
+import { settingsConnector } from "./settings.js";
 import { webConnector } from "./web.js";
 
 /** Every connector's id. */
-export type ConnectorID = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web";
+export type ConnectorID = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web" | "settings";
 
 /** The connectors, in their order (`Connector.order`): their switches' and bubbles'. */
-export const connectors: readonly Connector[] = [calendarConnector, remindersConnector, contactsConnector, filesConnector, emailConnector, notesConnector, messagesConnector, webConnector];
+export const connectors: readonly Connector[] = [calendarConnector, remindersConnector, contactsConnector, filesConnector, emailConnector, notesConnector, messagesConnector, webConnector, settingsConnector];

@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
+import { eventDurationLabel } from "../../core/agent/connectors/settings.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
@@ -400,6 +401,7 @@ function AgentPane({ state }: { state: SettingsState }) {
               icon={<ConnectorIcon connector={key} size={config.settingsToolIconSize} />}
               checked={state.enabledConnectors.includes(key)}
               onChange={(value) => send({ type: "setConnectorEnabled", connector: key, value })}
+              extra={key === "calendar" ? <EventDurationPicker state={state} /> : undefined}
             >
               {connectorByID[key].settingsDescription}
             </Toggle>
@@ -672,7 +674,7 @@ function Group({ captions = [], children }: { captions?: (string | false)[]; chi
 /** A setting that is on or off: its label (after its icon, if any), a switch at the end of the row,
  * and what it does. Only the label and the switch toggle it; its note is text to read (or select),
  * as in the Swift app. */
-function Toggle({ label, icon, checked, onChange, children }: { label: string; icon?: ReactNode; checked: boolean; onChange: (value: boolean) => unknown; children?: ReactNode }) {
+function Toggle({ label, icon, checked, onChange, extra, children }: { label: string; icon?: ReactNode; checked: boolean; onChange: (value: boolean) => unknown; extra?: ReactNode; children?: ReactNode }) {
   const id = useId();
   return (
     <div className="row toggle">
@@ -682,9 +684,36 @@ function Toggle({ label, icon, checked, onChange, children }: { label: string; i
           {label}
         </label>
         {children && <span className="caption">{children}</span>}
+        {extra}
       </span>
       <input id={id} type="checkbox" role="switch" className="switch" checked={checked} onChange={(event) => void onChange(event.target.checked)} />
     </div>
+  );
+}
+
+/** How long a new event lasts when no end is given, under the Calendar switch: Thunderbird's choices,
+ * and the one in force if the agent set another (`change_setting`). */
+function EventDurationPicker({ state }: { state: SettingsState }) {
+  const id = useId();
+  const [failure, setFailure] = useState<string | null>(null);
+  const choices = config.eventDurationChoices.includes(state.eventDuration) ? config.eventDurationChoices : [...config.eventDurationChoices, state.eventDuration].sort((a, b) => a - b);
+  const choose = async (value: number) => {
+    setFailure(null);
+    const { error } = await send({ type: "setEventDuration", value });
+    setFailure(error);
+  };
+  return (
+    <span className="event-duration">
+      <label htmlFor={id}>Default event length</label>
+      <select id={id} value={state.eventDuration} onChange={(event) => void choose(Number(event.target.value))}>
+        {choices.map((minutes) => (
+          <option key={minutes} value={minutes}>
+            {eventDurationLabel(minutes)}
+          </option>
+        ))}
+      </select>
+      {failure && <span className="error">{failure}</span>}
+    </span>
   );
 }
 

@@ -175,6 +175,21 @@
   gap: 2px;
 }
 
+/* A small choice under a switch's caption (the Calendar's default event length). */
+.event-duration {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--secondary);
+  font-size: 11px;
+}
+
+.event-duration select {
+  padding: 1px 4px;
+}
+
 /* A switch, as macOS draws one, on in the accent. */
 
 input.switch {

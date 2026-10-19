@@ -7,6 +7,7 @@ import { type FileQuery, type FileStore, FileOpenTool, FilesSearchTool, FileStor
 import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
+import { toolSettings } from "../../../support/stubs.js";
 
 /** Spotlight as the Answer prompt's Files tools, against a stand-in store (never the user's files):
  * the search asked for, what the model reads back, and what `file_open` asks the helper to open
@@ -182,7 +183,7 @@ describe("connector", () => {
       ["files", "file_open"],
       ["files", "file_read_pdf"],
     ]);
-    expect(tools.slice(0, 2).map((tool) => tool.confirmation({ query: "tax", path: "/tmp/example.pdf" }, new AbortController().signal))).toEqual([null, null]);
+    expect(tools.slice(0, 2).map((tool) => tool.confirmation({ query: "tax", path: "/tmp/example.pdf" }, new AbortController().signal, toolSettings))).toEqual([null, null]);
   });
 });
 

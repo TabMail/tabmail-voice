@@ -20,7 +20,7 @@ const gigabyte = 1_024 * 1_024 * 1_024;
 const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
-const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
+const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"];
 const overlayCanvasSize = { width: 440, height: 292 };
 /** The overlay window with the chat window at its tallest (`chatWindowFrame`), and where the pill is
  * in it, over it or under it. */
@@ -87,6 +87,7 @@ const settings = {
   dictionary: [],
   learnsWords: true,
   smartDictation: false,
+  eventDuration: 45,
   canLearnWords: true,
   excludedApps: [],
   excludedSites: [],
@@ -94,7 +95,7 @@ const settings = {
   builtInExcludedApps: [{ bundleIdentifier: "com.1password.1password", name: "1Password" }],
   userName: "Alex Example",
   suggestedName: "Alex Example",
-  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
+  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"],
   memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
 } satisfies SettingsState;
 /** Settings › Memory with requests kept: an answer, a Compose, and an older Edit, the newest first. */
@@ -111,7 +112,7 @@ const memory = {
   searchFailed: null,
   status: null,
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
 
 /** The paste history: a short entry, a long one clipped to its lines, and an older one. */
 const history = {

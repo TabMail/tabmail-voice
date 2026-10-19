@@ -296,8 +296,12 @@ export const confirmationToolNoAnswer = "Error: confirmed must be true or false.
  * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
 export const calendarReadMaxDays = 4 * 365;
 
-/** How long an event the user gave no end or duration for lasts, as Calendar's own default. */
-export const calendarEventDefaultDuration = 60 * 60 * 1_000;
+/** How long an event the user gave no end or duration for lasts (minutes; `AppSettings.eventDuration`):
+ * Settings' choices, its default and the range `change_setting` takes, as Thunderbird's and iOS's. */
+export const eventDurationChoices: readonly number[] = [15, 30, 45, 60, 90, 120];
+export const eventDurationDefault = 45;
+export const eventDurationMin = 5;
+export const eventDurationMax = 12 * 60;
 /** The most events one `calendar_read` page lists; the model reads the next with `page_index`. */
 export const calendarReadPageSize = 50;
 /** An event `calendar_event_read` looks up by `start_iso` starts within this long of it (ms): the

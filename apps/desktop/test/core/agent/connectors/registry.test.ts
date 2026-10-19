@@ -33,7 +33,7 @@ describe("the connector registry", () => {
 
   /** Settings, the welcome wizard and the bubbles list them in this order. */
   test("lists every connector once, in its order", () => {
-    expect(connectorIDs).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]);
+    expect(connectorIDs).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]);
     expect(connectors.map((connector) => connector.order)).toEqual([...connectors.map((connector) => connector.order)].sort((a, b) => a - b));
     for (const id of connectorIDs) expect(connectorByID[id].id).toBe(id);
   });
@@ -54,7 +54,7 @@ describe("the connector registry", () => {
   test("platform capabilities retain every Mac connector and expose shared tools on both ports", () => {
     expect(connectorsForPlatform("darwin").map(({ id }) => id)).toEqual(connectorIDs);
     for (const platform of ["win32", "linux"] as const) {
-      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web"]);
+      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web", "settings"]);
     }
     expect(connectorsForPlatform("freebsd")).toEqual([]);
   });

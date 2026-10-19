@@ -9,6 +9,7 @@ import { AccountModel, AuthClient, type SessionStore, type TabMailSession } from
 import type { ScriptRunner } from "../../src/core/agent/connectors/macos/appleScript.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
+import type { ToolSettings } from "../../src/core/agent/connectors/contract.js";
 import { type HTTPRequest, type HTTPTransport, TransportError } from "../../src/core/backend/http.js";
 import { observeContent } from "../../src/core/log.js";
 
@@ -264,3 +265,6 @@ export class FakeScriptRunner implements ScriptRunner {
     return this.result;
   }
 }
+
+/** The settings a request gives its tools, as a request started with Settings untouched would. */
+export const toolSettings: ToolSettings = { eventDuration: config.eventDurationDefault };

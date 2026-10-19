@@ -16,7 +16,7 @@ import type { MemoryPageState } from "../../src/core/memory/page.js";
 import { memoryRow } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels } from "../../src/shared/ipc.js";
-import { eventually } from "../support/stubs.js";
+import { eventually, toolSettings } from "../support/stubs.js";
 
 /** The signal a tool runs with: a request never canceled. */
 const signal = new AbortController().signal;
@@ -1103,24 +1103,24 @@ describe("main process wiring", () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "calendar_event_read", "calendar_event_edit", "calendar_event_delete", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "calendar_event_read", "calendar_event_edit", "calendar_event_delete", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open", "change_setting"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.connectorTools.map((tool) => tool.connector))).toEqual(new Set(connectorIDs));
-    await app.connectorTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
-    await app.connectorTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal);
-    await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "calendar_read")?.run({}, signal, toolSettings);
+    await app.connectorTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal, toolSettings);
+    await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal, toolSettings);
     expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "calendars", "contactsSearch", "filesSearch"]));
-    await app.connectorTools.find((tool) => tool.name === "notes_search")?.run({ query: "offsite" }, signal);
-    await app.connectorTools.find((tool) => tool.name === "messages_send")?.run({ to: "sam@example.com", text: "Hi" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "notes_search")?.run({ query: "offsite" }, signal, toolSettings);
+    await app.connectorTools.find((tool) => tool.name === "messages_send")?.run({ to: "sam@example.com", text: "Hi" }, signal, toolSettings);
     expect(app.scripts.map((script) => script.args)).toEqual([["offsite"], ["sam@example.com", "Hi"]]);
-    await app.connectorTools.find((tool) => tool.name === "web_open")?.run({ url: "https://example.com/page" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "web_open")?.run({ url: "https://example.com/page" }, signal, toolSettings);
     expect(app.opened).toEqual(["https://example.com/page"]);
 
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
     expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
     for (const name of ["settings", "welcome"]) {
-      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]);
-      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email", "notes", "messages", "web"]);
+      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]);
     }
   });
 
@@ -1462,8 +1462,8 @@ describe("main process wiring", () => {
       macHelper?.replies.set("filesSearch", { items: [{ path: `${home}/Documents/Tax return.pdf`, name: "Tax return.pdf", kind: "PDF document", changed: null, subject: null, authors: [], isEmail: false }] });
       macHelper?.replies.set("fileOpen", { opened: true });
 
-      expect(await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal)).toContain(": ~/Documents/Tax return.pdf");
-      expect(await app.connectorTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal)).toBe("Opened Tax return.pdf.");
+      expect(await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal, toolSettings)).toContain(": ~/Documents/Tax return.pdf");
+      expect(await app.connectorTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal, toolSettings)).toBe("Opened Tax return.pdf.");
       expect(macHelper?.requests.find((request) => request.method === "fileOpen")?.params).toEqual({ path: `${home}/Documents/Tax return.pdf`, reveal: false });
     } finally {
       vi.doUnmock("node:os");
@@ -1479,47 +1479,47 @@ describe("main process wiring", () => {
     const macHelper = app.helpers.get("voice-macos");
 
     // `launch` loads the app afresh, so the failure is its own module's class: matched by name.
-    await expect(compose?.run(args, signal)).rejects.toMatchObject({ name: "NoEmailAppError" });
+    await expect(compose?.run(args, signal, toolSettings)).rejects.toMatchObject({ name: "NoEmailAppError" });
     expect(app.opened).toEqual([]);
 
     macHelper?.replies.set("emailApps", { systemDefault: { bundleIdentifier: "com.example.mail", name: "Example Mail" }, installed: [] });
-    expect(await compose?.run(args, signal)).toBe("Opened a new email to sam@example.com in Example Mail, for the user to review and send. Nothing was sent.");
+    expect(await compose?.run(args, signal, toolSettings)).toBe("Opened a new email to sam@example.com in Example Mail, for the user to review and send. Nothing was sent.");
     expect(app.opened).toEqual([mailtoURL({ to: ["sam@example.com"], cc: [], bcc: [], subject: "Lunch", body: "Friday?" })]);
     expect(macHelper?.requests.filter((request) => request.method === "emailApps").at(-1)?.params).toEqual({ bundleIdentifiers: [] });
 
     // An app that fails to launch fails the call, so the model never says it opened.
     app.openFailure = new Error("Failed to open URL");
-    await expect(compose?.run(args, signal)).rejects.toThrow("Failed to open URL");
+    await expect(compose?.run(args, signal, toolSettings)).rejects.toThrow("Failed to open URL");
   });
 
   test.each(["win32", "linux"] as const)("shared Answer tools and switches work on %s", async (platform) => {
     await launch(platform);
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open", "change_setting"]);
     if (platform === "win32") {
       const create = app.connectorTools.find((tool) => tool.name === "calendar_event_create");
-      const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" }, signal);
+      const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" }, signal, toolSettings);
       // The words name where it goes, and so does the card the window draws.
       expect(typeof confirmation === "object" && confirmation !== null ? confirmation.text : confirmation).toContain("Destination: TabMail Voice calendar (local to this PC)");
       expect(typeof confirmation === "object" && confirmation !== null ? confirmation.event.lines[0] : null).toEqual({ icon: "calendar", text: "TabMail Voice calendar (local to this PC)", detail: null, tone: "plain" });
     }
-    const expectedConnectors = ["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web"];
+    const expectedConnectors = ["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web", "settings"];
     expect(state("settings").connectors).toEqual(expectedConnectors);
     expect(state("welcome").connectors).toEqual(expectedConnectors);
     const web = app.connectorTools.find((tool) => tool.name === "web_open");
     expect(web).toBeDefined();
-    expect(await web?.run({ url: "https://example.com/page" }, signal)).toContain("Opened");
+    expect(await web?.run({ url: "https://example.com/page" }, signal, toolSettings)).toContain("Opened");
     const compose = app.connectorTools.find((tool) => tool.name === "email_compose");
     expect(compose).toBeDefined();
     const args = { to: ["sam@example.com"], subject: "Lunch", body: "Friday?" };
     app.emailHandler = "";
-    await expect(compose?.run(args, signal)).rejects.toMatchObject({ name: "NoEmailAppError" });
+    await expect(compose?.run(args, signal, toolSettings)).rejects.toMatchObject({ name: "NoEmailAppError" });
     expect(app.opened).toEqual(["https://example.com/page"]);
     app.emailHandler = "Example Mail";
-    expect(await compose?.run(args, signal)).toContain("Example Mail");
+    expect(await compose?.run(args, signal, toolSettings)).toContain("Example Mail");
     expect(app.opened.at(-1)).toBe(mailtoURL({ to: args.to, cc: [], bcc: [], subject: args.subject, body: args.body }));
     app.openFailure = new Error("Failed to open URL");
-    await expect(compose?.run(args, signal)).rejects.toThrow("Failed to open URL");
+    await expect(compose?.run(args, signal, toolSettings)).rejects.toThrow("Failed to open URL");
     // These shared tools never invoke AppleScript or the macOS native connector APIs.
     expect(app.scripts).toEqual([]);
     const forbidden = ["calendarEvents", "contactsSearch", "filesSearch", "emailApps"];
@@ -1651,6 +1651,39 @@ describe("main process wiring", () => {
     expect(memory.rows).toEqual([]);
     expect(page().status).toBe("Memory cleared.");
     expect(pushed.at(-1)?.status).toBe("Memory cleared.");
+  });
+
+  /** The default event duration (owner, 2026-10-18): Settings shows it, and both its menu and agent
+   * mode's `change_setting` store it, pushing the new value to the Settings window; one the file
+   * can't keep is reported, not claimed. */
+  test.each(["darwin", "win32", "linux"] as const)("the default event duration is set from Settings and by change_setting, on %s", async (platform) => {
+    await launch(platform);
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { eventDuration: number };
+    const pushed: number[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, pushedState) => {
+        if (name === "settings") pushed.push((pushedState as { eventDuration: number }).eventDuration);
+      },
+    ]);
+    expect(state().eventDuration).toBe(config.eventDurationDefault);
+
+    expect(await send({ type: "setEventDuration", value: 90 })).toEqual({ error: null });
+    expect(app.stored.get("eventDurationMinutes")).toBe(90);
+    expect(state().eventDuration).toBe(90);
+    expect(pushed.at(-1)).toBe(90);
+    expect(await send({ type: "setEventDuration", value: config.eventDurationMax + 1 })).toEqual({ error: expect.any(String) });
+    expect(state().eventDuration).toBe(90);
+
+    const change = app.connectorTools.find((tool) => tool.name === "change_setting");
+    await expect(change?.run({ setting: "calendar.default_event_duration_minutes", value: 50 }, signal, toolSettings)).resolves.toContain("50 min");
+    expect(app.stored.get("eventDurationMinutes")).toBe(50);
+    expect(state().eventDuration).toBe(50);
+    expect(pushed.at(-1)).toBe(50);
+
+    app.savesFail = true;
+    expect(await send({ type: "setEventDuration", value: 30 })).toEqual({ error: "The default event duration couldn't be saved. Check the disk and try again." });
+    await expect(change?.run({ setting: "calendar.default_event_duration_minutes", value: 30 }, signal, toolSettings)).rejects.toThrow("The setting couldn't be saved. Nothing was changed.");
+    expect(state().eventDuration).toBe(50);
   });
 
   /** Memory is the computer user's, not the account's (ADR-DESK-061): signing out and signing in

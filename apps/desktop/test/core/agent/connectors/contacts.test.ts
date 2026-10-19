@@ -14,6 +14,7 @@ import {
 } from "../../../../src/core/agent/connectors/contacts.js";
 import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
 import * as config from "../../../../src/core/config.js";
+import { toolSettings } from "../../../support/stubs.js";
 
 /** Contacts as the Answer prompt's tools, against a fake store: what the model searches for, what the
  * user is asked to confirm, and what the model reads back (from the Swift `ContactsToolsTests`; the
@@ -163,7 +164,7 @@ describe("connectors", () => {
       ["contacts", "contacts_add"],
     ]);
     const valid = { query: "Sam", first_name: "Sam" };
-    expect(tools.map((tool) => tool.confirmation(valid, new AbortController().signal) !== null)).toEqual([false, true]);
+    expect(tools.map((tool) => tool.confirmation(valid, new AbortController().signal, toolSettings) !== null)).toEqual([false, true]);
   });
 });
 

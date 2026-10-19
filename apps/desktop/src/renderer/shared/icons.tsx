@@ -110,6 +110,15 @@ const connectorPaths: Record<ConnectorID, ReactNode> = {
       <path d="M3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z" />
     </>
   ),
+  // Three sliders, each at its own setting.
+  settings: (
+    <>
+      <path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" />
+      <circle cx="15" cy="6" r="2" />
+      <circle cx="9" cy="12" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </>
+  ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: ConnectorID; size: number }) {
