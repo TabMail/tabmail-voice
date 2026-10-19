@@ -245,12 +245,15 @@ export function SparklesLineIcon({ size }: { size: number }) {
 }
 
 /** A clock with an arrow going back: memory, the requests kept. */
+const historyPath = <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5M3.5 4v4.5H8M12 7.5V12l3 2" />;
+
 export function HistoryIcon({ size }: { size: number }) {
-  return (
-    <PlainIcon size={size}>
-      <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5M3.5 4v4.5H8M12 7.5V12l3 2" />
-    </PlainIcon>
-  );
+  return <PlainIcon size={size}>{historyPath}</PlainIcon>;
+}
+
+/** Memory's bubble: Settings' memory icon, in the bubbles' accent. */
+export function MemoryIcon({ size }: { size: number }) {
+  return <AccentIcon size={size}>{historyPath}</AccentIcon>;
 }
 
 /** A gear: general options. */

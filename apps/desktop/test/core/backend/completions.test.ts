@@ -44,6 +44,9 @@ describe("CompletionsClient", () => {
       Authorization: "Bearer token-abc",
       "X-Client-Type": "voice",
       "X-Client-Version": "test-version",
+      // The backend picks the prompts and tools at this version, on Thunderbird's and iOS's line: it
+      // must have them there, so the number changes only with the backend's files.
+      "X-Client-Protocol": "1.9.3",
     });
     const body = stub.body(0);
     expect(body.disable_tools).toBe(true);

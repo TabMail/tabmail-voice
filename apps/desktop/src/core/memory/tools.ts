@@ -33,11 +33,8 @@ export class MemoryTools {
   }
 
   private async search(args: Record<string, unknown>): Promise<unknown> {
+    // No query lists the most recent exchanges, newest first ("what have we discussed").
     const query = typeof args.query === "string" ? args.query.trim() : "";
-    if (query === "") {
-      log.error(`MemoryTools: ${config.memorySearchTool} called without a query`);
-      return { error: "missing query" };
-    }
     const fromText = typeof args.from_date === "string" ? args.from_date : "";
     const toText = typeof args.to_date === "string" ? args.to_date : "";
     const key = JSON.stringify({ query, from_date: fromText, to_date: toText });

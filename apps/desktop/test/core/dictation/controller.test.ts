@@ -3827,6 +3827,33 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(memory.searches).toEqual([{ query: "launch review", from: "", to: "", limit: Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax) }]);
           });
 
+          /** Memory's bubble runs at the front while its search does, alone, as an app's does while its
+           * tool runs (owner, 2026-10-19), and stops with it, so Answer's bubble runs alone for the reply. */
+          test("memory's bubble runs while a memory tool does", async () => {
+            const searching = deferred<void>();
+            const searched = deferred<void>();
+            const search = memory.search.bind(memory);
+            memory.search = async (request) => {
+              searching.resolve();
+              await searched.promise;
+              return search(request);
+            };
+            const running: (string | null)[] = [];
+            const { controller, done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })]), reply("Nothing found.")], (controller) => controller.observe(() => running.push(controller.runningBubble)));
+            await searching.promise;
+            expect(controller.runningBubble).toBe("memory");
+            expect(controller.recentBubbles[0]).toBe("memory");
+            searched.resolve();
+            await done;
+            // Stopped when the search ended, before Answer's bubble ran for the reply.
+            const ran = running.indexOf("memory");
+            const answered = running.indexOf("answer", ran);
+            expect(answered).toBeGreaterThan(ran);
+            expect(running.slice(ran, answered)).toContain(null);
+            expect(controller.recentBubbles).toEqual(["answer", "memory"]);
+            expect(controller.runningBubble).toBeNull();
+          });
+
           test("each request searches memory afresh, so a search after Clear All finds nothing", async () => {
             memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
             const search = calling(["memory_search", JSON.stringify({ query: "launch review" })]);

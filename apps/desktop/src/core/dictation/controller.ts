@@ -4,7 +4,7 @@
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion } from "../agent/chat.js";
-import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
+import { type BubbleKey, memoryBubble, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
 import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
@@ -168,7 +168,7 @@ export class DictationController extends Observable {
   /** The bubbles whose tools ran, the most recent first: for the app's life, never saved. */
   private recent: BubbleKey[] = [];
   /** The apps whose tools run now: one at a time, as the answer's tools run in turn. */
-  private runningApps = new Set<ConnectorID>();
+  private runningApps = new Set<BubbleKey>();
 
   onPhaseChange: ((phase: Phase) => void) | undefined;
   /** The chat window opened (true) or closed. */
@@ -315,7 +315,7 @@ export class DictationController extends Observable {
 
   /** The one bubble that runs now, first in the row (owner, 2026-10-05: "the only one that circles is the
    * one on the far left"): the app whose tool started last, on this computer (`ConnectorTool`) or on the
-   * backend (the web's search), while it runs; otherwise the tool agent mode answers or writes with,
+   * backend (the web's search), or memory while its tools run (owner, 2026-10-19); otherwise the tool agent mode answers or writes with,
    * none while it thinks. */
   get runningBubble(): BubbleKey | null {
     const app = [...this.runningApps].at(-1);
@@ -1152,8 +1152,8 @@ export class DictationController extends Observable {
     return this.runTool(tool, args, settings, isCurrent, signal);
   }
 
-  /** Runs a memory tool: it only reads, so it asks nothing, and belongs to no app's bubble; the chat
-   * window says what it does. */
+  /** Runs a memory tool: it only reads, so it asks nothing; memory's bubble runs, and the chat window
+   * says what it does. */
   private async runMemoryTool(call: ToolCall, memoryTools: MemoryTools, isCurrent: () => boolean): Promise<string> {
     const args = parsedJSON(call.function.arguments);
     if (!isJSONObject(args)) {
@@ -1162,10 +1162,14 @@ export class DictationController extends Observable {
     }
     log.debug(`DictationController: running ${call.function.name}`);
     this.updateChat({ activity: config.memoryToolProgressLabel });
+    this.appStarted(memoryBubble);
     try {
       return await memoryTools.run(call.function.name, args);
     } finally {
-      if (isCurrent()) this.updateChat({ activity: null });
+      if (isCurrent()) {
+        this.appEnded(memoryBubble);
+        this.updateChat({ activity: null });
+      }
     }
   }
 
@@ -1215,8 +1219,9 @@ export class DictationController extends Observable {
     if (event.label !== null) this.updateChat({ activity: event.running ? event.label : null });
   }
 
-  /** One of `connector`'s tools starts: its bubble moves to the front of the history and runs. */
-  private appStarted(connector: ConnectorID): void {
+  /** One of `connector`'s tools starts (or memory's): its bubble moves to the front of the history and
+   * runs. */
+  private appStarted(connector: BubbleKey): void {
     this.recent = ranNow(this.recent, connector);
     this.runningApps.add(connector);
     this.changed();
@@ -1224,7 +1229,7 @@ export class DictationController extends Observable {
 
   /** One of `connector`'s tools ends: the bubble still running (another app's, or the tool agent mode
    * answers or writes with), if any, moves back to the front. */
-  private appEnded(connector: ConnectorID): void {
+  private appEnded(connector: BubbleKey): void {
     this.runningApps.delete(connector);
     const running = this.runningBubble;
     if (running !== null) this.recent = ranNow(this.recent, running);

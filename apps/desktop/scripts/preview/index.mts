@@ -205,6 +205,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "agentAndHistory" }],
     ["overlay-agent-apps-up", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, bubblesFitUnder: false, opensUpward: true, tip: "handsFree" }],
     ["overlay-agent-apps-running", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], runningBubble: "calendar" }],
+    ["overlay-agent-memory-running", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["compose", "answer"], connectors: allConnectors, recentBubbles: ["memory", "answer"], runningBubble: "memory" }],
     ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
     ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],

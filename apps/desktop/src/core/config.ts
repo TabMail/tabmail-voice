@@ -200,6 +200,11 @@ export const warmUpRequestTimeout = 10_000;
 /** Sent as `X-Client-Type` to identify this client to the backend, on every platform (ADR-DESK-009).
  * Usage is recorded under it, and the admin panel shows it as the Voice device. */
 export const clientType = "voice";
+/** Sent as `X-Client-Protocol`: the version, on Thunderbird's and iOS's version line, at which the
+ * backend picks this app's prompts and tools (ADR-DESK-064), so it shares theirs rather than keeping
+ * copies. Raised only with the backend's prompts and tools at the new version in place; the app's own
+ * version (`X-Client-Version`) is the one users see. */
+export const clientProtocol = "1.9.3";
 /** Longest a dictation waits for its text after the release, every request and retry included, and
  * a long dictation's polish (owner, 2026-10-08: "nobody waits for dictation more than 10" seconds;
  * ADR-DESK-039). The backend gives the speech model 8 s and the cleanup 1.5 s inside it. */
@@ -377,6 +382,9 @@ export const memorySearchMaxLength = 500;
 export const memoryIDMaxLength = 100;
 /** What the chat window says while a memory tool runs. */
 export const memoryToolProgressLabel = "Looking through past requests";
+/** The bubble of the memory tools, which runs while they do (owner, 2026-10-19). */
+export const memoryBubbleName = "Memory";
+export const memoryBubbleDescription = "Looks back at your earlier requests.";
 
 // MARK: Apps excluded from screen reading
 

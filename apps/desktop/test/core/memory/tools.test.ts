@@ -45,11 +45,32 @@ describe("MemoryTools", () => {
   });
 
   describe(config.memorySearchTool, () => {
-    test("needs a query", async () => {
-      expect(await run(config.memorySearchTool, {})).toEqual({ error: "missing query" });
-      expect(await run(config.memorySearchTool, { query: "   " })).toEqual({ error: "missing query" });
-      expect(await run(config.memorySearchTool, { query: 42 })).toEqual({ error: "missing query" });
-      expect(memory.searches).toEqual([]);
+    /** "What have we discussed" names no topic: with no query the tool lists the most recent
+     * exchanges, newest first, a page at a time (the helper lists the newest for an empty query). */
+    test("with no query lists the most recent exchanges, newest first", async () => {
+      keep(config.memorySearchPageSize + 2, "budget");
+      keep(1, "travel", () => "travel today");
+      memory.rows[memory.rows.length - 1]!.dateMs = now;
+      const limit = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
+      for (const args of [{}, { query: "   " }, { query: 42 }]) {
+        tools = new MemoryTools(memory);
+        memory.searches.length = 0;
+        const result = (await run(config.memorySearchTool, args)) as { results: string; totalItems: number; totalPages: number };
+        expect(memory.searches).toEqual([{ query: "", from: "", to: "", limit }]);
+        expect(result.totalItems).toBe(config.memorySearchPageSize + 3);
+        expect(result.totalPages).toBe(2);
+        expect(listed(result.results)).toHaveLength(config.memorySearchPageSize);
+        const stamps = [...result.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]));
+        expect(stamps[0]).toBe(now);
+        expect(stamps).toEqual([...stamps].sort((a, b) => b - a));
+      }
+    });
+
+    test("with no query keeps to the dates asked", async () => {
+      keep(1, "budget");
+      const result = await run(config.memorySearchTool, { from_date: "2020-01-01", to_date: "2020-01-31" });
+      expect(memory.searches).toEqual([expect.objectContaining({ query: "", from: expect.stringMatching(/^2020-01-01/), to: expect.stringMatching(/^2020-01-31/) })]);
+      expect(result).toEqual(expect.objectContaining({ totalItems: 1 }));
     });
 
     test("lists matches, newest first, each with its timestamp, date and text", async () => {
