@@ -70,7 +70,8 @@ export interface EventQuestion {
 export interface EventQuestionLine {
   icon: "repeat" | "location" | "calendar" | "person" | "notes" | "availability" | "mail" | "deleted";
   text: string;
-  /** Fainter, after the text: a person's address, a calendar's account. */
+  /** After the text: a person's address (as strong as the name, since it is who is emailed), a
+   * calendar's account (fainter). */
   detail: string | null;
   /** `added` for what the change brings (in the accent), `removed` for what it takes away (struck
    * out), `note` for what happens as a result (secondary), `plain` for the event as it is. */
