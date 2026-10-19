@@ -293,6 +293,22 @@ describe("the default event duration", () => {
     expect(app.eventDuration).toBe(config.eventDurationMax);
   });
 
+  /** The policy itself, written out rather than read from `config`, so a changed default or range
+   * fails here: 45 minutes unset, and whole minutes from 5 to 720 (Thunderbird's and iOS's). */
+  test("is 45 minutes unset, and takes 5 to 720 minutes", () => {
+    const store = new MemoryStore();
+    const app = settings(store, true);
+    expect(app.eventDuration).toBe(45);
+    expect(app.dictation(null).eventDuration).toBe(45);
+    expect(app.setEventDuration(5)).toBe(true);
+    expect(settings(store, true).eventDuration).toBe(5);
+    expect(app.setEventDuration(720)).toBe(true);
+    expect(settings(store, true).eventDuration).toBe(720);
+    expect(app.setEventDuration(4)).toBe(false);
+    expect(app.setEventDuration(721)).toBe(false);
+    expect(settings(store, true).eventDuration).toBe(720);
+  });
+
   test("a value the file can't keep is reported unsaved, and the duration is as it was", () => {
     const app = settings(new UnsavedStore(), true);
     expect(app.setEventDuration(90)).toBe(false);

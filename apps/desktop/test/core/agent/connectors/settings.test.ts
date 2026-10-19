@@ -81,6 +81,20 @@ describe("change_setting", () => {
     },
   );
 
+  /** The range `change_setting` advertises, written out: 5 to 720 minutes. */
+  test.each([
+    [4, false],
+    [5, true],
+    [720, true],
+    [721, false],
+  ])("the value %i is %s taken", async (minutes, taken) => {
+    const { tool: change, settings } = tool();
+    const run = change.run({ setting: eventDurationSetting, value: minutes }, signal, toolSettings);
+    if (taken) await expect(run).resolves.toContain(eventDurationLabel(minutes));
+    else await expect(run).rejects.toThrow("value must be a whole number of minutes from 5 to 720.");
+    expect(settings.written).toEqual(taken ? [minutes] : []);
+  });
+
   test("the range's ends are taken", async () => {
     const { tool: change, settings } = tool();
     await change.run({ setting: eventDurationSetting, value: config.eventDurationMin }, signal, toolSettings);
