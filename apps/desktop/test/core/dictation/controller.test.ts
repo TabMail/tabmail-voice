@@ -4483,6 +4483,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(completions.requests).toHaveLength(3);
           });
 
+          /** A question answered aloud runs with the settings of its request's key-down, as the
+           * question was asked: a default event duration changed while it waits applies from the next
+           * request, so what runs is what the card showed. */
+          test("the call that asked runs with its request's key-down settings", async () => {
+            const tool = new FakeLoopTool();
+            tool.question = confirmationQuestion;
+            const changed = config.eventDurationChoices.find((minutes) => minutes !== config.eventDurationDefault) ?? 0;
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            prefs.value = { ...prefs.value, eventDuration: changed };
+
+            await sayAloud(controller, "Yes, go ahead.");
+            await done;
+
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+            expect(tool.askedWith).toEqual([{ eventDuration: config.eventDurationDefault }]);
+            expect(tool.ranWith).toEqual([{ eventDuration: config.eventDurationDefault }]);
+          });
+
           /** The model declining for the user runs nothing, and reads that the user declined. */
           test("the model declines for the user, and nothing runs", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
