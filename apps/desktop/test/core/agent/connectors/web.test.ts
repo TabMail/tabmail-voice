@@ -9,6 +9,7 @@ import { ToolArgumentError } from "../../../../src/core/agent/connectors/contrac
 import { liveWebFetch, type WebFetch, WebOpenTool, WebPageReader, WebReadError, WebReadTool, type WebResponse, webConnector, webURL } from "../../../../src/core/agent/connectors/web.js";
 import * as config from "../../../../src/core/config.js";
 import { CancellationError } from "../../../../src/core/util/timeout.js";
+import { toolSettings } from "../../../support/stubs.js";
 
 // A small body cap, so a page can run past it: every other page stays far below.
 vi.mock("../../../../src/core/config.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../../../src/core/config.js")>()), webReadMaxBytes: 4_096 }));
@@ -53,7 +54,7 @@ describe("the connector", () => {
       ["web_read", "web"],
       ["web_open", "web"],
     ]);
-    expect(tools.map((tool) => tool.confirmation({ url: "https://example.com/" }, new AbortController().signal))).toEqual([null, null]);
+    expect(tools.map((tool) => tool.confirmation({ url: "https://example.com/" }, new AbortController().signal, toolSettings))).toEqual([null, null]);
   });
 });
 

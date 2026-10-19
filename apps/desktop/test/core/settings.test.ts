@@ -209,6 +209,7 @@ describe("AppSettings", () => {
     app.smartDictation = true;
     const lower = config.memorySizeLimitChoices[0] ?? 0;
     expect(app.setMemorySizeLimit(lower)).toBe(true);
+    expect(app.setEventDuration(20)).toBe(true);
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -226,8 +227,9 @@ describe("AppSettings", () => {
       learnsWords: true,
       smartDictation: false,
       memorySizeLimit: config.memorySizeLimitDefault,
+      eventDuration: config.eventDurationDefault,
     });
-    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false, smartDictation: true, memorySizeLimit: lower });
+    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false, smartDictation: true, memorySizeLimit: lower, eventDuration: 20 });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
   });
@@ -257,6 +259,64 @@ describe("memory's size limit", () => {
 
   test("a stored value not among the choices reads as the default", () => {
     expect(settings(new MemoryStore({ memorySizeLimit: 12_345 }), true).memorySizeLimit).toBe(config.memorySizeLimitDefault);
+  });
+});
+
+/** How long a new event lasts: 45 minutes until the user (or agent mode) sets another whole number
+ * of minutes in range, which is kept; any other value is refused and leaves it as it was, and a stored
+ * value out of range reads as the default. */
+describe("the default event duration", () => {
+  test("is the default, then the value kept", () => {
+    const store = new MemoryStore();
+    const app = settings(store, true);
+    expect(app.eventDuration).toBe(config.eventDurationDefault);
+    expect(app.setEventDuration(90)).toBe(true);
+    expect(settings(store, true).eventDuration).toBe(90);
+    expect(app.setEventDuration(20)).toBe(true);
+    expect(settings(store, true).eventDuration).toBe(20);
+  });
+
+  test.each([0, config.eventDurationMin - 1, config.eventDurationMax + 1, 30.5, Number.NaN])("%s is refused and leaves it as it was", (minutes) => {
+    const store = new MemoryStore();
+    const app = settings(store, true);
+    expect(app.setEventDuration(90)).toBe(true);
+    expect(app.setEventDuration(minutes)).toBe(false);
+    expect(app.eventDuration).toBe(90);
+    expect(settings(store, true).eventDuration).toBe(90);
+  });
+
+  test("the range's ends are kept", () => {
+    const app = settings(new MemoryStore(), true);
+    expect(app.setEventDuration(config.eventDurationMin)).toBe(true);
+    expect(app.eventDuration).toBe(config.eventDurationMin);
+    expect(app.setEventDuration(config.eventDurationMax)).toBe(true);
+    expect(app.eventDuration).toBe(config.eventDurationMax);
+  });
+
+  /** The policy itself, written out rather than read from `config`, so a changed default or range
+   * fails here: 45 minutes unset, and whole minutes from 5 to 720 (Thunderbird's and iOS's). */
+  test("is 45 minutes unset, and takes 5 to 720 minutes", () => {
+    const store = new MemoryStore();
+    const app = settings(store, true);
+    expect(app.eventDuration).toBe(45);
+    expect(app.dictation(null).eventDuration).toBe(45);
+    expect(app.setEventDuration(5)).toBe(true);
+    expect(settings(store, true).eventDuration).toBe(5);
+    expect(app.setEventDuration(720)).toBe(true);
+    expect(settings(store, true).eventDuration).toBe(720);
+    expect(app.setEventDuration(4)).toBe(false);
+    expect(app.setEventDuration(721)).toBe(false);
+    expect(settings(store, true).eventDuration).toBe(720);
+  });
+
+  test("a value the file can't keep is reported unsaved, and the duration is as it was", () => {
+    const app = settings(new UnsavedStore(), true);
+    expect(app.setEventDuration(90)).toBe(false);
+    expect(app.eventDuration).toBe(config.eventDurationDefault);
+  });
+
+  test.each([0, 12_345, 30.5, "60", null])("a stored %s reads as the default", (stored) => {
+    expect(settings(new MemoryStore({ eventDurationMinutes: stored }), true).eventDuration).toBe(config.eventDurationDefault);
   });
 });
 
@@ -922,17 +982,17 @@ describe("connectors", () => {
     app.setConnectorEnabled("calendar", false);
 
     expect(store.get("disabledConnectors")).toEqual(["calendar", "reminders"]);
-    expect(app.enabledConnectors).toEqual(["contacts", "files", "email", "notes", "messages", "web"]);
+    expect(app.enabledConnectors).toEqual(["contacts", "files", "email", "notes", "messages", "web", "settings"]);
   });
 
   /** A stored name no longer an app, or a stored value of another type, is ignored rather than
    * turning anything off; a switch changed after that stores only apps. */
   test.each<[unknown, string[]]>([
-    [["calendar", "retired-app"], ["reminders", "contacts", "files", "email", "notes", "messages", "web"]],
-    ["calendar", ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]],
+    [["calendar", "retired-app"], ["reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]],
+    ["calendar", ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]],
     // Shortcuts, retired before the first release: a user who switched it off turns nothing else off.
-    [["shortcuts"], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]],
-    [[7, null], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]],
+    [["shortcuts"], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]],
+    [[7, null], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"]],
   ])("a stored %j turns off only known apps", (stored, enabled) => {
     const store = new MemoryStore({ disabledConnectors: stored });
     expect(settings(store).dictation(null).enabledConnectors).toEqual(enabled);

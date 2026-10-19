@@ -276,6 +276,7 @@ function launch(): void {
         noteStore: process.platform === "linux" ? new NativeNoteStore(productivityRunner(join(helpers, "voice-productivity"))) : new MacNoteStore(osascript),
         webFetch: liveWebFetch,
         webOpener: { open: (url) => shell.openExternal(url) },
+        settings,
       }),
     ),
     // Learn corrections locally, the field read by voice-field-reader (ADR-DESK-038).
@@ -414,6 +415,7 @@ function launch(): void {
       learnsWords: settings.learnsWords,
       canLearnWords: nativeAudio,
       smartDictation: settings.smartDictation,
+      eventDuration: settings.eventDuration,
       excludedApps: settings.excludedApps,
       canExcludeApps: nativeAudio,
       builtInExcludedApps: settings.builtInExcludedApps,
@@ -857,6 +859,9 @@ function launch(): void {
         return;
       case "setSmartDictation":
         settings.smartDictation = command.value;
+        return;
+      case "setEventDuration":
+        if (!settings.setEventDuration(command.value)) throw new Error("The default event duration couldn't be saved. Check the disk and try again.");
         return;
       case "loadMemory":
         return memoryPage.load();

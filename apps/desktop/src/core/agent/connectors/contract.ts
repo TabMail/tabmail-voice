@@ -12,6 +12,7 @@ import type { EmailOpener } from "./email.js";
 import type { NoteStore } from "./notes.js";
 import type { PDFReader } from "./pdf.js";
 import type { FileStore } from "./files.js";
+import type { SettingsWriter } from "./settings.js";
 import type { ConnectorID } from "./registry.js";
 import type { WebFetch, WebOpener } from "./web.js";
 
@@ -31,11 +32,18 @@ export interface ConnectorTool {
   /** What the chat window asks before the tool sends or creates anything ("Add “Launch review” to
    * your calendar on Friday at 10:00?"); null for ordinary reads. Explicit document reads also ask before sharing text. The tool runs only if the
    * user confirms (owner, 2026-09-26: send or create = confirm first, always). */
-  confirmation(args: Record<string, unknown>, signal: AbortSignal): ToolQuestion | null | Promise<ToolQuestion | null>;
+  confirmation(args: Record<string, unknown>, signal: AbortSignal, settings: ToolSettings): ToolQuestion | null | Promise<ToolQuestion | null>;
   /** Runs the tool; the result is what the model reads next. Throws when it can't: the model is told
    * why. `signal` aborts when the request is canceled or its chat window closed: a tool that can
    * stop what it started (a script) stops it. */
-  run(args: Record<string, unknown>, signal: AbortSignal): Promise<string>;
+  run(args: Record<string, unknown>, signal: AbortSignal, settings: ToolSettings): Promise<string>;
+}
+
+/** The settings a tool works with, those of the request it runs in, read once as the request
+ * started: a change in Settings or by `change_setting` meanwhile applies from the next request. */
+export interface ToolSettings {
+  /** How long a new event lasts when no end is given (minutes; `AppSettings.eventDuration`). */
+  eventDuration: number;
 }
 
 /** A tool's question: its words, or its words and the calendar event the window draws for them. The
@@ -114,6 +122,8 @@ export interface ConnectorServices {
   scriptRunner: ScriptRunner;
   webFetch: WebFetch;
   webOpener: WebOpener;
+  /** The settings agent mode can change (`change_setting`). */
+  settings: SettingsWriter;
 }
 
 /**

@@ -6,7 +6,7 @@ import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { CancellationError } from "../../util/timeout.js";
 import type { EventQuestion, EventQuestionLine } from "../chat.js";
-import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, isJSONObject, ToolArgumentError } from "./contract.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, isJSONObject, ToolArgumentError, type ToolSettings } from "./contract.js";
 import { isAddress } from "./email.js";
 
 /** An event in the user's calendars, as the calendar tools read and create them. The fields after
@@ -497,8 +497,8 @@ export class CalendarEventCreateTool implements ConnectorTool {
 
   /** Throws for arguments it can't add and for a calendar it can't find, so nothing is added
    * unasked: the controller tells the model why and runs nothing. */
-  async confirmation(args: Record<string, unknown>): Promise<{ text: string; event: EventQuestion }> {
-    const event = this.draft(args);
+  async confirmation(args: Record<string, unknown>, _signal: AbortSignal, settings: ToolSettings): Promise<{ text: string; event: EventQuestion }> {
+    const event = this.draft(args, settings);
     let calendar: EventCalendar | undefined;
     if (event.calendarId) {
       calendar = (await this.store.editor?.calendars())?.find((candidate) => candidate.id === event.calendarId);
@@ -526,18 +526,18 @@ export class CalendarEventCreateTool implements ConnectorTool {
     return { text: lines.join("\n"), event: eventCard("add", "New event", event, card) };
   }
 
-  async run(args: Record<string, unknown>): Promise<string> {
-    const draft = this.draft(args);
+  async run(args: Record<string, unknown>, _signal: AbortSignal, settings: ToolSettings): Promise<string> {
+    const draft = this.draft(args, settings);
     const saved = await this.store.addEvent(draft);
     const ids = eventIDs(saved);
     return `Added "${saved.title}" to ${this.writeDestination ?? `the ${saved.calendar} calendar`}: ${describeWhen(saved)}${ids.length === 0 ? "" : ` (${ids.join(", ")})`}.${missingInvitees(draft.attendees ?? [], saved)}${availabilityNotKept(draft.availability, saved)}`;
   }
 
   /** The event the arguments describe. A day for `start_iso` (or `all_day`) makes it all day, through
-   * the day `end_iso` names; without `end_iso`, a timed event lasts `calendarEventDefaultDuration`.
+   * the day `end_iso` names; without `end_iso`, a timed event lasts the request's `eventDuration`.
    * An all-day event's `end` is the start of its last day. Invitations, repeating, a chosen calendar
    * and showing as free need the store's `editor`. */
-  draft(args: Record<string, unknown>): CalendarEvent {
+  draft(args: Record<string, unknown>, settings: ToolSettings): CalendarEvent {
     const title = Arguments.text(args, "title");
     if (title === null) throw ToolArgumentError.missing("title");
     const start = Arguments.localDate(args, "start_iso");
@@ -550,7 +550,7 @@ export class CalendarEventCreateTool implements ConnectorTool {
       const first = LocalDateTime.startOfDay(start.date);
       event = { ...fields, start: first, end: end === null ? first : LocalDateTime.startOfDay(end.date), isAllDay: true };
     } else {
-      event = { ...fields, start: start.date, end: end?.date ?? new Date(start.date.getTime() + config.calendarEventDefaultDuration), isAllDay: false };
+      event = { ...fields, start: start.date, end: end?.date ?? new Date(start.date.getTime() + settings.eventDuration * 60_000), isAllDay: false };
     }
     if (event.end < event.start) throw new ToolArgumentError("end_iso is before start_iso.");
     const calendarId = Arguments.text(args, "calendar_id");
@@ -637,8 +637,8 @@ export class CalendarEventEditTool implements ConnectorTool {
   constructor(private readonly editor: EventEditor) {}
 
   /** Throws for a change it can't make or an event it can't read, so nothing is changed unasked. */
-  async confirmation(args: Record<string, unknown>): Promise<{ text: string; event: EventQuestion }> {
-    const plan = await this.plan(args);
+  async confirmation(args: Record<string, unknown>, _signal: AbortSignal, settings: ToolSettings): Promise<{ text: string; event: EventQuestion }> {
+    const plan = await this.plan(args, settings);
     this.prepared.set(args, plan);
     const { current, changes, scope, occurrence } = plan;
     const lines = ["Change this event?", current.title, spokenWhen(current)];
@@ -675,7 +675,7 @@ export class CalendarEventEditTool implements ConnectorTool {
   }
 
   /** The change the arguments ask for, over the event as it is when asked; throws for one it can't make. */
-  async plan(args: Record<string, unknown>): Promise<EditPlan> {
+  async plan(args: Record<string, unknown>, settings: ToolSettings): Promise<EditPlan> {
     const id = Arguments.text(args, "event_id");
     if (id === null) throw ToolArgumentError.missing("event_id");
     const occurrence = Arguments.localDate(args, "recurrence_id")?.date ?? null;
@@ -697,7 +697,7 @@ export class CalendarEventEditTool implements ConnectorTool {
     const changes: EventChanges = { invite: attendeesArgument(args, "add_attendees"), uninvite: [], exclude: [] };
     const title = Arguments.text(args, "title");
     if (title !== null) changes.title = title;
-    const times = editedTimes(args, current);
+    const times = editedTimes(args, current, settings.eventDuration);
     if (times !== null) {
       // Moving a series needs the occurrence the new times are for: every one moves by as much.
       if (repeats && occurrence === null) throw new ToolArgumentError("A repeating event's new start_iso or end_iso needs recurrence_id: the occurrence those times are for.");
@@ -778,8 +778,8 @@ function picksDays(rule: EventRecurrence): boolean {
 
 /** The new start, end and all-day of an edit, or null when it changes none of them. A new start
  * alone keeps the event's length, and so does a new end alone; changed between all day and timed,
- * the event lasts a day, or `calendarEventDefaultDuration`. */
-function editedTimes(args: Record<string, unknown>, current: CalendarEvent): { start: Date; end: Date; isAllDay: boolean } | null {
+ * the event lasts a day, or `eventDuration` minutes. */
+function editedTimes(args: Record<string, unknown>, current: CalendarEvent, eventDuration: number): { start: Date; end: Date; isAllDay: boolean } | null {
   const start = Arguments.localDate(args, "start_iso");
   const end = Arguments.localDate(args, "end_iso");
   const allDay = typeof args.all_day === "boolean" ? args.all_day : undefined;
@@ -800,7 +800,7 @@ function editedTimes(args: Record<string, unknown>, current: CalendarEvent): { s
       times = { start: first, end: LocalDateTime.addingDays(first, days) };
     }
   } else {
-    const length = sameKind ? current.end.getTime() - current.start.getTime() : config.calendarEventDefaultDuration;
+    const length = sameKind ? current.end.getTime() - current.start.getTime() : eventDuration * 60_000;
     if (start) times = { start: start.date, end: end ? end.date : new Date(start.date.getTime() + length) };
     else if (end) times = { start: new Date(end.date.getTime() - length), end: end.date };
     else times = { start: current.start, end: new Date(current.start.getTime() + length) };

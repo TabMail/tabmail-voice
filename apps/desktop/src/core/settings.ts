@@ -4,6 +4,7 @@
 
 import { DebugAccess } from "./backend/account.js";
 import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connectors/index.js";
+import { isEventDuration } from "./agent/connectors/settings.js";
 import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type ExcludedApp, excludedApp, isBuiltInExcludedApp, isSameApp, storedExcludedApps } from "./dictation/excludedApps.js";
@@ -30,6 +31,7 @@ const Key = {
   excludedApps: "excludedApps",
   excludedSites: "excludedSites",
   memorySizeLimit: "memorySizeLimit",
+  eventDuration: "eventDurationMinutes",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -70,6 +72,8 @@ export interface DictationSettings {
   smartDictation: boolean;
   /** The most memory may take (bytes; `memorySizeLimit`): the request is kept within it. */
   memorySizeLimit: number;
+  /** How long a new event lasts when the user gave no end (minutes; `eventDuration`). */
+  eventDuration: number;
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
@@ -314,6 +318,19 @@ export class AppSettings extends Observable {
     return config.memorySizeLimitChoices.includes(value) && this.saveOrPutBack(Key.memorySizeLimit, value);
   }
 
+  /** How long an event the user gave no end or duration for lasts (minutes): whole minutes from
+   * `config.eventDurationMin` to `config.eventDurationMax`, `config.eventDurationDefault` until the
+   * user or the agent picks another. */
+  get eventDuration(): number {
+    const stored = storedInteger(this.store, Key.eventDuration);
+    return stored !== null && isEventDuration(stored) ? stored : config.eventDurationDefault;
+  }
+
+  /** Stores `minutes` if it is in range; false (nothing stored) otherwise or when it couldn't be saved. */
+  setEventDuration(minutes: number): boolean {
+    return isEventDuration(minutes) && this.saveOrPutBack(Key.eventDuration, minutes);
+  }
+
   /** The apps the user excludes from screen reading, in the order they were added; the built-in ones
    * (`config.builtInExcludedApps`) are not among them. */
   get excludedApps(): ExcludedApp[] {
@@ -453,6 +470,7 @@ export class AppSettings extends Observable {
       learnsWords: this.learnsWords,
       smartDictation: this.smartDictation,
       memorySizeLimit: this.memorySizeLimit,
+      eventDuration: this.eventDuration,
     };
   }
 

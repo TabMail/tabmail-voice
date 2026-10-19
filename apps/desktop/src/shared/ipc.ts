@@ -5,6 +5,7 @@
 import type { AgentChat } from "../core/agent/chat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
 import { type ConnectorID, isConnectorID } from "../core/agent/connectors/index.js";
+import { isEventDuration } from "../core/agent/connectors/settings.js";
 import { type AgentToolID, isAgentToolID } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictation/controller.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/bindings.js";
@@ -104,6 +105,8 @@ export interface SettingsState {
   canLearnWords: boolean;
   /** Smart dictation: the AI cleanup of each dictation. */
   smartDictation: boolean;
+  /** How long a new event lasts when no end is given (minutes; `AppSettings.eventDuration`). */
+  eventDuration: number;
   /** The apps the user excludes from screen reading, besides the built-in ones
    * (`config.builtInExcludedApps`); shown only where the screen is read (`canExcludeApps`, macOS). */
   excludedApps: ExcludedApp[];
@@ -195,6 +198,7 @@ export type Command =
   | { type: "removeDictionaryWord"; word: string }
   | { type: "setLearnsWords"; value: boolean }
   | { type: "setSmartDictation"; value: boolean }
+  | { type: "setEventDuration"; value: number }
   /** Asks the user to pick an app, and excludes it from screen reading. */
   | { type: "excludeApp" }
   | { type: "removeExcludedApp"; bundleIdentifier: string }
@@ -305,6 +309,8 @@ export function isCommand(value: unknown): value is Command {
       return typeof command.query === "string" && command.query.length <= config.memorySearchMaxLength;
     case "setMemorySizeLimit":
       return typeof command.value === "number" && config.memorySizeLimitChoices.includes(command.value);
+    case "setEventDuration":
+      return typeof command.value === "number" && isEventDuration(command.value);
     case "removeMemory":
       return typeof command.memId === "string" && command.memId.length <= config.memoryIDMaxLength;
     case "removeExcludedApp":

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../../../src/core/backend/account.js";
 import { type AgentChat, emptyChat, type EventQuestion } from "../../../src/core/agent/chat.js";
 import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
-import type { ConnectorTool, ToolQuestion } from "../../../src/core/agent/connectors/contract.js";
+import type { ConnectorTool, ToolQuestion, ToolSettings } from "../../../src/core/agent/connectors/contract.js";
 import { AgentError, type AgentToolID, agentToolIDs, screenHiddenNote } from "../../../src/core/agent/tools.js";
 import { AudioRecorder } from "../../../src/core/audio/recorder.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
@@ -66,7 +66,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -2888,7 +2888,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0 };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions) => {
@@ -3718,18 +3718,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
             readonly connector: ConnectorID = "calendar",
           ) {}
 
-          confirmation(args: Record<string, unknown>): ToolQuestion | null {
+          /** The settings each question and each run were given. */
+          readonly askedWith: ToolSettings[] = [];
+          readonly ranWith: ToolSettings[] = [];
+
+          confirmation(args: Record<string, unknown>, _signal: AbortSignal, settings: ToolSettings): ToolQuestion | null {
             this.asked += 1;
             this.askedAbout.push(args);
+            this.askedWith.push(settings);
             return this.question;
           }
 
           /** The signal each run was given. */
           readonly signals: AbortSignal[] = [];
 
-          async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
+          async run(args: Record<string, unknown>, signal: AbortSignal, settings: ToolSettings): Promise<string> {
             this.runs.push(args);
             this.signals.push(signal);
+            this.ranWith.push(settings);
             await this.during();
             if (this.failure) throw this.failure;
             return this.result;
@@ -4216,6 +4222,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.confirmationEvent).toBeNull();
         });
 
+        /** A tool is given the settings of its request's key-down (the default event duration), for
+         * its question and its run alike: a duration changed while the request runs, as Settings or
+         * `change_setting` changes it, applies from the next request. */
+        test("a tool is given the settings of its request's key-down", async () => {
+          const tool = new FakeLoopTool();
+          tool.question = confirmationQuestion;
+          const changed = config.eventDurationChoices.find((minutes) => minutes !== config.eventDurationDefault) ?? 0;
+          const { controller, done } = await ask([tool], [calling(["example_create", '{"title":"Launch review"}']), reply(answer)], (controller) => {
+            controller.onPhaseChange = (phase) => {
+              if (phase.kind === "listening") prefs.value = { ...prefs.value, eventDuration: changed };
+            };
+          });
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          controller.answerConfirmation(true);
+          await done;
+          expect(prefs.value.eventDuration).toBe(changed);
+          expect(tool.askedWith).toEqual([{ eventDuration: config.eventDurationDefault }]);
+          expect(tool.ranWith).toEqual([{ eventDuration: config.eventDurationDefault }]);
+
+          controller.onPhaseChange = undefined;
+          tool.question = null;
+          transcription.enqueue(200, { text: toolRequest });
+          completions.enqueue(200, calling(["example_create", '{"title":"Launch party"}']));
+          completions.enqueue(200, reply(answer));
+          await holdAndRelease(controller, "agent");
+          expect(await eventually(() => tool.runs.length === 2)).toBe(true);
+          expect(tool.askedWith.at(-1)).toEqual({ eventDuration: changed });
+          expect(tool.ranWith.at(-1)).toEqual({ eventDuration: changed });
+        });
+
         /** Declined, the tool doesn't run; the model is told, and answers. */
         test("a declined tool does not run", async () => {
           const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
@@ -4445,6 +4481,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(transcription.requests).toHaveLength(2);
             expect(cleanupVars(1)).toBeUndefined();
             expect(completions.requests).toHaveLength(3);
+          });
+
+          /** A question answered aloud runs with the settings of its request's key-down, as the
+           * question was asked: a default event duration changed while it waits applies from the next
+           * request, so what runs is what the card showed. */
+          test("the call that asked runs with its request's key-down settings", async () => {
+            const tool = new FakeLoopTool();
+            tool.question = confirmationQuestion;
+            const changed = config.eventDurationChoices.find((minutes) => minutes !== config.eventDurationDefault) ?? 0;
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            prefs.value = { ...prefs.value, eventDuration: changed };
+
+            await sayAloud(controller, "Yes, go ahead.");
+            await done;
+
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+            expect(tool.askedWith).toEqual([{ eventDuration: config.eventDurationDefault }]);
+            expect(tool.ranWith).toEqual([{ eventDuration: config.eventDurationDefault }]);
           });
 
           /** The model declining for the user runs nothing, and reads that the user declined. */
