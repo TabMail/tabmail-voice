@@ -50,7 +50,7 @@ const signedIn: SettingsState = {
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
  * each command with `reply` and then pushes `after` (as the main process pushes the new state). */
-async function settingsPage(reply: CommandResult, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
+async function settingsPage(reply: CommandResult | Promise<CommandResult>, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const commands: Command[] = [];
@@ -436,7 +436,7 @@ describe("Settings page", () => {
     const clearAll = () => button("Clear All…");
     const sent = (commands: Command[]) => commands.filter((command) => command.type !== "loadMemory");
 
-    async function open(initial: SettingsState, reply: CommandResult = { error: null }): Promise<{ commands: Command[] }> {
+    async function open(initial: SettingsState, reply: CommandResult | Promise<CommandResult> = { error: null }): Promise<{ commands: Command[] }> {
       const page = await settingsPage(reply, initial, initial);
       await act(async () => button("Memory").click());
       return page;
@@ -482,6 +482,22 @@ describe("Settings page", () => {
       expect(remove.map((element) => element.textContent)).toEqual(["Remove", "Remove"]);
       await act(async () => remove[1]?.click());
       expect(sent(commands)).toEqual([{ type: "removeMemory", memId: "turn:1" }]);
+    });
+
+    test("Remove shows it is removing that request until the removal answers", async () => {
+      let answer: (result: CommandResult) => void = () => {};
+      await open(kept, new Promise<CommandResult>((resolve) => (answer = resolve)));
+      const removeButtons = () => [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Past requests"] button')];
+      await act(async () => removeButtons()[1]?.click());
+      expect(removeButtons().map((element) => [element.textContent, element.disabled])).toEqual([["Remove", false], ["Removing…", true]]);
+      await act(async () => answer({ error: null }));
+      expect(removeButtons().map((element) => [element.textContent, element.disabled])).toEqual([["Remove", false], ["Remove", false]]);
+    });
+
+    test("Reload reads memory again", async () => {
+      const { commands } = await open(kept);
+      await act(async () => button("Reload").click());
+      expect(commands).toEqual([{ type: "loadMemory" }, { type: "loadMemory" }]);
     });
 
     test("a larger size limit applies at once", async () => {

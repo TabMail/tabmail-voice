@@ -426,7 +426,7 @@ function AgentPane({ state }: { state: SettingsState }) {
 
 /** Past agent-mode requests (ADR-DESK-061), a port of Thunderbird's Chat History tab: memory used
  * against the size limit, as a bar, with the limit to choose; the requests, the newest first, with
- * a search; a remove button on each; and Clear All, confirmed in place. */
+ * a search and a reload; a remove button on each; and Clear All, confirmed in place. */
 function MemoryPane({ state }: { state: SettingsState }) {
   const memory = state.memory;
   const [draft, setDraft] = useState("");
@@ -434,10 +434,17 @@ function MemoryPane({ state }: { state: SettingsState }) {
   /** A lower size limit chosen, waiting to be confirmed: it removes the oldest requests for good. */
   const [confirmingLimit, setConfirmingLimit] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  /** The request being removed: its button says so until the removal has answered. */
+  const [removing, setRemoving] = useState<string | null>(null);
   const run = async (command: Command) => {
     setFailure(null);
     const { error } = await send(command);
     setFailure(error);
+  };
+  const remove = async (memId: string) => {
+    setRemoving(memId);
+    await run({ type: "removeMemory", memId });
+    setRemoving(null);
   };
   const search = (event: FormEvent) => {
     event.preventDefault();
@@ -518,6 +525,10 @@ function MemoryPane({ state }: { state: SettingsState }) {
             onChange={(event) => setDraft(event.target.value)}
           />
           <button type="submit">Search</button>
+          {/* Requests kept while the section is open are listed once it is read again. */}
+          <button type="button" onClick={() => void run({ type: "loadMemory" })}>
+            Reload
+          </button>
         </form>
         {failure !== null && (
           <div className="row">
@@ -551,8 +562,8 @@ function MemoryPane({ state }: { state: SettingsState }) {
                     {request !== "" && <span className="memory-request">{request}</span>}
                     <span className="memory-reply">{agent}</span>
                   </div>
-                  <button className="link" aria-label={`Remove the request from ${memoryDate(entry.dateMs)}`} onClick={() => void run({ type: "removeMemory", memId: entry.memId })}>
-                    Remove
+                  <button className="link" aria-label={`Remove the request from ${memoryDate(entry.dateMs)}`} disabled={removing === entry.memId} onClick={() => void remove(entry.memId)}>
+                    {removing === entry.memId ? "Removing…" : "Remove"}
                   </button>
                 </li>
               );
