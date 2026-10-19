@@ -12,6 +12,9 @@ import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
+import type { MemoryPageState } from "../../src/core/memory/page.js";
+import { memoryRow } from "../../src/core/memory/store.js";
+import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels } from "../../src/shared/ipc.js";
 import { eventually } from "../support/stubs.js";
 
@@ -67,6 +70,10 @@ const app = vi.hoisted(() => ({
   scripts: [] as { source: string; args: readonly string[] }[],
   /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
   appData: null as string | null,
+  /** `app.getPath("userData")`, the app's own folder (memory's is in it). */
+  userData: "/nonexistent",
+  /** Memory as the app made it: a stand-in that keeps it in a list. */
+  memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string }; stops: number }) | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
@@ -106,7 +113,7 @@ vi.mock("electron", async () => {
       focus() {},
       requestSingleInstanceLock: () => true,
       whenReady: () => Promise.resolve(),
-      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
+      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
       getApplicationNameForProtocol: () => app.emailHandler,
@@ -334,6 +341,22 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     }
   },
 }));
+vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
+  const { FakeMemory } = await import("../support/fakeMemory.js");
+  return {
+    ...(await importOriginal<typeof import("../../src/main/native/memoryHelper.js")>()),
+    MemoryHelper: class extends FakeMemory {
+      stops = 0;
+      constructor(readonly options: { directory: string }) {
+        super();
+        app.memory = this;
+      }
+      stop() {
+        this.stops += 1;
+      }
+    },
+  };
+});
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
@@ -504,6 +527,9 @@ afterEach(() => {
   app.scripts = [];
   if (app.appData !== null) rmSync(app.appData, { recursive: true, force: true });
   app.appData = null;
+  if (app.userData !== "/nonexistent") rmSync(app.userData, { recursive: true, force: true });
+  app.userData = "/nonexistent";
+  app.memory = null;
   app.fullName = null;
   app.trayActions = null;
   app.trayState = null;
@@ -1575,7 +1601,91 @@ describe("main process wiring", () => {
     expect(ended()).toBe(2);
   });
 
-  /** ADR-DESK-049: what's new about long dictations is a tip shown once at a dictation, to a user
+  /** Settings › Memory (ADR-DESK-061): memory is in the app's own folder, read only once something
+   * was kept there, and each command of the section reaches it. */
+  test("Settings › Memory's commands reach memory in the app's own folder", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const directory = join(app.userData, "memory");
+    expect(memory.options.directory).toBe(directory);
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { memory: MemoryPageState }).memory;
+    // The Settings window learns the page's state only by push.
+    const pushed: MemoryPageState[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        if (name === "settings") pushed.push((state as { memory: MemoryPageState }).memory);
+      },
+    ]);
+    const now = Date.now();
+    memory.rows.push(memoryRow("asked about Friday", "the review", now - 1_000, "1"), memoryRow("other", "reply", now - 2_000, "2"));
+
+    // Nothing kept on disk yet: nothing is asked of memory.
+    await send({ type: "loadMemory" });
+    expect(page().usage).toEqual({ docs: 0, usedBytes: 0 });
+    expect(memory.searches).toEqual([]);
+
+    const database = memoryFolders(directory).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await send({ type: "loadMemory" });
+    expect(page().usage?.docs).toBe(2);
+    expect(pushed.at(-1)?.usage?.docs).toBe(2);
+    expect(page().entries.map((entry) => entry.memId)).toEqual(["turn:1", "turn:2"]);
+
+    await send({ type: "searchMemory", query: "friday" });
+    expect(memory.searches.at(-1)?.query).toBe("friday");
+    expect(page().entries.map((entry) => entry.memId)).toEqual(["turn:1"]);
+
+    const trim = vi.spyOn(memory, "trim");
+    const limit = config.memorySizeLimitChoices[0] ?? 0;
+    await send({ type: "setMemorySizeLimit", value: limit });
+    expect(app.stored.get("memorySizeLimit")).toBe(limit);
+    expect(trim).toHaveBeenCalledWith(limit);
+
+    await send({ type: "removeMemory", memId: "turn:2" });
+    expect(memory.rows.map((row) => row.memId)).toEqual(["turn:1"]);
+
+    await send({ type: "clearMemory" });
+    expect(memory.rows).toEqual([]);
+    expect(page().status).toBe("Memory cleared.");
+    expect(pushed.at(-1)?.status).toBe("Memory cleared.");
+  });
+
+  /** Memory is the computer user's, not the account's (ADR-DESK-061): signing out and signing in
+   * with another account keep it, in the same folder; quitting ends its helper. */
+  test("memory stays across sign-out and another account, and its helper ends at quit", async () => {
+    const signIn = (id: string, email: string) => {
+      app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id, email } });
+    };
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    signIn("user", "tester@example.com");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const directory = join(app.userData, "memory");
+    const database = memoryFolders(directory).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "kept");
+    memory.rows.push(memoryRow("asked about Friday", "the review", Date.now() - 1_000, "1"));
+    const clear = vi.spyOn(memory, "clear");
+
+    expect(await send({ type: "signOut" })).toEqual({ error: null });
+    expect(clear).not.toHaveBeenCalled();
+    expect(memory.rows.map((row) => row.memId)).toEqual(["turn:1"]);
+    expect(readFileSync(database, "utf8")).toBe("kept");
+
+    signIn("other-user", "other@example.com");
+    await launch("darwin");
+    expect(app.memory?.options.directory).toBe(directory);
+    expect(readFileSync(database, "utf8")).toBe("kept");
+
+    app.appEvents.get("before-quit")?.({ preventDefault() {} });
+    await vi.waitFor(() => expect(app.memory?.stops).toBe(1));
+  });
+
+  /** ADR-DESK-061 (ADR-DESK-049's tip): what's new about memory is a tip shown once at a dictation, to a user
    * who set the app up before; one still in the welcome wizard reads it on the consent page, and
    * never gets the tip. Nothing is shown at launch. */
   test.each([
@@ -1585,7 +1695,7 @@ describe("main process wiring", () => {
     app.stored.set("hasFinishedWelcome", finishedWelcome);
     await launch("darwin");
     expect(app.dialogs).toEqual([]);
-    expect(app.stored.get("tip.longDictations.learned") === true).toBe(!tipShows);
+    expect(app.stored.get("tip.agentMemory.learned") === true).toBe(!tipShows);
   });
 
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {

@@ -23,6 +23,7 @@ import { TranscriptionClient } from "../core/backend/transcription.js";
 import * as config from "../core/config.js";
 import { CorrectionWatch } from "../core/dictionary/correctionWatch.js";
 import { DictationController, isResting } from "../core/dictation/controller.js";
+import { MemoryPage } from "../core/memory/page.js";
 import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { liveTransport } from "../core/backend/http.js";
@@ -55,6 +56,7 @@ import {
 import { SessionAudioCapture } from "./audioCapture.js";
 import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
+import { MemoryHelper, memoryFolders } from "./native/memoryHelper.js";
 import { FieldReader } from "./native/fieldReader.js";
 import { ScreenReader } from "./native/screenReader.js";
 import { NativeMicrophone } from "./native/microphone.js";
@@ -187,6 +189,13 @@ function launch(): void {
   }
   // The microphone has a helper to itself on every platform, so nothing another helper waits on
   // can hold up or end a recording; it is started afresh after each dictation (ADR-DESK-032).
+  // Memory, kept by Thunderbird's search helper built for this app, in this app's own folder: per
+  // user of this computer, whoever is signed in (ADR-DESK-061).
+  const memoryDirectory = join(app.getPath("userData"), "memory");
+  const memory = new MemoryHelper({ executable: join(helpers, process.platform === "win32" ? "voice-memory.exe" : "voice-memory"), directory: memoryDirectory });
+  // Settings › Memory reads nothing until memory's database exists: the helper creates it at its
+  // first start, when agent mode is first chosen.
+  const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
 
   let wizard: WelcomeWizard | null = null;
@@ -272,6 +281,7 @@ function launch(): void {
     // Learn corrections locally, the field read by voice-field-reader (ADR-DESK-038).
     corrections: nativeAudio ? new CorrectionWatch(fieldReader, (words) => settings.learnWords(words)) : undefined,
     useWords: (texts) => settings.useWords(texts),
+    memory,
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -419,6 +429,7 @@ function launch(): void {
       debugMode: settings.debugMode,
       version: app.getVersion(),
       update: updater?.state ?? null,
+      memory: memoryPage.state,
     };
   }
 
@@ -758,6 +769,7 @@ function launch(): void {
   settings.observe(followDebugMode);
   account.observe(followDebugMode);
   permissions.observe(pushSettingsWindows);
+  memoryPage.observe(() => windows.push("settings"));
 
   // The hotkey's event tap can't be created until Accessibility is granted: configure again once
   // the grant lands.
@@ -846,6 +858,16 @@ function launch(): void {
       case "setSmartDictation":
         settings.smartDictation = command.value;
         return;
+      case "loadMemory":
+        return memoryPage.load();
+      case "searchMemory":
+        return memoryPage.load(command.query);
+      case "setMemorySizeLimit":
+        return memoryPage.setSizeLimit(command.value);
+      case "removeMemory":
+        return memoryPage.remove(command.memId);
+      case "clearMemory":
+        return memoryPage.clear();
       case "excludeApp":
         return excludePickedApp();
       case "removeExcludedApp":
@@ -971,6 +993,7 @@ function launch(): void {
         screenReaderHelper.stop();
         fieldReaderHelper.stop();
         microphoneHelper.stop();
+        memory.stop();
         accessibilityActivator?.stop();
         return logFile.flush();
       })
@@ -992,7 +1015,7 @@ function launch(): void {
   // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
   // says what's new, so the tip that tells a user who set the app up before never shows to this one.
   if (!settings.hasFinishedWelcome) {
-    tips.markLearned("longDictations");
+    tips.markLearned("agentMemory");
     showWelcome();
   }
 }

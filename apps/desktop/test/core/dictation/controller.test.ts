@@ -29,6 +29,8 @@ import { TipBook, tipDetails } from "../../../src/core/onboarding/tips.js";
 import { CancellationError, sleep } from "../../../src/core/util/timeout.js";
 import { type HTTPTransport, liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import { FakeThunderbird } from "../../support/fakeThunderbird.js";
+import { memoryDate, memoryRow } from "../../../src/core/memory/store.js";
+import { FakeMemory } from "../../support/fakeMemory.js";
 import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
 import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
@@ -64,7 +66,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -115,6 +117,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
   let tipStore: MemoryStore;
   /** The texts each dictation marked its dictionary words used in (`useWords`). */
   let used: string[][];
+  /** What agent mode kept, and what its memory tools read. */
+  let memory: FakeMemory;
 
   beforeEach(() => {
     transcription = new StubTransport();
@@ -126,8 +130,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
     prefs = { value: defaultSettings() };
     tipStore = new MemoryStore();
     // Told what's new already, unless a test starts afresh: it would take the first tip's turn.
-    new TipBook(tipStore).markLearned("longDictations");
+    new TipBook(tipStore).markLearned("agentMemory");
     used = [];
+    memory = new FakeMemory();
   });
 
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
@@ -178,6 +183,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       connectorTools: options.connectorTools ?? [],
       corrections: options.corrections,
       useWords: (texts) => used.push([...texts]),
+      memory,
     });
     return { controller, pastes, copies, history, clipboardSaves: () => clipboardSaves };
   }
@@ -2388,7 +2394,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases).toContainEqual(running("edit"));
       expect(completions.requests).toHaveLength(1);
       expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
-      expect(completions.body(0).available_tools).toEqual(["edit"]);
+      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "edit"]);
       expect(completionsVars(0)?.user_request).toBe(request);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
     });
@@ -2429,6 +2435,140 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(used).toEqual([["write that we ship on Friday"]]);
     });
 
+    /** Memory (ADR-DESK-061): every agent-mode request is kept with what came of it, the text a
+     * writing tool wrote with where it went, or the reply; plain dictation never is. */
+    describe("memory", () => {
+      const keptContent = () => memory.rows.map((row) => row.content);
+
+      test.each<[string, string, string]>([
+        ["compose", "", "Pasted at the cursor in Example Notes:\nWe ship on Friday."],
+        ["edit", "Ship it Friday or else.", "Replaced the selection in Example Notes:\nWe ship on Friday."],
+      ])("keeps a request %s ended with the text and where it went", async (tool, selected, agent) => {
+        transcription.enqueue(200, { text: request });
+        completions.enqueue(200, writes(tool as "compose" | "edit", "We ship on Friday."));
+        const before = Date.now();
+        await carryOut(selectionScreen(selected));
+        expect(await eventually(() => memory.rows.length === 1)).toBe(true);
+        expect(keptContent()).toEqual([`[USER]: ${request}\n\n[AGENT]: ${agent}`]);
+        const [row] = memory.rows;
+        expect(row?.sessionId).toBe("voice_agent");
+        expect(row?.memId).toMatch(/^turn:[0-9a-f-]{36}$/);
+        expect(row?.dateMs).toBeGreaterThanOrEqual(before);
+        expect(memory.limits).toEqual([config.memorySizeLimitDefault]);
+      });
+
+      /** Compose and Edit look up memory too, with Answer off: what they write can reuse an earlier
+       * exchange. */
+      test.each([["compose", ""], ["edit", "old selection"]] as const)("%s recalls earlier exchanges with Answer off", async (tool, selected) => {
+        prefs.value = { ...prefs.value, enabledTools: [tool] };
+        const at = Date.now() - 24 * 60 * 60 * 1_000;
+        const earlier = memoryRow("launch budget", "The earlier budget was 500.", at, "earlier");
+        memory.rows.push(earlier);
+        transcription.enqueue(200, { text: "reuse my earlier launch budget" });
+        completions.enqueue(200, Fixtures.toolCalls([{ id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) }]));
+        completions.enqueue(200, Fixtures.toolCalls([{ id: "read", name: "memory_read", arguments: JSON.stringify({ timestamp: at }) }]));
+        completions.enqueue(200, writes(tool, "The launch budget is 500."));
+        const { pastes } = await carryOut(selectionScreen(selected));
+        expect(pastes).toEqual(["The launch budget is 500."]);
+        expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", tool]);
+        const toolResults = (i: number) =>
+          (completions.body(i).conversation_state as { harmony_messages: { role: string; content: string }[] }).harmony_messages.filter((m) => m.role === "tool").map((m) => m.content);
+        const searched = JSON.parse(toolResults(1)[0] ?? "{}") as Record<string, unknown>;
+        expect(searched).toMatchObject({ totalItems: 1 });
+        expect(searched.results).toContain("launch budget");
+        expect(JSON.parse(toolResults(2).at(-1) ?? "null")).toContain(earlier.content);
+        expect(await eventually(() => memory.rows.length === 2)).toBe(true);
+        expect(memory.rows.find((row) => row.memId !== earlier.memId)?.content).toBe(
+          `[USER]: reuse my earlier launch budget\n\n[AGENT]: ${tool === "edit" ? "Replaced the selection" : "Pasted at the cursor"} in Example Notes:\nThe launch budget is 500.`,
+        );
+      });
+
+      test("keeps an answer with its reply", async () => {
+        prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs] };
+        transcription.enqueue(200, { text: "what does this error mean" });
+        completions.enqueue(200, reply("It means the function is not defined yet."));
+        const { controller } = await carryOut(selectionScreen(""));
+        controller.closeChat();
+        expect(await eventually(() => memory.rows.length === 1)).toBe(true);
+        expect(keptContent()).toEqual(["[USER]: what does this error mean\n\n[AGENT]: It means the function is not defined yet."]);
+      });
+
+      test("keeps two requests as two rows", async () => {
+        transcription.enqueue(200, { text: "write we ship friday" });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        const { controller } = await carryOut(selectionScreen(""));
+        transcription.enqueue(200, { text: "write we ship monday" });
+        completions.enqueue(200, writes("compose", "We ship on Monday."));
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => memory.rows.length === 2)).toBe(true);
+        expect(new Set(memory.rows.map((row) => row.memId)).size).toBe(2);
+      });
+
+      test("starts the memory helper as agent mode starts, and never for plain dictation", async () => {
+        transcription.enqueue(200, { text: "hello there" });
+        const { pasted } = await dictate();
+        expect(pasted).toEqual(["hello there"]);
+        expect(memory.prepared).toBe(0);
+        expect(await throughout(100, () => memory.rows.length === 0)).toBe(true);
+
+        transcription.enqueue(200, { text: request });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        await carryOut(selectionScreen(""));
+        expect(memory.prepared).toBeGreaterThanOrEqual(1);
+      });
+
+      /** Agent mode chosen at key-down (a chat follow-up, or the agent hotkey) or by the second tap of
+       * a double tap starts the memory helper then too, not only Space during the hold. */
+      test.each(["startAgent", "startAgentHandsFree", "reused"] as const)("%s starts the memory helper as agent mode starts", async (action) => {
+        const { controller } = makeController({ capture: new CountingCapture(true) });
+        controller.captureContext = async () => selectionScreen("");
+        if (action === "reused") {
+          controller.handle("start");
+          controller.handle("finish");
+          expect(memory.prepared).toBe(0);
+          controller.handle("startAgentHandsFree");
+        } else controller.handle(action);
+        expect(controller.mode).toBe("agent");
+        expect(memory.prepared).toBe(1);
+        controller.handle("cancel");
+        expect(await eventually(() => settled(controller))).toBe(true);
+      });
+
+      test("a request whose text couldn't be pasted keeps nothing", async () => {
+        transcription.enqueue(200, { text: request });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        await carryOut(selectionScreen(""), undefined, () => {}, {
+          paste: async () => {
+            throw new Error("the paste failed");
+          },
+        });
+        expect(await throughout(100, () => memory.rows.length === 0)).toBe(true);
+      });
+
+      test("a request that pasted nothing keeps nothing", async () => {
+        transcription.enqueue(200, { text: request });
+        completions.enqueue(200, Fixtures.toolCalls([]));
+        await carryOut(selectionScreen(""));
+        expect(await throughout(100, () => memory.rows.length === 0)).toBe(true);
+      });
+
+      test("memory that can't be kept is logged, and the paste stands", async () => {
+        const errors: string[] = [];
+        configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
+        try {
+          memory.failing = true;
+          transcription.enqueue(200, { text: request });
+          completions.enqueue(200, writes("compose", "We ship on Friday."));
+          const { controller, pastes } = await carryOut(selectionScreen(""));
+          expect(pastes).toEqual(["We ship on Friday."]);
+          expect(controller.phase).toEqual(idle);
+          expect(await eventually(() => errors.includes("DictationController: memory not kept: HelperError.exited(memory)"))).toBe(true);
+        } finally {
+          configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+        }
+      });
+    });
+
     /** The selection alone decides between Edit and Compose, as the bubbles showed it: the other
      * writing tool is not offered (`available_tools`), and a call to it anyway is no tool the app has:
      * it pastes nothing, and the loop goes on. */
@@ -2443,7 +2583,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(selected), new FakeThunderbird());
 
       expect(controller.tools).toEqual([tool]);
-      expect(completions.body(0).available_tools).toEqual([tool]);
+      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", tool]);
       expect(completions.requests).toHaveLength(2);
       expect(JSON.stringify(completions.body(1).conversation_state)).toContain(`there is no tool named ${other}`);
       expect(pastes).toEqual(["Here."]);
@@ -2748,7 +2888,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions) => {
@@ -2762,6 +2902,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(reads).toBe(1);
       expect(completionsVars(0)?.user_name).toBe("Alex Example");
       expect(transcription.body(0).vocabulary).toBeUndefined();
+      // Kept within the size limit of key-down.
+      expect(await eventually(() => memory.limits.length === 1)).toBe(true);
+      expect(memory.limits).toEqual([config.memorySizeLimitDefault]);
 
       controller.onPhaseChange = undefined;
       transcription.enqueue(200, { text: "write we ship monday" });
@@ -2773,6 +2916,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(reads).toBe(1);
       expect(completionsVars(1)?.user_name).toBe("Sam Example");
       expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
+      expect(await eventually(() => memory.limits.length === 2)).toBe(true);
+      expect(memory.limits).toEqual([config.memorySizeLimitDefault, config.memorySizeLimitChoices[0]]);
     });
 
     /** The bubbles show the tools switched on at key-down, the ones the request is offered: a tool
@@ -3654,6 +3799,94 @@ describe("DictationController", { timeout: 20_000 }, () => {
           return { controller: made, done, chatChanges };
         }
 
+        /** The memory tools run on this computer, in the answer's loop and the writing tools' alike:
+         * the model reads what Thunderbird's tools of the same names answer. */
+        describe("memory tools", () => {
+          test("memory_search finds earlier requests, and memory_read reads around one", async () => {
+            const dateMs = Date.now() - 24 * 60 * 60 * 1_000;
+            memory.rows.push(memoryRow("plan the launch review", "Pasted at the cursor:\nLaunch review on Friday.", dateMs, "earlier"));
+            const seen: (string | null | undefined)[] = [];
+            const { done } = await ask(
+              [],
+              [calling(["memory_search", JSON.stringify({ query: "launch review" })]), calling(["memory_read", JSON.stringify({ timestamp: dateMs })]), reply("It was on Friday.")],
+              (controller) => controller.observe(() => seen.push(controller.chat?.activity)),
+            );
+            await done;
+            const searched = JSON.parse(told(1)[0] ?? "{}") as Record<string, unknown>;
+            expect(searched).toMatchObject({ page: 1, totalPages: 1, totalItems: 1 });
+            expect(searched.results).toContain(`[timestamp: ${dateMs}]`);
+            expect(searched.results).toContain("plan the launch review");
+            expect(JSON.parse(told(2)[0] ?? "null")).toBe(`--- Conversation from ${memoryDate(dateMs)} ---\n[USER]: plan the launch review\n\n[AGENT]: Pasted at the cursor:\nLaunch review on Friday.`);
+            expect(seen).toContain(config.memoryToolProgressLabel);
+            expect(memory.searches).toEqual([{ query: "launch review", from: "", to: "", limit: Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax) }]);
+          });
+
+          test("each request searches memory afresh, so a search after Clear All finds nothing", async () => {
+            memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
+            const search = calling(["memory_search", JSON.stringify({ query: "launch review" })]);
+            const { done } = await ask([], [search, reply("It was on Friday.")]);
+            const { controller } = await done;
+            expect(JSON.parse(told(1)[0] ?? "{}")).toMatchObject({ totalItems: 1 });
+            controller.closeChat();
+            // Memory emptied, as Clear All leaves it; the next request asks the same.
+            memory.rows.length = 0;
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, search);
+            completions.enqueue(200, reply("Nothing kept."));
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => memory.searches.length === 2 && completions.requests.length === 4)).toBe(true);
+            expect(JSON.parse(told(3)[0] ?? "{}")).toMatchObject({ totalItems: 0 });
+          });
+
+          /** A canceled request's memory search ends late: it clears nothing of the next request's
+           * chat window, whose own tool is still running. */
+          test("a canceled request's memory search leaves the next request's tool showing", async () => {
+            const searching = deferred<void>();
+            const searched = deferred<void>();
+            const search = memory.search.bind(memory);
+            memory.search = async (request) => {
+              searching.resolve();
+              await searched.promise;
+              return search(request);
+            };
+            const next = new FakeLoopTool("example_read", "Checking your calendar");
+            const nextDone = deferred<void>();
+            next.during = () => nextDone.promise;
+            const { controller, done } = await ask([next], [calling(["memory_search", JSON.stringify({ query: "launch" })])]);
+            await searching.promise;
+            controller.handle("cancel");
+            await done;
+            transcription.enqueue(200, { text: "what is on today" });
+            completions.enqueue(200, calling(["example_read", "{}"]));
+            completions.enqueue(200, reply("Nothing today."));
+
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => next.runs.length === 1)).toBe(true);
+            expect(controller.chat?.activity).toBe("Checking your calendar");
+            searched.resolve();
+            await sleep(100);
+
+            expect(controller.chat?.activity).toBe("Checking your calendar");
+            nextDone.resolve();
+            expect(await eventually(() => controller.chat?.turns.length === 1)).toBe(true);
+          });
+
+          test("arguments that aren't a JSON object are refused without reading memory", async () => {
+            const { done } = await ask([], [calling(["memory_search", "[1]"]), reply("Sorry.")]);
+            await done;
+            expect(told(1)).toEqual(["Error: the arguments were not a JSON object."]);
+            expect(memory.searches).toEqual([]);
+          });
+
+          test("a memory that can't be read tells the model so, and the loop goes on", async () => {
+            memory.failing = true;
+            const { done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })]), reply("I couldn't look that up.")]);
+            const { controller } = await done;
+            expect(JSON.parse(told(1)[0] ?? "{}")).toEqual({ error: "memory search failed" });
+            expect(controller.chat?.turns.at(-1)?.reply).toBe("I couldn't look that up.");
+          });
+        });
+
         test("a newer conversation survives late preparation from the previous chat", async () => {
           const ready = deferred<string | null>();
           let preparing = false;
@@ -3757,7 +3990,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           expect(tool.runs).toEqual([{ title: "Launch review", day: "friday", hour: 10.5, note: null }]);
           expect(whileRunning.map((chat) => [chat?.pendingRequest, chat?.activity, chat?.turns])).toEqual([[toolRequest, tool.progressLabel, []]]);
-          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create"]);
+          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read"]);
           expect(completions.body(0).disable_tools).toBe(false);
           expect(told(1)).toEqual(["Added."]);
           expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer }]);
@@ -3870,7 +4103,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
           await done;
 
-          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read"]);
+          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read"]);
           expect(completions.body(0).web_search_enabled).toBe(false);
           expect(reminders.runs).toEqual([]);
           expect(calendar.runs).toEqual([{}]);
@@ -3891,7 +4124,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
           await done;
 
-          expect(completions.body(0).available_tools).toEqual(["compose"]);
+          expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "compose"]);
           expect(calendar.runs).toEqual([]);
           expect(told(1)).toEqual(["Error: there is no tool named example_read."]);
           expect(pasted).toEqual(["I'm free at 3."]);
@@ -3908,7 +4141,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
           await done;
 
-          expect(completions.body(0).available_tools).toEqual(webOn ? ["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read"] : ["date_to_day", "time_delta", "confirmation_answer", "example_read"]);
+          expect(completions.body(0).available_tools).toEqual(webOn ? ["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "memory_search", "memory_read"] : ["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read"]);
           expect(completions.body(0).web_search_enabled).toBe(webOn);
         });
 
@@ -4244,6 +4477,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
             expect(tool.runs).toEqual([]);
             expect(told(rounds.length - 1).at(-1)).toBe(config.confirmationToolNothingWaiting);
+          });
+
+          /** A spoken answer is for the model's very next call: memory read in between (text kept from
+           * earlier requests) uses it up, so the confirmation after runs nothing. */
+          test.each([
+            ["memory_search", { query: "launch review" }],
+            ["memory_read", { timestamp: Date.now() - 24 * 60 * 60 * 1_000 }],
+          ])("the model's confirmation after a %s call does nothing", async (name, args) => {
+            memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling([name, JSON.stringify(args)]), calling(confirming), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Yes, add it.");
+            await done;
+
+            expect(tool.runs).toEqual([]);
+            expect(told(3).at(-1)).toBe(config.confirmationToolNothingWaiting);
           });
 
           /** One spoken answer is one answer: the model's tool a second time does nothing. */
@@ -5390,7 +5641,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Added it."]);
           expect(controller.chat?.closesAt).toBeNull();
           expect(chatChanges).toEqual([true]);
-          expect(completions.body(2).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "compose"]);
+          expect(completions.body(2).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read", "compose"]);
         });
 
         /** A chat window touched and then closed leaves the next one untouched: it times out. */
@@ -5444,20 +5695,20 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
     });
 
-    /** What's new about long dictations (ADR-DESK-049) is a tip, first in line, shown once (owner,
+    /** What's new (now memory, ADR-DESK-061; the tip of ADR-DESK-049) is a tip, first in line, shown once (owner,
      * 2026-10-03: "an ordinary tooltip that shows with high priority only once"). */
     test("the what's-new tip shows first at the next hold, once, then the hold's tips", async () => {
       tipStore = new MemoryStore();
       const { controller } = makeController({ capture: new CountingCapture(true) });
       const whatsNewDuration = 300;
-      controller.tipDisplayDuration = (tip) => (tip === "longDictations" ? whatsNewDuration : 60_000);
+      controller.tipDisplayDuration = (tip) => (tip === "agentMemory" ? whatsNewDuration : 60_000);
 
       controller.handle("start");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
-      expect(controller.tip).toBe("longDictations");
+      expect(controller.tip).toBe("agentMemory");
       expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       controller.handle("cancel");
-      expect(new TipBook(tipStore).isEligible("longDictations")).toBe(false);
+      expect(new TipBook(tipStore).isEligible("agentMemory")).toBe(false);
 
       controller.handle("start");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
@@ -5471,13 +5722,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       tipStore = new MemoryStore();
       const { controller } = makeController({ capture: new CountingCapture(true) });
       const whatsNewDuration = 300;
-      controller.tipDisplayDuration = (tip) => (tip === "longDictations" ? whatsNewDuration : tipDetails[tip].displayDuration);
+      controller.tipDisplayDuration = (tip) => (tip === "agentMemory" ? whatsNewDuration : tipDetails[tip].displayDuration);
 
       controller.handle("startHandsFree");
-      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "longDictations")).toBe(true);
+      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "agentMemory")).toBe(true);
       controller.handle("listenHandsFree");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
-      expect(controller.tip).toBe("longDictations");
+      expect(controller.tip).toBe("agentMemory");
       expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
       controller.handle("cancel");
     });

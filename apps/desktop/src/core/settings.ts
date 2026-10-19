@@ -11,7 +11,7 @@ import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dict
 import { type DictionaryEntry, dictionaryWord, isSameWord, leastRecentlyUsedLearned, nextUse, prioritizedWords, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { log } from "./log.js";
-import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
+import { type KeyValueStore, storedBool, storedInteger, storedString } from "./util/keyValueStore.js";
 import { Observable } from "./util/observable.js";
 
 const Key = {
@@ -29,6 +29,7 @@ const Key = {
   smartDictation: "smartDictation",
   excludedApps: "excludedApps",
   excludedSites: "excludedSites",
+  memorySizeLimit: "memorySizeLimit",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -67,6 +68,8 @@ export interface DictationSettings {
   /** Whether the dictation asks for the backend's cleanup (and a long dictation for its final polish);
    * off, the transcript is pasted as heard. */
   smartDictation: boolean;
+  /** The most memory may take (bytes; `memorySizeLimit`): the request is kept within it. */
+  memorySizeLimit: number;
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
@@ -298,6 +301,19 @@ export class AppSettings extends Observable {
     this.write(Key.smartDictation, value);
   }
 
+  /** The most memory may take on this computer (bytes): one of `config.memorySizeLimitChoices`,
+   * `config.memorySizeLimitDefault` until the user picks another. When memory reaches it, the oldest
+   * exchanges are removed first (ADR-DESK-061). */
+  get memorySizeLimit(): number {
+    const stored = storedInteger(this.store, Key.memorySizeLimit);
+    return stored !== null && config.memorySizeLimitChoices.includes(stored) ? stored : config.memorySizeLimitDefault;
+  }
+
+  /** Stores `value` if Settings offers it; false (nothing stored) otherwise. */
+  setMemorySizeLimit(value: number): boolean {
+    return config.memorySizeLimitChoices.includes(value) && this.saveOrPutBack(Key.memorySizeLimit, value);
+  }
+
   /** The apps the user excludes from screen reading, in the order they were added; the built-in ones
    * (`config.builtInExcludedApps`) are not among them. */
   get excludedApps(): ExcludedApp[] {
@@ -311,7 +327,7 @@ export class AppSettings extends Observable {
     const apps = this.excludedApps;
     if (isBuiltInExcludedApp(app.bundleIdentifier, this.builtInExcludedApps) || apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return "added";
     if (apps.length >= config.exclusionsMax) return "full";
-    return this.saveExclusions(Key.excludedApps, [...apps, app]) ? "added" : "unsaved";
+    return this.saveOrPutBack(Key.excludedApps, [...apps, app]) ? "added" : "unsaved";
   }
 
   /** Lets the screen be read in an app the user excluded again. A built-in one stays excluded.
@@ -319,15 +335,16 @@ export class AppSettings extends Observable {
   removeExcludedApp(bundleIdentifier: string): boolean {
     const apps = this.excludedApps;
     const kept = apps.filter((app) => !isSameApp(app.bundleIdentifier, bundleIdentifier));
-    return kept.length === apps.length || this.saveExclusions(Key.excludedApps, kept);
+    return kept.length === apps.length || this.saveOrPutBack(Key.excludedApps, kept);
   }
 
-  /** Writes a list of exclusions and tells of the change. When the file could not be written the
-   * list is put back as it was and false is returned: what is excluded is what is saved, so nothing
-   * is excluded only until the app quits (owner, 2026-10-01). */
-  private saveExclusions(key: string, list: unknown[]): boolean {
+  /** Writes a setting and tells of the change. When the file could not be written the setting is put
+   * back as it was and false is returned: what applies is what is saved, so nothing is excluded only
+   * until the app quits (owner, 2026-10-01), and memory isn't trimmed to a limit that a relaunch
+   * forgets. */
+  private saveOrPutBack(key: string, value: unknown): boolean {
     const before = this.store.get(key);
-    if (this.store.set(key, list)) {
+    if (this.store.set(key, value)) {
       this.changed();
       return true;
     }
@@ -349,7 +366,7 @@ export class AppSettings extends Observable {
     const sites = this.excludedSites;
     if (isBuiltInExcludedSite(site) || sites.includes(site)) return "added";
     if (sites.length >= config.exclusionsMax) return "full";
-    return this.saveExclusions(Key.excludedSites, [...sites, site]) ? "added" : "unsaved";
+    return this.saveOrPutBack(Key.excludedSites, [...sites, site]) ? "added" : "unsaved";
   }
 
   /** Lets the screen be read on a website the user excluded again. A built-in one stays excluded.
@@ -357,7 +374,7 @@ export class AppSettings extends Observable {
   removeExcludedSite(host: string): boolean {
     const sites = this.excludedSites;
     const kept = sites.filter((site) => site !== host.toLowerCase());
-    return kept.length === sites.length || this.saveExclusions(Key.excludedSites, kept);
+    return kept.length === sites.length || this.saveOrPutBack(Key.excludedSites, kept);
   }
 
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
@@ -435,6 +452,7 @@ export class AppSettings extends Observable {
       dictionary: prioritizedWords(this.dictionary),
       learnsWords: this.learnsWords,
       smartDictation: this.smartDictation,
+      memorySizeLimit: this.memorySizeLimit,
     };
   }
 

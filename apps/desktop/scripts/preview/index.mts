@@ -15,6 +15,8 @@ import type { SettingsState } from "../../src/shared/ipc.js";
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
+/** `config.memorySizeLimitDefault`. */
+const gigabyte = 1_024 * 1_024 * 1_024;
 const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
@@ -89,7 +91,22 @@ const settings = {
   userName: "Alex Example",
   suggestedName: "Alex Example",
   enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
+  memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
 } satisfies SettingsState;
+/** Settings › Memory with requests kept: an answer, a Compose, and an older Edit, the newest first. */
+const memory = {
+  sizeLimit: gigabyte,
+  usage: { docs: 3, usedBytes: 2_000_000 },
+  unavailable: false,
+  query: "",
+  entries: [
+    { memId: "turn:3", dateMs: Date.now() - 25 * 60_000, content: "[USER]: What's on Friday?\n\n[AGENT]: Friday has two things: the launch review at 10:00, and team lunch at 12:30 at the usual place. Want me to add a reminder?" },
+    { memId: "turn:2", dateMs: Date.now() - 3 * 3_600_000, content: "[USER]: Tell Sam I'll send the slides tonight\n\n[AGENT]: Pasted at the cursor in Messages:\nHi Sam, I'll send the slides over tonight." },
+    { memId: "turn:1", dateMs: Date.now() - 2 * 86_400_000, content: "[USER]: Make this more formal\n\n[AGENT]: Replaced the selection in Mail:\nThank you for your patience. I have attached the revised proposal for your review and would welcome your comments by the end of the week." },
+  ],
+  searchFailed: null,
+  status: null,
+};
 const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
 
 /** The paste history: a short entry, a long one clipped to its lines, and an older one. */
@@ -167,7 +184,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-tip-switch", { phase: { kind: "listening" }, tip: "agentAndHistory" }],
     ["overlay-tip-double-tap", { phase: { kind: "listening" }, tip: "doubleTap", language: null }],
     ["overlay-tip-hands-free", { phase: { kind: "listening" }, tip: "handsFree" }],
-    ["overlay-tip-whats-new", { phase: { kind: "listening" }, tip: "longDictations" }],
+    ["overlay-tip-whats-new", { phase: { kind: "listening" }, tip: "agentMemory" }],
     ["overlay-tip-hands-free-up", { phase: { kind: "listening" }, tip: "handsFree", opensUpward: true, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-transcribing", { phase: { kind: "transcribing" } }],
     ["overlay-transcribing-retry", { phase: { kind: "transcribing" }, isRetrying: true }],
@@ -224,6 +241,16 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-privacy", page: "settings/index.html", size: settingsWindowSize, section: "Privacy", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }, { bundleIdentifier: "org.example.notes", name: "Example Notes" }], excludedSites: ["example.com", "bank.example.org"] } },
   { name: "settings-permissions-vscode", page: "settings/index.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   { name: "settings-general", page: "settings/index.html", size: settingsWindowSize, section: "General", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, debugAllowed: true } },
+  // Memory: usage against the limit, the requests kept, the newest first; dark; nothing kept yet; a
+  // search that found nothing; the helper not answering; a lower limit just applied.
+  { name: "settings-memory", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },
+  { name: "settings-memory-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },
+  { name: "settings-memory-empty", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, usage: { docs: 0, usedBytes: 0 }, entries: [] } } },
+  { name: "settings-memory-no-results", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, query: "invoice", entries: [] } } },
+  { name: "settings-memory-search-failed", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, query: "re: invoice", entries: [], searchFailed: "refused" } } },
+  { name: "settings-memory-unavailable", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, usage: null, unavailable: true, entries: [] } } },
+  { name: "settings-memory-limit-lowered", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, sizeLimit: 100 * 1_024 * 1_024, usage: { docs: 2, usedBytes: 92_000_000 }, entries: memory.entries.slice(0, 2), status: "Size limit set to 100 MB. Removed the oldest request." } } },
+  { name: "settings-memory-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
   { name: "welcome-features", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 4, categoryIndex: 3, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },

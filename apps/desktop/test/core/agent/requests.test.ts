@@ -181,12 +181,13 @@ describe("the agent's tool loop", () => {
   });
 
   /** With Answer on, the loop is offered the backend's date tools, every tool that runs on this
-   * computer and the writing tool; with it off, the writing tool alone. */
-  test("the loop is offered the date tools, this computer's tools and the writing tool", () => {
+   * computer, the memory tools and the writing tool; with it off, the memory tools and the writing
+   * tool: an Edit or a Compose may draw on an earlier request. With no tool, nothing. */
+  test("the loop is offered the date tools, this computer's tools, memory and the writing tool", () => {
     const tool = (name: string): ConnectorTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta"]);
-    expect(DesktopAgent.loopTools(["compose", "answer"], [tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_create", "compose"]);
-    expect(DesktopAgent.loopTools(["edit"], [tool("example_read")])).toEqual(["edit"]);
+    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read"]);
+    expect(DesktopAgent.loopTools(["compose", "answer"], [tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_create", "memory_search", "memory_read", "compose"]);
+    expect(DesktopAgent.loopTools(["edit"], [tool("example_read")])).toEqual(["memory_search", "memory_read", "edit"]);
     expect(DesktopAgent.loopTools([], [tool("example_read")])).toEqual([]);
   });
 
@@ -195,9 +196,9 @@ describe("the agent's tool loop", () => {
    * (switched off, or none on this computer), or an app with no backend tools, brings nothing. */
   test("an app switched on brings its backend tools", () => {
     const tool = (name: string, connector: ConnectorTool["connector"]): ConnectorTool => ({ name, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "web_open"]);
-    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_note"]);
-    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta"]);
+    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "web_open", "memory_search", "memory_read"]);
+    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_note", "memory_search", "memory_read"]);
+    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read"]);
   });
 
   /** A call to the writing tool ends the request (owner, 2026-10-05): its text is what is pasted, the

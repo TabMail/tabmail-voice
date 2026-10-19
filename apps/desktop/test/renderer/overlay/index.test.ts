@@ -144,7 +144,7 @@ describe("overlay page", () => {
     ["handsFree", 2],
     ["agentAndHistory", 2],
     ["doubleTap", 3],
-    ["longDictations", 2],
+    ["agentMemory", 2],
   ])("the %s tip is %d lines, its box as tall", async (tip, count) => {
     const page = await overlayPage();
     await page.show({ ...listening, tip });

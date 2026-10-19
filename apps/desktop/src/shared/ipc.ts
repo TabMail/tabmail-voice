@@ -11,6 +11,7 @@ import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../
 import * as config from "../core/config.js";
 import type { DictionaryEntry } from "../core/dictionary/entries.js";
 import type { ExcludedApp } from "../core/dictation/excludedApps.js";
+import type { MemoryPageState } from "../core/memory/page.js";
 import type { UpdateState } from "../core/ui/menuModel.js";
 import type { PasteEntry } from "../core/dictation/pasteHistory.js";
 import type { ScreenContext } from "../core/dictation/screenContext.js";
@@ -128,6 +129,8 @@ export interface SettingsState {
   /** Where an update is, for Settings › General's update button; null where the app doesn't update
    * itself (a debug build). */
   update: UpdateState | null;
+  /** Settings › Memory: past agent-mode requests (ADR-DESK-061). */
+  memory: MemoryPageState;
 }
 
 /** Whether VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
@@ -203,6 +206,13 @@ export type Command =
   | { type: "setConnectorEnabled"; connector: ConnectorID; value: boolean }
   | { type: "setOpenAtLogin"; value: boolean }
   | { type: "setDebugMode"; value: boolean }
+  /** Settings › Memory: read it afresh (the page shows), search it (`query` empty: the newest),
+   * choose its size limit, remove one exchange, or all. */
+  | { type: "loadMemory" }
+  | { type: "searchMemory"; query: string }
+  | { type: "setMemorySizeLimit"; value: number }
+  | { type: "removeMemory"; memId: string }
+  | { type: "clearMemory" }
   | { type: "setConsent"; value: boolean }
   | { type: "requestMicrophone" }
   | { type: "requestAccessibility" }
@@ -288,7 +298,15 @@ export function isCommand(value: unknown): value is Command {
     case "excludeApp":
     case "copyNotPasted":
     case "dismissNotPasted":
+    case "loadMemory":
+    case "clearMemory":
       return true;
+    case "searchMemory":
+      return typeof command.query === "string" && command.query.length <= config.memorySearchMaxLength;
+    case "setMemorySizeLimit":
+      return typeof command.value === "number" && config.memorySizeLimitChoices.includes(command.value);
+    case "removeMemory":
+      return typeof command.memId === "string" && command.memId.length <= config.memoryIDMaxLength;
     case "removeExcludedApp":
       return typeof command.bundleIdentifier === "string" && command.bundleIdentifier.length <= config.bundleIdentifierMaxLength;
     case "excludeSite":

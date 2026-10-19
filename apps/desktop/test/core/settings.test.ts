@@ -207,6 +207,8 @@ describe("AppSettings", () => {
     app.excludeApp({ bundleIdentifier: "org.example.bank", name: "Example Bank" });
     app.excludeSite("example.com");
     app.smartDictation = true;
+    const lower = config.memorySizeLimitChoices[0] ?? 0;
+    expect(app.setMemorySizeLimit(lower)).toBe(true);
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -223,10 +225,38 @@ describe("AppSettings", () => {
       dictionary: [],
       learnsWords: true,
       smartDictation: false,
+      memorySizeLimit: config.memorySizeLimitDefault,
     });
-    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false, smartDictation: true });
+    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false, smartDictation: true, memorySizeLimit: lower });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
+  });
+});
+
+/** Memory's size limit: 1 GB until the user picks another of the choices, which is kept; any other
+ * value is refused and leaves the limit as it was, and a stored value no longer among the choices
+ * reads as the default. */
+describe("memory's size limit", () => {
+  test("is the default, then the choice kept", () => {
+    const store = new MemoryStore();
+    const app = settings(store, true);
+    expect(app.memorySizeLimit).toBe(config.memorySizeLimitDefault);
+    const choice = config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0;
+    expect(app.setMemorySizeLimit(choice)).toBe(true);
+    expect(settings(store, true).memorySizeLimit).toBe(choice);
+    expect(app.setMemorySizeLimit(choice + 1)).toBe(false);
+    expect(app.memorySizeLimit).toBe(choice);
+  });
+
+  test("a choice the file can't keep is reported unsaved, and the limit is as it was", () => {
+    const app = settings(new UnsavedStore(), true);
+    const choice = config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0;
+    expect(app.setMemorySizeLimit(choice)).toBe(false);
+    expect(app.memorySizeLimit).toBe(config.memorySizeLimitDefault);
+  });
+
+  test("a stored value not among the choices reads as the default", () => {
+    expect(settings(new MemoryStore({ memorySizeLimit: 12_345 }), true).memorySizeLimit).toBe(config.memorySizeLimitDefault);
   });
 });
 

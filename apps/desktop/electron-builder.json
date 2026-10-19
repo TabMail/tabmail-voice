@@ -84,7 +84,8 @@
           "voice-microphone.exe",
           "voice-screen-reader.exe",
           "voice-field-reader.exe",
-          "voice-productivity.exe"
+          "voice-productivity.exe",
+          "voice-memory.exe"
         ]
       },
       {
@@ -144,7 +145,8 @@
           "voice-screen-reader",
           "voice-field-reader",
           "voice-files",
-          "voice-productivity"
+          "voice-productivity",
+          "voice-memory"
         ]
       }
     ],

@@ -23,6 +23,8 @@ import { contextTerms } from "../dictionary/contextTerms.js";
 import { type DictationMode, type HotkeyAction, toggled } from "../hotkey/bindings.js";
 import { TransportError } from "../backend/http.js";
 import { LevelEnvelope } from "../audio/levelEnvelope.js";
+import { agentPart, type AgentMemory, memoryRow } from "../memory/store.js";
+import { MemoryTools } from "../memory/tools.js";
 import { elapsed, errorName, log } from "../log.js";
 import { Observable } from "../util/observable.js";
 import type { PasteHistory } from "./pasteHistory.js";
@@ -108,6 +110,9 @@ export interface DictationDependencies {
   makeCompletionsClient: (baseURL: string) => CompletionsClient;
   /** The tools agent mode's model can call that run on this computer. */
   connectorTools: readonly ConnectorTool[];
+  /** Memory: every agent-mode request and what came of it, which the agent can look back at
+   * (ADR-DESK-061). */
+  memory: AgentMemory;
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
   /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`) in the field of the app
@@ -419,7 +424,7 @@ export class DictationController extends Observable {
         // Explicit agent intent also applies when reusing the first tap's audio.
         // An ordinary second tap preserves a mode already selected with Space.
         if (initialMode === "agent") this.currentMode = "agent";
-        if (this.currentMode === "agent") void this.lookUpEmailApp();
+        if (this.currentMode === "agent") this.prepareAgent();
         this.updateTools();
         this.latchHandsFree();
         return;
@@ -473,9 +478,9 @@ export class DictationController extends Observable {
       this.currentLanguage = language;
       this.changed();
     });
-    // What's new goes first, once (`longDictations`).
-    this.dueTips = ["longDictations", "agentAndHistory"];
-    if (this.currentMode === "agent") void this.lookUpEmailApp();
+    // What's new goes first, once (`agentMemory`).
+    this.dueTips = ["agentMemory", "agentAndHistory"];
+    if (this.currentMode === "agent") this.prepareAgent();
     void this.warmUp(settings.backendURL);
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
     // time most of the start-up is done.
@@ -557,7 +562,7 @@ export class DictationController extends Observable {
     this.currentMode = toggled(this.currentMode);
     // Space was used; the tip, which teaches the history too, shows again at the next hold.
     if (this.currentTip === "agentAndHistory") this.hideTip();
-    if (this.currentMode === "agent") void this.lookUpEmailApp();
+    if (this.currentMode === "agent") this.prepareAgent();
     this.updateNameTip();
     this.updateTools();
     log.debug(`DictationController: switched to ${this.currentMode}`);
@@ -784,6 +789,8 @@ export class DictationController extends Observable {
         // Only the tools of apps switched on at key-down are offered, and only those run; with Answer off
         // none is offered (`loopTools`), and none runs: the backend passes on whatever the model calls.
         const connectorTools = offered.includes("answer") ? this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector)) : [];
+        // This request's searches, for their later pages.
+        const memoryTools = new MemoryTools(this.deps.memory);
         const { tool, text } = await DesktopAgent.run(
           transcript,
           context,
@@ -794,7 +801,7 @@ export class DictationController extends Observable {
           client,
           account,
           userID,
-          (call, round) => this.runConnectorTool(call, round, connectorTools, isCurrent, signal),
+          (call, round) => this.runConnectorTool(call, round, connectorTools, memoryTools, isCurrent, signal),
           (event) => this.serverToolRan(event, isCurrent),
           signal,
         );
@@ -817,6 +824,7 @@ export class DictationController extends Observable {
           },
           signal,
         });
+        this.remember(transcript, agentPart(tool, text, agentTools[tool].chatCaption, context?.appName ?? null), settings.memorySizeLimit);
       }
       if (this.generation !== generation) return;
       this.teardown();
@@ -1071,7 +1079,7 @@ export class DictationController extends Observable {
    * the call that asked runs as the user was shown it. The confirmation names the question it answers
    * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
    * about as usual. */
-  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], memoryTools: MemoryTools, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     const waiting = this.answeredAloud;
     if (call.function.name === config.confirmationTool) {
       const answer = parsedJSON(call.function.arguments);
@@ -1100,6 +1108,7 @@ export class DictationController extends Observable {
     }
     // Any other call drops the call answered aloud: the answer covered only what its question showed.
     this.answeredAloud = null;
+    if (MemoryTools.handles(call.function.name)) return this.runMemoryTool(call, memoryTools, isCurrent);
     const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
@@ -1139,6 +1148,37 @@ export class DictationController extends Observable {
       }
     }
     return this.runTool(tool, args, isCurrent, signal);
+  }
+
+  /** Runs a memory tool: it only reads, so it asks nothing, and belongs to no app's bubble; the chat
+   * window says what it does. */
+  private async runMemoryTool(call: ToolCall, memoryTools: MemoryTools, isCurrent: () => boolean): Promise<string> {
+    const args = parsedJSON(call.function.arguments);
+    if (!isJSONObject(args)) {
+      log.error(`DictationController: ${call.function.name} called with arguments that aren't a JSON object`);
+      return "Error: the arguments were not a JSON object.";
+    }
+    log.debug(`DictationController: running ${call.function.name}`);
+    this.updateChat({ activity: config.memoryToolProgressLabel });
+    try {
+      return await memoryTools.run(call.function.name, args);
+    } finally {
+      if (isCurrent()) this.updateChat({ activity: null });
+    }
+  }
+
+  /** Keeps an agent-mode request and what came of it (`agent`) in memory, within `maxBytes`, the size
+   * limit at key-down. Best effort: nothing waits for it, and a failure is only logged. */
+  private remember(request: string, agent: string, maxBytes: number): void {
+    const row = memoryRow(request, agent, Date.now(), globalThis.crypto.randomUUID());
+    this.deps.memory.index([row], maxBytes).catch((error: unknown) => log.error(`DictationController: memory not kept: ${errorName(error)}`));
+  }
+
+  /** Agent mode was chosen for this dictation: what its request will need is looked up meanwhile, the
+   * email app, and the memory helper, whose first start downloads its model. */
+  private prepareAgent(): void {
+    void this.lookUpEmailApp();
+    this.deps.memory.prepare();
   }
 
   /** Runs `tool`, confirmed if it asks: the chat window says what it does, and its app's bubble runs. */
@@ -1532,7 +1572,7 @@ export class DictationController extends Observable {
     this.secondPressTimer = after(config.minimumHoldDuration, () => {
       if (this.generation !== current) return;
       this.secondPressTimer = null;
-      this.dueTips = ["longDictations", "agentAndHistory"];
+      this.dueTips = ["agentMemory", "agentAndHistory"];
       this.showDueTip();
     });
   }
@@ -1547,9 +1587,9 @@ export class DictationController extends Observable {
       this.onNothingListening?.();
       return;
     }
-    this.dueTips = ["longDictations", "handsFree"];
+    this.dueTips = ["agentMemory", "handsFree"];
     // What's new shows only once: up as the tap ended, it stays its time.
-    if (this.currentTip !== "longDictations") this.hideTip();
+    if (this.currentTip !== "agentMemory") this.hideTip();
     log.debug("DictationController: second press was a tap; listening without the key");
   }
 
