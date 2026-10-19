@@ -101,6 +101,11 @@ button.link {
   color: var(--accent);
 }
 
+/* A link button is only its text, so it dims while held to show the press. */
+button.link:active:not(:disabled) {
+  opacity: 0.5;
+}
+
 input[type="email"],
 input[type="text"],
 select {
