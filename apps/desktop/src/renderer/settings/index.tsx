@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
@@ -434,17 +434,32 @@ function MemoryPane({ state }: { state: SettingsState }) {
   /** A lower size limit chosen, waiting to be confirmed: it removes the oldest requests for good. */
   const [confirmingLimit, setConfirmingLimit] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  /** The request being removed: its button says so until the removal has answered. */
-  const [removing, setRemoving] = useState<string | null>(null);
-  const run = async (command: Command) => {
+  /** The requests being removed: each one's button says so until its own removal has answered. */
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  /** Set once a Reload has answered, as Thunderbird's Chat History says it refreshed; the next
+   * command clears it. */
+  const [reloaded, setReloaded] = useState(false);
+  const commands = useRef(0);
+  /** Sends `command`; true when it answered without an error and no later command was sent. */
+  const run = async (command: Command): Promise<boolean> => {
+    const sent = ++commands.current;
     setFailure(null);
+    setReloaded(false);
     const { error } = await send(command);
     setFailure(error);
+    return error === null && sent === commands.current;
+  };
+  const reload = async () => {
+    if (await run({ type: "loadMemory" })) setReloaded(true);
   };
   const remove = async (memId: string) => {
-    setRemoving(memId);
+    setRemoving((current) => new Set(current).add(memId));
     await run({ type: "removeMemory", memId });
-    setRemoving(null);
+    setRemoving((current) => {
+      const next = new Set(current);
+      next.delete(memId);
+      return next;
+    });
   };
   const search = (event: FormEvent) => {
     event.preventDefault();
@@ -526,13 +541,18 @@ function MemoryPane({ state }: { state: SettingsState }) {
           />
           <button type="submit">Search</button>
           {/* Requests kept while the section is open are listed once it is read again. */}
-          <button type="button" onClick={() => void run({ type: "loadMemory" })}>
+          <button type="button" onClick={() => void reload()}>
             Reload
           </button>
         </form>
         {failure !== null && (
           <div className="row">
             <span className="error">{failure}</span>
+          </div>
+        )}
+        {reloaded && (
+          <div className="row">
+            <span className="caption">Memory reloaded.</span>
           </div>
         )}
         {memory.entries.length === 0 ? (
@@ -562,8 +582,8 @@ function MemoryPane({ state }: { state: SettingsState }) {
                     {request !== "" && <span className="memory-request">{request}</span>}
                     <span className="memory-reply">{agent}</span>
                   </div>
-                  <button className="link" aria-label={`Remove the request from ${memoryDate(entry.dateMs)}`} disabled={removing === entry.memId} onClick={() => void remove(entry.memId)}>
-                    {removing === entry.memId ? "Removing…" : "Remove"}
+                  <button className="link" aria-label={`Remove the request from ${memoryDate(entry.dateMs)}`} disabled={removing.has(entry.memId)} onClick={() => void remove(entry.memId)}>
+                    {removing.has(entry.memId) ? "Removing…" : "Remove"}
                   </button>
                 </li>
               );

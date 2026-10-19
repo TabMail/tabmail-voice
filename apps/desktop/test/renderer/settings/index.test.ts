@@ -50,7 +50,10 @@ const signedIn: SettingsState = {
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
  * each command with `reply` and then pushes `after` (as the main process pushes the new state). */
-async function settingsPage(reply: CommandResult | Promise<CommandResult>, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
+/** What the stand-in main process answers: one reply for every command, or one per command. */
+type Reply = CommandResult | Promise<CommandResult> | ((command: Command) => CommandResult | Promise<CommandResult>);
+
+async function settingsPage(reply: Reply, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const commands: Command[] = [];
@@ -63,7 +66,7 @@ async function settingsPage(reply: CommandResult | Promise<CommandResult>, after
     send: async (command: Command) => {
       commands.push(command);
       listener?.(after);
-      return reply;
+      return typeof reply === "function" ? reply(command) : reply;
     },
   });
   vi.resetModules();
@@ -436,7 +439,7 @@ describe("Settings page", () => {
     const clearAll = () => button("Clear All…");
     const sent = (commands: Command[]) => commands.filter((command) => command.type !== "loadMemory");
 
-    async function open(initial: SettingsState, reply: CommandResult | Promise<CommandResult> = { error: null }): Promise<{ commands: Command[] }> {
+    async function open(initial: SettingsState, reply: Reply = { error: null }): Promise<{ commands: Command[] }> {
       const page = await settingsPage(reply, initial, initial);
       await act(async () => button("Memory").click());
       return page;
@@ -494,10 +497,55 @@ describe("Settings page", () => {
       expect(removeButtons().map((element) => [element.textContent, element.disabled])).toEqual([["Remove", false], ["Remove", false]]);
     });
 
-    test("Reload reads memory again", async () => {
-      const { commands } = await open(kept);
+    test("each Remove in flight shows until its own removal answers", async () => {
+      const answers = new Map<string, (result: CommandResult) => void>();
+      await open(kept, (command) => (command.type === "removeMemory" ? new Promise<CommandResult>((resolve) => answers.set(command.memId, resolve)) : { error: null }));
+      const removeButtons = () => [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Past requests"] button')];
+      const shown = () => removeButtons().map((element) => [element.textContent, element.disabled]);
+      await act(async () => removeButtons()[0]?.click());
+      await act(async () => removeButtons()[1]?.click());
+      expect(shown()).toEqual([["Removing…", true], ["Removing…", true]]);
+      await act(async () => answers.get("turn:2")?.({ error: null }));
+      expect(shown()).toEqual([["Remove", false], ["Removing…", true]]);
+      await act(async () => answers.get("turn:1")?.({ error: null }));
+      expect(shown()).toEqual([["Remove", false], ["Remove", false]]);
+    });
+
+    test("a Remove that fails says why, and that request can be removed again", async () => {
+      const { commands } = await open(kept, (command) => ({ error: command.type === "removeMemory" ? "That request couldn’t be removed. Try again." : null }));
+      const removeButtons = () => [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Past requests"] button')];
+      await act(async () => removeButtons()[1]?.click());
+      expect(document.querySelector(".error")?.textContent).toBe("That request couldn’t be removed. Try again.");
+      expect(removeButtons().map((element) => [element.textContent, element.disabled])).toEqual([["Remove", false], ["Remove", false]]);
+      await act(async () => removeButtons()[1]?.click());
+      expect(sent(commands)).toEqual([{ type: "removeMemory", memId: "turn:1" }, { type: "removeMemory", memId: "turn:1" }]);
+    });
+
+    test("Reload reads memory again and says so once read, until the next command", async () => {
+      let answer: (result: CommandResult) => void = () => {};
+      let waiting = false;
+      const { commands } = await open(kept, (command) => (command.type === "loadMemory" && waiting ? new Promise<CommandResult>((resolve) => (answer = resolve)) : { error: null }));
+      waiting = true;
       await act(async () => button("Reload").click());
+      waiting = false;
       expect(commands).toEqual([{ type: "loadMemory" }, { type: "loadMemory" }]);
+      expect(visibleText()).not.toContain("Memory reloaded.");
+      await act(async () => answer({ error: null }));
+      expect(visibleText()).toContain("Memory reloaded.");
+      await act(async () => button("Search").click());
+      expect(visibleText()).not.toContain("Memory reloaded.");
+    });
+
+    test("a Reload overtaken by another command does not say it reloaded", async () => {
+      let answer: (result: CommandResult) => void = () => {};
+      let waiting = false;
+      await open(kept, (command) => (command.type === "loadMemory" && waiting ? new Promise<CommandResult>((resolve) => (answer = resolve)) : { error: null }));
+      waiting = true;
+      await act(async () => button("Reload").click());
+      waiting = false;
+      await act(async () => button("Search").click());
+      await act(async () => answer({ error: null }));
+      expect(visibleText()).not.toContain("Memory reloaded.");
     });
 
     test("a larger size limit applies at once", async () => {
