@@ -52,8 +52,9 @@ const signedIn: SettingsState = {
 type Reply = CommandResult | Promise<CommandResult> | ((command: Command) => CommandResult | Promise<CommandResult>);
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
- * each command with `reply` and then pushes `after` (as the main process pushes the new state). */
-async function settingsPage(reply: Reply, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
+ * each command with `reply` and then pushes `after` (as the main process pushes the new state), or
+ * what `after` gives at that moment. */
+async function settingsPage(reply: Reply, after: SettingsState | (() => SettingsState), initial = signedIn): Promise<{ commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const commands: Command[] = [];
@@ -65,7 +66,7 @@ async function settingsPage(reply: Reply, after: SettingsState, initial = signed
     },
     send: async (command: Command) => {
       commands.push(command);
-      listener?.(after);
+      listener?.(typeof after === "function" ? after() : after);
       return typeof reply === "function" ? reply(command) : reply;
     },
   });
@@ -511,6 +512,20 @@ describe("Settings page", () => {
       expect(shown()).toEqual([["Remove", false], ["Remove", false]]);
     });
 
+    test("a Remove that fails while an earlier one is in flight can be tried again at once", async () => {
+      const answers = new Map<string, (result: CommandResult) => void>();
+      await open(kept, (command) => (command.type === "removeMemory" ? new Promise<CommandResult>((resolve) => answers.set(command.memId, resolve)) : { error: null }));
+      const removeButtons = () => [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Past requests"] button')];
+      const shown = () => removeButtons().map((element) => [element.textContent, element.disabled]);
+      await act(async () => removeButtons()[0]?.click());
+      await act(async () => removeButtons()[1]?.click());
+      await act(async () => answers.get("turn:1")?.({ error: "That request couldn’t be removed. Try again." }));
+      expect(document.querySelector(".error")?.textContent).toBe("That request couldn’t be removed. Try again.");
+      expect(shown()).toEqual([["Removing…", true], ["Remove", false]]);
+      await act(async () => answers.get("turn:2")?.({ error: null }));
+      expect(shown()).toEqual([["Remove", false], ["Remove", false]]);
+    });
+
     test("a Remove that fails says why, and that request can be removed again", async () => {
       const { commands } = await open(kept, (command) => ({ error: command.type === "removeMemory" ? "That request couldn’t be removed. Try again." : null }));
       const removeButtons = () => [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label="Past requests"] button')];
@@ -519,6 +534,23 @@ describe("Settings page", () => {
       expect(removeButtons().map((element) => [element.textContent, element.disabled])).toEqual([["Remove", false], ["Remove", false]]);
       await act(async () => removeButtons()[1]?.click());
       expect(sent(commands)).toEqual([{ type: "removeMemory", memId: "turn:1" }, { type: "removeMemory", memId: "turn:1" }]);
+    });
+
+    test("Reload shows what memory holds now: a request kept since the section opened, and its usage", async () => {
+      const first = kept.memory.entries[1];
+      if (!first) throw new Error("no request to start with");
+      let current = withMemory({ usage: { docs: 1, usedBytes: MB }, entries: [first] });
+      await settingsPage({ error: null }, () => current, current);
+      await act(async () => button("Memory").click());
+      const requests = () => [...document.querySelectorAll('ul[aria-label="Past requests"] li')].map((item) => item.textContent ?? "");
+      expect(requests()).toHaveLength(1);
+      expect(visibleText()).toContain("1 request kept");
+      current = kept;
+      await act(async () => button("Reload").click());
+      expect(requests()).toHaveLength(2);
+      expect(requests()[0]).toContain("What's on Friday?");
+      expect(visibleText()).toContain("Memory used: 2 MB of 1 GB");
+      expect(visibleText()).toContain("2 requests kept");
     });
 
     test("Reload reads memory again and says so once read, until the next command", async () => {
