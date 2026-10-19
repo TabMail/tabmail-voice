@@ -905,6 +905,11 @@ export const eventLineIconSize = 12;
 /** Between the card's caption, its page and its lines, and between lines. */
 export const eventCardGap = 6;
 export const eventLineGap = 4;
+/** The people a question invites, and those it removes, each a list under one icon and a small
+ * label (owner, 2026-10-18: grouped, each "name <address>"). */
+export const eventPeopleLabelFontSize = 10;
+export const eventPeopleLabelTracking = 0.04;
+export const eventPeopleGap = 2;
 /** The not-pasted note's x, which dismisses it: a faint glyph until the pointer is over it. */
 export const noteCloseButtonSize = 16;
 export const noteCloseFontSize = 10;

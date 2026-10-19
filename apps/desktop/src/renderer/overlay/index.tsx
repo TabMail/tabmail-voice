@@ -4,7 +4,7 @@
 
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { type AgentChat, type ChatTurn, type EventQuestion, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
+import { type AgentChat, type ChatTurn, type EventQuestion, type EventQuestionLine, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
 import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
@@ -524,14 +524,24 @@ function ConfirmationCard({ question, event, expiresAt }: { question: string; ev
  * its month red. */
 function EventCard({ event }: { event: EventQuestion }) {
   const deleting = event.action === "delete";
-  const changed = (old: string, now: string | null) =>
+  // A screen reader hears what the strike-out and the accent show: "Title changes from … to …".
+  const changed = (field: string, old: string, now: string | null) =>
     now === null ? (
       old
     ) : (
       <>
-        <span className="event-removed">{old}</span> <span className="event-added">{now}</span>
+        <span className="sr-only">{field} changes from </span>
+        <del className="event-removed">{old}</del>
+        <span className="sr-only"> to</span> <ins className="event-added">{now}</ins>
       </>
     );
+  // People one after another with the same tone are one list under one icon.
+  const items: (EventQuestionLine | EventQuestionLine[])[] = [];
+  for (const line of event.lines) {
+    const last = items.at(-1);
+    if (line.icon === "person" && Array.isArray(last) && last[0]?.tone === line.tone) last.push(line);
+    else items.push(line.icon === "person" ? [line] : line);
+  }
   return (
     <div className="event-card" style={{ gap: config.eventCardGap, fontSize: config.chatFontSize, lineHeight: config.chatLineHeight }}>
       <div className={`chat-caption${deleting ? " event-deleting" : ""}`} style={{ fontSize: config.chatCaptionFontSize }}>
@@ -539,36 +549,90 @@ function EventCard({ event }: { event: EventQuestion }) {
       </div>
       <div className="event-head" style={{ gap: config.eventPageGap }}>
         <div className={`event-page${deleting ? " event-deleting" : ""}`} style={{ width: config.eventPageWidth, borderRadius: config.eventPageCornerRadius, padding: config.eventPagePadding, lineHeight: config.eventPageLineHeight }}>
-          <span className="event-page-month" style={{ fontSize: config.eventPageLabelFontSize, letterSpacing: `${config.eventPageMonthTracking}em` }}>
+          <span className="sr-only">{`${event.weekday}, ${event.month} ${event.day}`}</span>
+          <span className="event-page-month" aria-hidden="true" style={{ fontSize: config.eventPageLabelFontSize, letterSpacing: `${config.eventPageMonthTracking}em` }}>
             {event.month.toUpperCase()}
           </span>
-          <span className="event-page-day" style={{ fontSize: config.eventPageDayFontSize }}>
+          <span className="event-page-day" aria-hidden="true" style={{ fontSize: config.eventPageDayFontSize }}>
             {event.day}
           </span>
-          <span className="event-page-weekday" style={{ fontSize: config.eventPageLabelFontSize }}>
+          <span className="event-page-weekday" aria-hidden="true" style={{ fontSize: config.eventPageLabelFontSize }}>
             {event.weekday}
           </span>
         </div>
         <div className="event-summary">
           <div className="event-title" style={{ fontSize: config.eventTitleFontSize }}>
-            {changed(event.title, event.newTitle)}
+            {changed("Title", event.title, event.newTitle)}
           </div>
-          <div className="event-time">{changed(event.time, event.newTime)}</div>
+          <div className="event-time">{changed("Time", event.time, event.newTime)}</div>
         </div>
       </div>
       {event.lines.length > 0 && (
         <div className="event-lines" style={{ gap: config.eventLineGap, paddingLeft: config.eventPageWidth + config.eventPageGap, fontSize: config.eventLineFontSize }}>
-          {event.lines.map((line, index) => (
-            <div key={index} className={`event-line ${line.tone}`} style={{ gap: config.eventLineIconGap }}>
-              <EventLineIcon icon={line.icon} size={config.eventLineIconSize} />
-              <span className="event-line-text">
-                {line.text}
-                {line.detail !== null && <span className="event-line-detail"> {line.detail}</span>}
-              </span>
-            </div>
-          ))}
+          {items.map((item, index) =>
+            Array.isArray(item) ? (
+              <EventPeople key={index} people={item} />
+            ) : (
+              <div key={index} className={`event-line ${item.tone}`} style={{ gap: config.eventLineIconGap }}>
+                <EventLineIcon icon={item.icon} size={config.eventLineIconSize} />
+                <EventLineText line={item}>
+                  {spokenField(item) !== "" && <span className="sr-only">{spokenField(item)}</span>}
+                  {item.text}
+                  {item.detail !== null && <span className="event-line-detail"> {item.detail}</span>}
+                </EventLineText>
+              </div>
+            ),
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A card line's text, `<del>` when it is removed so a screen reader says so as the strike-out shows it. */
+function EventLineText({ line, children }: { line: EventQuestionLine; children: ReactNode }) {
+  return line.tone === "removed" ? <del className="event-line-text">{children}</del> : <span className="event-line-text">{children}</span>;
+}
+
+/** The fields a line's value belongs to, which its icon shows on screen: what a screen reader says first. */
+const spokenFields: Partial<Record<EventQuestionLine["icon"], string>> = { calendar: "calendar", location: "location", notes: "notes", deleted: "occurrence" };
+
+/** What a screen reader hears before a line: its field, and whether it is new or removed ("New
+ * location: ", "Removed occurrence: "); nothing for a line that says it itself ("Shown as free"). */
+function spokenField(line: EventQuestionLine): string {
+  const field = spokenFields[line.icon];
+  if (line.tone === "added") return field ? `New ${field}: ` : "";
+  if (line.tone === "removed") return field ? `Removed ${field}: ` : "Removed: ";
+  return field ? `${field.charAt(0).toUpperCase()}${field.slice(1)}: ` : "";
+}
+
+/** People a question invites, or removes: one icon, a small label, then each as "name <address>",
+ * the address as strong as the name since it is who is emailed. */
+function EventPeople({ people }: { people: EventQuestionLine[] }) {
+  const tone = people[0]?.tone ?? "plain";
+  const removed = tone === "removed";
+  return (
+    <div className={`event-line event-people ${tone}`} style={{ gap: config.eventLineIconGap }}>
+      <EventLineIcon icon="person" size={config.eventLineIconSize} />
+      <div className="event-people-list" style={{ gap: config.eventPeopleGap }}>
+        <span className="event-people-label" aria-hidden="true" style={{ fontSize: config.eventPeopleLabelFontSize, letterSpacing: `${config.eventPeopleLabelTracking}em` }}>
+          {removed ? "Remove" : "Invite"}
+        </span>
+        {people.map((person, index) => (
+          <EventLineText key={index} line={person}>
+            <span className="sr-only">{removed ? "Removed: " : "Invited: "}</span>
+            {person.text}
+            {person.detail !== null && (
+              <span className="event-line-detail">
+                <span aria-hidden="true"> &lt;</span>
+                <span className="sr-only">, </span>
+                {person.detail}
+                <span aria-hidden="true">&gt;</span>
+              </span>
+            )}
+          </EventLineText>
+        ))}
+      </div>
     </div>
   );
 }

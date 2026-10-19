@@ -1225,9 +1225,24 @@ describe("the chat window", () => {
     expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed }]);
   });
 
+  /** What `element` shows on screen: its text without the words only a screen reader hears. */
+  const seen = (element: Element | null) => {
+    const copy = element?.cloneNode(true) as Element | undefined;
+    copy?.querySelectorAll(".sr-only").forEach((hidden) => hidden.remove());
+    return copy?.textContent ?? null;
+  };
+  /** What a screen reader hears of `element`: its text without what is hidden from it. */
+  const heard = (element: Element | null) => {
+    const copy = element?.cloneNode(true) as Element | undefined;
+    copy?.querySelectorAll("[aria-hidden='true']").forEach((hidden) => hidden.remove());
+    return copy?.textContent ?? null;
+  };
+
   /** A question about a calendar event draws the event, not its words: the page for its day, its
-   * title and time (the old struck out by the new), each line with its icon and tone, and a button
-   * that says what confirming does, red for a delete. */
+   * title and time (the old struck out by the new), each line with its icon and tone, the people it
+   * invites and removes each a list under one icon, each person as "name <address>", and a button
+   * that says what confirming does, red for a delete. A screen reader hears what the strike-out, the
+   * accent and the icons show: "Title changes from … to …", "Invited: …", "Removed location: …". */
   test.each<[EventQuestion["action"], string, boolean]>([
     ["add", "Add", false],
     ["change", "Save", false],
@@ -1245,9 +1260,14 @@ describe("the chat window", () => {
       newTime: "3:00 – 3:30 PM",
       lines: [
         { icon: "person", text: "Pat Doe", detail: "pat@example.com", tone: "added" },
+        { icon: "person", text: "jordan@example.com", detail: null, tone: "added" },
         { icon: "person", text: "alex@example.com", detail: null, tone: "removed" },
+        { icon: "person", text: "chris@example.com", detail: null, tone: "removed" },
         { icon: "mail", text: "Invitations are emailed.", detail: null, tone: "note" },
         { icon: "location", text: "Room 5", detail: null, tone: "plain" },
+        { icon: "location", text: "Room 4", detail: null, tone: "removed" },
+        { icon: "notes", text: "Bring the deck", detail: null, tone: "added" },
+        { icon: "availability", text: "Shown as free", detail: null, tone: "added" },
       ],
     };
     const page = await overlayPage();
@@ -1256,16 +1276,24 @@ describe("the chat window", () => {
     expect(document.querySelector(".chat-confirmation .chat-text")).toBeNull();
     expect(document.querySelector(".event-card .chat-caption")?.textContent).toBe("Change this occurrence");
     expect(document.querySelector(".event-card .chat-caption")?.classList.contains("event-deleting")).toBe(destructive);
-    expect(texts(".event-page span")).toEqual(["OCT", "22", "Thu"]);
+    expect(texts(".event-page [aria-hidden='true']")).toEqual(["OCT", "22", "Thu"]);
+    expect(heard(document.querySelector(".event-page"))).toBe("Thu, Oct 22");
     expect(document.querySelector(".event-page")?.classList.contains("event-deleting")).toBe(destructive);
-    expect(texts(".event-title span")).toEqual(["Team sync", "Kickoff"]);
-    expect(texts(".event-time .event-removed")).toEqual(["10:00 – 10:30 AM"]);
-    expect(texts(".event-time .event-added")).toEqual(["3:00 – 3:30 PM"]);
+    expect(seen(document.querySelector(".event-title"))).toBe("Team sync Kickoff");
+    expect(texts(".event-title del.event-removed")).toEqual(["Team sync"]);
+    expect(texts(".event-title ins.event-added")).toEqual(["Kickoff"]);
+    expect(heard(document.querySelector(".event-title"))).toBe("Title changes from Team sync to Kickoff");
+    expect(texts(".event-time del.event-removed")).toEqual(["10:00 – 10:30 AM"]);
+    expect(texts(".event-time ins.event-added")).toEqual(["3:00 – 3:30 PM"]);
+    expect(heard(document.querySelector(".event-time"))).toBe("Time changes from 10:00 – 10:30 AM to 3:00 – 3:30 PM");
     const lines = [...document.querySelectorAll(".event-line")];
-    expect(lines.map((line) => line.className)).toEqual(["event-line added", "event-line removed", "event-line note", "event-line plain"]);
-    expect(lines.map((line) => line.querySelector(".event-line-text")?.textContent)).toEqual(["Pat Doe pat@example.com", "alex@example.com", "Invitations are emailed.", "Room 5"]);
-    expect(lines.every((line) => line.querySelector("svg") !== null)).toBe(true);
-    expect(texts(".event-line-detail")).toEqual([" pat@example.com"]);
+    expect(lines.map((line) => line.className)).toEqual(["event-line event-people added", "event-line event-people removed", "event-line note", "event-line plain", "event-line removed", "event-line added", "event-line added"]);
+    expect(lines.map((line) => line.querySelectorAll("svg").length)).toEqual([1, 1, 1, 1, 1, 1, 1]);
+    expect(texts(".event-people-label")).toEqual(["Invite", "Remove"]);
+    const words = [...document.querySelectorAll(".event-line-text")];
+    expect(words.map(seen)).toEqual(["Pat Doe <pat@example.com>", "jordan@example.com", "alex@example.com", "chris@example.com", "Invitations are emailed.", "Room 5", "Room 4", "Bring the deck", "Shown as free"]);
+    expect(words.map(heard)).toEqual(["Invited: Pat Doe, pat@example.com", "Invited: jordan@example.com", "Removed: alex@example.com", "Removed: chris@example.com", "Invitations are emailed.", "Location: Room 5", "Removed location: Room 4", "New notes: Bring the deck", "Shown as free"]);
+    expect(words.map((word) => word.tagName)).toEqual(["SPAN", "SPAN", "DEL", "DEL", "SPAN", "SPAN", "DEL", "SPAN", "SPAN"]);
     expect(texts(".chat-confirmation button")).toEqual(["Cancel", title]);
     const button = document.querySelector<HTMLElement>(".chat-confirmation .chat-confirm");
     expect(button?.classList.contains("destructive")).toBe(destructive);
@@ -1274,6 +1302,35 @@ describe("the chat window", () => {
     await act(async () => button?.click());
 
     expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed: true }]);
+  });
+
+  /** A new event's people are invited: one list under Invite, each heard as invited; a calendar line
+   * names its field, and an occurrence dropped is heard as removed. */
+  test("a new event's people are one list under Invite", async () => {
+    const page = await overlayPage();
+    const event: EventQuestion = {
+      action: "add",
+      caption: "New event",
+      month: "Oct",
+      day: 21,
+      weekday: "Wed",
+      title: "Design review",
+      newTitle: null,
+      time: "10:00 – 11:00 AM",
+      newTime: null,
+      lines: [
+        { icon: "calendar", text: "Work", detail: "iCloud", tone: "plain" },
+        { icon: "person", text: "Alex Kim", detail: "alex@example.com", tone: "plain" },
+        { icon: "person", text: "sam@example.com", detail: null, tone: "plain" },
+        { icon: "deleted", text: "Thu, Oct 29", detail: null, tone: "removed" },
+      ],
+    };
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), confirmation: "Add this event?", confirmationEvent: event } });
+
+    expect([...document.querySelectorAll(".event-line")].map((line) => line.className)).toEqual(["event-line plain", "event-line event-people plain", "event-line removed"]);
+    expect(texts(".event-people-label")).toEqual(["Invite"]);
+    expect([...document.querySelectorAll(".event-line-text")].map(heard)).toEqual(["Calendar: Work iCloud", "Invited: Alex Kim, alex@example.com", "Invited: sam@example.com", "Removed occurrence: Thu, Oct 29"]);
+    expect(heard(document.querySelector(".event-title"))).toBe("Design review");
   });
 
   /** An event with nothing new to say draws its title and time alone, with no lines. */

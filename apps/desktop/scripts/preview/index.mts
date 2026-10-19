@@ -41,7 +41,7 @@ const conversation = {
   confirmationExpiresAt: null,
 };
 /** A calendar question's card for each write: a weekly event with people invited, one occurrence
- * moved with someone added, and a series deleted. */
+ * moved with people added and removed, and a series deleted. */
 const eventQuestions = {
   add: { action: "add", caption: "New event", month: "Oct", day: 21, weekday: "Wed", title: "Design review", newTitle: null, time: "10:00 – 11:00 AM", newTime: null, lines: [
     { icon: "calendar", text: "Work", detail: "iCloud", tone: "plain" },
@@ -53,7 +53,11 @@ const eventQuestions = {
   ] },
   change: { action: "change", caption: "Change this occurrence", month: "Oct", day: 22, weekday: "Thu", title: "Team sync", newTitle: null, time: "10:00 – 10:30 AM", newTime: "3:00 – 3:30 PM", lines: [
     { icon: "person", text: "Pat Doe", detail: "pat@example.com", tone: "added" },
+    { icon: "person", text: "Sam Lee", detail: "sam.lee@example.com", tone: "added" },
+    { icon: "person", text: "jordan@example.com", detail: null, tone: "added" },
+    { icon: "person", text: "Morgan Rivera", detail: "m.rivera@company.com", tone: "added" },
     { icon: "person", text: "alex@example.com", detail: null, tone: "removed" },
+    { icon: "person", text: "chris@example.com", detail: null, tone: "removed" },
     { icon: "mail", text: "Invitations are emailed.", detail: null, tone: "note" },
     { icon: "mail", text: "Its attendees are emailed the change.", detail: null, tone: "note" },
   ] },
@@ -61,7 +65,7 @@ const eventQuestions = {
     { icon: "mail", text: "Its attendees are emailed a cancellation.", detail: null, tone: "note" },
   ] },
 };
-const eventRequests = { add: "Set up a weekly design review on Wednesdays at 10 in Room 5 with Alex and Sam", change: "Move Thursday's team sync to 3, add Pat and drop Alex", delete: "Delete my weekly one-on-one" };
+const eventRequests = { add: "Set up a weekly design review on Wednesdays at 10 in Room 5 with Alex and Sam", change: "Move Thursday's team sync to 3, add Pat, Sam, Jordan and Morgan, and drop Alex and Chris", delete: "Delete my weekly one-on-one" };
 const settings = {
   availableHotkeys: ["rightOption", "function"],
   email: null,

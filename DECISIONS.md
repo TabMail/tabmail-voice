@@ -5442,6 +5442,15 @@ five candidates on a page, "Date tile looks awesome".
 - Changing an event the user was invited to is refused when the question is prepared, from the
   event the edit reads anyway, so the user is never asked to confirm a change that can't be made
   (it was refused by the helper only after Save). The helper's refusal stays.
+- People and screen readers (owner, 2026-10-18, chosen from a page of candidates: "the new
+  recommendation looks good … and the screen reader fix as well"). The people a question invites,
+  and those it removes, are each one list under one icon and a small "Invite" or "Remove" label,
+  each person written "name <address>" in one color: the address is who is emailed, so it is never
+  fainter than a name the model chose. The grouping is the renderer's (consecutive person lines of
+  one tone); the card's data is unchanged. A screen reader hears what the strike-out, the accent and
+  the icons show: the page as "Thu, Oct 22", "Title changes from … to …", "Invited: …",
+  "Removed: …", a line's field where its icon names it ("New location: …", "Removed occurrence:
+  …"), with removed text in `<del>` and new in `<ins>`; nothing changes on screen.
 
 ## ADR-DESK-061: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
 
