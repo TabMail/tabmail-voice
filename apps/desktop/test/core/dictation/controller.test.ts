@@ -2457,6 +2457,32 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(memory.limits).toEqual([config.memorySizeLimitDefault]);
       });
 
+      /** Compose and Edit look up memory too, with Answer off: what they write can reuse an earlier
+       * exchange. */
+      test.each([["compose", ""], ["edit", "old selection"]] as const)("%s recalls earlier exchanges with Answer off", async (tool, selected) => {
+        prefs.value = { ...prefs.value, enabledTools: [tool] };
+        const at = Date.now() - 24 * 60 * 60 * 1_000;
+        const earlier = memoryRow("launch budget", "The earlier budget was 500.", at, "earlier");
+        memory.rows.push(earlier);
+        transcription.enqueue(200, { text: "reuse my earlier launch budget" });
+        completions.enqueue(200, Fixtures.toolCalls([{ id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) }]));
+        completions.enqueue(200, Fixtures.toolCalls([{ id: "read", name: "memory_read", arguments: JSON.stringify({ timestamp: at }) }]));
+        completions.enqueue(200, writes(tool, "The launch budget is 500."));
+        const { pastes } = await carryOut(selectionScreen(selected));
+        expect(pastes).toEqual(["The launch budget is 500."]);
+        expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", tool]);
+        const toolResults = (i: number) =>
+          (completions.body(i).conversation_state as { harmony_messages: { role: string; content: string }[] }).harmony_messages.filter((m) => m.role === "tool").map((m) => m.content);
+        const searched = JSON.parse(toolResults(1)[0] ?? "{}") as Record<string, unknown>;
+        expect(searched).toMatchObject({ totalItems: 1 });
+        expect(searched.results).toContain("launch budget");
+        expect(JSON.parse(toolResults(2).at(-1) ?? "null")).toContain(earlier.content);
+        expect(await eventually(() => memory.rows.length === 2)).toBe(true);
+        expect(memory.rows.find((row) => row.memId !== earlier.memId)?.content).toBe(
+          `[USER]: reuse my earlier launch budget\n\n[AGENT]: ${tool === "edit" ? "Replaced the selection" : "Pasted at the cursor"} in Example Notes:\nThe launch budget is 500.`,
+        );
+      });
+
       test("keeps an answer with its reply", async () => {
         prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs] };
         transcription.enqueue(200, { text: "what does this error mean" });

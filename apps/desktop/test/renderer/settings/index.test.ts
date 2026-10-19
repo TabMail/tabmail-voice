@@ -446,6 +446,18 @@ describe("Settings page", () => {
       expect(commands).toEqual([{ type: "loadMemory" }]);
     });
 
+    test.each<[string, number, string, number]>([
+      ["nothing", 0, "0%", 0],
+      ["a quarter of the limit", 256 * MB, "25%", 256 * MB],
+      ["more than the limit", 2 * GB, "100%", GB],
+    ])("the usage bar shows %s used", async (_, usedBytes, width, now) => {
+      await open(withMemory({ usage: { docs: 1, usedBytes }, sizeLimit: GB }));
+      const bar = document.querySelector('[role="progressbar"][aria-label="Memory used"]') as HTMLElement;
+      expect(bar.getAttribute("aria-valuemax")).toBe(String(GB));
+      expect(bar.getAttribute("aria-valuenow")).toBe(String(now));
+      expect((bar.querySelector(".usage-fill") as HTMLElement).style.width).toBe(width);
+    });
+
     test("lists each request with what the agent did, the newest first", async () => {
       await open(kept);
       const items = [...document.querySelectorAll('ul[aria-label="Past requests"] li')];

@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { buildMemoryHelper } from "../../scripts/memory-helper.mts";
 import { buildNative } from "../../scripts/linux/build-native.mts";
 
@@ -20,7 +20,15 @@ vi.mock("../../scripts/memory-helper.mts", () => ({ buildMemoryHelper: vi.fn() }
 
 const helpers = ["voice-hotkey", "voice-linux", "voice-microphone", "voice-screen-reader", "voice-field-reader", "voice-files", "voice-productivity"];
 
-describe("the Linux helper build", () => {
+describe.each(["arm64", "x64"] as const)("the Linux helper build on %s", (arch) => {
+  // Each architecture a package is built for, as the build machine reports it.
+  const hostArch = Object.getOwnPropertyDescriptor(process, "arch");
+  beforeEach(() => {
+    Object.defineProperty(process, "arch", { value: arch, configurable: true });
+  });
+  afterEach(() => {
+    if (hostArch !== undefined) Object.defineProperty(process, "arch", hostArch);
+  });
   const roots: string[] = [];
   afterEach(() => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -30,7 +38,7 @@ describe("the Linux helper build", () => {
     const root = mkdtempSync(join(tmpdir(), "voice-linux-build-"));
     roots.push(root);
     // What CMake would have built for this machine, and the memory helper's build.
-    const build = join(root, "native/linux/build", process.arch);
+    const build = join(root, "native/linux/build", arch);
     mkdirSync(build, { recursive: true });
     for (const helper of helpers) writeFileSync(join(build, helper), `built ${helper}`);
     const memory = join(root, "memory-build", "fts_helper");
@@ -47,6 +55,6 @@ describe("the Linux helper build", () => {
     expect(readFileSync(join(destination, "voice-memory"), "utf8")).toBe("the pinned memory helper");
     // Built for this machine's architecture (a Linux package is built on the one it ships for),
     // named, so the toolchain's own host can't decide it.
-    expect(vi.mocked(buildMemoryHelper).mock.calls).toEqual([[root, process.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"]]);
+    expect(vi.mocked(buildMemoryHelper).mock.calls).toEqual([[root, arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"]]);
   });
 });
