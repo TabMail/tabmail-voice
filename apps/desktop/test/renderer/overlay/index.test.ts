@@ -1242,7 +1242,8 @@ describe("the chat window", () => {
    * title and time (the old struck out by the new), each line with its icon and tone, the people it
    * invites and removes each a list under one icon, each person as "name <address>", and a button
    * that says what confirming does, red for a delete. A screen reader hears what the strike-out, the
-   * accent and the icons show: "Title changes from … to …", "Invited: …", "Removed location: …". */
+   * accent and the icons show: "Title changes from … to …", "Invited: …", "Removed location: …",
+   * "New: Every day". */
   test.each<[EventQuestion["action"], string, boolean]>([
     ["add", "Add", false],
     ["change", "Save", false],
@@ -1268,6 +1269,7 @@ describe("the chat window", () => {
         { icon: "location", text: "Room 4", detail: null, tone: "removed" },
         { icon: "notes", text: "Bring the deck", detail: null, tone: "added" },
         { icon: "availability", text: "Shown as free", detail: null, tone: "added" },
+        { icon: "repeat", text: "Every day, 3 times", detail: null, tone: "added" },
       ],
     };
     const page = await overlayPage();
@@ -1277,6 +1279,7 @@ describe("the chat window", () => {
     expect(document.querySelector(".event-card .chat-caption")?.textContent).toBe("Change this occurrence");
     expect(document.querySelector(".event-card .chat-caption")?.classList.contains("event-deleting")).toBe(destructive);
     expect(texts(".event-page [aria-hidden='true']")).toEqual(["OCT", "22", "Thu"]);
+    expect(seen(document.querySelector(".event-page"))).toBe("OCT22Thu");
     expect(heard(document.querySelector(".event-page"))).toBe("Thu, Oct 22");
     expect(document.querySelector(".event-page")?.classList.contains("event-deleting")).toBe(destructive);
     expect(seen(document.querySelector(".event-title"))).toBe("Team sync Kickoff");
@@ -1287,13 +1290,15 @@ describe("the chat window", () => {
     expect(texts(".event-time ins.event-added")).toEqual(["3:00 – 3:30 PM"]);
     expect(heard(document.querySelector(".event-time"))).toBe("Time changes from 10:00 – 10:30 AM to 3:00 – 3:30 PM");
     const lines = [...document.querySelectorAll(".event-line")];
-    expect(lines.map((line) => line.className)).toEqual(["event-line event-people added", "event-line event-people removed", "event-line note", "event-line plain", "event-line removed", "event-line added", "event-line added"]);
-    expect(lines.map((line) => line.querySelectorAll("svg").length)).toEqual([1, 1, 1, 1, 1, 1, 1]);
+    expect(lines.map((line) => line.className)).toEqual(["event-line event-people added", "event-line event-people removed", "event-line note", "event-line plain", "event-line removed", "event-line added", "event-line added", "event-line added"]);
+    expect(lines.map((line) => line.querySelectorAll("svg").length)).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
     expect(texts(".event-people-label")).toEqual(["Invite", "Remove"]);
+    // The label is for the eye; each person is heard as invited or removed instead.
+    expect([...document.querySelectorAll(".event-people")].map(heard)).toEqual(["Invited: Pat Doe, pat@example.comInvited: jordan@example.com", "Removed: alex@example.comRemoved: chris@example.com"]);
     const words = [...document.querySelectorAll(".event-line-text")];
-    expect(words.map(seen)).toEqual(["Pat Doe <pat@example.com>", "jordan@example.com", "alex@example.com", "chris@example.com", "Invitations are emailed.", "Room 5", "Room 4", "Bring the deck", "Shown as free"]);
-    expect(words.map(heard)).toEqual(["Invited: Pat Doe, pat@example.com", "Invited: jordan@example.com", "Removed: alex@example.com", "Removed: chris@example.com", "Invitations are emailed.", "Location: Room 5", "Removed location: Room 4", "New notes: Bring the deck", "Shown as free"]);
-    expect(words.map((word) => word.tagName)).toEqual(["SPAN", "SPAN", "DEL", "DEL", "SPAN", "SPAN", "DEL", "SPAN", "SPAN"]);
+    expect(words.map(seen)).toEqual(["Pat Doe <pat@example.com>", "jordan@example.com", "alex@example.com", "chris@example.com", "Invitations are emailed.", "Room 5", "Room 4", "Bring the deck", "Shown as free", "Every day, 3 times"]);
+    expect(words.map(heard)).toEqual(["Invited: Pat Doe, pat@example.com", "Invited: jordan@example.com", "Removed: alex@example.com", "Removed: chris@example.com", "Invitations are emailed.", "Location: Room 5", "Removed location: Room 4", "New notes: Bring the deck", "New: Shown as free", "New: Every day, 3 times"]);
+    expect(words.map((word) => word.tagName)).toEqual(["SPAN", "SPAN", "DEL", "DEL", "SPAN", "SPAN", "DEL", "SPAN", "SPAN", "SPAN"]);
     expect(texts(".chat-confirmation button")).toEqual(["Cancel", title]);
     const button = document.querySelector<HTMLElement>(".chat-confirmation .chat-confirm");
     expect(button?.classList.contains("destructive")).toBe(destructive);
