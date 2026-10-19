@@ -4,6 +4,8 @@
 
 // @vitest-environment happy-dom
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
@@ -1231,11 +1233,25 @@ describe("the chat window", () => {
     copy?.querySelectorAll(".sr-only").forEach((hidden) => hidden.remove());
     return copy?.textContent ?? null;
   };
-  /** What a screen reader hears of `element`: its text without what is hidden from it. */
+  /** What a screen reader hears of `element`: its text without what the accessibility tree leaves
+   * out, an `aria-hidden` element or one the overlay's stylesheet hides (`display: none`,
+   * `visibility: hidden`), so the words only a screen reader hears must stay in the tree. */
   const heard = (element: Element | null) => {
-    const copy = element?.cloneNode(true) as Element | undefined;
-    copy?.querySelectorAll("[aria-hidden='true']").forEach((hidden) => hidden.remove());
-    return copy?.textContent ?? null;
+    if (element === null) return null;
+    const style = document.createElement("style");
+    style.textContent = readFileSync(join(import.meta.dirname, "../../../src/renderer/overlay/index.css"), "utf8");
+    document.head.append(style);
+    const spoken = (node: Node): string => {
+      if (!(node instanceof Element)) return node.textContent ?? "";
+      const computed = getComputedStyle(node);
+      if (node.getAttribute("aria-hidden") === "true" || computed.display === "none" || computed.visibility === "hidden") return "";
+      return [...node.childNodes].map(spoken).join("");
+    };
+    try {
+      return spoken(element);
+    } finally {
+      style.remove();
+    }
   };
 
   /** A question about a calendar event draws the event, not its words: the page for its day, its
