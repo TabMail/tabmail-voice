@@ -48,11 +48,11 @@ const signedIn: SettingsState = {
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
 };
 
-/** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
- * each command with `reply` and then pushes `after` (as the main process pushes the new state). */
 /** What the stand-in main process answers: one reply for every command, or one per command. */
 type Reply = CommandResult | Promise<CommandResult> | ((command: Command) => CommandResult | Promise<CommandResult>);
 
+/** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
+ * each command with `reply` and then pushes `after` (as the main process pushes the new state). */
 async function settingsPage(reply: Reply, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';

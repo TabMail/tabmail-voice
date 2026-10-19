@@ -5535,7 +5535,9 @@ Thunderbird's copy or its files.
   one. Space freed is reused; the file keeps its size (no `VACUUM`, which could take unbounded time).
 - **Settings › Memory** (`src/core/memory/page.ts`, a port of Thunderbird's Chat History tab, in
   Voice's style): a usage bar, "Memory used: X of <limit>", the limit, the requests newest first (at
-  most `memoryListLimit`), a search, Remove on each, and Clear All with a confirmation. It reads
+  most `memoryListLimit`), a search, Remove on each, Reload (reads memory again and says "Memory
+  reloaded." once read), and Clear All with a confirmation. A Remove shows as removing until its own
+  removal answers. It reads
   nothing, and starts no helper, until the helper first ran (the database exists; the helper makes
   it at its first start, when agent mode is first chosen). Usage and the list
   are read apart: a search the helper refuses empties only the list ("Couldn't search for …. Try
