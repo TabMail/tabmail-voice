@@ -76,7 +76,7 @@ describe("overlay geometry", () => {
   /** A caret too low for the pill and a tip under it, but high enough that no lowering is needed to
    * keep the pill on screen above it. */
   test("moves above the caret when there is no room below", () => {
-    const caret = rect(500, maxY(display) - config.listeningPillHeight - config.tipFootprint - 20, 1, 20);
+    const caret = rect(500, maxY(display) - config.pillHeight - config.tipFootprint - 20, 1, 20);
     const origin = overlayOrigin(caret, canvas, pillHeight, display);
     expect(maxY(pillFrame(origin))).toBe(caret.y - config.overlayCaretGap);
     expect(opensUpward(caret, pillHeight, display)).toBe(true);
@@ -89,7 +89,7 @@ describe("overlay geometry", () => {
    * whose work area starts at 0, one shortened by the Dock, and a display below the main one. */
   test("the tip under the listening pill is always on screen", () => {
     const canvas = config.overlayCanvasSize;
-    const pill: Size = { width: 120, height: config.listeningPillHeight };
+    const pill: Size = { width: 120, height: config.pillHeight };
     const tipBottom = maxY(framed(hintCenter(rect(0, 0, pill.width, pill.height), tip), tip));
     let openedBelow = 0;
     let openedAbove = 0;
@@ -150,7 +150,7 @@ describe("overlay geometry", () => {
     const shadow = config.glassShadowReach;
     const visible = config.agentBubbleRowVisibleCount;
     const showing = visible + config.agentBubbleRowFadeCount;
-    for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
+    for (const size of [{ width: 120, height: config.pillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
       for (let count = 0; count <= agentToolIDs.length + connectorIDs.length; count += 1) {
         const frames = bubbleRow(pill, count, underFits).map((center) => framed(center, bubble));
@@ -180,7 +180,7 @@ describe("overlay geometry", () => {
   /** Neighboring bubbles both grown to the running size stay apart, so the running one never touches
    * its neighbor; at rest a bubble is smaller than the pill (owner, 2026-09-28). */
   test("running neighbors don't touch", () => {
-    const pill = rect(100, 100, 120, config.listeningPillHeight);
+    const pill = rect(100, 100, 120, config.pillHeight);
     const [first, second] = bubbleRow(pill, 2, true).map((center) => grownBubble(framed(center, { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter }), config.agentBubbleRunningScale));
     if (!first || !second) throw new Error("no row");
     expect(second.x - maxX(first)).toBeGreaterThan(0);
@@ -206,7 +206,7 @@ describe("overlay geometry", () => {
    * them over it. */
   test("bubbles go under the pill only when they fit below the caret's line", () => {
     const row = config.agentBubbleGap + config.agentBubbleDiameter;
-    const room = config.overlayCaretGap + Math.max(config.pillHeight, config.listeningPillHeight) + config.tipFootprint + row;
+    const room = config.overlayCaretGap + config.pillHeight + config.tipFootprint + row;
     const caret = (bottom: number) => rect(500, bottom - 20, 1, 20);
 
     expect(bubblesFitUnder(caret(400), config.pillHeight, display)).toBe(true);
@@ -231,7 +231,7 @@ describe("overlay geometry", () => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
     const shadow = config.glassShadowReach;
-    for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
+    for (const size of [{ width: 120, height: config.pillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
       for (let count = 0; count <= config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount; count += 1) {
         const bubbles = bubbleRow(pill, count, false).map((center) => framed(center, bubble));
@@ -259,7 +259,7 @@ describe("overlay geometry", () => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
     const tooltip: Size = { width: config.bubbleTooltipMaxWidth, height: 130 };
-    const pill = rect(midX(area) - 60, (area.height - config.pillHeight) / 2, 120, config.listeningPillHeight);
+    const pill = rect(midX(area) - 60, (area.height - config.pillHeight) / 2, 120, config.pillHeight);
     const frames = bubbleRow(pill, config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount, underFits).map((center) => framed(center, bubble));
     for (const scale of [config.agentBubbleHoverScale, config.agentBubbleRunningScale]) {
       for (const [index, frame] of frames.entries()) {

@@ -561,8 +561,14 @@ export const contextDebugWindowSize = { width: 720, height: 560 };
 /** Gap between the caret's line and the top of the pill. */
 export const overlayCaretGap = 4;
 export const overlayFontSize = 13;
+/** The pill's height, the circle's and the listening pill's alike, so nothing under it moves as one
+ * becomes the other (owner, 2026-10-20: the listening pill, then 30 points, moved the bubbles and the
+ * chat window up and down as it became the circle). */
 export const pillHeight = 26;
 export const pillHorizontalPadding = 14;
+/** The listening pill's padding at its ends: 2 points less than a message's, as its top and bottom
+ * came 2 points closer to the waveform when it took the circle's height (owner, 2026-10-20). */
+export const listeningPillHorizontalPadding = 12;
 /** Keeps text off the pill's rounded top and bottom when a message wraps. */
 export const pillVerticalPadding = 5;
 export const pillContentSpacing = 8;
@@ -618,12 +624,10 @@ export const overlayMeterBarWidth = 3;
 export const overlayMeterBarSpacing = 3;
 export const overlayMeterMinBarHeight = 3;
 export const overlayMeterMaxBarHeight = 18;
-/** The listening pill's height: the waveform between the pill's vertical padding. */
-export const listeningPillHeight = Math.max(pillHeight, overlayMeterMaxBarHeight + 2 * pillVerticalPadding);
-/** The language badge left of the waveform: a circle as tall as the waveform, inset so it is
- * concentric with the pill's rounded end. */
+/** The language badge left of the waveform: a circle as tall as the waveform, inset (inside the
+ * pill's border) so it is concentric with the pill's rounded end. */
 export const languageBadgeDiameter = overlayMeterMaxBarHeight;
-export const languageBadgeInset = (listeningPillHeight - languageBadgeDiameter) / 2;
+export const languageBadgeInset = (pillHeight - languageBadgeDiameter) / 2 - pillBorderWidth;
 export const languageBadgeFontSize = 8;
 /** Bar height follows level^exponent (< 1 lifts quieter speech), times the gain. */
 export const waveformLevelExponent = 1;
@@ -789,11 +793,11 @@ export const tipGap = 4;
 /** Room the hint takes beside the pill: the gap, the arrow and the box. */
 export const tipFootprint = tipGap + tipArrowHeight + tipHeight;
 /** Transparent canvas the overlay draws in; the pill sizes itself inside it. The one-line pill sits
- * vertically centered, with room on each side for the listening pill's growth downward, agent mode's
- * row of bubbles (under the pill or over it, `bubblesFitUnder`) and a tip (and its glow) past it. */
+ * vertically centered, with room on each side for agent mode's row of bubbles (under the pill or over
+ * it, `bubblesFitUnder`) and a tip (and its glow) past it. */
 export const overlayCanvasSize = {
   width: 440,
-  height: pillHeight + 2 * (listeningPillHeight - pillHeight + agentBubbleGap + agentBubbleDiameter + tipFootprint + glassShadowReach),
+  height: pillHeight + 2 * (agentBubbleGap + agentBubbleDiameter + tipFootprint + glassShadowReach),
 };
 /** The not-pasted note is never taller than this, whatever the fonts make of its lines: placed, it
  * keeps this much of the work area under the pill's top (`overlayOrigin`), and it fits the canvas
@@ -847,9 +851,8 @@ export const chatShadowMargin = glassShadowReach;
 /** The chat window sits this far over the pill (or under its bubbles, `chatSide`), which stays
  * where it was (owner, 2026-09-28: the answer box "appears smoothly above in a subtle way"). */
 export const chatPillGap = 10;
-/** The pill, as tall as it gets listening, and its row of bubbles under it: what the chat window
- * leaves room for beside it. */
-export const chatStripHeight = listeningPillHeight + agentBubbleGap + agentBubbleDiameter;
+/** The pill and its row of bubbles under it: what the chat window leaves room for beside it. */
+export const chatStripHeight = pillHeight + agentBubbleGap + agentBubbleDiameter;
 /** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCenter`). */
 export const chatBubbleTooltipRoom = 80;
 /** The chat window grows out of its pill as it opens, from this scale, fading in on the pill's spring,

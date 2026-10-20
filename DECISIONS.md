@@ -386,6 +386,19 @@ above the room, under the 6 dB. The owner chose, of three options, both fixes:
 - Trade-off the owner accepted: right after a switch to a much louder microphone or room, the next
   dictation can turn blue on the room's noise, until the floor moves down to it.
 
+**Amendment 2026-10-20 (owner): the listening pill is the circle's height.** The owner saw agent
+mode's bubbles and the chat window move up and down as the pill turned from the waveform into the
+circle and back. The listening pill was 30 points tall (the 18-point waveform, 5 points of padding
+over and under it and the border; `listeningPillHeight` left the border out and said 28), the circle
+26, and the pill's top stays put, so all under it moved 4 points; its padding over and under the
+waveform also sprang past its mark on each change, which made it wobble too. Chosen from an animated
+page of three sizes: the waveform stays as it was, and the pill behind it is the circle's 26 points
+(`pillHeight`; `listeningPillHeight` is gone), the waveform centered in it with no padding over or
+under it, so only the width changes; its ends 2 points closer to the waveform as its top and bottom
+came (`listeningPillHorizontalPadding`, 12; a message keeps `pillHorizontalPadding`), and the
+language badge still concentric with its rounded end (`languageBadgeInset`, inside the border). The
+preview checks every listening, thinking and working pill is `pillHeight` tall as laid out.
+
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
 **Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the

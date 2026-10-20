@@ -131,6 +131,13 @@ const settingsWindowSize = { width: 700, height: 500 };
 /** `config.welcomeWindowSize`. */
 const welcomeWindowSize = { width: 560, height: 660 };
 
+/** `config.pillHeight`: the circle's height, and the listening pill's, so nothing under the pill moves
+ * as one becomes the other (owner, 2026-10-20). */
+const pillHeight = 26;
+/** The phases whose pill is the circle or the waveform, each shot of them checked to be `pillHeight`
+ * tall as laid out. */
+const pillHeightPhases = new Set(["listening", "transcribing", "running"]);
+
 /** `config.noteTextMaxLines`. */
 const noteTextMaxLines = 3;
 /** The not-pasted note's shots, each checked as laid out (`noteLayoutProblem`), with the lines its
@@ -308,6 +315,11 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
   if (errors > 0 || !rendered || !whole) throw new Error(`the page ${errors > 0 ? "logged errors" : !rendered ? "rendered nothing" : `cut off ${shot.whole}`}`);
   const noteProblem = shot.noteLines === undefined ? null : ((await window.webContents.executeJavaScript(`(${noteLayoutProblem})(${noteTextMaxLines}, ${JSON.stringify(shot.noteLines)})`)) as string | null);
   if (noteProblem !== null) throw new Error(`the not-pasted note is wrong: ${noteProblem}`);
+  const phase = (shot.state as { phase?: { kind?: string }; isHearing?: boolean }).phase?.kind;
+  if (shot.page.startsWith("overlay/") && phase !== undefined && pillHeightPhases.has(phase) && (shot.state as { isHearing?: boolean }).isHearing !== false) {
+    const height = (await window.webContents.executeJavaScript(`document.querySelector(".pill:not(.note)")?.getBoundingClientRect().height ?? null`)) as number | null;
+    if (height === null || Math.abs(height - pillHeight) > 0.01) throw new Error(`the ${phase} pill is ${height ?? "not shown"}, not ${pillHeight}, points tall`);
+  }
   const image = await window.webContents.capturePage();
   writeFileSync(join(output, `${shot.name}.png`), image.toPNG());
   window.close();
