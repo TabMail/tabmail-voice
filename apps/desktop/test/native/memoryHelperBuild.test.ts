@@ -100,6 +100,8 @@ describe("the memory helper build", () => {
     ["no flags", {}, []],
     ["RUSTFLAGS", { RUSTFLAGS: "-C  target-cpu=native" }, ["-C", "target-cpu=native"]],
     ["CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "-C\x1ftarget-cpu=native", RUSTFLAGS: "--ignored" }, ["-C", "target-cpu=native"]],
+    // Set empty, it means no flags to Cargo, which then reads no RUSTFLAGS.
+    ["an empty CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "", RUSTFLAGS: "--ignored" }, []],
   ])("builds the source paths from a home folder with a space in it as ~, keeping %s already set", (_name, set, inherited) => {
     const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, RUSTFLAGS: process.env.RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS };
     const home = join(tmpdir(), "First Last");

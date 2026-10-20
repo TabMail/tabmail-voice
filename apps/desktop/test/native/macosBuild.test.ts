@@ -102,17 +102,24 @@ describe("the macOS helper build", () => {
   /** The Rust core's source paths, under the builder's home folder, name its user: they are built
    *  as `~` (one flag, even for a home folder with a space in it), and a helper still holding the
    *  home folder is never copied out as built. */
-  test("builds the Rust core's source paths from a home folder with a space in it as ~", async () => {
+  test.each<[string, NodeJS.ProcessEnv, string[]]>([
+    ["no flags", {}, []],
+    ["RUSTFLAGS", { RUSTFLAGS: "-C  target-cpu=native" }, ["-C", "target-cpu=native"]],
+    ["CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "-C\x1ftarget-cpu=native", RUSTFLAGS: "--ignored" }, ["-C", "target-cpu=native"]],
+    ["an empty CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "", RUSTFLAGS: "--ignored" }, []],
+  ])("builds the Rust core's source paths from a home folder with a space in it as ~, keeping %s already set", async (_name, set, inherited) => {
     const saved = { HOME: process.env.HOME, RUSTFLAGS: process.env.RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS };
     const home = join(tmpdir(), "First Last");
     try {
       delete process.env.RUSTFLAGS;
       delete process.env.CARGO_ENCODED_RUSTFLAGS;
-      process.env.HOME = home;
+      Object.assign(process.env, { HOME: home }, set);
       const { root, cargoFlags } = checkout({}, {});
       process.env.VOICE_MAC_ARCH = "universal";
       await buildNative(root);
-      expect(cargoFlags.map((flags) => flags?.split("\x1f"))).toEqual([[`--remap-path-prefix=${home}=~`], [`--remap-path-prefix=${home}=~`]]);
+      // Both architectures of the universal build.
+      const remapped = [...inherited, `--remap-path-prefix=${home}=~`];
+      expect(cargoFlags.map((flags) => flags?.split("\x1f"))).toEqual([remapped, remapped]);
     } finally {
       for (const [name, value] of Object.entries(saved)) {
         if (value === undefined) delete process.env[name];

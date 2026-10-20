@@ -12,12 +12,13 @@ import { homedir } from "node:os";
 const cargoFlagSeparator = "\x1f";
 
 /** `CARGO_ENCODED_RUSTFLAGS` that build every source path under the home folder as `~`, after any
- * flags `env` already sets (its `CARGO_ENCODED_RUSTFLAGS`, else its `RUSTFLAGS` split on whitespace,
- * as Cargo splits them). Cargo splits `RUSTFLAGS` on whitespace, so a home folder with a space in it
- * would break the remap in two; each encoded flag reaches rustc whole, and Cargo reads them first. */
+ * flags `env` already sets, as Cargo reads them: its `CARGO_ENCODED_RUSTFLAGS` when set (set empty,
+ * no flags, and `RUSTFLAGS` unread), else its `RUSTFLAGS` split on whitespace. Cargo splits
+ * `RUSTFLAGS` on whitespace, so a home folder with a space in it would break the remap in two; each
+ * encoded flag reaches rustc whole, and Cargo reads them first. */
 export function encodedRustFlagsWithoutHome(env: NodeJS.ProcessEnv = process.env): string {
   const encoded = env.CARGO_ENCODED_RUSTFLAGS;
-  const inherited = encoded !== undefined && encoded !== "" ? encoded.split(cargoFlagSeparator) : (env.RUSTFLAGS ?? "").split(/\s+/).filter((flag) => flag !== "");
+  const inherited = encoded === undefined ? (env.RUSTFLAGS ?? "").split(/\s+/).filter((flag) => flag !== "") : encoded === "" ? [] : encoded.split(cargoFlagSeparator);
   return [...inherited, `--remap-path-prefix=${homedir()}=~`].join(cargoFlagSeparator);
 }
 
