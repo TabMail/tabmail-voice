@@ -11,6 +11,8 @@ import { FakeMemory } from "../../support/fakeMemory.js";
 
 const minute = 60 * 1_000;
 const day = 24 * 60 * minute;
+/** How far ahead a test looks for a daylight-saving day: past two years, so every zone's next ones. */
+const transitionSearchDays = 800;
 
 /** The agent loop's memory tools, run on this computer: the same arguments, paging, results and
  * errors as Thunderbird's tools of the same names, each result the JSON of what the tool answers. */
@@ -126,6 +128,61 @@ describe("MemoryTools", () => {
         const result = (await run(config.memorySearchTool, dates(day))) as { results: string; totalItems: number };
         expect(result.totalItems).toBe(expected.length);
         expect([...result.results.matchAll(/^\[AGENT\]: About (.+)$/gm)].map((m) => m[1])).toEqual(expected);
+      });
+    });
+
+    /** A day is the user's whole local day however long daylight saving makes it (23 or 25 hours, or
+     * starting at 01:00 where midnight is skipped), and a time given is that instant: each bound
+     * included, the moment either side of it not. */
+    describe("date bounds, exactly", () => {
+      let savedZone: string | undefined;
+      beforeEach(() => {
+        savedZone = process.env.TZ;
+      });
+      afterEach(() => {
+        if (savedZone === undefined) delete process.env.TZ;
+        else process.env.TZ = savedZone;
+      });
+
+      const dayText = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+      /** The next day in `zone` that lasts `hours`, and, when `skipsMidnight`, starts after midnight. */
+      function transitionDay(zone: string, hours: number, skipsMidnight: boolean): Date {
+        process.env.TZ = zone;
+        const today = new Date();
+        for (let i = 0; i < transitionSearchDays; i += 1) {
+          const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+          const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+          if ((next.getTime() - start.getTime()) / (60 * minute) === hours && (start.getHours() !== 0) === skipsMidnight) return start;
+        }
+        throw new Error(`no ${hours}-hour day in ${zone}`);
+      }
+
+      /** Lists exactly the exchanges from `from` to `to` (milliseconds, both included). */
+      async function expectListed(from: number, to: number, args: Record<string, string>): Promise<void> {
+        const exchanges: [string, number][] = [["before", from - 1], ["start", from], ["inside", Math.floor((from + to) / 2)], ["end", to], ["after", to + 1]];
+        for (const [name, dateMs] of exchanges) memory.rows.push(memoryRow(`${name} question`, name, dateMs, name));
+        const result = (await run(config.memorySearchTool, args)) as { results: string };
+        expect([...result.results.matchAll(/^\[AGENT\]: (.+)$/gm)].map((m) => m[1])).toEqual(["end", "inside", "start"]);
+        expect(memory.rows).toHaveLength(exchanges.length);
+      }
+
+      test.each<[string, number, boolean]>([
+        ["America/Vancouver", 23, false],
+        ["America/Vancouver", 25, false],
+        ["America/Santiago", 23, true],
+      ])("a day in %s of %s hours (midnight skipped: %s) is that whole day", async (zone, hours, skipsMidnight) => {
+        const start = transitionDay(zone, hours, skipsMidnight);
+        const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+        await expectListed(start.getTime(), next.getTime() - 1, { from_date: dayText(start), to_date: dayText(start) });
+      });
+
+      test.each(["", "Z", "+09:00"])("a time with offset %j is that instant", async (offset) => {
+        process.env.TZ = "America/Vancouver";
+        const day = dayText(new Date());
+        const from = `${day}T10:15:00${offset}`;
+        const to = `${day}T11:15:00${offset}`;
+        await expectListed(Date.parse(from), Date.parse(to), { from_date: from, to_date: to });
       });
     });
 

@@ -5613,8 +5613,9 @@ Thunderbird's copy or its files.
 >
 > **A day is the user's local day.** `from_date` and `to_date` given as a day alone (`YYYY-MM-DD`, the
 > form `time_delta` answers "yesterday" in) are the whole of that day where the user is: a start from
-> its local midnight, an end through its last millisecond (the helper's bounds are inclusive and keep
-> milliseconds). JavaScript reads a bare day as UTC midnight, which made "yesterday" as start and end
+> its local midnight, an end through its last millisecond, the next day's start less one (the helper's
+> bounds are inclusive and keep milliseconds), however long daylight saving makes the day (where it
+> skips midnight the day starts at 01:00 and the next at 00:00). JavaScript reads a bare day as UTC midnight, which made "yesterday" as start and end
 > an empty window, and shifted every day by the user's offset. A time without an offset is local too;
 > one with an offset is read as written. As `Arguments.localEnd` reads a day for the calendar and files
 > tools. Tests: `memory/tools.test.ts` (a day west of UTC, east of it and in UTC, red-verified).

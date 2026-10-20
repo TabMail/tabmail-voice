@@ -120,13 +120,19 @@ function centred(hits: MemoryHit[], timestamp: number, count: number): MemoryHit
 }
 
 /** A date the model wrote, as the helper takes it (ISO, to the millisecond, both bounds included);
- * empty when it isn't one. A day alone is the user's local day, as `time_delta` gives it: from its
- * start, or, as the `end` of a range, through its last millisecond. A time without an offset is local
+ * empty when it isn't one. A day alone is the user's local day, as `time_delta` gives it, however
+ * long daylight saving makes it: from its start, or, as the `end` of a range, through its last
+ * millisecond. A time without an offset is local
  * too. */
 function isoDate(text: string, end: boolean): string {
   if (text === "") return "";
   const local = LocalDateTime.parse(text);
-  if (local !== null && !local.hasTime) return (end ? new Date(LocalDateTime.addingDays(local.date, 1).getTime() - 1) : local.date).toISOString();
+  if (local !== null && !local.hasTime) {
+    // The next day's start, not this day's start a day on: where daylight saving skips midnight, a
+    // day starts at 01:00 and the next one at 00:00.
+    const nextDay = LocalDateTime.startOfDay(LocalDateTime.addingDays(local.date, 1));
+    return (end ? new Date(nextDay.getTime() - 1) : local.date).toISOString();
+  }
   const date = local?.date ?? new Date(text);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
