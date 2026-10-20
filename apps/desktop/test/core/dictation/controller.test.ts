@@ -3829,28 +3829,66 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           /** Memory's bubble runs at the front while its search does, alone, as an app's does while its
            * tool runs (owner, 2026-10-19), and stops with it, so Answer's bubble runs alone for the reply. */
-          test("memory's bubble runs while a memory tool does", async () => {
-            const searching = deferred<void>();
-            const searched = deferred<void>();
-            const search = memory.search.bind(memory);
-            memory.search = async (request) => {
-              searching.resolve();
-              await searched.promise;
-              return search(request);
+          /** Holds the memory's `method` until `release` resolves; `entered` resolves as it is called. */
+          function holdMemory(method: "search" | "read") {
+            const entered = deferred<void>();
+            const release = deferred<void>();
+            const original = memory[method].bind(memory) as (...args: never[]) => Promise<unknown>;
+            (memory as unknown as Record<string, unknown>)[method] = async (...args: never[]) => {
+              entered.resolve();
+              await release.promise;
+              return original(...args);
             };
+            return { entered, release };
+          }
+
+          test.each<[string, string, boolean]>([
+            ["memory_search", JSON.stringify({ query: "launch" }), false],
+            ["memory_read", JSON.stringify({ timestamp: Date.now() - 60_000 }), false],
+            ["memory_search", JSON.stringify({ query: "launch" }), true],
+            ["memory_read", JSON.stringify({ timestamp: Date.now() - 60_000 }), true],
+          ])("memory's bubble runs while %s does (%s, failing: %s)", async (name, args, failing) => {
+            const held = holdMemory(name === "memory_search" ? "search" : "read");
             const running: (string | null)[] = [];
-            const { controller, done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })]), reply("Nothing found.")], (controller) => controller.observe(() => running.push(controller.runningBubble)));
-            await searching.promise;
+            const { controller, done } = await ask([], [calling([name, args]), reply("Nothing found.")], (controller) => controller.observe(() => running.push(controller.runningBubble)));
+            await held.entered.promise;
             expect(controller.runningBubble).toBe("memory");
             expect(controller.recentBubbles[0]).toBe("memory");
-            searched.resolve();
+            memory.failing = failing;
+            held.release.resolve();
             await done;
-            // Stopped when the search ended, before Answer's bubble ran for the reply.
+            // Stopped when the tool ended, before Answer's bubble ran for the reply.
             const ran = running.indexOf("memory");
             const answered = running.indexOf("answer", ran);
             expect(answered).toBeGreaterThan(ran);
             expect(running.slice(ran, answered)).toContain(null);
             expect(controller.recentBubbles).toEqual(["answer", "memory"]);
+            expect(controller.runningBubble).toBeNull();
+          });
+
+          /** A canceled request's memory search ends late, while the next request's own memory search
+           * runs: that one's bubble keeps running until it ends. */
+          test("a canceled request's memory search leaves the next request's memory bubble running", async () => {
+            const unheld = memory.search;
+            const first = holdMemory("search");
+            const { controller, done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })])]);
+            await first.entered.promise;
+            controller.handle("cancel");
+            await done;
+            // The next search is held on its own, apart from the first.
+            memory.search = unheld;
+            const second = holdMemory("search");
+            transcription.enqueue(200, { text: "what did we discuss" });
+            completions.enqueue(200, calling(["memory_search", "{}"]));
+            completions.enqueue(200, reply("We discussed the launch."));
+            await holdAndRelease(controller, "agent");
+            await second.entered.promise;
+            expect(controller.runningBubble).toBe("memory");
+            first.release.resolve();
+            await sleep(100);
+            expect(controller.runningBubble).toBe("memory");
+            second.release.resolve();
+            expect(await eventually(() => controller.chat?.turns.at(-1)?.reply === "We discussed the launch.")).toBe(true);
             expect(controller.runningBubble).toBeNull();
           });
 

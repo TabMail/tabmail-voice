@@ -10,7 +10,7 @@ import { afterEach, expect, test } from "vitest";
 import { connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import { agentToolIDs } from "../../../src/core/agent/tools.js";
 import type { EventQuestionLine } from "../../../src/core/agent/chat.js";
-import { ConnectorIcon, EventLineIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../../../src/renderer/shared/icons.js";
+import { ConnectorIcon, EventLineIcon, ExclamationIcon, HistoryIcon, MemoryIcon, SparklesIcon, ToolIcon } from "../../../src/renderer/shared/icons.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,4 +58,19 @@ test("every calendar card line icon draws its own shape", async () => {
     drawings.push(svg.innerHTML);
   }
   expect(new Set(drawings).size).toBe(icons.length);
+});
+
+/** Memory's icon, a clock with an arrow going back, is one drawing in two colors: Settings' and the
+ * welcome's plain one (`HistoryIcon`) and the overlay's accent one (`MemoryIcon`). */
+test("memory's icon draws the clock with its arrow, plain in Settings and accented in the overlay", async () => {
+  const plain = await drawn(<HistoryIcon size={13} />);
+  const accent = await drawn(<MemoryIcon size={13} />);
+  for (const svg of [plain, accent]) {
+    const d = svg.querySelector("path")?.getAttribute("d") ?? "";
+    // The clock face and its arrow going back, and the hands.
+    expect(d).toContain("M3.5 12a8.5 8.5 0 1 0");
+    expect(d).toContain("M12 7.5V12l3 2");
+  }
+  expect(accent.outerHTML).toContain("var(--accent)");
+  expect(plain.outerHTML).not.toContain("var(--accent)");
 });

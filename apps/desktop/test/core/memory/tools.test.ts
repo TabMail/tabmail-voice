@@ -52,7 +52,7 @@ describe("MemoryTools", () => {
       keep(1, "travel", () => "travel today");
       memory.rows[memory.rows.length - 1]!.dateMs = now;
       const limit = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
-      for (const args of [{}, { query: "   " }, { query: 42 }]) {
+      for (const args of [{}, { query: "" }, { query: "   " }, { query: 42 }]) {
         tools = new MemoryTools(memory);
         memory.searches.length = 0;
         const result = (await run(config.memorySearchTool, args)) as { results: string; totalItems: number; totalPages: number };
@@ -63,14 +63,32 @@ describe("MemoryTools", () => {
         const stamps = [...result.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]));
         expect(stamps[0]).toBe(now);
         expect(stamps).toEqual([...stamps].sort((a, b) => b - a));
+        // The next page is the next exchanges, from the one listing.
+        const next = (await run(config.memorySearchTool, { ...args, page_index: 2 })) as { results: string; page: number };
+        expect(next.page).toBe(2);
+        expect(listed(next.results)).toEqual([config.memorySearchPageSize + 1, config.memorySearchPageSize + 2, config.memorySearchPageSize + 3]);
+        const nextStamps = [...next.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]));
+        expect(nextStamps).toEqual([...nextStamps].sort((a, b) => b - a));
+        expect(Math.max(...nextStamps)).toBeLessThan(Math.min(...stamps));
+        expect(memory.searches).toHaveLength(1);
       }
     });
 
-    test("with no query keeps to the dates asked", async () => {
-      keep(1, "budget");
-      const result = await run(config.memorySearchTool, { from_date: "2020-01-01", to_date: "2020-01-31" });
-      expect(memory.searches).toEqual([expect.objectContaining({ query: "", from: expect.stringMatching(/^2020-01-01/), to: expect.stringMatching(/^2020-01-31/) })]);
-      expect(result).toEqual(expect.objectContaining({ totalItems: 1 }));
+    /** The dates bound the listing as they bound a search: from a start, to an end, both, or neither. */
+    test.each<[string, Record<string, string>, number[]]>([
+      ["a start", { from_date: new Date(now - 3.5 * day).toISOString() }, [0, 1, 2]],
+      ["an end", { to_date: new Date(now - 2.5 * day).toISOString() }, [2, 3, 4]],
+      ["a start and an end", { from_date: new Date(now - 4.5 * day).toISOString(), to_date: new Date(now - 1.5 * day).toISOString() }, [1, 2, 3]],
+      ["no dates", {}, [0, 1, 2, 3, 4]],
+    ])("with no query keeps to the dates asked: %s", async (_name, dates, expected) => {
+      keep(5, "budget");
+      const result = (await run(config.memorySearchTool, dates)) as { results: string; totalItems: number };
+      expect(result.totalItems).toBe(expected.length);
+      for (let i = 0; i < 5; i += 1) {
+        if (expected.includes(i)) expect(result.results).toContain(`budget question ${i}`);
+        else expect(result.results).not.toContain(`budget question ${i}`);
+      }
+      expect(memory.rows).toHaveLength(5);
     });
 
     test("lists matches, newest first, each with its timestamp, date and text", async () => {
