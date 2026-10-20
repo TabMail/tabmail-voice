@@ -793,7 +793,12 @@ function TimeoutBar({ closesAt, timeout, inset }: { closesAt: number; timeout: n
 function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }: { mode: Mode; level: number; hasVoice: boolean; isRetrying: boolean; language: string | null; isAgent: boolean; maxWidth: number }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
   const isNote = mode.kind === "notPasted";
-  const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
+  const isText = mode.kind === "message" || mode.kind === "retrying";
+  // Listening, the waveform is centered in the circle's height, with no padding over or under it to
+  // spring as the pill becomes the circle: only its width changes, and nothing under it moves.
+  const endPadding = isCircle ? 0 : isText ? config.pillHorizontalPadding : config.listeningPillHorizontalPadding;
+  const leadingPadding = isCircle || isText || language === null ? endPadding : config.languageBadgeInset;
+  const verticalPadding = isText ? config.pillVerticalPadding : 0;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
   useNoteHitArea(ref, isNote);
   // Over the note, its Copy takes a wash of the accent: a click copies.
@@ -801,9 +806,9 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
     paddingLeft: leadingPadding,
-    paddingRight: isCircle ? 0 : config.pillHorizontalPadding,
-    paddingTop: isCircle ? 0 : config.pillVerticalPadding,
-    paddingBottom: isCircle ? 0 : config.pillVerticalPadding,
+    paddingRight: endPadding,
+    paddingTop: verticalPadding,
+    paddingBottom: verticalPadding,
     minHeight: config.pillHeight,
     maxWidth,
     borderRadius: config.pillHeight / 2,

@@ -150,7 +150,7 @@ describe("OverlayWindowController", () => {
    * do; a caret with room under it for the pill and the tip but not a row of bubbles too keeps the pill
    * under it and puts them over it; at the bottom the overlay opens upward and they go over it too. */
   test("each placing tells the view whether the bubbles fit under the pill", async () => {
-    const room = config.overlayCaretGap + Math.max(config.pillHeight, config.listeningPillHeight) + config.tipFootprint;
+    const room = config.overlayCaretGap + config.pillHeight + config.tipFootprint;
     const bottom = workArea.y + workArea.height;
     const carets: Rect[] = [
       { x: 400, y: 300, width: 1, height: 16 },

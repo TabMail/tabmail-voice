@@ -53,9 +53,9 @@ export function opensUpward(anchor: Rect, pillHeight: number, workArea: Rect): b
   return maxY(anchor) + config.overlayCaretGap + heightUnderPillTop(pillHeight) > maxY(workArea);
 }
 
-/** The listening pill and a tip under it, from the pill's top edge down. */
+/** The pill and a tip under it, from the pill's top edge down. */
 function heightUnderPillTop(pillHeight: number): number {
-  return Math.max(pillHeight, config.listeningPillHeight) + config.tipFootprint;
+  return pillHeight + config.tipFootprint;
 }
 
 /** Whether a row of agent mode's bubbles fits under the pill, with the tip under it
