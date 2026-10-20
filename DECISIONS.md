@@ -5610,6 +5610,14 @@ Thunderbird's copy or its files.
 > version (ADR-DESK-064) no longer requires a query and says when to leave it out. Tests:
 > `memory/tools.test.ts` (no query lists the newest first, paged, in the dates asked), red-verified
 > against the refusal.
+>
+> **A day is the user's local day.** `from_date` and `to_date` given as a day alone (`YYYY-MM-DD`, the
+> form `time_delta` answers "yesterday" in) are the whole of that day where the user is: a start from
+> its local midnight, an end through its last millisecond (the helper's bounds are inclusive and keep
+> milliseconds). JavaScript reads a bare day as UTC midnight, which made "yesterday" as start and end
+> an empty window, and shifted every day by the user's offset. A time without an offset is local too;
+> one with an offset is read as written. As `Arguments.localEnd` reads a day for the calendar and files
+> tools. Tests: `memory/tools.test.ts` (a day west of UTC, east of it and in UTC, red-verified).
 
 > **Amended (2026-10-19): the helper is native-fts 0.11.8, and no helper carries the home folder.**
 > The pin moves to the 0.11.8 commit (`04b19a3`), whose dependencies the security audit passes. A

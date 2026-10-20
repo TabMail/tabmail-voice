@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
 import { MemoryError, memoryDate, memoryRow } from "../../../src/core/memory/store.js";
@@ -91,6 +91,44 @@ describe("MemoryTools", () => {
       expect(memory.rows).toHaveLength(5);
     });
 
+    /** A day alone, as `time_delta` gives "yesterday", is the user's whole local day: west of UTC
+     * its evening falls in the next UTC day, east of it its morning in the previous one, and its
+     * last second still counts. */
+    describe.each(["America/Vancouver", "Asia/Tokyo", "UTC"])("in %s", (zone) => {
+      let savedZone: string | undefined;
+      beforeEach(() => {
+        savedZone = process.env.TZ;
+        process.env.TZ = zone;
+      });
+      afterEach(() => {
+        if (savedZone === undefined) delete process.env.TZ;
+        else process.env.TZ = savedZone;
+      });
+
+      test.each<[string, (day: string) => Record<string, string>, string[]]>([
+        ["that day as start and end", (day) => ({ from_date: day, to_date: day }), ["last second", "evening", "morning", "midnight"]],
+        ["that day as the end", (day) => ({ to_date: day }), ["last second", "evening", "morning", "midnight", "the night before"]],
+        ["that day as the start", (day) => ({ from_date: day }), ["today", "last second", "evening", "morning", "midnight"]],
+      ])("with no query lists the whole of a day asked as a date: %s", async (_name, dates, expected) => {
+        const today = new Date();
+        const at = (days: number, hour: number, minute = 0, second = 0, ms = 0) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + days, hour, minute, second, ms).getTime();
+        const exchanges: [string, number][] = [
+          ["the night before", at(-2, 23)],
+          ["midnight", at(-1, 0)],
+          ["morning", at(-1, 2)],
+          ["evening", at(-1, 22)],
+          ["last second", at(-1, 23, 59, 59, 500)],
+          ["today", at(0, 0)],
+        ];
+        for (const [name, dateMs] of exchanges) memory.rows.push(memoryRow(`${name} question`, `About ${name}`, dateMs, name));
+        const yesterday = new Date(at(-1, 12));
+        const day = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+        const result = (await run(config.memorySearchTool, dates(day))) as { results: string; totalItems: number };
+        expect(result.totalItems).toBe(expected.length);
+        expect([...result.results.matchAll(/^\[AGENT\]: About (.+)$/gm)].map((m) => m[1])).toEqual(expected);
+      });
+    });
+
     test("lists matches, newest first, each with its timestamp, date and text", async () => {
       keep(2, "budget");
       keep(1, "travel");
@@ -169,14 +207,14 @@ describe("MemoryTools", () => {
       expect(await run(config.memorySearchTool, { query: "budget", page_index: "2" })).toMatchObject({ page: 1 });
     });
 
-    test("passes dates as ISO times to the second, drops one that isn't a date, and searches afresh for other dates", async () => {
+    test("passes dates as ISO times to the millisecond, drops one that isn't a date, and searches afresh for other dates", async () => {
       keep(1, "budget");
       const from = new Date(now - 7 * day);
       await run(config.memorySearchTool, { query: "budget", from_date: from.toISOString(), to_date: "last week" });
       await run(config.memorySearchTool, { query: "budget", from_date: from.toISOString(), to_date: "last week" });
       await run(config.memorySearchTool, { query: "budget" });
       expect(memory.searches.map(({ from, to }) => ({ from, to }))).toEqual([
-        { from: from.toISOString().replace(/\.\d{3}Z$/, "Z"), to: "" },
+        { from: from.toISOString(), to: "" },
         { from: "", to: "" },
       ]);
     });

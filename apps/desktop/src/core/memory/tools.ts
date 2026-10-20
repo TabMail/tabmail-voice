@@ -5,6 +5,7 @@
 import * as config from "../config.js";
 import { errorName, log } from "../log.js";
 import { type MemoryHit, type AgentMemory, MemoryError, memoryDate } from "./store.js";
+import { LocalDateTime } from "../util/localDateTime.js";
 
 /**
  * The agent loop's memory tools, run on this computer: `memory_search` finds past exchanges, and
@@ -41,8 +42,8 @@ export class MemoryTools {
     const key = JSON.stringify({ query, from_date: fromText, to_date: toText });
     let hits = this.searches.get(key);
     if (hits === undefined) {
-      const from = isoDate(fromText);
-      const to = isoDate(toText);
+      const from = isoDate(fromText, false);
+      const to = isoDate(toText, true);
       const limit = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
       try {
         hits = (await this.store.search({ query, from, to, limit })).slice(0, limit);
@@ -118,11 +119,16 @@ function centred(hits: MemoryHit[], timestamp: number, count: number): MemoryHit
   return hits.slice(start, end);
 }
 
-/** A date the model wrote, as the helper takes it (ISO, to the second); empty when it isn't one. */
-function isoDate(text: string): string {
+/** A date the model wrote, as the helper takes it (ISO, to the millisecond, both bounds included);
+ * empty when it isn't one. A day alone is the user's local day, as `time_delta` gives it: from its
+ * start, or, as the `end` of a range, through its last millisecond. A time without an offset is local
+ * too. */
+function isoDate(text: string, end: boolean): string {
   if (text === "") return "";
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const local = LocalDateTime.parse(text);
+  if (local !== null && !local.hasTime) return (end ? new Date(LocalDateTime.addingDays(local.date, 1).getTime() - 1) : local.date).toISOString();
+  const date = local?.date ?? new Date(text);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 /** A positive number the model gave, or null. */
