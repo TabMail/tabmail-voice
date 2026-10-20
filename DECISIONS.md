@@ -5611,6 +5611,22 @@ Thunderbird's copy or its files.
 > `memory/tools.test.ts` (no query lists the newest first, paged, in the dates asked), red-verified
 > against the refusal.
 
+> **Amended (2026-10-19): the helper is native-fts 0.11.8, and no helper carries the home folder.**
+> The pin moves to the 0.11.8 commit (`04b19a3`), whose dependencies the security audit passes. A
+> Rust build keeps its dependencies' source paths in the binary, and on the builder's computer they
+> start at its home folder, which names its user: 0.2.4's Mac helpers carry it from the Rust core
+> (8 to 23 paths each), and in the Swift link's debug map, which names each object file by its path
+> in the checkout. `scripts/home-folder.mts` gives the Rust builds `--remap-path-prefix=<home>=~`
+> (after any `RUSTFLAGS` already set) and refuses a built helper that still holds the home folder;
+> `buildMemoryHelper` and the Mac build's Rust core use both. The Mac build strips the debug map from
+> the Swift helpers it ships (`strip -S`, which keeps the linker's signature valid; the build's own
+> copies keep it, beside their debug symbols) and checks every helper it copies, as the memory
+> helper's own release build does. Windows and Linux release builds run on CI
+> runners, whose home folder names no one; their memory helper gets the same flags and check. Tests:
+> `native/memoryHelperBuild.test.ts` and `native/macosBuild.test.ts` (the flag, kept beside earlier
+> flags; the Swift helpers shipped without their debug map, thin and universal; a helper holding the
+> home folder refused), red-verified against the previous build scripts.
+
 ## ADR-DESK-062: The default event duration, in Settings and set by agent mode's Settings tool
 
 **Context:** Owner, 2026-10-18: an event added with no end lasted a fixed hour

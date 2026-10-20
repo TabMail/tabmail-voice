@@ -9,6 +9,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { refuseHomeFolder, rustFlagsWithoutHome } from "./home-folder.mts";
 
 /** Where the helper's source comes from, and at which commit. */
 export interface MemoryHelperPin { repository: string; revision: string }
@@ -44,13 +45,16 @@ function source(root: string, pin: MemoryHelperPin): string {
 
 /** Builds the helper for one Rust target and returns the built executable's path. The target is
  * always named, as the app's Rust core does: the toolchain's own host can differ from the
- * architecture being packaged (an x64 rustup on an arm64 Windows builder). */
+ * architecture being packaged (an x64 rustup on an arm64 Windows builder). Its source paths start
+ * at `~`, not the builder's home folder (`home-folder.mts`), as the helper's own release build's do. */
 export function buildMemoryHelper(root: string, target: string): string {
   const pin = memoryHelperPin(root);
   const checkout = source(root, pin);
   const channel = toolchain(root);
-  const env = { ...process.env, RUSTUP_TOOLCHAIN: channel, CARGO_TARGET_DIR: join(root, "native/memory/.build/target") };
+  const env = { ...process.env, RUSTUP_TOOLCHAIN: channel, CARGO_TARGET_DIR: join(root, "native/memory/.build/target"), RUSTFLAGS: rustFlagsWithoutHome() };
   execFileSync("rustup", ["target", "add", "--toolchain", channel, target], { stdio: "inherit", env });
   execFileSync("cargo", ["build", "--release", "--locked", "--bin", "fts_helper", "--target", target], { cwd: checkout, stdio: "inherit", env });
-  return join(env.CARGO_TARGET_DIR, target, "release", target.includes("-windows-") ? "fts_helper.exe" : "fts_helper");
+  const helper = join(env.CARGO_TARGET_DIR, target, "release", target.includes("-windows-") ? "fts_helper.exe" : "fts_helper");
+  refuseHomeFolder(helper, `The memory helper built for ${target}`);
+  return helper;
 }

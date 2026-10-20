@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { refuseHomeFolder, rustFlagsWithoutHome } from "../home-folder.mts";
 import { buildMemoryHelper } from "../memory-helper.mts";
 
 /** Each app architecture (electron-builder's name) and what builds its helpers. */
@@ -54,7 +55,8 @@ function buildHelpers(root: string, arch: keyof typeof architectures): string {
   // The pinned toolchain (rust-toolchain.toml) installs only the host's standard library; this
   // adds the target's, once (a no-op after).
   execFileSync("rustup", ["target", "add", target.rust], { cwd: join(root, "native/shared/rust"), stdio: "inherit" });
-  execFileSync("cargo", ["build", "--release", "--locked", "--target", target.rust], { cwd: join(root, "native/shared/rust"), stdio: "inherit" });
+  // The Rust core's source paths start at `~`, not this computer's home folder (`home-folder.mts`).
+  execFileSync("cargo", ["build", "--release", "--locked", "--target", target.rust], { cwd: join(root, "native/shared/rust"), stdio: "inherit", env: { ...process.env, RUSTFLAGS: rustFlagsWithoutHome() } });
   // The triple names the package's deployment target (macOS 15, as Package.swift): with `--arch`,
   // SwiftPM checks x86_64 against the SDK's own macOS and warns that it is deprecated there.
   // Package.swift links the Rust target it is told: the manifest only knows the host's.
@@ -85,5 +87,10 @@ export async function buildNative(root: string): Promise<void> {
     for (const helper of helpers) copyFileSync(join(binPath, helper), join(destination, helper));
     copyFileSync(buildMemoryHelper(root, architectures[arch].rust), join(destination, "voice-memory"));
   }
+  // The Swift helpers' debug map names each object file by its path in this checkout, under the home
+  // folder, and only this computer can read it: the copies that ship leave it out (the build's own
+  // stay whole, beside their debug symbols).
+  for (const helper of helpers) execFileSync("strip", ["-S", join(destination, helper)], { stdio: "inherit" });
+  for (const helper of [...helpers, "voice-memory"]) refuseHomeFolder(join(destination, helper), helper);
   process.stdout.write(`Copied ${arch} ${[...helpers, "voice-memory"].join(", ")} to ${destination}\n`);
 }
