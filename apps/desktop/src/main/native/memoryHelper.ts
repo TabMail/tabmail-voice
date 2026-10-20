@@ -111,8 +111,8 @@ export class MemoryHelper implements AgentMemory {
 
   /** Removes everything memory holds by deleting its database, with the helper ended first: the
    * helper's own `memoryClear` deletes the files while its other connection holds them open, which
-   * Windows refuses, and it still answers ok. The next request starts a helper on an empty
-   * database. */
+   * Windows refuses (since native-fts 0.11.7 it answers an error when files remain). The next request
+   * starts a helper on an empty database. */
   clear(): Promise<void> {
     if (this.clearing === null) {
       this.clearing = this.deleteAll().finally(() => {

@@ -444,6 +444,8 @@ describe("overlay page", () => {
     expect(labels()).toEqual(["answer", "compose", "memory", "web"]);
     // Settings' memory icon: a clock with an arrow going back.
     expect(memory()?.querySelector("svg path")?.getAttribute("d")).toContain("M3.5 12a8.5 8.5 0 1 0");
+    // In the bubbles' accent, as every other bubble (not Settings' plain clock).
+    expect(memory()?.querySelector("svg")?.outerHTML).toContain("var(--accent)");
     expect(memory()?.querySelector(".spinning")).toBeNull();
     // Hovered, it says what it is.
     await act(async () => {

@@ -9,7 +9,8 @@ import { type MemoryHit, type AgentMemory, MemoryError, memoryDate } from "./sto
 /**
  * The agent loop's memory tools, run on this computer: `memory_search` finds past exchanges, and
  * `memory_read` reads those around one it found (ADR-DESK-061). A port of Thunderbird's tools of the
- * same names: the same arguments, paging, result text and errors, and, as there, each result is the
+ * same names: the same arguments, paging, result text and errors (with no query it lists the most
+ * recent exchanges, as Thunderbird will once its own change lands), and, as there, each result is the
  * JSON of what the tool answers. One instance serves one request, so a search's pages last as long as
  * the request (Thunderbird resets them each turn).
  */

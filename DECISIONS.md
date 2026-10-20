@@ -5619,7 +5619,7 @@ Thunderbird's copy or its files.
 > in the checkout. `scripts/home-folder.mts` gives the Rust builds `--remap-path-prefix=<home>=~`
 > (after any `RUSTFLAGS` already set) and refuses a built helper that still holds the home folder;
 > `buildMemoryHelper` and the Mac build's Rust core use both. The Mac build strips the debug map from
-> the Swift helpers it ships (`strip -S`, which keeps the linker's signature valid; the build's own
+> the Swift helpers it ships (`strip -S`, observed to keep the linker's signature valid; the build's own
 > copies keep it, beside their debug symbols) and checks every helper it copies, as the memory
 > helper's own release build does. Windows and Linux release builds run on CI
 > runners, whose home folder names no one; their memory helper gets the same flags and check. Tests:

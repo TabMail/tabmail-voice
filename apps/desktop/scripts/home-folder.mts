@@ -8,10 +8,17 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
-/** `RUSTFLAGS` that build every source path under the home folder as `~`, after any flags `env`
- * already sets. */
-export function rustFlagsWithoutHome(env: NodeJS.ProcessEnv = process.env): string {
-  return [env.RUSTFLAGS, `--remap-path-prefix=${homedir()}=~`].filter((flag) => flag !== undefined && flag !== "").join(" ");
+/** What separates the flags in `CARGO_ENCODED_RUSTFLAGS`. */
+const cargoFlagSeparator = "\x1f";
+
+/** `CARGO_ENCODED_RUSTFLAGS` that build every source path under the home folder as `~`, after any
+ * flags `env` already sets (its `CARGO_ENCODED_RUSTFLAGS`, else its `RUSTFLAGS` split on whitespace,
+ * as Cargo splits them). Cargo splits `RUSTFLAGS` on whitespace, so a home folder with a space in it
+ * would break the remap in two; each encoded flag reaches rustc whole, and Cargo reads them first. */
+export function encodedRustFlagsWithoutHome(env: NodeJS.ProcessEnv = process.env): string {
+  const encoded = env.CARGO_ENCODED_RUSTFLAGS;
+  const inherited = encoded !== undefined && encoded !== "" ? encoded.split(cargoFlagSeparator) : (env.RUSTFLAGS ?? "").split(/\s+/).filter((flag) => flag !== "");
+  return [...inherited, `--remap-path-prefix=${homedir()}=~`].join(cargoFlagSeparator);
 }
 
 /** Refuses the built file at `path`, named `name` in the error, if it holds this computer's home

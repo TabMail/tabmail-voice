@@ -9,7 +9,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { refuseHomeFolder, rustFlagsWithoutHome } from "./home-folder.mts";
+import { encodedRustFlagsWithoutHome, refuseHomeFolder } from "./home-folder.mts";
 
 /** Where the helper's source comes from, and at which commit. */
 export interface MemoryHelperPin { repository: string; revision: string }
@@ -51,7 +51,7 @@ export function buildMemoryHelper(root: string, target: string): string {
   const pin = memoryHelperPin(root);
   const checkout = source(root, pin);
   const channel = toolchain(root);
-  const env = { ...process.env, RUSTUP_TOOLCHAIN: channel, CARGO_TARGET_DIR: join(root, "native/memory/.build/target"), RUSTFLAGS: rustFlagsWithoutHome() };
+  const env = { ...process.env, RUSTUP_TOOLCHAIN: channel, CARGO_TARGET_DIR: join(root, "native/memory/.build/target"), CARGO_ENCODED_RUSTFLAGS: encodedRustFlagsWithoutHome() };
   execFileSync("rustup", ["target", "add", "--toolchain", channel, target], { stdio: "inherit", env });
   execFileSync("cargo", ["build", "--release", "--locked", "--bin", "fts_helper", "--target", target], { cwd: checkout, stdio: "inherit", env });
   const helper = join(env.CARGO_TARGET_DIR, target, "release", target.includes("-windows-") ? "fts_helper.exe" : "fts_helper");

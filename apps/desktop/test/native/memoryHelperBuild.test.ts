@@ -93,22 +93,28 @@ describe("the memory helper build", () => {
   });
 
   /** A built helper holds its dependencies' source paths, under the builder's home folder, which
-   *  names its user: they are built as `~`, and a helper still holding the home folder ships nowhere. */
-  test("builds the source paths from the home folder as ~, keeping any flags already set", () => {
-    const flags = process.env.RUSTFLAGS;
+   *  names its user: they are built as `~`, and a helper still holding the home folder ships nowhere.
+   *  The remap reaches rustc as one flag even when the home folder has a space in it (Cargo splits
+   *  `RUSTFLAGS` on whitespace, so the flags go as `CARGO_ENCODED_RUSTFLAGS`), after any flags set. */
+  test.each<[string, NodeJS.ProcessEnv, string[]]>([
+    ["no flags", {}, []],
+    ["RUSTFLAGS", { RUSTFLAGS: "-C  target-cpu=native" }, ["-C", "target-cpu=native"]],
+    ["CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "-C\x1ftarget-cpu=native", RUSTFLAGS: "--ignored" }, ["-C", "target-cpu=native"]],
+  ])("builds the source paths from a home folder with a space in it as ~, keeping %s already set", (_name, set, inherited) => {
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, RUSTFLAGS: process.env.RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS };
+    const home = join(tmpdir(), "First Last");
     try {
       delete process.env.RUSTFLAGS;
-      const plain = checkoutPinning({ repository, revision });
-      buildMemoryHelper(plain.root, "x86_64-unknown-linux-gnu");
-      expect(plain.runs.at(-1)?.env?.RUSTFLAGS).toBe(`--remap-path-prefix=${homedir()}=~`);
-
-      process.env.RUSTFLAGS = "-C target-cpu=native";
-      const set = checkoutPinning({ repository, revision });
-      buildMemoryHelper(set.root, "x86_64-unknown-linux-gnu");
-      expect(set.runs.at(-1)?.env?.RUSTFLAGS).toBe(`-C target-cpu=native --remap-path-prefix=${homedir()}=~`);
+      delete process.env.CARGO_ENCODED_RUSTFLAGS;
+      Object.assign(process.env, { HOME: home, USERPROFILE: home }, set);
+      const { root, runs } = checkoutPinning({ repository, revision });
+      buildMemoryHelper(root, "x86_64-unknown-linux-gnu");
+      expect(runs.at(-1)?.env?.CARGO_ENCODED_RUSTFLAGS?.split("\x1f")).toEqual([...inherited, `--remap-path-prefix=${home}=~`]);
     } finally {
-      if (flags === undefined) delete process.env.RUSTFLAGS;
-      else process.env.RUSTFLAGS = flags;
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 

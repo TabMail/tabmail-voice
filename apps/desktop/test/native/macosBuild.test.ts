@@ -54,7 +54,7 @@ describe("the macOS helper build", () => {
    *  registry serves `served` (by URL), SwiftPM's build writes each helper, marked with the triple
    *  and Rust target it was given (and `built`, if given) and a debug map naming its object file under
    *  the home folder, which `strip -S` removes, and lipo writes what it joined. Returns the commands
-   *  run, each cargo build's RUSTFLAGS and the URLs fetched. */
+   *  run, each cargo build's CARGO_ENCODED_RUSTFLAGS and the URLs fetched. */
   function checkout(packages: Record<string, object>, served: Record<string, Buffer>, built = ""): { root: string; commands: string[][]; cargoFlags: (string | undefined)[]; fetched: string[]; unpacked: { tarball: string; existed: boolean }[] } {
     const root = mkdtempSync(join(tmpdir(), "voice-macos-build-"));
     roots.push(root);
@@ -69,7 +69,7 @@ describe("the macOS helper build", () => {
         return realExecFileSync(command, args);
       }
       commands.push([command, ...args]);
-      if (command === "cargo") cargoFlags.push(options?.env?.RUSTFLAGS);
+      if (command === "cargo") cargoFlags.push(options?.env?.CARGO_ENCODED_RUSTFLAGS);
       if (command === "strip" && args[0] === "-S") {
         const path = args[1] ?? "";
         writeFileSync(path, readFileSync(path, "utf8").replace(/ \[debug map [^\]]*\]/g, ""));
@@ -100,18 +100,24 @@ describe("the macOS helper build", () => {
   }
 
   /** The Rust core's source paths, under the builder's home folder, name its user: they are built
-   *  as `~`, and a helper still holding the home folder is never copied out as built. */
-  test("builds the Rust core's source paths from the home folder as ~", async () => {
-    const flags = process.env.RUSTFLAGS;
+   *  as `~` (one flag, even for a home folder with a space in it), and a helper still holding the
+   *  home folder is never copied out as built. */
+  test("builds the Rust core's source paths from a home folder with a space in it as ~", async () => {
+    const saved = { HOME: process.env.HOME, RUSTFLAGS: process.env.RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS };
+    const home = join(tmpdir(), "First Last");
     try {
       delete process.env.RUSTFLAGS;
+      delete process.env.CARGO_ENCODED_RUSTFLAGS;
+      process.env.HOME = home;
       const { root, cargoFlags } = checkout({}, {});
       process.env.VOICE_MAC_ARCH = "universal";
       await buildNative(root);
-      expect(cargoFlags).toEqual([`--remap-path-prefix=${homedir()}=~`, `--remap-path-prefix=${homedir()}=~`]);
+      expect(cargoFlags.map((flags) => flags?.split("\x1f"))).toEqual([[`--remap-path-prefix=${home}=~`], [`--remap-path-prefix=${home}=~`]]);
     } finally {
-      if (flags === undefined) delete process.env.RUSTFLAGS;
-      else process.env.RUSTFLAGS = flags;
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 
