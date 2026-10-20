@@ -13,7 +13,7 @@ import Testing
 struct ClipboardKeeperTests {
     private let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))
     private let customType = NSPasteboard.PasteboardType("ai.tabmail.test.custom")
-    private static let rules = SharedRequest.ClipboardRules(restoreDelay: 20, maxBytes: 1024, maxFormats: 8)
+    private static let rules = SharedRequest.ClipboardRules(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8)
 
     private func keeper(read: @escaping ClipboardKeeper.Reader = ClipboardKeeper.readItems,
                         delay: ClipboardKeeper.Delay? = nil) -> ClipboardKeeper {
@@ -21,8 +21,13 @@ struct ClipboardKeeperTests {
         return ClipboardKeeper(pasteboard: pasteboard, rules: Self.rules, read: read, delay: delay)
     }
 
+    /// Pastes `text` into a target app that reads the clipboard as it handles the keys, as one does.
     private func paste(_ text: String, with keeper: ClipboardKeeper, onPaste: @escaping @MainActor () -> Void = {}) async {
-        await TextInserter(clipboard: keeper, pasteKeystroke: { onPaste() }).insert(text)
+        let pasteboard = pasteboard
+        await TextInserter(clipboard: keeper, pasteKeystroke: {
+            _ = pasteboard.string(forType: .string)
+            onPaste()
+        }).insert(text)
     }
 
     private func copy(_ text: String, custom: Data? = nil) {
@@ -145,6 +150,80 @@ struct ClipboardKeeperTests {
         #expect(await app?.value == "Dictated text")
         await keeper.restoreTask?.value
         #expect(pasteboard.string(forType: .string) == "user text")
+    }
+
+    /// A busy app, under load, handling the paste keys only after `restoreDelay`, still pastes the
+    /// paste's text, never the clipboard as it was; that goes back once the app has read the text.
+    @Test func aBusyAppReadingAfterTheDelayGetsThePastesText() async {
+        copy("user text")
+        let rules = SharedRequest.clipboardRules
+        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules)
+        keeper.save()
+        await keeper.saveTask?.value
+        let pasteboard = pasteboard
+        var app: Task<String?, Never>?
+        let keys = ContinuousClock.now
+        await TextInserter(clipboard: keeper, pasteKeystroke: {
+            app = Task {
+                try? await Task.sleep(for: .milliseconds(rules.restoreDelay + 200))
+                return pasteboard.string(forType: .string)
+            }
+        }).insert("Dictated text")
+        #expect(await app?.value == "Dictated text")
+        await keeper.restoreTask?.value
+        #expect(pasteboard.string(forType: .string) == "user text")
+        // Back once the app read the text, not once `readWait` ran out.
+        #expect(keys.duration(to: .now) < .milliseconds(rules.readWait / 2))
+    }
+
+    /// A paste no app reads (the keys went where no text is taken) leaves its text on the clipboard
+    /// until `readWait` passes, then the clipboard as it was goes back.
+    @Test func putsTheClipboardBackWhenNoAppReadsThePaste() async {
+        copy("user text")
+        let keeper = keeper()
+        keeper.save()
+        await keeper.saveTask?.value
+        await TextInserter(clipboard: keeper, pasteKeystroke: {}).insert("Dictated text")
+        let pasted = pasteboard.changeCount
+        try? await Task.sleep(for: .milliseconds(Self.rules.restoreDelay * 4))
+        // Not read yet: still the paste's, past `restoreDelay` (its change count; reading would read it).
+        #expect(pasteboard.changeCount == pasted)
+        await keeper.restoreTask?.value
+        #expect(pasteboard.string(forType: .string) == "user text")
+    }
+
+    /// As the helper ends, a paste's text no app has read is written in full, so the clipboard still
+    /// holds it once the helper is gone; one an app has read is left as it is.
+    @Test func handsOverAnUnreadPasteAsTheHelperEnds() async {
+        for read in [false, true] {
+            copy("user text")
+            let keeper = keeper()
+            let pasteboard = pasteboard
+            await TextInserter(clipboard: keeper, pasteKeystroke: { if read { _ = pasteboard.string(forType: .string) } }).insert("Dictated text")
+            let pasted = pasteboard.changeCount
+            keeper.handOver()
+            #expect(pasteboard.changeCount == (read ? pasted : pasted + 1))
+            #expect(pasteboard.string(forType: .string) == "Dictated text")
+            // Written in full: reading it asked the offer nothing.
+            #expect(keeper.offered.withLock { $0 }?.text.wasRead == read)
+            #expect(pasteboard.types?.contains(ClipboardKeeper.transientType) == true)
+            #expect(pasteboard.types?.contains(ClipboardKeeper.concealedType) == true)
+            await keeper.restoreTask?.value
+        }
+    }
+
+    /// A copy made after the paste, while no app has read its text, is not written over as the helper
+    /// ends.
+    @Test func keepsANewerCopyAsTheHelperEnds() async {
+        copy("user text")
+        let keeper = keeper()
+        await TextInserter(clipboard: keeper, pasteKeystroke: {}).insert("Dictated text")
+        copy("newer copy")
+        let copied = pasteboard.changeCount
+        keeper.handOver()
+        #expect(pasteboard.changeCount == copied)
+        #expect(pasteboard.string(forType: .string) == "newer copy")
+        await keeper.restoreTask?.value
     }
 
     /// The app asks again and again until the paste (ADR-DESK-002, amended 2026-10-09): a copy made

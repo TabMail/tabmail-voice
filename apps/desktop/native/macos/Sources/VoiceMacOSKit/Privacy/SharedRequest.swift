@@ -44,9 +44,12 @@ enum SharedRequest {
         }
     }
 
-    /// How long after a paste's keys the clipboard as it was goes back, and the most a saved
-    /// clipboard may hold (`ClipboardKeeper`).
+    /// How long after a paste's keys the put-back waits for an app to read its text, how long after
+    /// that read the clipboard as it was goes back, and the most a saved clipboard may hold
+    /// (`ClipboardKeeper`).
     struct ClipboardRules: Decodable, Sendable {
+        /// Milliseconds.
+        var readWait: Int
         /// Milliseconds.
         var restoreDelay: Int
         var maxBytes: Int

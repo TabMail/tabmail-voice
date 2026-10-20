@@ -17,9 +17,14 @@ const INSERT_TEXT_BYTES: usize = 512 * 1024;
 const ROW_BREAK: char = '\u{2029}';
 /// How far past the helper's clock a paste's deadline may be, in milliseconds.
 const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
-/// How long after the paste keys the clipboard as it was is put back, in milliseconds: the target
-/// app reads the clipboard as it handles the keys, after they are sent (ADR-DESK-002).
+/// How long after an app reads a paste's text the clipboard as it was is put back, in milliseconds:
+/// an app may read the clipboard more than once as it handles the paste keys (ADR-DESK-002).
 const CLIPBOARD_RESTORE_DELAY_MILLISECONDS: u64 = 500;
+/// How long after the paste keys the put-back waits for an app to read the paste's text, in
+/// milliseconds; a paste no app reads by then goes back anyway. A busy app, under load, handles the
+/// keys late, and one that read the clipboard as it was would paste that (ADR-DESK-002, amended
+/// 2026-10-20).
+const CLIPBOARD_READ_WAIT_MILLISECONDS: u64 = 10_000;
 /// The most data a saved clipboard holds, in bytes, all its formats together; a larger one is not
 /// saved, and not put back.
 const CLIPBOARD_SAVE_BYTES: u64 = 64 * 1024 * 1024;
@@ -112,13 +117,15 @@ fn insert(request: &Value) -> Result<Value, u32> {
     }
 }
 
-/// `{"clipboard": {}}` → `{"restoreDelay": ms, "maxBytes": n, "maxFormats": n}`: how long after a
-/// paste's keys the clipboard as it was goes back, and the most a saved clipboard may hold.
+/// `{"clipboard": {}}` → `{"readWait": ms, "restoreDelay": ms, "maxBytes": n, "maxFormats": n}`: how
+/// long after a paste's keys the put-back waits for an app to read its text, how long after that read
+/// the clipboard as it was goes back, and the most a saved clipboard may hold.
 fn clipboard(request: &Value) -> Result<Value, u32> {
     if !request.as_object().is_some_and(serde_json::Map::is_empty) {
         return Err(1);
     }
     Ok(json!({
+        "readWait": CLIPBOARD_READ_WAIT_MILLISECONDS,
         "restoreDelay": CLIPBOARD_RESTORE_DELAY_MILLISECONDS,
         "maxBytes": CLIPBOARD_SAVE_BYTES,
         "maxFormats": CLIPBOARD_SAVE_FORMATS,

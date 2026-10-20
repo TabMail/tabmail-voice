@@ -158,6 +158,28 @@ struct MacServiceRequestTests {
         }
     }
 
+    /// As the helper ends (stdin closed), a paste's text no app has read is written in full, so the
+    /// clipboard keeps it once the helper is gone.
+    @Test func anUnreadPasteIsKeptAsTheHelperEnds() async throws {
+        let channel = HelperChannel(output: { _ in })
+        let pasteboard = Self.pasteboard()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setString("User text", forType: .string)
+        let clipboard = ClipboardKeeper(pasteboard: pasteboard, rules: .init(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
+            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
+            clipboard: clipboard, pasteKeystroke: {})
+        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"Dictated text"}}"#.utf8))
+        let pasted = pasteboard.changeCount
+        channel.end()
+        #expect(pasteboard.changeCount == pasted + 1)
+        #expect(pasteboard.string(forType: .string) == "Dictated text")
+        #expect(clipboard.offered.withLock { $0 }?.text.wasRead == false)
+        await clipboard.restoreTask?.value
+        withExtendedLifetime(service) {}
+    }
+
     /// A private, uniquely named pasteboard: tests never touch the user's clipboard.
     private static func pasteboard() -> NSPasteboard {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))

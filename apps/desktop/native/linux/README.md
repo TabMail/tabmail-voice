@@ -106,8 +106,12 @@ app/window and waits for this session to own the selection before sending the
 paste chord, and releases its injected keys. `ClipboardKeeper` saved the
 clipboard ahead (`clipboardSave`, asynchronous `SelectionRead`s on the event
 loop, once the portal has announced the selection) and puts it back
-`restoreDelay` after the paste, only while this session still owns the
-selection it offered the text in; a password manager's copy
+`restoreDelay` after the target reads the paste's text (a `SelectionTransfer` asked
+for after the compositor answers the first paste key: GNOME's clipboard manager
+and its X bridge read every new selection as it is set, before any key),
+or once `readWait` from the paste keys passes with no read (at once for a paste
+refused before its keys), only while this session still owns the
+selection it offered the text in (amended 2026-10-20); a password manager's copy
 (`x-kde-passwordManagerHint`) and a file transfer are not saved (ADR-DESK-002,
 amended 2026-10-08). Clipboard portal version 1 has no atomic owner check, so a copy
 made between the final check and the chord has a compositor race. An uncertain
@@ -118,7 +122,7 @@ and [Mutter clipboard implementation](https://gitlab.gnome.org/GNOME/mutter/-/bl
 The private-bus fixture covers silent startup, explicit clears, malformed owner
 events, a paste that never reads the clipboard, and the save and put-back: every
 format put back, a copy after the paste or between the save and the paste kept,
-two pastes, a read still held when the paste comes, password-manager copies,
+two pastes, a target reading the paste late, a paste no app reads, a read still held when the paste comes, password-manager copies,
 file transfers, too many formats and an unannounced selection.
 
 Foreground and focus events drive accessibility lookup. Failed window lookups

@@ -29,6 +29,15 @@ struct Fixture {
     std::vector<std::string> published;
     // Another app copies just after the helper publishes, before it pastes.
     bool copyAfterPublish = false;
+    // GNOME's clipboard manager and its X bridge read every new selection as it is set, before the
+    // compositor answers SetSelection and before any paste key.
+    // Their reads, of whatever is set (the paste's text, or a clipboard put back), counted apart.
+    bool readOnSet = false;
+    static constexpr guint setSerials = 900;
+    guint setSerial = setSerials;
+    unsigned readsOnSet = 0;
+    // Run as the selection is set, before the compositor answers SetSelection.
+    std::function<void()> onSet;
     std::vector<unsigned char> expected = original;
     unsigned completed = 0, grants = 0;
     bool clipboardGranted = true;
@@ -119,14 +128,23 @@ struct Fixture {
         } else if (method == "SelectionWriteDone") {
             const gchar* path = nullptr; guint serial = 0; gboolean success = false; g_variant_get(args, "(&oub)", &path, &serial, &success);
             require(success && readers.contains(serial)); unsigned char bytes[100]; const auto size = read(readers[serial], bytes, sizeof(bytes)); close(readers[serial]); readers.erase(serial);
-            require(size == ssize_t(expected.size()) && std::equal(expected.begin(), expected.end(), bytes)); ++completed;
+            if (serial >= setSerials) ++readsOnSet;
+            else { require(size == ssize_t(expected.size()) && std::equal(expected.begin(), expected.end(), bytes)); ++completed; }
             g_dbus_method_invocation_return_value(invocation, nullptr); if (onTransfer) onTransfer();
         } else if (method == "SetSelection") {
             auto dictionary = variant(g_variant_get_child_value(args, 1));
             auto formats = variant(g_variant_lookup_value(dictionary.get(), "mime_types", G_VARIANT_TYPE_STRING_ARRAY));
             published.clear();
             if (formats) { gsize count = 0; const gchar** names = g_variant_get_strv(formats.get(), &count); published.assign(names, names + count); g_free(names); }
-            ++publications; owner(true);
+            const auto read = [&] {
+                require(g_dbus_connection_emit_signal(bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionTransfer",
+                    g_variant_new("(osu)", session.c_str(), "text/plain;charset=utf-8", setSerial++), nullptr));
+            };
+            ++publications;
+            if (readOnSet) read();
+            owner(true);
+            if (readOnSet) read();
+            if (onSet) onSet();
             if (copyAfterPublish) { copyAfterPublish = false; owner(false); }
             g_dbus_method_invocation_return_value(invocation, nullptr);
         }
@@ -180,8 +198,8 @@ int main() {
     emitOwner(g_variant_builder_end(&malformed));
     require(!input.state->selection.ours);
     bool focused = true, terminal = false;
-    // A short put-back delay keeps the run quick; the shared core's own is checked by its cases.
-    ClipboardKeeper keeper(input, {100, 1024 * 1024, 8});
+    // Short waits keep the run quick; the shared core's own are checked by its cases.
+    ClipboardKeeper keeper(input, {600, 100, 1024 * 1024, 8});
     Inserter inserter(input, keeper, [&](uint64_t token) { return focused && token == 42; }, [&] { return terminal; });
     { auto inner = input.state->onOwnerChange; input.state->onOwnerChange = [&changes, inner] { ++changes; inner(); }; }
     const auto parameters = [] {
@@ -335,11 +353,18 @@ int main() {
         g_timeout_add(300, [](gpointer data) -> gboolean { *static_cast<bool*>(data) = true; return G_SOURCE_REMOVE; }, &due);
         until([&] { return due; });
     };
+    // The target app reads the paste's text as it handles the keys, as one does.
+    guint transferSerial = 200;
+    const auto transfer = [&] {
+        require(g_dbus_connection_emit_signal(fixture.bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionTransfer",
+            g_variant_new("(osu)", fixture.session.c_str(), "text/plain;charset=utf-8", transferSerial++), nullptr));
+    };
+    const auto readOnPaste = [&](int key, unsigned down) { if (key == 'v' && down) transfer(); };
     const auto copy = [&](std::vector<const char*> formats) {
         const auto seen = changes;
         fixture.owner(false, formats);
         while (changes == seen) g_main_context_iteration(nullptr, true);
-        fixture.keys.clear(); fixture.onKey = {}; fixture.publications = 0; fixture.reads = 0;
+        fixture.keys.clear(); fixture.onKey = readOnPaste; fixture.publications = 0; fixture.reads = 0;
     };
     const std::vector<unsigned char> picture{1, 2, 3};
     fixture.foreign = {{"text/plain;charset=utf-8", fixture.original}, {"image/png", picture}};
@@ -417,6 +442,72 @@ int main() {
     copy(manyNames);
     keeper.save();
     require(fixture.reads == 0 && count("clipboard not to be saved after") == 3);
+    // A busy app, handling the keys only after `restoreDelay`, still reads the paste's text (the
+    // fake portal checks every transfer's bytes), and the clipboard as it was goes back after: the
+    // reads made as the selection is set don't count as its read.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    {
+        const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after");
+        const auto transfers = fixture.completed, readsOnSet = fixture.readsOnSet;
+        keeper.save();
+        until([&] { return count("clipboard saved after") == saves + 1; });
+        std::function<void()> lateTransfer = transfer;
+        fixture.onKey = [&](int key, unsigned down) {
+            if (key == 'v' && down) g_timeout_add(250, [](gpointer data) -> gboolean { (*static_cast<std::function<void()>*>(data))(); return G_SOURCE_REMOVE; }, &lateTransfer);
+        };
+        fixture.readOnSet = true;
+        run(118, true);
+        until([&] { return count("clipboard put back after") == putBacks + 1; });
+        require(fixture.completed == transfers + 1 && fixture.readsOnSet >= readsOnSet + 2 && count("the paste's text read after") >= 1 && putBack());
+        fixture.readOnSet = false;
+    }
+    // A paste no app reads leaves its text past `restoreDelay`, until `readWait`; then the clipboard
+    // as it was goes back.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    {
+        const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after");
+        keeper.save();
+        until([&] { return count("clipboard saved after") == saves + 1; });
+        fixture.onKey = {};
+        run(119, true);
+        settle();
+        require(offered() && count("clipboard put back after") == putBacks);
+        until([&] { return count("clipboard put back after") == putBacks + 1; });
+        require(count("no app read the paste's text in 600ms") == 1 && putBack());
+    }
+    // A paste refused once its text is offered, before any key, puts the clipboard back without
+    // waiting for a read: no app is going to read it.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    {
+        const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after");
+        keeper.save();
+        until([&] { return count("clipboard saved after") == saves + 1; });
+        fixture.onKey = {};
+        fixture.onSet = [&] { focused = false; };
+        run(121, false);
+        fixture.onSet = {};
+        focused = true;
+        require(fixture.keys.empty() && offered());
+        settle();
+        require(count("clipboard put back after") == putBacks + 1 && putBack());
+    }
+    // Reads made as the selection is set (GNOME's clipboard manager, its X bridge) are not the
+    // target's: with no read after the keys, the paste's text stays until `readWait`.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    {
+        const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after"), unread = count("no app read the paste's text in 600ms");
+        const auto transfers = fixture.completed, readsOnSet = fixture.readsOnSet;
+        keeper.save();
+        until([&] { return count("clipboard saved after") == saves + 1; });
+        fixture.onKey = {};
+        fixture.readOnSet = true;
+        run(120, true);
+        settle();
+        require(fixture.completed == transfers && fixture.readsOnSet >= readsOnSet + 2 && offered() && count("clipboard put back after") == putBacks);
+        until([&] { return count("clipboard put back after") == putBacks + 1; });
+        require(count("no app read the paste's text in 600ms") == unread + 1 && putBack());
+        fixture.readOnSet = false;
+    }
     // The paste's own text, left on the clipboard where nothing was saved, is not saved.
     copy({"text/plain;charset=utf-8"});
     run(117, true);

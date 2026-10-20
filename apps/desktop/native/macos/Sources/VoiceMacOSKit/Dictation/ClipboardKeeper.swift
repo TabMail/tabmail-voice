@@ -3,18 +3,22 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import AppKit
+import os
 import VoiceHelperSupport
 
 /// The clipboard a paste writes, and what it held before, put back after the paste
-/// (DECISIONS.md ADR-DESK-002, amended 2026-10-08).
+/// (DECISIONS.md ADR-DESK-002, amended 2026-10-08 and 2026-10-20).
 ///
 /// The paste never waits for the clipboard to be read. Reading it asks the app that owns it for
 /// every item's data, which a busy app hands over late, so the clipboard is saved ahead, off the
 /// main actor, while the user speaks (`save`, which the app asks for again and again from key-down
 /// until the paste; the newest save is the one put back). A paste that comes before the save is done goes ahead and leaves its text on the
-/// clipboard. The clipboard goes back `restoreDelay` after the paste keys, and only while it still
-/// holds the paste's text and was saved as it was just before the paste (its `changeCount`): a copy
-/// made in between is never overwritten. One read runs at a time: a save asked for while one is
+/// clipboard. The clipboard goes back `restoreDelay` after an app reads the paste's text (offered
+/// through `OfferedText`, which hands it over when asked), or `readWait` after the paste keys when no
+/// app has read it by then: a busy app handles the keys late, and one that read the clipboard as it
+/// was would paste that. It goes back only while the clipboard still holds the paste's text and was
+/// saved as it was just before the paste (its `changeCount`): a copy made in between is never
+/// overwritten. One read runs at a time: a save asked for while one is
 /// still reading is skipped, so an owner that never answers holds one read, not one per copy. A
 /// clipboard put back is read again by the next save. A clipboard marked concealed (a password manager's) is not
 /// saved, and is not put back, where its manager would no longer clear it.
@@ -32,7 +36,7 @@ final class ClipboardKeeper {
     /// Waits out a put-back's delay, in milliseconds.
     typealias Delay = @Sendable (_ milliseconds: Int) async -> Void
 
-    let pasteboard: NSPasteboard
+    nonisolated(unsafe) let pasteboard: NSPasteboard
     private let rules: SharedRequest.ClipboardRules
     private let read: Reader
     private let delay: Delay
@@ -41,6 +45,9 @@ final class ClipboardKeeper {
     private var saved: (changeCount: Int, items: Items?)?
     /// The change count of the save still to be kept, if any: a paste drops it.
     private var saving: Int?
+    /// The latest paste's text as offered, and the change count its write gave; read off the main
+    /// actor as the helper ends (`handOver`).
+    nonisolated let offered = OSAllocatedUnfairLock<(changeCount: Int, text: OfferedText)?>(initialState: nil)
     /// A read is running, kept or not.
     private var reading = false
     /// The latest save, and the latest put-back, under way or done.
@@ -93,16 +100,15 @@ final class ClipboardKeeper {
     }
 
     /// Writes `text` over the clipboard for a paste, marked transient and concealed, returning the
-    /// pasteboard's change count with it. The saved clipboard now holds while the text is there.
+    /// pasteboard's change count with it. The saved clipboard now holds while the text is there. The
+    /// text is handed over when an app asks for it, so the put-back knows an app has read it.
     func write(_ text: String) -> Int {
         let before = pasteboard.changeCount
         // The count the clear gives is the text's own: one read after the write may be a newer copy's.
         let ours = pasteboard.clearContents()
-        let item = NSPasteboardItem()
-        item.setString(text, forType: .string)
-        item.setString("", forType: Self.transientType)
-        item.setString("", forType: Self.concealedType)
-        pasteboard.writeObjects([item])
+        let offered = OfferedText(text)
+        pasteboard.writeObjects([Self.item(offering: offered)])
+        self.offered.withLock { $0 = (ours, offered) }
         if let kept = saved, kept.changeCount == before {
             saved = (ours, kept.items)
         } else {
@@ -114,11 +120,22 @@ final class ClipboardKeeper {
         return ours
     }
 
-    /// Puts the saved clipboard back `restoreDelay` from now, if the pasteboard still holds the
+    /// Puts the saved clipboard back `restoreDelay` after an app reads the paste's text, or once
+    /// `readWait` from now passes with no app having read it, if the pasteboard still holds the
     /// paste's text (`ours`, its change count).
     func restore(after ours: Int) {
         let started = ContinuousClock.now
+        // A later paste's text replaced it: that paste's put-back is the one to wait for its read.
+        let text = offered.withLock { $0?.changeCount == ours ? $0?.text : nil }
         restoreTask = Task { [weak self, rules, delay] in
+            if let text, !text.wasRead {
+                let timer = Task { await delay(rules.readWait); text.endWait() }
+                let read = await text.waitForRead()
+                timer.cancel()
+                HelperLog.debug(read
+                    ? "ClipboardKeeper: the paste's text read after \(Self.milliseconds(since: started))ms"
+                    : "ClipboardKeeper: no app read the paste's text in \(rules.readWait)ms")
+            }
             await delay(rules.restoreDelay)
             self?.putBack(ours, started: started)
         }
@@ -148,6 +165,26 @@ final class ClipboardKeeper {
         HelperLog.debug("ClipboardKeeper: clipboard put back after \(Self.milliseconds(since: started))ms")
     }
 
+    /// Writes a paste's text no app has read yet in full, so the clipboard still holds it once the
+    /// helper is gone (macOS asks no exited process for its data). Run as the helper ends, on its
+    /// input's thread.
+    nonisolated func handOver() {
+        guard let (changeCount, text) = offered.withLock({ $0 }), !text.wasRead, pasteboard.changeCount == changeCount else { return }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([Self.item(offering: text, inFull: true)])
+        HelperLog.debug("ClipboardKeeper: the paste's text no app read kept as the helper ends")
+    }
+
+    /// The paste's item: its text handed over when an app asks for it, or written `inFull`; marked
+    /// transient and concealed.
+    private nonisolated static func item(offering text: OfferedText, inFull: Bool = false) -> NSPasteboardItem {
+        let item = NSPasteboardItem()
+        if inFull { item.setString(text.text, forType: .string) } else { item.setDataProvider(text, forTypes: [.string]) }
+        item.setString("", forType: transientType)
+        item.setString("", forType: concealedType)
+        return item
+    }
+
     /// Every item's data, by type; nil for a clipboard that can't be read (or an item of it whose owner
     /// gives none of its data), one marked concealed, or one with more formats or data than `rules`
     /// allow. A concealed one is told by its types, before any data is asked for.
@@ -175,5 +212,57 @@ final class ClipboardKeeper {
 
     nonisolated static func milliseconds(since start: ContinuousClock.Instant) -> Int {
         Int((start.duration(to: .now) / .milliseconds(1)).rounded())
+    }
+}
+
+/// A paste's text, handed to an app only when it reads the clipboard, so the put-back knows an app
+/// has it before the clipboard as it was goes back (ADR-DESK-002, amended 2026-10-20). macOS asks on
+/// the main thread for another app's read, on the reading thread for this process's own.
+final class OfferedText: NSObject, NSPasteboardItemDataProvider, Sendable {
+    private struct State {
+        var read = false
+        var ended = false
+        var waiter: CheckedContinuation<Bool, Never>?
+    }
+
+    let text: String
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        item.setString(text, forType: type)
+        end(read: true)
+    }
+
+    /// An app has read the text.
+    var wasRead: Bool { state.withLock { $0.read } }
+
+    /// Waits until an app reads the text (true) or `endWait` (false).
+    func waitForRead() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let ended: Bool? = state.withLock { state in
+                guard !state.ended else { return state.read }
+                state.waiter = continuation
+                return nil
+            }
+            if let ended { continuation.resume(returning: ended) }
+        }
+    }
+
+    /// Ends the wait for a read, as none came in time.
+    func endWait() { end(read: false) }
+
+    private func end(read: Bool) {
+        let waiter = state.withLock { state -> CheckedContinuation<Bool, Never>? in
+            guard !state.ended else { return nil }
+            state.ended = true
+            state.read = read
+            defer { state.waiter = nil }
+            return state.waiter
+        }
+        waiter?.resume(returning: read)
     }
 }

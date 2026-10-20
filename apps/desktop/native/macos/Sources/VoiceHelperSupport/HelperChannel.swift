@@ -19,6 +19,7 @@ public final class HelperChannel: Sendable {
     public typealias Handler = @Sendable (JSON) async throws -> JSON
 
     private let handlers: OSAllocatedUnfairLock<[String: Handler]> = .init(initialState: [:])
+    private let endings: OSAllocatedUnfairLock<[@Sendable () -> Void]> = .init(initialState: [])
     private let output: @Sendable (Data) -> Void
 
     /// `output` receives each line, newline included; stdout by default.
@@ -34,6 +35,17 @@ public final class HelperChannel: Sendable {
     /// Answers `method` with `handler`'s result.
     public func on(_ method: String, _ handler: @escaping Handler) {
         handlers.withLock { $0[method] = handler }
+    }
+
+    /// Runs `handler` as stdin closes, on stdin's thread, before the process exits.
+    public func onEnd(_ handler: @escaping @Sendable () -> Void) {
+        endings.withLock { $0.append(handler) }
+    }
+
+    /// Runs the `onEnd` handlers, in the order they were added, as `start()` does when stdin closes.
+    /// Internal to the package's tests; `start()` calls it before the process exits.
+    public func end() {
+        for ending in endings.withLock({ $0 }) { ending() }
     }
 
     /// Sends an event the app did not ask for.
@@ -72,7 +84,10 @@ public final class HelperChannel: Sendable {
             var buffer = Data()
             while true {
                 let chunk = input.availableData
-                if chunk.isEmpty { exit(0) }
+                if chunk.isEmpty {
+                    end()
+                    exit(0)
+                }
                 buffer.append(chunk)
                 while let newline = buffer.firstIndex(of: 0x0A) {
                     let line = buffer[buffer.startIndex..<newline]

@@ -27,7 +27,7 @@ namespace {
 // What a saved clipboard may hold, and when it goes back: the shared core's.
 voice::ClipboardRules clipboardRules() {
     const auto rules = voice::core::request({{"clipboard", JSON::object()}}, voice_core_request_json);
-    return {rules.at("restoreDelay").get<unsigned>(), rules.at("maxBytes").get<unsigned long long>(), rules.at("maxFormats").get<size_t>()};
+    return {rules.at("readWait").get<unsigned>(), rules.at("restoreDelay").get<unsigned>(), rules.at("maxBytes").get<unsigned long long>(), rules.at("maxFormats").get<size_t>()};
 }
 
 JSON handle(const std::string& method, const JSON& params) {
@@ -247,6 +247,8 @@ int main(int argc, char** argv) {
         }
     }
     accessibility.finish();
+    // A paste's text no app has read yet stays on the clipboard once the helper is gone.
+    clipboard.finish();
     // Output owns a process-lifetime writer thread. EOF closes all native resources together.
     ExitProcess(0);
 }

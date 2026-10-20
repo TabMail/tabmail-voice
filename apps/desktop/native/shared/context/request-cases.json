@@ -694,6 +694,7 @@
         "clipboard": {}
       },
       "expected": {
+        "readWait": 10000,
         "restoreDelay": 500,
         "maxBytes": 67108864,
         "maxFormats": 256

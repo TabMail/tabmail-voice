@@ -62,6 +62,15 @@ struct HelperChannelTests {
         #expect(JSON.string("7").integer == nil)
     }
 
+    @Test func endRunsTheEndHandlersInOrder() {
+        let channel = HelperChannel(output: { _ in })
+        let ran = OSAllocatedUnfairLock<[Int]>(initialState: [])
+        channel.onEnd { ran.withLock { $0.append(1) } }
+        channel.onEnd { ran.withLock { $0.append(2) } }
+        channel.end()
+        #expect(ran.withLock { $0 } == [1, 2])
+    }
+
     @Test func eventsCarryTheirName() {
         let (channel, lines) = channel()
         channel.emit("action", ["action": "start"])

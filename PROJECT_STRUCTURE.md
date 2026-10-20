@@ -44,7 +44,7 @@ apps/desktop/
 │   │   ├── VoiceMicrophone/         `voice-microphone`'s `main.swift`
 │   │   ├── VoiceMicrophoneKit/      The microphone, in a process of its own that runs one engine, ending itself after each dictation or an input change to be started afresh: `MicrophoneService` (its requests), `MicrophoneCapture` (the engine, prepared ahead), `HelperConfig`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
-│   │       ├── Dictation/               Paste (`TextInserter`; the clipboard saved ahead and put back after by `ClipboardKeeper`, never read by the paste), the caret, the focused field read after a paste and its reader (`FieldReaderService`), the keyboard's language, the screen read and its reader
+│   │       ├── Dictation/               Paste (`TextInserter`; the clipboard saved ahead and put back by `ClipboardKeeper` once the target reads the paste's text, offered by `OfferedText`; never read by the paste), the caret, the focused field read after a paste and its reader (`FieldReaderService`), the keyboard's language, the screen read and its reader
 │   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor` and `SharedContext`, thin adapters to the shared Rust core); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`; inviting through Calendar's own methods, `Invitations`, ADR-DESK-060), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
@@ -135,9 +135,10 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    context read at key-down (`ScreenContextProbe`, waited for up to `contextWait`) and the
    dictionary. The backend transcribes it and runs the cleanup prompt in the same request, under its
    own deadline (backend ADR-027), and `voice-macos` pastes the cleaned text into the focused field
-   (`TextInserter`), then puts back the newest clipboard it saved, asked for every
+   (`TextInserter`), then, once the target has read the text (or `readWait` passes), puts back the newest
+   clipboard it saved, asked for every
    `clipboardSaveInterval` from key-down until the paste writes (`clipboardSave`, `ClipboardKeeper`:
-   ADR-DESK-002, amended 2026-10-08 and 2026-10-09); with another app in front
+   ADR-DESK-002, amended 2026-10-08, 2026-10-09 and 2026-10-20); with another app in front
    than at key-down (`focusChanged`), nothing is pasted or copied, and a note at the mouse pointer
    offers to copy it for 10 s (phase `notPasted`, carrying the text: a card showing it in a box with a copy sign; a click anywhere on it copies it and the note goes, its x dismisses it). Either way the text joins
    the paste history. If the cleanup failed for any reason, the transcript
