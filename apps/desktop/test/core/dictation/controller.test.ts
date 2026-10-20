@@ -3827,8 +3827,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(memory.searches).toEqual([{ query: "launch review", from: "", to: "", limit: Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax) }]);
           });
 
-          /** Memory's bubble runs at the front while its search does, alone, as an app's does while its
-           * tool runs (owner, 2026-10-19), and stops with it, so Answer's bubble runs alone for the reply. */
           /** Holds the memory's `method` until `release` resolves; `entered` resolves as it is called. */
           function holdMemory(method: "search" | "read") {
             const entered = deferred<void>();
@@ -3842,6 +3840,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
             return { entered, release };
           }
 
+          /** Memory's bubble runs at the front while its search does, alone, as an app's does while its
+           * tool runs (owner, 2026-10-19), and stops with it, so Answer's bubble runs alone for the reply. */
           test.each<[string, string, boolean]>([
             ["memory_search", JSON.stringify({ query: "launch" }), false],
             ["memory_read", JSON.stringify({ timestamp: Date.now() - 60_000 }), false],
@@ -3868,15 +3868,20 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           /** A canceled request's memory search ends late, while the next request's own memory search
            * runs: that one's bubble keeps running until it ends. */
-          test("a canceled request's memory search leaves the next request's memory bubble running", async () => {
-            const unheld = memory.search;
-            const first = holdMemory("search");
-            const { controller, done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })])]);
+          test.each<[string, string, "search" | "read"]>([
+            ["memory_search", JSON.stringify({ query: "launch" }), "search"],
+            ["memory_read", JSON.stringify({ timestamp: Date.now() - 60_000 }), "read"],
+          ])("a canceled request's %s stops its bubble and leaves the next request's memory bubble running", async (name, args, method) => {
+            const unheld = memory[method];
+            const first = holdMemory(method);
+            const { controller, done } = await ask([], [calling([name, args])]);
             await first.entered.promise;
             controller.handle("cancel");
             await done;
+            // The canceled request's bubble stopped with it.
+            expect(controller.runningBubble).toBeNull();
             // The next search is held on its own, apart from the first.
-            memory.search = unheld;
+            (memory as unknown as Record<string, unknown>)[method] = unheld;
             const second = holdMemory("search");
             transcription.enqueue(200, { text: "what did we discuss" });
             completions.enqueue(200, calling(["memory_search", "{}"]));
