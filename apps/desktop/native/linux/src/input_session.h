@@ -284,7 +284,8 @@ public:
                     auto complete = [self, timer, finish, request](bool success) {
                         if (g_main_context_find_source_by_id(nullptr, timer)) g_source_remove(timer);
                         --self->transfers; finish(success);
-                        if (self->onTransferred) self->onTransferred(request);
+                        // Only delivered bytes count as a read; a failed transfer gave the app nothing.
+                        if (success && self->onTransferred) self->onTransferred(request);
                     };
                     gint handle = -1; Error error;
                     if (!result || !fds || !g_variant_is_of_type(result.get(), G_VARIANT_TYPE("(h)"))) { complete(false); return; }

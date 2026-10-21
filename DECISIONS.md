@@ -179,9 +179,10 @@ and fix the put-back.
   only when an app asks for it, and so knows when the target has read it: on the Mac an
   `NSPasteboardItemDataProvider` (`OfferedText`; macOS asks on the main thread for another app's
   read); on Ubuntu the portal's `SelectionTransfer` for the session's offer (as before; the keeper now
-  counts one, but only one asked for after the compositor answers the paste's first key: GNOME's
-  clipboard manager and its X bridge read every new selection as it is set, before any key, and
-  the target reads only once it has the keys); on Windows delayed rendering (`SetClipboardData(CF_UNICODETEXT, NULL)`, then
+  counts one, but only one asked for after the compositor answers the paste's first key, and only
+  once its bytes were written: GNOME's clipboard manager and its X bridge read every new selection
+  as it is set, before any key, the target reads only once it has the keys, and a failed transfer
+  gave the app nothing); on Windows delayed rendering (`SetClipboardData(CF_UNICODETEXT, NULL)`, then
   `WM_RENDERFORMAT` to a message-only owner window on a thread of the keeper's own). Markers and
   privacy formats are written as before.
 - **Put back `restoreDelay` after the read, or after `readWait`.** The put-back waits for the first
@@ -206,12 +207,14 @@ and fix the put-back.
 - **Tests.** Mac `ClipboardKeeperTests` › `aBusyAppReadingAfterTheDelayGetsThePastesText`,
   `putsTheClipboardBackWhenNoAppReadsThePaste`, `handsOverAnUnreadPasteAsTheHelperEnds`,
   `keepsANewerCopyAsTheHelperEnds` (the stub paste keystroke now reads the clipboard, as a target
-  does), `MacServiceRequestTests` › `anUnreadPasteIsKeptAsTheHelperEnds` (the helper's end wired to
-  the hand-over), `HelperChannelTests` › `endRunsTheEndHandlersInOrder`; Windows `clipboard-keeper.cpp` (a late
+  does), `MacServiceRequestTests` › `anUnreadPasteIsKeptAsTheHelperEnds` (the helper's closed input wired
+  to the hand-over, with the wait for a read still on and run out), `HelperChannelTests` ›
+  `closedInputRunsTheEndHandlersInOrderBeforeExiting`; Windows `clipboard-keeper.cpp` (a late
   reader gets the text, an unread paste goes back after `readWait`, a refused paste at once, an unread
   text kept as the keeper ends); Ubuntu `input-session.cpp` (a read 250 ms after the keys gets the
   text, an unread paste goes back after `readWait`, both with the fake portal reading the offer as it
-  is set, as GNOME does; a paste refused before its keys goes back without waiting; checked on GNOME, where those reads come before any key); the shared `request-cases.json` (`readWait`).
+  is set, as GNOME does; a paste refused before its keys goes back without waiting; a failed transfer after the keys leaves
+  the text for a later read; checked on GNOME, where those reads come before any key); the shared `request-cases.json` (`readWait`).
 
 ## ADR-DESK-003: Not sandboxed; Developer ID distribution
 

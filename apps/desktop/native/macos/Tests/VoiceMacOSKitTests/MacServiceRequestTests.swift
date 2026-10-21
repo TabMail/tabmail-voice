@@ -160,19 +160,25 @@ struct MacServiceRequestTests {
 
     /// As the helper ends (stdin closed), a paste's text no app has read is written in full, so the
     /// clipboard keeps it once the helper is gone.
-    @Test func anUnreadPasteIsKeptAsTheHelperEnds() async throws {
+    /// As the app closes the helper's input, a paste's text no app read is written in full, whether
+    /// the wait for its read is still on or has run out with nothing saved to put back.
+    @Test(arguments: [false, true]) func anUnreadPasteIsKeptAsTheHelperEnds(waitedOut: Bool) async throws {
         let channel = HelperChannel(output: { _ in })
         let pasteboard = Self.pasteboard()
         defer { pasteboard.releaseGlobally() }
-        pasteboard.setString("User text", forType: .string)
         let clipboard = ClipboardKeeper(pasteboard: pasteboard, rules: .init(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
         let service = MacService.register(
             on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
             contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
             clipboard: clipboard, pasteKeystroke: {})
         await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"Dictated text"}}"#.utf8))
+        if waitedOut { await clipboard.restoreTask?.value }
         let pasted = pasteboard.changeCount
-        channel.end()
+        let input = Pipe()
+        await withCheckedContinuation { (exited: CheckedContinuation<Void, Never>) in
+            channel.start(input: input.fileHandleForReading, exit: { exited.resume() })
+            try? input.fileHandleForWriting.close()
+        }
         #expect(pasteboard.changeCount == pasted + 1)
         #expect(pasteboard.string(forType: .string) == "Dictated text")
         #expect(clipboard.offered.withLock { $0 }?.text.wasRead == false)

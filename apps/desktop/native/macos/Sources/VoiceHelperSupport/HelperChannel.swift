@@ -42,9 +42,8 @@ public final class HelperChannel: Sendable {
         endings.withLock { $0.append(handler) }
     }
 
-    /// Runs the `onEnd` handlers, in the order they were added, as `start()` does when stdin closes.
-    /// Internal to the package's tests; `start()` calls it before the process exits.
-    public func end() {
+    /// Runs the `onEnd` handlers, in the order they were added.
+    private func end() {
         for ending in endings.withLock({ $0 }) { ending() }
     }
 
@@ -77,16 +76,17 @@ public final class HelperChannel: Sendable {
     }
 
     /// Reads stdin on its own thread, each request handled in its own task, and exits the process
-    /// when stdin closes. Returns at once; the caller runs the main run loop.
-    public func start() {
+    /// when stdin closes, once the `onEnd` handlers have run. Returns at once; the caller runs the
+    /// main run loop. `input` and `exit` are the package's tests' own pipe and stand-in.
+    public func start(input: FileHandle = .standardInput, exit: @escaping @Sendable () -> Void = { Foundation.exit(0) }) {
         let thread = Thread { [self] in
-            let input = FileHandle.standardInput
             var buffer = Data()
             while true {
                 let chunk = input.availableData
                 if chunk.isEmpty {
                     end()
-                    exit(0)
+                    exit()
+                    return
                 }
                 buffer.append(chunk)
                 while let newline = buffer.firstIndex(of: 0x0A) {

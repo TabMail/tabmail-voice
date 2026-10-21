@@ -33,6 +33,7 @@ struct Fixture {
     // compositor answers SetSelection and before any paste key.
     // Their reads, of whatever is set (the paste's text, or a clipboard put back), counted apart.
     bool readOnSet = false;
+    bool failWrite = false; unsigned failedWrites = 0;
     static constexpr guint setSerials = 900;
     guint setSerial = setSerials;
     unsigned readsOnSet = 0;
@@ -120,6 +121,11 @@ struct Fixture {
             const int handle = g_unix_fd_list_append(fds.get(), pipes[0], &error.value); require(handle >= 0 && !error.value); close(pipes[0]);
             g_dbus_method_invocation_return_value_with_unix_fd_list(invocation, g_variant_new("(h)", handle), fds.get());
         } else if (method == "SelectionWrite") {
+            if (failWrite) {
+                failWrite = false;
+                g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "write refused");
+                return;
+            }
             int pipes[2]; require(pipe2(pipes, O_CLOEXEC | O_NONBLOCK) == 0);
             auto fds = own(g_unix_fd_list_new()); Error error;
             const int handle = g_unix_fd_list_append(fds.get(), pipes[1], &error.value); require(handle >= 0 && !error.value);
@@ -127,6 +133,7 @@ struct Fixture {
             g_dbus_method_invocation_return_value_with_unix_fd_list(invocation, g_variant_new("(h)", handle), fds.get());
         } else if (method == "SelectionWriteDone") {
             const gchar* path = nullptr; guint serial = 0; gboolean success = false; g_variant_get(args, "(&oub)", &path, &serial, &success);
+            if (!success && !readers.contains(serial)) { ++failedWrites; g_dbus_method_invocation_return_value(invocation, nullptr); return; }
             require(success && readers.contains(serial)); unsigned char bytes[100]; const auto size = read(readers[serial], bytes, sizeof(bytes)); close(readers[serial]); readers.erase(serial);
             if (serial >= setSerials) ++readsOnSet;
             else { require(size == ssize_t(expected.size()) && std::equal(expected.begin(), expected.end(), bytes)); ++completed; }
@@ -507,6 +514,24 @@ int main() {
         until([&] { return count("clipboard put back after") == putBacks + 1; });
         require(count("no app read the paste's text in 600ms") == unread + 1 && putBack());
         fixture.readOnSet = false;
+    }
+    // A transfer after the keys that fails delivers no text, so it is not the paste's read: the text
+    // stays offered, and a later read gets the dictation before the clipboard as it was goes back.
+    copy({"text/plain;charset=utf-8", "image/png"});
+    {
+        const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after");
+        const auto transfers = fixture.completed, failures = fixture.failedWrites;
+        keeper.save();
+        until([&] { return count("clipboard saved after") == saves + 1; });
+        fixture.failWrite = true;
+        run(122, true);
+        until([&] { return fixture.failedWrites == failures + 1; });
+        settle();
+        require(fixture.completed == transfers && offered() && count("clipboard put back after") == putBacks);
+        transfer();
+        until([&] { return fixture.completed == transfers + 1; });
+        until([&] { return count("clipboard put back after") == putBacks + 1; });
+        require(count("the paste's text read after") >= 1 && putBack());
     }
     // The paste's own text, left on the clipboard where nothing was saved, is not saved.
     copy({"text/plain;charset=utf-8"});
