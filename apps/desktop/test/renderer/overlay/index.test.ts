@@ -1288,6 +1288,10 @@ describe("the chat window", () => {
     // While the model reads an answer aloud a small spinner shows; a screen reader hears the label.
     expect(card?.querySelectorAll(".chat-question-status .reading-spinner .spinning")).toHaveLength(state === "reading" ? 1 : 0);
     expect(seen(card?.querySelector(".chat-question-status") ?? null)).toBe(state === "reading" ? "" : label);
+    // Declined, the question and the button left fade; otherwise neither does.
+    const faded = state === "declined";
+    expect(card?.querySelector<HTMLElement>(".chat-question")?.style.opacity).toBe(String(faded ? config.chatQuestionDeclinedOpacity : 1));
+    expect(card?.querySelector<HTMLElement>(".chat-question-status")?.style.opacity).toBe(String(faded ? config.chatQuestionDeclinedButtonOpacity : 1));
     // The request, the question, what the user said to it, then the reply.
     const order = [...document.querySelectorAll(".chat-turn .chat-request, .chat-turn .chat-text, .chat-turn .event-card")].map((element) => (element.classList.contains("event-card") ? "event" : element.textContent));
     const asked = event === null ? "Add the launch party?" : "event";
@@ -1324,6 +1328,17 @@ describe("the chat window", () => {
     await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), turns: [turn], pendingRequest: null } });
 
     expect(texts(".chat-turn .chat-request, .chat-turn .chat-text")).toEqual(["Add the launch party", "Add the launch party?", "Done."]);
+  });
+
+  /** While a request is still carried out, the questions it asked and was answered show under it, in
+   * the order answered, each with the user's words, and the question it asks now under them. */
+  test("a request still carried out shows its answered questions under it, then the one it asks", async () => {
+    const page = await overlayPage();
+    const answered = { id: 1, text: "Add the launch party?", event: null, spoken: "Yes.", answer: null };
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), turns: [], pendingRequest: "Add the launch party", questions: [answered], confirmation: "Invite Sam Lee?", confirmationExpiresAt: Date.now() + config.chatConfirmationTimeout } });
+
+    const order = [...document.querySelectorAll(".chat-scroll .chat-request, .chat-scroll .chat-confirmation")].map((element) => (element.classList.contains("chat-confirmation") ? (element.classList.contains("answered") ? "answered" : "asking") : element.textContent));
+    expect(order).toEqual(["Add the launch party", "answered", "Yes.", "asking"]);
   });
 
   /** What `element` shows on screen: its text without the words only a screen reader hears. */

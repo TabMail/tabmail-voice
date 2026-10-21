@@ -4822,6 +4822,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
             ]);
           });
 
+          /** An answer aloud the model writes into the app instead of acting on: the question is
+           * declined, nothing it asked about runs, and the text is pasted with the chat window closed
+           * first, with no failure. */
+          test("the question answered aloud is declined when the model writes into the app instead", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), writes("compose", "We ship on Friday.")], () => setTools(["answer", "compose"]));
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Yes.");
+            const { pastes } = await done;
+
+            expect(tool.runs).toEqual([]);
+            expect(pastes).toEqual(["We ship on Friday."]);
+            expect(controller.chat).toBeNull();
+            expect(controller.phase).toEqual(idle);
+          });
+
           /** Two questions answered aloud, in one round or one after the other, each with its own id:
            * the model's confirmation runs only the question it names, and only while that one is still
            * waiting (another call drops it). What the user declined aloud never runs, whatever the model

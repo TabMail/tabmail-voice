@@ -903,8 +903,8 @@ export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
 /** A question once answered stays where it was asked (owner, 2026-10-20: chosen from a page of
  * candidates): a label takes its buttons' place, saying what confirming did (a calendar event's by
- * its action), that it was declined, that nothing was done, or that the model is reading the answer
- * given aloud. Confirmed or declined, a ring of this width shows its color. */
+ * its action) with a tick, that it was declined with a cross, or, while the model reads the answer
+ * given aloud, a spinner (`questionReadingLabel` for a screen reader). */
 export const questionConfirmedLabels = { question: "Confirmed", add: "Added", change: "Saved", delete: "Deleted" } as const;
 export const questionDeclinedLabel = "Declined";
 export const questionReadingLabel = "Answered aloud";
