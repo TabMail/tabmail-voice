@@ -21,7 +21,7 @@ const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
 const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"];
-const overlayCanvasSize = { width: 440, height: 292 };
+const overlayCanvasSize = { width: 440, height: 288 };
 /** The overlay window with the chat window at its tallest (`chatWindowFrame`), and where the pill is
  * in it, over it or under it. */
 const chatWindowSize = { width: 412, height: 420 };
@@ -30,9 +30,9 @@ const under = { below: true, maxHeight: 320, bubblesUnder: true, pillX: 206 };
 /** A conversation: an answer laid out as Thunderbird's chat lays one out, and a follow-up under way. */
 const conversation = {
   turns: [
-    { id: 0, request: "What's on Friday?", tool: "answer", reply: "Friday has two things:\n\n1. **Launch review** at 10:00\n2. Team lunch at 12:30, at the usual place\n\nWant me to add a reminder?" },
+    { id: 0, request: "What's on Friday?", tool: "answer", reply: "Friday has two things:\n\n1. **Launch review** at 10:00\n2. Team lunch at 12:30, at the usual place\n\nWant me to add a reminder?", questions: [] },
   ],
-  pendingRequest: null,
+  pendingRequest: null, questions: [],
   closesAt: null,
   touched: true,
   activity: null,
@@ -227,15 +227,25 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-chat-answer", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: over }],
     ["overlay-chat-below", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: under }],
     // The backend searching the web for a follow-up: the web's bubble circles, the chat says so.
-    ["overlay-chat-searching", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], runningBubble: "web", chat: { ...conversation, pendingRequest: "Look up the usual place", activity: "Searching the web: usual lunch place" }, chatPlacement: over }],
+    ["overlay-chat-searching", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], runningBubble: "web", chat: { ...conversation, pendingRequest: "Look up the usual place", questions: [], activity: "Searching the web: usual lunch place" }, chatPlacement: over }],
     // A follow-up that failed under the chat window: the widest message, its neon glow inside the window.
     ["overlay-chat-failed", { phase: { kind: "failed", message: "The selection holds what looks like a password or key, so it wasn't rewritten." }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: over }],
     // A tool's question in the chat window, a third of its 30 seconds gone.
-    ["overlay-chat-confirmation", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
+    ["overlay-chat-confirmation", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", questions: [], closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
     // A calendar question for each write, as its card: the page, the title and time, and its lines.
-    ...(Object.entries(eventQuestions).map(([action, event]) => [`overlay-chat-event-${action}`, { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: eventRequests[action as keyof typeof eventRequests], confirmation: "Change this event?", confirmationEvent: event, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }])),
+    ...(Object.entries(eventQuestions).map(([action, event]) => [`overlay-chat-event-${action}`, { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: eventRequests[action as keyof typeof eventRequests], questions: [], confirmation: "Change this event?", confirmationEvent: event, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }])),
+    // Questions once answered stay where they were asked (owner, 2026-10-20), the pressed button in
+    // their buttons' place: one answered aloud while the model reads the words (a small spinner),
+    // the words under it.
+    ["overlay-chat-question-reading", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: eventRequests.add, questions: [{ id: 1, text: "Add this event?", event: eventQuestions.add, spoken: "Yes, go ahead.", answer: null }] }, chatPlacement: over }],
+    // Confirmed aloud, and done: "Added" in Confirm's blue, the words under it, then the reply.
+    ["overlay-chat-question-confirmed", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [{ id: 0, request: eventRequests.add, tool: "answer", reply: "Added **Design review** to your Work calendar, every Wednesday at 10:00.", questions: [{ id: 1, text: "Add this event?", event: eventQuestions.add, spoken: "Yes, go ahead.", answer: "confirmed" }] }] }, chatPlacement: over }],
+    // Declined aloud: "Declined" in Cancel's grey, the event and its button faded.
+    ["overlay-chat-question-declined", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [{ id: 0, request: eventRequests.add, tool: "answer", reply: "Okay, I didn't add it.", questions: [{ id: 1, text: "Add this event?", event: eventQuestions.add, spoken: "No, not this week.", answer: "declined" }] }] }, chatPlacement: over }],
+    // A question in words declined with a click, then one asked again and still asking.
+    ["overlay-chat-question-clicked", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: "Add the launch review on Friday at ten", questions: [{ id: 1, text: "Add “Launch review” to your calendar on Friday at 10:00?", event: null, spoken: null, answer: "declined" }], confirmation: "Add “Launch review” to your calendar on Friday at 11:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
     // A chat long enough to scroll: the question keeps its height and its buttons show.
-    ["overlay-chat-confirmation-long", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [{ id: 0, request: "Can you add this to my calendar?", tool: "answer", reply: "Happy to add it. Which item on the screen do you mean: the date and time, the title, and any other details? What is on screen does not give me the specifics I need yet." }, { id: 1, request: "The launch review, tomorrow at ten.", tool: "answer", reply: "Here is the entry:\n\n- Title: Launch review\n- When: tomorrow at 10:00\n- No location given\n\nShall I go ahead?" }], pendingRequest: "Yes.", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar tomorrow at 10:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }],
+    ["overlay-chat-confirmation-long", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [{ id: 0, request: "Can you add this to my calendar?", tool: "answer", reply: "Happy to add it. Which item on the screen do you mean: the date and time, the title, and any other details? What is on screen does not give me the specifics I need yet.", questions: [] }, { id: 1, request: "The launch review, tomorrow at ten.", tool: "answer", reply: "Here is the entry:\n\n- Title: Launch review\n- When: tomorrow at 10:00\n- No location given\n\nShall I go ahead?", questions: [] }], pendingRequest: "Yes.", questions: [], closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar tomorrow at 10:00?", confirmationEvent: null, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }],
     ] as [string, Record<string, unknown> & { whole?: string }][]
   ).map(([name, { whole, ...change }]) => ({ name, page: "overlay/index.html", size: chatWindowSize, state: { ...overlay, ...change }, transparent: true, ...(whole === undefined ? {} : { whole }) })),
   { name: "history", page: "history/index.html", size: historyWindowSize, state: history, transparent: true },
@@ -273,7 +283,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "welcome-accessibility-vscode", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true, vscodeFix: "needed" } },
 ];
 /** The overlay follows the system's light and dark (owner, 2026-10-09): these again, dark. */
-const darkOverlayShots = new Set(["overlay-listening", "overlay-tip-switch", "overlay-not-pasted", "overlay-failed-long", "overlay-agent-apps-running", "overlay-chat-answer", "overlay-chat-confirmation", "overlay-chat-event-change", "overlay-chat-event-delete"]);
+const darkOverlayShots = new Set(["overlay-chat-question-confirmed", "overlay-chat-question-declined", "overlay-listening", "overlay-tip-switch", "overlay-not-pasted", "overlay-failed-long", "overlay-agent-apps-running", "overlay-chat-answer", "overlay-chat-confirmation", "overlay-chat-event-change", "overlay-chat-event-delete"]);
 shots.push(...shots.filter((shot) => darkOverlayShots.has(shot.name)).map((shot) => ({ ...shot, name: `${shot.name}-dark`, dark: true })));
 
 async function capture(shot: (typeof shots)[number]): Promise<void> {

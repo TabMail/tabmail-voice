@@ -13,7 +13,27 @@ export interface ChatTurn {
   tool: AgentToolID;
   /** The answer, or the text the tool pasted or sent. */
   reply: string;
+  /** What its tools asked the user on the way, oldest first, each where it was asked. */
+  questions: ChatQuestion[];
 }
+
+/** A question a tool asked before it sent or created anything, once answered: it stays in the chat
+ * window where it was asked, the answer ticked on it, and the user's words under it when they
+ * answered aloud (owner, 2026-10-20). */
+export interface ChatQuestion {
+  id: number;
+  /** What it asked, and the calendar event drawn in place of the words (null for words alone). */
+  text: string;
+  event: EventQuestion | null;
+  /** What the user said to it, when they answered aloud. */
+  spoken: string | null;
+  /** How it was settled: confirmed or declined (by a click, its time running out, or the model for
+   * an answer aloud; an answer aloud the model did not act on is declined); null while the model
+   * reads an answer aloud. */
+  answer: QuestionAnswer | null;
+}
+
+export type QuestionAnswer = "confirmed" | "declined";
 
 /**
  * The conversation in the chat window the pill grows into once the Answer tool replies: each request
@@ -24,6 +44,8 @@ export interface AgentChat {
   turns: ChatTurn[];
   /** The follow-up being carried out, shown until its turn is added. */
   pendingRequest: string | null;
+  /** The questions it has asked and the user answered, shown under it until they join its turn. */
+  questions: ChatQuestion[];
   /** When the window closes unless the user touches it (epoch milliseconds); null until an answer
    * joins it, and once they have touched it. */
   closesAt: number | null;
@@ -79,10 +101,18 @@ export interface EventQuestionLine {
 }
 
 /** The chat window as it opens: no turns yet, and untouched. */
-export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null, confirmationEvent: null, confirmationExpiresAt: null };
+export const emptyChat: AgentChat = { turns: [], pendingRequest: null, questions: [], closesAt: null, touched: false, activity: null, confirmation: null, confirmationEvent: null, confirmationExpiresAt: null };
 
+/** Adds the request's turn, with the questions it asked on the way. */
 export function appendTurn(chat: AgentChat, request: string, tool: AgentToolID, reply: string): AgentChat {
-  return { ...chat, turns: [...chat.turns, { id: chat.turns.length, request, tool, reply }], pendingRequest: null };
+  return { ...chat, turns: [...chat.turns, { id: chat.turns.length, request, tool, reply, questions: chat.questions }], pendingRequest: null, questions: [] };
+}
+
+/** Ticks `answer` on question `id`, wherever it is (under the request still being carried out, or in
+ * its turn by then), once: a question already settled keeps its answer. */
+export function settleQuestion(chat: AgentChat, id: number, answer: QuestionAnswer): AgentChat {
+  const settle = (questions: ChatQuestion[]) => questions.map((question) => (question.id === id && question.answer === null ? { ...question, answer } : question));
+  return { ...chat, questions: settle(chat.questions), turns: chat.turns.map((turn) => ({ ...turn, questions: settle(turn.questions) })) };
 }
 
 /** The conversation as the backend prompts' `conversation` variable: each request and its reply,

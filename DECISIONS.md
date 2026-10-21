@@ -1923,6 +1923,36 @@ the hotkey answers it (it still starts no new request).
   card it names showed. Text the model read earlier in the request (a page, search results) could
   steer it to confirm once the user has said anything; the damage is still bounded by that card.
 
+**Amendment 2026-10-20: an answered question stays, with its answer.** Owner: "when the user answers
+vocally, the answer doesn't really show up. We should make the user answer show up as normally, and
+have the confirmation dialogue not disappear either"; then, of pages of candidates, "the pressed
+button stays, with a little more fading", "the circle spinner just like our main voice circle"
+instead of the words "answer aloud, which is not really obvious", "timeout action == decline", "if it
+doesn't act, it's just declined", and "make that spinning time a global configuration shared".
+- Once answered, a question stays in the chat window where it was asked (`ChatQuestion`, in
+  `chat.questions` until its request's turn is added, then in that turn's `questions`). The button
+  pressed stays, solid as it was, and the other goes: confirmed, Confirm's blue (a delete's red)
+  saying what was done, "Added", "Saved", "Deleted" or "Confirmed", with a tick; declined, Cancel's
+  grey saying "Declined" with a cross, the question faded to `chatQuestionDeclinedOpacity` and the
+  button to `chatQuestionDeclinedButtonOpacity`. Nothing is struck out. Rejected candidates: a tick
+  on the kept buttons, a blue ring and red tint (a declined delete read as alarming, a confirmed one
+  as calm), a tinted card, and a label alone.
+- An answer given aloud shows as the user's own bubble under the question. Until the model's
+  `confirmation_answer` reads it, the thinking circle's spinner, small and alone, takes the buttons'
+  place (a small waveform was tried first), and a screen reader hears "Answered aloud"; the model's
+  answer then shows on that question (by the id the chat window keeps for it).
+- **Everything that spins turns at one speed**, `config.spinnerRevolutionsPerSecond` (the thinking
+  circle's 1.2 turns a second): the thinking circle, a running bubble's border and the chat window's
+  activity spinner (both 1 before) and the spinner on a question answered aloud. The warm-up swirl's
+  orbiting particles keep their own speed.
+- **Not acting is declining.** A question left unanswered for `config.chatConfirmationTimeout` is
+  declined exactly as a click on Cancel is: the model reads `config.connectorToolDeclined`. This
+  supersedes the 2026-09-28 amendment's "the model reads ... 'didn't confirm in time', not the
+  decline". An answer aloud the model does not act on (any other call, a confirmation with neither
+  true nor false, the request ending) is declined too.
+- A request that ends without its turn (canceled, failed) takes its questions with it, as it takes
+  its pending request: the chat window is left as it was.
+
 ## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
 
 **Context:** Owner, 2026-09-26: the Answer prompt's tools reach the user's apps, each a switch in

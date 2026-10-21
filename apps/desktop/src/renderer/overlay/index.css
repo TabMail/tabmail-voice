@@ -291,6 +291,21 @@ body {
   cursor: pointer;
 }
 
+/* An answered question's pressed button, solid as it was (it also carries that button's class),
+   or a spinner while the model reads an answer given aloud; it answers nothing more. */
+.chat-question-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.reading-spinner {
+  position: relative;
+  flex: none;
+}
+
 .chat-cancel {
   background: var(--hover);
   color: var(--text);
