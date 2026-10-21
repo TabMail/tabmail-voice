@@ -183,6 +183,21 @@ describe("MemoryTools", () => {
       expect(memory.rows).toHaveLength(count);
     });
 
+    /** A listing ends where a search does (its pages times its page size): a far page asked for lists
+     * the newest that many, a few at a time, never the whole memory. */
+    test("with no query lists at most a search's worth for a far page", async () => {
+      const max = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
+      keep(max + config.memoryListFetchRows * 3, "budget");
+      const newestFirst = [...memory.rows].sort((x, y) => y.dateMs - x.dateMs).map((row) => row.dateMs);
+      const pages = max / config.memorySearchPageSize;
+      const far = (await run(config.memorySearchTool, { page_index: 1e9 })) as Record<string, unknown> & { results: string };
+      expect(far).toMatchObject({ page: pages, totalPages: pages, totalItems: max });
+      expect(far.comment).toBeUndefined();
+      expect([...far.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]))).toEqual(newestFirst.slice(max - config.memorySearchPageSize, max));
+      expect(memory.searches.length).toBeLessThanOrEqual(max / config.memoryListFetchRows + 1);
+      expectSmallRequests();
+    });
+
     /** A first request that fails is the tool's error; asked again in the same request, the listing
      * starts over and lists every exchange. */
     test("with no query lists every exchange after its first request failed", async () => {

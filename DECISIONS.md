@@ -5715,6 +5715,8 @@ Thunderbird's copy or its files.
 > millisecond can come in any order), and one more, to know whether more follow. Until all are listed a
 > page says more follow and gives no `totalPages` or `totalItems`, as Thunderbird's tool does. A
 > request that fails is the tool's error, and the next call goes on from where the listing got to. A
+> listing still ends at 2,000 exchanges (the same cap as a search): a far `page_index` lists at most
+> that, in about 400 requests, never the whole memory; older exchanges are reached with dates. A
 > search with a query is unchanged (its results are cut by relevance). The agent loop runs one tool
 > call at a time, so no two calls list the same search at once. Tests: `memory/tools.test.ts`
 > (mutation-verified).

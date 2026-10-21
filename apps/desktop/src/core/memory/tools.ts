@@ -49,7 +49,7 @@ export class MemoryTools {
         // time, as its pages are asked for.
         search = { hits: [], done: false, from, to };
       } else {
-        const limit = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
+        const limit = searchMax();
         let hits: MemoryHit[];
         try {
           hits = (await this.store.search({ query, from, to, limit })).slice(0, limit);
@@ -96,16 +96,17 @@ export class MemoryTools {
 
   /** Lists the next `memoryListFetchRows` exchanges of `search`, a listing: the newest no newer than
    * the last one listed (the helper's bounds include it), less those already listed at that
-   * millisecond, and one more, to know whether more follow. */
+   * millisecond, and one more, to know whether more follow. A listing ends at `searchMax`
+   * exchanges, as a search does, so a far page asked for never lists the whole memory. */
   private async listMore(search: Search): Promise<void> {
     const rows = config.memoryListFetchRows;
     const last = search.hits.at(-1);
     const listedAtLast = new Set(last === undefined ? [] : search.hits.filter((hit) => hit.dateMs === last.dateMs).map((hit) => hit.memId));
-    const to = last === undefined || (search.to !== "" && Date.parse(search.to) < last.dateMs) ? search.to : new Date(last.dateMs).toISOString();
+    const to = last === undefined ? search.to : new Date(last.dateMs).toISOString();
     const found = await this.store.search({ query: "", from: search.from, to, limit: rows + listedAtLast.size + 1 });
     const fresh = found.filter((hit) => !listedAtLast.has(hit.memId));
     search.hits.push(...fresh.slice(0, rows));
-    search.done = fresh.length <= rows;
+    search.done = fresh.length <= rows || search.hits.length >= searchMax();
     log.debug(`MemoryTools: ${config.memorySearchTool} listed ${search.hits.length}`);
   }
 
@@ -143,6 +144,12 @@ interface Search {
   done: boolean;
   from: string;
   to: string;
+}
+
+/** The most results one search gives, a listing too (`memorySearchPageSize` pages of
+ * `memorySearchPrefetchPages`, at most `memorySearchFetchMax`). */
+function searchMax(): number {
+  return Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
 }
 
 /** As Thunderbird's tool: the helper's refusal (a query it can't parse) as it gave it, so the model can
