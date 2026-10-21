@@ -1285,8 +1285,8 @@ describe("the chat window", () => {
     // The button pressed stays, solid as it was: Confirm's blue (a delete's red) or Cancel's grey.
     const stays = card?.querySelector(".chat-question-status")?.className;
     expect(stays).toBe({ confirmed: action === "delete" ? "chat-question-status chat-confirm destructive" : "chat-question-status chat-confirm", declined: "chat-question-status chat-cancel", reading: "chat-question-status" }[state]);
-    // While the model reads an answer aloud the label is a small waveform; a screen reader hears it.
-    expect(card?.querySelectorAll(".chat-question-status .bar")).toHaveLength(state === "reading" ? config.questionReadingBarCount : 0);
+    // While the model reads an answer aloud a small spinner shows; a screen reader hears the label.
+    expect(card?.querySelectorAll(".chat-question-status .reading-spinner .spinning")).toHaveLength(state === "reading" ? 1 : 0);
     expect(seen(card?.querySelector(".chat-question-status") ?? null)).toBe(state === "reading" ? "" : label);
     // The request, the question, what the user said to it, then the reply.
     const order = [...document.querySelectorAll(".chat-turn .chat-request, .chat-turn .chat-text, .chat-turn .event-card")].map((element) => (element.classList.contains("event-card") ? "event" : element.textContent));
@@ -1294,6 +1294,27 @@ describe("the chat window", () => {
     expect(order.indexOf("Add the launch party")).toBeLessThan(order.indexOf(asked));
     expect(order.indexOf(asked)).toBeLessThan(order.indexOf(spoken));
     expect(order.indexOf(spoken)).toBeLessThan(order.indexOf("Done."));
+  });
+
+  /** Everything that spins turns at one speed, so none looks out of step with another (owner,
+   * 2026-10-20): the thinking circle, a running bubble's border, the chat's activity spinner, and the
+   * spinner on a question answered aloud. */
+  test("every spinner turns at the one speed", async () => {
+    const page = await overlayPage();
+    const reading = { id: 1, text: "Add the launch party?", event: null, spoken: "Yes.", answer: null };
+    const speeds = () => [...document.querySelectorAll<HTMLElement>(".spinning")].map((element) => element.style.animationDuration);
+    const one = `${1 / config.spinnerRevolutionsPerSecond}s`;
+    // A question answered aloud under a running bubble, the chat saying what a tool does.
+    await page.show({ ...running, tools: ["answer"], connectors: ["calendar"], chatPlacement: above, chat: { ...chat(null), turns: [], pendingRequest: "Add the launch party", questions: [reading], activity: "Adding it to your calendar" } });
+    expect(document.querySelectorAll(".reading-spinner .spinning")).toHaveLength(1);
+    expect(document.querySelectorAll(".chat-spinner.spinning")).toHaveLength(1);
+    const whileRunning = speeds();
+    expect(whileRunning.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(whileRunning)).toEqual(new Set([one]));
+    // The thinking circle, while transcribing.
+    await page.show({ ...listening, phase: { kind: "transcribing" } });
+    expect(document.querySelectorAll(".pill .rim-layer .spinning")).toHaveLength(2);
+    expect(new Set(speeds())).toEqual(new Set([one]));
   });
 
   /** A question answered with a click has no words under it. */

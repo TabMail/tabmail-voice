@@ -480,7 +480,7 @@ function Activity({ label }: { label: string }) {
     <div className="chat-caption chat-activity" style={{ fontSize: size, gap: config.chatBubblePadding / 2 }}>
       <div
         className="chat-spinner spinning"
-        style={{ width: size, height: size, borderWidth: config.chatActivitySpinnerLineWidth, animationDuration: `${1 / config.chatActivitySpinnerRevolutionsPerSecond}s` }}
+        style={{ width: size, height: size, borderWidth: config.chatActivitySpinnerLineWidth, animationDuration: `${1 / config.spinnerRevolutionsPerSecond}s` }}
       />
       {label}
     </div>
@@ -496,6 +496,17 @@ function AnsweredQuestions({ questions }: { questions: ChatQuestion[] }) {
       {question.spoken !== null && <RequestBubble text={question.spoken} />}
     </div>
   ));
+}
+
+/** While the model reads an answer given aloud: the thinking circle's spinner, small (owner,
+ * 2026-10-20: "the circle spinner just like our main voice circle"). */
+function ReadingSpinner() {
+  const size = config.questionReadingSpinnerSize;
+  return (
+    <div className="reading-spinner" aria-hidden="true" style={{ width: size, height: size }}>
+      <RimLayer start={brandColor(0)} end={brandColor(config.thinkingArcEndColor)} track={brandColor(0, config.thinkingTrackOpacity)} transparent={brandColor(0, 0)} isShown width={config.questionReadingSpinnerRimWidth} />
+    </div>
+  );
 }
 
 /** What a tool asks before it sends or creates anything: it runs only on Confirm, and a bar along its
@@ -542,7 +553,7 @@ function ConfirmationCard({ question, event, expiresAt, state }: { question: str
 
 /** What stays of an answered question's buttons, as tall as they were: the one pressed, solid as it
  * was (Confirm's blue, a delete's red, Cancel's grey), saying what was done with a tick, or that it
- * was declined with a cross; while the model reads an answer given aloud, a small waveform. */
+ * was declined with a cross; while the model reads an answer given aloud, a small spinner. */
 function QuestionStatus({ state, event }: { state: "reading" | QuestionAnswer; event: EventQuestion | null }) {
   const label = { confirmed: config.questionConfirmedLabels[event?.action ?? "question"], declined: config.questionDeclinedLabel, reading: config.questionReadingLabel }[state];
   const pressed = state === "confirmed" ? ` chat-confirm${event?.action === "delete" ? " destructive" : ""}` : state === "declined" ? " chat-cancel" : "";
@@ -555,7 +566,7 @@ function QuestionStatus({ state, event }: { state: "reading" | QuestionAnswer; e
       {state === "declined" && <CrossIcon size={config.chatCaptionFontSize} />}
       {state === "reading" ? (
         <>
-          <ReadingWave />
+          <ReadingSpinner />
           <span className="sr-only">{label}</span>
         </>
       ) : (
@@ -1059,17 +1070,8 @@ function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
   );
 }
 
-/** The pill's waveform bars' shape; the label of a question answered aloud draws a smaller one. */
-interface MeterShape {
-  count: number;
-  minHeight: number;
-  maxHeight: number;
-}
-
-const pillMeter: MeterShape = { count: config.overlayMeterBarCount, minHeight: config.overlayMeterMinBarHeight, maxHeight: config.overlayMeterMaxBarHeight };
-
-function barHeight(index: number, time: number, level: number, meter: MeterShape = pillMeter): number {
-  const count = meter.count;
+function barHeight(index: number, time: number, level: number): number {
+  const count = config.overlayMeterBarCount;
   const center = (count - 1) / 2;
   const distance = Math.abs(index - center) / Math.max(center, 1);
   const weight = 1 - distance * (1 - config.overlayMeterEdgeBarWeight);
@@ -1079,35 +1081,8 @@ function barHeight(index: number, time: number, level: number, meter: MeterShape
   // Boost quieter levels so ordinary speech moves the bars visibly, on top of an idle ripple.
   const voice = level ** config.waveformLevelExponent * config.waveformGain * weight * (1 - config.waveformRippleDepth + config.waveformRippleDepth * ripple);
   const amount = Math.min(1, config.waveformIdleLevel * ripple + voice);
-  return meter.minHeight + amount * (meter.maxHeight - meter.minHeight);
-}
-
-const readingMeter: MeterShape = { count: config.questionReadingBarCount, minHeight: config.questionReadingMinBarHeight, maxHeight: config.questionReadingMaxBarHeight };
-
-/** The label of a question answered aloud while the model reads the answer: the pill's waveform,
- * small, in the color of a voice heard, moving as to a steady voice. */
-function ReadingWave() {
-  const bars = useRef<(HTMLDivElement | null)[]>([]);
-  useAnimationFrame(() => {
-    const time = performance.now() / 1000;
-    bars.current.forEach((bar, index) => {
-      if (bar) bar.style.height = `${barHeight(index, time, config.questionReadingLevel, readingMeter)}px`;
-    });
-  });
-  return (
-    <div className="waveform" aria-hidden="true" style={{ gap: config.questionReadingBarSpacing, height: config.questionReadingMaxBarHeight }}>
-      {Array.from({ length: config.questionReadingBarCount }, (_, index) => (
-        <div
-          key={index}
-          ref={(element) => {
-            bars.current[index] = element;
-          }}
-          className="bar"
-          style={{ width: config.questionReadingBarWidth, height: config.questionReadingMinBarHeight, borderRadius: config.questionReadingBarWidth / 2, backgroundColor: rgba(palette.waveformVoiced) }}
-        />
-      ))}
-    </div>
-  );
+  const minHeight = config.overlayMeterMinBarHeight;
+  return minHeight + amount * (config.overlayMeterMaxBarHeight - minHeight);
 }
 
 /** A ring `width` thick around its box, masked out of a conic gradient. Its inner edge fades over
@@ -1132,9 +1107,9 @@ function SpinningRim({ isRetrying }: { isRetrying: boolean }) {
   );
 }
 
-/** One set of the thinking circle's colors: its track and its arc, shown or faded out. */
-function RimLayer({ start, end, track, transparent, isShown }: { start: string; end: string; track: string; transparent: string; isShown: boolean }) {
-  const width = config.thinkingRimWidth;
+/** One set of the thinking circle's colors: its track and its arc, shown or faded out; `width` thick
+ * (the thinking circle's, unless smaller, as on a question answered aloud). */
+function RimLayer({ start, end, track, transparent, isShown, width = config.thinkingRimWidth }: { start: string; end: string; track: string; transparent: string; isShown: boolean; width?: number }) {
   const arc = 360 * config.thinkingArcFraction;
   const ring: CSSProperties = { mask: ringMask(width) };
   return (
@@ -1145,7 +1120,7 @@ function RimLayer({ start, end, track, transparent, isShown }: { start: string; 
         style={{
           ...ring,
           background: `conic-gradient(${transparent} 0deg, ${start} ${arc / 2}deg, ${end} ${arc}deg, transparent ${arc}deg)`,
-          animationDuration: `${1 / config.thinkingRevolutionsPerSecond}s`,
+          animationDuration: `${1 / config.spinnerRevolutionsPerSecond}s`,
         }}
       />
     </div>
@@ -1163,7 +1138,7 @@ function CirclingBorder() {
         style={{
           ...ring,
           background: `conic-gradient(${brandColor(0, 0)}, ${brandBlue}, ${brandColor(config.thinkingArcEndColor)}, ${brandColor(0, 0)})`,
-          animationDuration: `${1 / config.agentBubbleRevolutionsPerSecond}s`,
+          animationDuration: `${1 / config.spinnerRevolutionsPerSecond}s`,
         }}
       />
     </>

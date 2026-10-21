@@ -675,7 +675,11 @@ export const thinkingRimWidth = 2.5;
  * the working pill's and a running bubble's): wide enough to blur its edge's pixel steps. */
 export const ringEdgeSoftness = 1;
 export const thinkingArcFraction = 0.7;
-export const thinkingRevolutionsPerSecond = 1.2;
+/** How fast everything that spins turns, one speed for all so none looks out of step with another
+ * (owner, 2026-10-20): the thinking circle's rim, a running bubble's border, the chat window's
+ * activity spinner and a question answered aloud. The warm-up swirl's particles orbit at their own
+ * `swirlRevolutionsPerSecond`. */
+export const spinnerRevolutionsPerSecond = 1.2;
 export const thinkingTrackOpacity = 0.2;
 /** The arc runs from blue to this point on the blue → purple gradient. While a transcription is
  * tried again after a server error, the arc and its track fade to `palette.retryArcStart` →
@@ -820,7 +824,6 @@ export const agentRestingSymbolOpacity = 0.6;
 export const agentBubbleIdleOpacity = 0.45;
 /** The running tool's bubble: a gradient arc circling its border. */
 export const agentBubbleRimWidth = 2;
-export const agentBubbleRevolutionsPerSecond = 1;
 /** The running tool's bubble grows to this size, about its center, on a bouncy spring that overshoots
  * a little ("a genie effect", so the tool in use is obvious). */
 export const agentBubbleRunningDiameter = 34;
@@ -905,15 +908,11 @@ export const chatCloseButtonSize = 18;
 export const questionConfirmedLabels = { question: "Confirmed", add: "Added", change: "Saved", delete: "Deleted" } as const;
 export const questionDeclinedLabel = "Declined";
 export const questionReadingLabel = "Answered aloud";
-/** While the model reads an answer given aloud, its label is a small waveform instead of words
- * (owner, 2026-10-20: "Answered aloud" was "not really obvious"): the pill's bars, smaller, moving as
- * to a steady voice of this level. A screen reader hears `questionReadingLabel`. */
-export const questionReadingBarCount = 5;
-export const questionReadingBarWidth = 2;
-export const questionReadingBarSpacing = 2;
-export const questionReadingMinBarHeight = 2;
-export const questionReadingMaxBarHeight = 11;
-export const questionReadingLevel = 0.6;
+/** While the model reads an answer given aloud, the thinking circle's spinner takes the buttons'
+ * place, this small (owner, 2026-10-20: the words "Answered aloud" were "not really obvious"). A
+ * screen reader hears `questionReadingLabel`. */
+export const questionReadingSpinnerSize = 13;
+export const questionReadingSpinnerRimWidth = 2;
 /** A question declined fades to this opacity, and its Declined button to the next. */
 export const chatQuestionDeclinedOpacity = 0.35;
 export const chatQuestionDeclinedButtonOpacity = 0.7;
@@ -963,8 +962,8 @@ export const noteTextFontSize = 14;
 export const noteTextLineHeight = 1.35;
 export const noteTextMaxLines = 3;
 export const noteCopyIconSize = 12;
-/** The spinner beside what a tool the answer's model called is doing, while it runs. */
-export const chatActivitySpinnerRevolutionsPerSecond = 1;
+/** The spinner beside what a tool the answer's model called is doing, while it runs (turning at
+ * `spinnerRevolutionsPerSecond`). */
 export const chatActivitySpinnerLineWidth = 1.5;
 /** The timeout bar along the bottom of the chat, its question or the note, shrinking from right to
  * left as the time runs out (like the iOS app's `PendingSendToast`): a faint hairline this far over

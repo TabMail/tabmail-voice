@@ -235,7 +235,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     // A calendar question for each write, as its card: the page, the title and time, and its lines.
     ...(Object.entries(eventQuestions).map(([action, event]) => [`overlay-chat-event-${action}`, { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: eventRequests[action as keyof typeof eventRequests], questions: [], confirmation: "Change this event?", confirmationEvent: event, confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }])),
     // Questions once answered stay where they were asked (owner, 2026-10-20), the pressed button in
-    // their buttons' place: one answered aloud while the model reads the words (a small waveform),
+    // their buttons' place: one answered aloud while the model reads the words (a small spinner),
     // the words under it.
     ["overlay-chat-question-reading", { phase: { kind: "running", tool: null }, mode: "agent", runningBubble: null, tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { ...conversation, turns: [], touched: false, pendingRequest: eventRequests.add, questions: [{ id: 1, text: "Add this event?", event: eventQuestions.add, spoken: "Yes, go ahead.", answer: null }] }, chatPlacement: over }],
     // Confirmed aloud, and done: "Added" in Confirm's blue, the words under it, then the reply.
