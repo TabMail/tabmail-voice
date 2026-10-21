@@ -299,6 +299,36 @@ struct ClipboardKeeperTests {
         #expect(pasteboard.string(forType: .string) == "user text")
     }
 
+    /// A paste whose keys are still on their way as a second paste starts and waits for its read:
+    /// the first's put-back is not the second's, so it neither takes the second's wait nor puts the
+    /// clipboard back over its unread text; the second's target reads its text, and the clipboard as
+    /// it was goes back after that read, both put-backs done.
+    @Test func aPasteOvertakenAsItsKeysGoLeavesTheNewerPastesWait() async {
+        copy("user text")
+        let keeper = keeper()
+        keeper.save()
+        await keeper.saveTask?.value
+        let (released, release) = AsyncStream<Void>.makeStream()
+        let saved = pasteboard.changeCount
+        let first = Task {
+            await TextInserter(clipboard: keeper, pasteKeystroke: { for await _ in released { break } }).insert("First")
+        }
+        while pasteboard.changeCount == saved { await Task.yield() }
+        await TextInserter(clipboard: keeper, pasteKeystroke: {}).insert("Second")
+        let second = keeper.restoreTask
+        release.yield()
+        release.finish()
+        await first.value
+        await keeper.restoreTask?.value
+        #expect(pasteboard.string(forType: .string) == "Second")
+        let done = OSAllocatedUnfairLock(initialState: false)
+        Task { await second?.value; done.withLock { $0 = true } }
+        let deadline = ContinuousClock.now + .milliseconds(Self.rules.readWait * 5)
+        while !done.withLock({ $0 }), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(done.withLock { $0 })
+        #expect(pasteboard.string(forType: .string) == "user text")
+    }
+
     /// A clipboard left as it was is read once for a dictation, not again for its second save; one
     /// put back is read again, as the change count after a put-back may be a newer copy's.
     @Test func readsAnUnchangedClipboardOnceAndAgainOncePutBack() async {

@@ -69,19 +69,25 @@ std::wstring text() {
     return result;
 }
 
+// A paste's sequence number and the number `offer` gave it, as `paste` hands them to the put-back.
+struct Written {
+    DWORD ours;
+    uint64_t paste;
+};
+
 // Offers `dictated` as `paste` does, through the keeper's owner; `between` copies after the paste
-// closes the clipboard and before it reads its sequence number. The paste's sequence number.
-DWORD write(ClipboardKeeper& keeper, const std::wstring& dictated, bool between = false) {
+// closes the clipboard and before it reads its sequence number.
+Written write(ClipboardKeeper& keeper, const std::wstring& dictated, bool between = false) {
     Clipboard clipboard(keeper.owner());
     clipboard.open();
     const DWORD before = GetClipboardSequenceNumber();
     clipboard.offerText();
-    keeper.offer(dictated);
+    const auto paste = keeper.offer(dictated);
     clipboard.close();
     if (between) copy(L"Newer copy");
     const DWORD ours = GetClipboardSequenceNumber();
     keeper.wrote(before, ours);
-    return ours;
+    return {ours, paste};
 }
 
 // A save, then a paste of `dictated`, which the target app reads as it handles the keys; `between`
@@ -93,9 +99,9 @@ std::wstring pasteAndPutBack(bool between) {
     ClipboardKeeper keeper(rules);
     keeper.save();
     Sleep(settle);
-    const DWORD ours = write(keeper, dictated, between);
+    const auto written = write(keeper, dictated, between);
     check(text() == (between ? L"Newer copy" : dictated), "the clipboard at the paste keys");
-    keeper.restore(ours, true);
+    keeper.restore(written.ours, written.paste, true);
     // A newer copy is never read as the paste's text, so its put-back decides only once `readWait` passes.
     Sleep(between ? rules.readWait + settle : settle);
     return text();
@@ -108,7 +114,8 @@ std::pair<std::wstring, std::wstring> pasteReadLate(DWORD readAt, bool keysSent 
     ClipboardKeeper keeper(rules);
     keeper.save();
     Sleep(settle);
-    keeper.restore(write(keeper, L"Dictated text"), keysSent);
+    const auto written = write(keeper, L"Dictated text");
+    keeper.restore(written.ours, written.paste, keysSent);
     std::wstring read;
     if (readAt) { Sleep(readAt); read = text(); }
     else {
@@ -117,6 +124,25 @@ std::pair<std::wstring, std::wstring> pasteReadLate(DWORD readAt, bool keysSent 
         check(GetClipboardOwner() == keeper.owner(), "an unread paste stays past restoreDelay");
         Sleep(rules.readWait);
     }
+    Sleep(settle);
+    return {read, text()};
+}
+
+// A refused paste whose put-back starts only once a second paste has offered its text: that
+// put-back is the first paste's, so it leaves the second's unread text, which its target then
+// reads; the clipboard as it was goes back after that read. What the second target read, and
+// the clipboard once its put-back has had its time.
+std::pair<std::wstring, std::wstring> refusedPasteOvertaken() {
+    copy(L"Original copy");
+    ClipboardKeeper keeper(rules);
+    keeper.save();
+    Sleep(settle);
+    const auto first = write(keeper, L"First dictation");
+    const auto second = write(keeper, L"Second dictation");
+    keeper.restore(first.ours, first.paste, false);
+    Sleep(settle);
+    const std::wstring read = text();
+    keeper.restore(second.ours, second.paste, true);
     Sleep(settle);
     return {read, text()};
 }
@@ -141,9 +167,9 @@ std::wstring copiedAsSaved(bool atRelease) {
     save(!atRelease);
     if (atRelease) copy(L"Copied during the hold");
     save(atRelease);
-    const DWORD ours = write(keeper, dictated);
+    const auto written = write(keeper, dictated);
     check(text() == dictated, "the target app reads the paste's text");
-    keeper.restore(ours, true);
+    keeper.restore(written.ours, written.paste, true);
     Sleep(settle);
     return text();
 }
@@ -164,6 +190,8 @@ int main() {
     check(pasteReadLate(0).second == L"Original copy", "an unread paste put back after readWait");
     // A paste refused before its keys goes back at once: no app is going to read it.
     check(pasteReadLate(lateRead, false).first == L"Original copy", "a refused paste put back at once");
+    // An older paste's put-back never puts the clipboard back over a newer paste's unread text.
+    check(refusedPasteOvertaken() == std::pair<std::wstring, std::wstring>{L"Second dictation", L"Original copy"}, "an overtaken put-back leaves the newer paste");
     // A paste's text no app has read is handed over as the keeper ends (the helper's exit): the
     // clipboard still holds it.
     {

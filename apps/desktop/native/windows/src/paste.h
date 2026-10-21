@@ -85,7 +85,7 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     stage("clipboard-write");
     clipboard.offerText();
     // Before the close: no app can read the text while the clipboard is open.
-    keeper.offer(text);
+    const auto paste = keeper.offer(text);
     clipboard.close();
     // Read once closed: closing adds the formats Windows makes from the text, each a new number.
     const DWORD ours = GetClipboardSequenceNumber();
@@ -95,9 +95,10 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     struct PutBack {
         ClipboardKeeper& keeper;
         DWORD ours;
+        uint64_t paste;
         bool keysSent = false;
-        ~PutBack() { keeper.restore(ours, keysSent); }
-    } putBack{keeper, ours};
+        ~PutBack() { keeper.restore(ours, paste, keysSent); }
+    } putBack{keeper, ours, paste};
     GUITHREADINFO current{}; current.cbSize = sizeof(current);
     if (canceled() || unixMilliseconds() >= deadline || GetForegroundWindow() != window ||
         !GetGUIThreadInfo(thread, &current) || current.hwndFocus != focus.hwndFocus) {

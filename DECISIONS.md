@@ -192,7 +192,9 @@ and fix the put-back.
   target stalled by the load that caused this, and still returns the user's clipboard soon when the
   keys went nowhere. A paste refused before its keys (a modifier held, focus moved, a failed
   `SendInput`) goes back after `restoreDelay` alone on Windows and Ubuntu, with no read to wait for. A later paste replaces
-  the earlier one's text, and its own put-back is the one that waits.
+  the earlier one's text, and its own put-back is the one that waits: each put-back is bound to its
+  own paste as it is scheduled (on Windows the number `offer` gives it), so an earlier paste's
+  put-back that runs late never waits for, nor puts the clipboard back over, a later one's text.
 - **The helper's exit.** The Mac and Windows write a still-unread text in full as the helper ends (the
   Mac at the end of the helper's input, `HelperChannel.onEnd`; Windows by `WM_RENDERALLFORMATS` as the
   owner window closes), so the clipboard keeps the text, not nothing. Ubuntu is unchanged: the portal
@@ -206,12 +208,12 @@ and fix the put-back.
   an empty clipboard on the Mac and Windows, where it would have held the text.
 - **Tests.** Mac `ClipboardKeeperTests` › `aBusyAppReadingAfterTheDelayGetsThePastesText`,
   `putsTheClipboardBackWhenNoAppReadsThePaste`, `handsOverAnUnreadPasteAsTheHelperEnds`,
-  `keepsANewerCopyAsTheHelperEnds` (the stub paste keystroke now reads the clipboard, as a target
-  does), `MacServiceRequestTests` › `anUnreadPasteIsKeptAsTheHelperEnds` (the helper's closed input wired
+  `keepsANewerCopyAsTheHelperEnds`, `aPasteOvertakenAsItsKeysGoLeavesTheNewerPastesWait` (the stub
+  paste keystroke now reads the clipboard, as a target does), `MacServiceRequestTests` › `anUnreadPasteIsKeptAsTheHelperEnds` (the helper's closed input wired
   to the hand-over, with the wait for a read still on and run out), `HelperChannelTests` ›
   `closedInputRunsTheEndHandlersInOrderBeforeExiting`; Windows `clipboard-keeper.cpp` (a late
-  reader gets the text, an unread paste goes back after `readWait`, a refused paste at once, an unread
-  text kept as the keeper ends); Ubuntu `input-session.cpp` (a read 250 ms after the keys gets the
+  reader gets the text, an unread paste goes back after `readWait`, a refused paste at once, a refused
+  paste's put-back run after a newer paste leaves that paste, an unread text kept as the keeper ends); Ubuntu `input-session.cpp` (a read 250 ms after the keys gets the
   text, an unread paste goes back after `readWait`, both with the fake portal reading the offer as it
   is set, as GNOME does; a paste refused before its keys goes back without waiting; a failed transfer after the keys leaves
   the text for a later read; checked on GNOME, where those reads come before any key); the shared `request-cases.json` (`readWait`).

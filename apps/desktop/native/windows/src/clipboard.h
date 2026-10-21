@@ -220,14 +220,15 @@ public:
         state->thread.join();
     }
     // The text a paste is about to offer over the clipboard, open with `owner`: what an app reading
-    // it gets.
-    void offer(const std::wstring& text) {
+    // it gets. The paste's number, which its put-back is given.
+    [[nodiscard]] uint64_t offer(const std::wstring& text) {
         std::lock_guard lock(state->mutex);
         state->offered = text;
         state->read = false;
-        ++state->paste;
+        const auto paste = ++state->paste;
         // A put-back still waiting for the last paste's read: that text is gone.
         state->changed.notify_all();
+        return paste;
     }
     // Saves the clipboard in the background, unless it is saved, or being saved, as it is now.
     void save() {
@@ -291,16 +292,15 @@ public:
     // `readWait` from now passes with none having read it (at once for a paste whose keys were never
     // sent), if the clipboard still holds the paste's text: `ours`, its sequence number, and the
     // owner window's. The number is read once the paste closes the clipboard, by when another
-    // program may have copied, so the owner is checked too.
-    void restore(DWORD ours, bool keysSent) noexcept {
+    // program may have copied, so the owner is checked too. `paste` is the number `offer` gave it: a
+    // put-back whose thread starts after a later paste's offer is still only its own paste's.
+    void restore(DWORD ours, uint64_t paste, bool keysSent) noexcept {
         try {
-            std::thread([state = state, ours, keysSent] {
+            std::thread([state = state, ours, paste, keysSent] {
                 const auto started = GetTickCount64();
-                uint64_t paste = 0;
                 {
                     std::unique_lock lock(state->mutex);
-                    paste = state->paste;
-                    if (keysSent && !state->read) {
+                    if (keysSent && state->paste == paste && !state->read) {
                         const bool read = state->changed.wait_for(lock, std::chrono::milliseconds(state->rules.readWait),
                             [&] { return state->read || state->paste != paste; });
                         if (state->paste == paste) {
