@@ -7,6 +7,7 @@ import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
 import { MemoryError, memoryDate, memoryRow } from "../../../src/core/memory/store.js";
 import { MemoryTools } from "../../../src/core/memory/tools.js";
+import { HelperError } from "../../../src/main/native/helperClient.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
 
 const minute = 60 * 1_000;
@@ -229,6 +230,40 @@ describe("MemoryTools", () => {
         stamps.push(...[...result.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1])));
       }
       expect(stamps).toEqual(newestFirst);
+    });
+
+    test("with no query keeps the exchanges a failed page had already fetched", async () => {
+      keep(config.memorySearchPageSize * 2 + 3, "budget");
+      await run(config.memorySearchTool, {});
+      // Page 2's first fetch succeeds, its next fails.
+      const search = memory.search.bind(memory);
+      let fetches = 0;
+      const asked = vi.spyOn(memory, "search").mockImplementation(async (request) => {
+        fetches += 1;
+        if (fetches === 2) throw new HelperError("timeout", "memorySearch");
+        return search(request);
+      });
+      expect(await run(config.memorySearchTool, { page_index: 2 })).toEqual({ error: "memory search failed" });
+      asked.mockRestore();
+      // An exchange kept meanwhile trims the memory to itself: the ones fetched are listed nowhere else.
+      const late = memoryRow("budget question kept late", "About budget: answer late", now, "budget-late");
+      await memory.index([late], late.content.length);
+      expect(memory.rows.map((row) => row.memId)).toEqual([late.memId]);
+
+      const result = (await run(config.memorySearchTool, { page_index: 2 })) as { results: string; page: number; totalItems: number };
+      expect(result.page).toBe(2);
+      expect(listed(result.results)).toEqual([21, 22, 23, 24, 25]);
+      for (let i = 20; i < 25; i += 1) expect(result.results).toContain(`budget question ${i}`);
+      expect(result.totalItems).toBe(config.memorySearchPageSize + config.memoryListFetchRows);
+    });
+
+    test("with no query gives a helper's refusal of a later page as it gave it, and goes on after", async () => {
+      keep(config.memorySearchPageSize * 2 + 3, "budget");
+      await run(config.memorySearchTool, {});
+      vi.spyOn(memory, "search").mockRejectedValueOnce(new MemoryError("memorySearch", "database is locked"));
+      expect(await run(config.memorySearchTool, { page_index: 2 })).toEqual({ error: "memory search failed: database is locked" });
+      const result = (await run(config.memorySearchTool, { page_index: 2 })) as { results: string };
+      expect(listed(result.results)).toEqual(Array.from({ length: config.memorySearchPageSize }, (_, i) => config.memorySearchPageSize + i + 1));
     });
 
     /** The dates bound the listing as they bound a search: from a start, to an end, both, or neither. */
