@@ -205,8 +205,8 @@ and fix the put-back.
   after that read. A target slower than `readWait` still gets the clipboard as it was. On the Mac
   another app's read needs the helper's main thread free; it is, except while a Calendar or Contacts
   request runs, which ends before its paste. A helper killed (not ended) with the text unread leaves
-  an empty clipboard on the Mac and Windows, where it would have held the text; tracked as a P3
-  issue (#241).
+  an empty clipboard on the Mac and Windows, where it would have held the text; tracked in
+  issue #241.
 - **Tests.** Mac `ClipboardKeeperTests` › `aBusyAppReadingAfterTheDelayGetsThePastesText`,
   `putsTheClipboardBackWhenNoAppReadsThePaste`, `handsOverAnUnreadPasteAsTheHelperEnds`,
   `keepsANewerCopyAsTheHelperEnds`, `aPasteOvertakenAsItsKeysGoLeavesTheNewerPastesWait`,
