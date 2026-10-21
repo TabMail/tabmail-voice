@@ -1269,7 +1269,6 @@ describe("the chat window", () => {
     ["confirmed", "add", "Yes, go ahead.", config.questionConfirmedLabels.add],
     ["confirmed", "delete", "Yes, go ahead.", config.questionConfirmedLabels.delete],
     ["declined", "add", "No, leave it.", config.questionDeclinedLabel],
-    ["unanswered", null, "Make it Monday.", config.questionUnansweredLabel],
     ["reading", null, "Yes.", config.questionReadingLabel],
   ] as const)("a question answered (%s, %s) stays in its turn, with what the user said", async (state, action, spoken, label) => {
     const page = await overlayPage();
@@ -1283,6 +1282,12 @@ describe("the chat window", () => {
     expect(card?.classList.contains(state)).toBe(true);
     expect(document.querySelectorAll(".chat-confirmation button")).toHaveLength(0);
     expect(card?.querySelector(".chat-question-status")?.textContent).toBe(label);
+    // The button pressed stays, solid as it was: Confirm's blue (a delete's red) or Cancel's grey.
+    const stays = card?.querySelector(".chat-question-status")?.className;
+    expect(stays).toBe({ confirmed: action === "delete" ? "chat-question-status chat-confirm destructive" : "chat-question-status chat-confirm", declined: "chat-question-status chat-cancel", reading: "chat-question-status" }[state]);
+    // While the model reads an answer aloud the label is a small waveform; a screen reader hears it.
+    expect(card?.querySelectorAll(".chat-question-status .bar")).toHaveLength(state === "reading" ? config.questionReadingBarCount : 0);
+    expect(seen(card?.querySelector(".chat-question-status") ?? null)).toBe(state === "reading" ? "" : label);
     // The request, the question, what the user said to it, then the reply.
     const order = [...document.querySelectorAll(".chat-turn .chat-request, .chat-turn .chat-text, .chat-turn .event-card")].map((element) => (element.classList.contains("event-card") ? "event" : element.textContent));
     const asked = event === null ? "Add the launch party?" : "event";

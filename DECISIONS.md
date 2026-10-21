@@ -1925,19 +1925,26 @@ the hotkey answers it (it still starts no new request).
 
 **Amendment 2026-10-20: an answered question stays, with its answer.** Owner: "when the user answers
 vocally, the answer doesn't really show up. We should make the user answer show up as normally, and
-have the confirmation dialogue not disappear either", then, of a page of candidates, the status
-label, "I would not cross things out ... The gray and the declined label is already good enough.
-And also the border."
+have the confirmation dialogue not disappear either"; then, of pages of candidates, "the pressed
+button stays, with a little more fading", a waveform "instead of answer aloud, which is not really
+obvious", "timeout action == decline", and "if it doesn't act, it's just declined".
 - Once answered, a question stays in the chat window where it was asked (`ChatQuestion`, in
-  `chat.questions` until its request's turn is added, then in that turn's `questions`), its buttons
-  replaced by a label: confirmed, "Added", "Saved" or "Deleted" for a calendar event, otherwise
-  "Confirmed", with a tick, the card ringed in the brand's blue; declined, "Declined" with a cross,
-  the card tinted red and faded; with nothing done (left to time out, or an answer aloud the model
-  did nothing with), "Not done", faded. Nothing is struck out.
+  `chat.questions` until its request's turn is added, then in that turn's `questions`). The button
+  pressed stays, solid as it was, and the other goes: confirmed, Confirm's blue (a delete's red)
+  saying what was done, "Added", "Saved", "Deleted" or "Confirmed", with a tick; declined, Cancel's
+  grey saying "Declined" with a cross, the question faded to `chatQuestionDeclinedOpacity` and the
+  button to `chatQuestionDeclinedButtonOpacity`. Nothing is struck out. Rejected candidates: a tick
+  on the kept buttons, a blue ring and red tint (a declined delete read as alarming, a confirmed one
+  as calm), a tinted card, and a label alone.
 - An answer given aloud shows as the user's own bubble under the question. Until the model's
-  `confirmation_answer` reads it, the label says "Answered aloud"; the model's answer is then ticked
-  on that question (by the id the chat window keeps for it), and dropping the answer (any other call,
-  a confirmation with neither true nor false, the request ending) marks it "Not done".
+  `confirmation_answer` reads it, a small waveform (the pill's bars, smaller) takes the buttons'
+  place, and a screen reader hears "Answered aloud"; the model's answer then shows on that question
+  (by the id the chat window keeps for it).
+- **Not acting is declining.** A question left unanswered for `config.chatConfirmationTimeout` is
+  declined exactly as a click on Cancel is: the model reads `config.connectorToolDeclined`. This
+  supersedes the 2026-09-28 amendment's "the model reads ... 'didn't confirm in time', not the
+  decline". An answer aloud the model does not act on (any other call, a confirmation with neither
+  true nor false, the request ending) is declined too.
 - A request that ends without its turn (canceled, failed) takes its questions with it, as it takes
   its pending request: the chat window is left as it was.
 

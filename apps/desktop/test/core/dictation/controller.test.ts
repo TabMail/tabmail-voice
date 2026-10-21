@@ -4338,8 +4338,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Nothing was added."]);
         });
 
-        /** A question left unanswered for the time to answer is declined as unanswered: the tool doesn't
-         * run and the model is told why. A touch in the window doesn't stop its clock. */
+        /** A question left unanswered for the time to answer is declined, as with a click on Cancel
+         * (owner, 2026-10-20): the tool doesn't run. A touch in the window doesn't stop its clock. */
         test("a question left unanswered is declined when its time runs out", async () => {
           const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply("Nothing was added.")], (controller) => {
@@ -4357,7 +4357,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await done;
 
           expect(tool.runs).toEqual([]);
-          expect(told(1)).toEqual([config.connectorToolUnanswered]);
+          expect(told(1)).toEqual([config.connectorToolDeclined]);
+          expect(controller.chat?.turns[0]?.questions.map((question) => question.answer)).toEqual(["declined"]);
           expect(controller.chat?.confirmation).toBeNull();
           expect(controller.chat?.confirmationExpiresAt).toBeNull();
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Nothing was added."]);
@@ -4451,17 +4452,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
         });
 
         /** A question answered with a click stays where it was asked, its answer ticked on it, and
-         * so does one left unanswered (owner, 2026-10-20). */
+         * so does one left unanswered, declined (owner, 2026-10-20). */
         test.each([
-          ["confirmed with a click", "confirmed"],
-          ["declined with a click", "declined"],
-          ["left unanswered", "unanswered"],
-        ] as const)("a question %s stays in its turn, ticked", async (_, ticked) => {
+          ["confirmed with a click", "confirmed", false],
+          ["declined with a click", "declined", false],
+          ["left unanswered", "declined", true],
+        ] as const)("a question %s stays in its turn, ticked", async (_, ticked, timesOut) => {
           const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], (controller) => {
-            if (ticked === "unanswered") controller.confirmationTimeout = 100;
+            if (timesOut) controller.confirmationTimeout = 100;
           });
-          if (ticked !== "unanswered") {
+          if (!timesOut) {
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
             controller.answerConfirmation(ticked === "confirmed");
           }
@@ -4796,14 +4797,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(tool.runs).toHaveLength(confirmed ? 1 : 0);
           });
 
-          /** An answer aloud the model does nothing with (it replies, calls the tool with other
-           * arguments, or confirms with neither true nor false) did nothing: its question stays with
-           * nothing ticked. */
+          /** An answer aloud the model does not act on (it replies, calls the tool with other
+           * arguments, or confirms with neither true nor false) is declined (owner, 2026-10-20). */
           test.each([
             ["replies", [reply("Nothing was added.")], false],
             ["calls the tool with other arguments", [calling(["example_create", '{"title":"Launch review","day":"monday"}']), reply("Nothing was added.")], true],
             ["confirms without true or false", [calling([config.confirmationTool, '{"question_id":"q1"}']), reply("Nothing was added.")], false],
-          ] as const)("the question answered aloud stays unanswered when the model %s", async (_, after, asksAgain) => {
+          ] as const)("the question answered aloud is declined when the model %s", async (_, after, asksAgain) => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const { controller, done } = await ask([tool], [calling(sameCall), ...after]);
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
@@ -4818,7 +4818,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(tool.runs).toEqual([]);
             const declined = { id: 2, text: confirmationQuestion, event: null, spoken: null, answer: "declined" };
             expect(controller.chat?.turns.map((turn) => turn.questions)).toEqual([
-              [{ id: 1, text: confirmationQuestion, event: null, spoken: "Make it Monday.", answer: "unanswered" }, ...(asksAgain ? [declined] : [])],
+              [{ id: 1, text: confirmationQuestion, event: null, spoken: "Make it Monday.", answer: "declined" }, ...(asksAgain ? [declined] : [])],
             ]);
           });
 

@@ -291,29 +291,18 @@ body {
   cursor: pointer;
 }
 
-/* An answered question's label, in its buttons' place: grey, until confirmed (blue) or declined
-   (red, the card tinted red). */
+/* An answered question's pressed button, solid as it was (it also carries that button's class),
+   or the waveform while the model reads an answer given aloud; it answers nothing more. */
 .chat-question-status {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
   font-weight: 600;
-  color: var(--secondary);
+  cursor: default;
+}
+
+.chat-confirmation.reading .chat-question-status {
   background: var(--hover);
-}
-
-.chat-confirmation.confirmed .chat-question-status {
-  color: var(--accent);
-  background: var(--question-confirmed-wash);
-}
-
-.chat-confirmation.declined {
-  background: var(--question-declined-fill);
-}
-
-.chat-confirmation.declined .chat-question-status {
-  color: var(--error);
-  background: var(--question-declined-wash);
 }
 
 .chat-cancel {

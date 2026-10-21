@@ -1153,7 +1153,7 @@ export class DictationController extends Observable {
       }
       if (answer !== "confirmed") {
         log.debug(`DictationController: ${tool.name} ${answer}`);
-        return answer === "declined" ? config.connectorToolDeclined : config.connectorToolUnanswered;
+        return config.connectorToolDeclined;
       }
     }
     return this.runTool(tool, args, settings, isCurrent, signal);
@@ -1262,7 +1262,8 @@ export class DictationController extends Observable {
     this.updateChat({ confirmationExpiresAt: Date.now() + this.confirmationTimeout });
     this.confirmationTimer = after(this.confirmationTimeout, () => {
       this.confirmationTimer = null;
-      this.replyToConfirmation("unanswered");
+      // Left unanswered, it is declined, as with a click on Cancel (owner, 2026-10-20).
+      this.replyToConfirmation("declined");
     });
   }
 
@@ -1305,12 +1306,12 @@ export class DictationController extends Observable {
     if (id !== null && chat !== null) this.setChat(settleQuestion(chat, id, answer));
   }
 
-  /** The call answered aloud is dropped unanswered: nothing it asked about was done, and its question
-   * shows so. */
+  /** The call answered aloud is dropped, the model not acting on the answer: it is declined, nothing
+   * it asked about done, and its question shows so (owner, 2026-10-20). */
   private dropAnsweredAloud(): void {
     const waiting = this.answeredAloud;
     this.answeredAloud = null;
-    if (waiting !== null) this.settleQuestion(waiting.question, "unanswered");
+    if (waiting !== null) this.settleQuestion(waiting.question, "declined");
   }
 
   /** The hotkey while the chat window asks a tool's question: the user answers it aloud. The
@@ -1867,9 +1868,9 @@ export function isResting(phase: Phase): boolean {
 
 type Timer = ReturnType<typeof setTimeout>;
 
-/** How the chat window's question ended: the user confirmed or declined it, answered it aloud
- * (`spoken`, the words), or it went unanswered for `confirmationTimeout`. */
-type ConfirmationAnswer = "confirmed" | "declined" | "unanswered" | { spoken: string };
+/** How the chat window's question ended: the user confirmed or declined it (a question left
+ * unanswered for `confirmationTimeout` is declined), or answered it aloud (`spoken`, the words). */
+type ConfirmationAnswer = "confirmed" | "declined" | { spoken: string };
 
 /** Sends a recording, or a chunk of one, with what every upload of the dictation sends (`prepareUpload`). */
 interface Upload {

@@ -282,7 +282,8 @@ export const agentPrompt = "system_prompt_desktop_agent_loop";
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
 /** What the model reads for a tool call the user declined in the chat window. */
 export const connectorToolDeclined = "The user declined, so nothing was done.";
-/** What the model reads when the user left a tool's question unanswered (`chatConfirmationTimeout`). */
+/** What a tool call returns when its request ended (canceled or superseded) before its question
+ * could be asked; a question left unanswered is declined instead (owner, 2026-10-20). */
 export const connectorToolUnanswered = "The user didn't confirm in time, so nothing was done.";
 /** The tool the model answers a question with for the user, once they answered it aloud: it runs
  * the call that asked (`confirmed` true) or drops it (false). It does nothing unless such an answer
@@ -903,11 +904,19 @@ export const chatCloseButtonSize = 18;
  * given aloud. Confirmed or declined, a ring of this width shows its color. */
 export const questionConfirmedLabels = { question: "Confirmed", add: "Added", change: "Saved", delete: "Deleted" } as const;
 export const questionDeclinedLabel = "Declined";
-export const questionUnansweredLabel = "Not done";
 export const questionReadingLabel = "Answered aloud";
-export const chatQuestionRingWidth = 1.5;
-/** A question declined, or left with nothing done, fades to this opacity. */
-export const chatQuestionDeclinedOpacity = 0.5;
+/** While the model reads an answer given aloud, its label is a small waveform instead of words
+ * (owner, 2026-10-20: "Answered aloud" was "not really obvious"): the pill's bars, smaller, moving as
+ * to a steady voice of this level. A screen reader hears `questionReadingLabel`. */
+export const questionReadingBarCount = 5;
+export const questionReadingBarWidth = 2;
+export const questionReadingBarSpacing = 2;
+export const questionReadingMinBarHeight = 2;
+export const questionReadingMaxBarHeight = 11;
+export const questionReadingLevel = 0.6;
+/** A question declined fades to this opacity, and its Declined button to the next. */
+export const chatQuestionDeclinedOpacity = 0.35;
+export const chatQuestionDeclinedButtonOpacity = 0.7;
 /** A calendar question's card (owner, 2026-10-18: the date tile, chosen from a page of candidates): a
  * small calendar page for the event's day beside its title and time, then a line for each other
  * thing, with an icon. Its button says what confirming does. */

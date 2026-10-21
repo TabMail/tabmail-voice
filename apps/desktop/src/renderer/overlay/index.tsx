@@ -501,8 +501,8 @@ function AnsweredQuestions({ questions }: { questions: ChatQuestion[] }) {
 /** What a tool asks before it sends or creates anything: it runs only on Confirm, and a bar along its
  * bottom edge shows the time left to answer. A question about a calendar event draws the event, and
  * its button says what confirming does (red for a delete). Once answered it stays where it was asked
- * (owner, 2026-10-20: chosen from a page of candidates), a label in its buttons' place: confirmed, it
- * is ringed in the brand's blue; declined, tinted red; declined or with nothing done, faded. */
+ * (owner, 2026-10-20: chosen from pages of candidates): the button pressed stays, saying what was
+ * done, and the other goes; declined, the question and its button fade. */
 function ConfirmationCard({ question, event, expiresAt, state }: { question: string; event: EventQuestion | null; expiresAt: number | null; state: "asking" | "reading" | QuestionAnswer }) {
   const button = (title: string, confirmed: boolean) => (
     <button
@@ -514,14 +514,9 @@ function ConfirmationCard({ question, event, expiresAt, state }: { question: str
       {title}
     </button>
   );
-  const ring = state === "confirmed" ? "var(--brand-blue)" : state === "declined" ? "var(--question-declined-border)" : null;
-  const faded = state === "declined" || state === "unanswered";
   return (
-    <div
-      className={`chat-confirmation${state === "asking" ? "" : ` answered ${state}`}`}
-      style={{ gap: config.chatBubblePadding, padding: config.chatBubblePadding, borderRadius: config.chatBubbleCornerRadius, boxShadow: ring === null ? undefined : `inset 0 0 0 ${config.chatQuestionRingWidth}px ${ring}` }}
-    >
-      <div className="chat-question" style={{ opacity: faded ? config.chatQuestionDeclinedOpacity : 1 }}>
+    <div className={`chat-confirmation${state === "asking" ? "" : ` answered ${state}`}`} style={{ gap: config.chatBubblePadding, padding: config.chatBubblePadding, borderRadius: config.chatBubbleCornerRadius }}>
+      <div className="chat-question" style={{ opacity: state === "declined" ? config.chatQuestionDeclinedOpacity : 1 }}>
         {event === null ? (
           <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
             {question}
@@ -545,20 +540,27 @@ function ConfirmationCard({ question, event, expiresAt, state }: { question: str
   );
 }
 
-/** An answered question's label, the height of the buttons it replaces: what confirming did (a tick),
- * that it was declined (a cross), that nothing was done, or that the model reads the answer aloud. */
+/** What stays of an answered question's buttons, as tall as they were: the one pressed, solid as it
+ * was (Confirm's blue, a delete's red, Cancel's grey), saying what was done with a tick, or that it
+ * was declined with a cross; while the model reads an answer given aloud, a small waveform. */
 function QuestionStatus({ state, event }: { state: "reading" | QuestionAnswer; event: EventQuestion | null }) {
-  const label = {
-    confirmed: config.questionConfirmedLabels[event?.action ?? "question"],
-    declined: config.questionDeclinedLabel,
-    unanswered: config.questionUnansweredLabel,
-    reading: config.questionReadingLabel,
-  }[state];
+  const label = { confirmed: config.questionConfirmedLabels[event?.action ?? "question"], declined: config.questionDeclinedLabel, reading: config.questionReadingLabel }[state];
+  const pressed = state === "confirmed" ? ` chat-confirm${event?.action === "delete" ? " destructive" : ""}` : state === "declined" ? " chat-cancel" : "";
   return (
-    <div className="chat-question-status" style={{ fontSize: config.chatCaptionFontSize, padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`, gap: config.chatBubblePadding / 2 }}>
+    <div
+      className={`chat-question-status${pressed}`}
+      style={{ fontSize: config.chatCaptionFontSize, padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`, gap: config.chatBubblePadding / 2, opacity: state === "declined" ? config.chatQuestionDeclinedButtonOpacity : 1 }}
+    >
       {state === "confirmed" && <CheckIcon size={config.chatCaptionFontSize} />}
       {state === "declined" && <CrossIcon size={config.chatCaptionFontSize} />}
-      {label}
+      {state === "reading" ? (
+        <>
+          <ReadingWave />
+          <span className="sr-only">{label}</span>
+        </>
+      ) : (
+        label
+      )}
     </div>
   );
 }
@@ -1057,8 +1059,17 @@ function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
   );
 }
 
-function barHeight(index: number, time: number, level: number): number {
-  const count = config.overlayMeterBarCount;
+/** The pill's waveform bars' shape; the label of a question answered aloud draws a smaller one. */
+interface MeterShape {
+  count: number;
+  minHeight: number;
+  maxHeight: number;
+}
+
+const pillMeter: MeterShape = { count: config.overlayMeterBarCount, minHeight: config.overlayMeterMinBarHeight, maxHeight: config.overlayMeterMaxBarHeight };
+
+function barHeight(index: number, time: number, level: number, meter: MeterShape = pillMeter): number {
+  const count = meter.count;
   const center = (count - 1) / 2;
   const distance = Math.abs(index - center) / Math.max(center, 1);
   const weight = 1 - distance * (1 - config.overlayMeterEdgeBarWeight);
@@ -1068,8 +1079,35 @@ function barHeight(index: number, time: number, level: number): number {
   // Boost quieter levels so ordinary speech moves the bars visibly, on top of an idle ripple.
   const voice = level ** config.waveformLevelExponent * config.waveformGain * weight * (1 - config.waveformRippleDepth + config.waveformRippleDepth * ripple);
   const amount = Math.min(1, config.waveformIdleLevel * ripple + voice);
-  const minHeight = config.overlayMeterMinBarHeight;
-  return minHeight + amount * (config.overlayMeterMaxBarHeight - minHeight);
+  return meter.minHeight + amount * (meter.maxHeight - meter.minHeight);
+}
+
+const readingMeter: MeterShape = { count: config.questionReadingBarCount, minHeight: config.questionReadingMinBarHeight, maxHeight: config.questionReadingMaxBarHeight };
+
+/** The label of a question answered aloud while the model reads the answer: the pill's waveform,
+ * small, in the color of a voice heard, moving as to a steady voice. */
+function ReadingWave() {
+  const bars = useRef<(HTMLDivElement | null)[]>([]);
+  useAnimationFrame(() => {
+    const time = performance.now() / 1000;
+    bars.current.forEach((bar, index) => {
+      if (bar) bar.style.height = `${barHeight(index, time, config.questionReadingLevel, readingMeter)}px`;
+    });
+  });
+  return (
+    <div className="waveform" aria-hidden="true" style={{ gap: config.questionReadingBarSpacing, height: config.questionReadingMaxBarHeight }}>
+      {Array.from({ length: config.questionReadingBarCount }, (_, index) => (
+        <div
+          key={index}
+          ref={(element) => {
+            bars.current[index] = element;
+          }}
+          className="bar"
+          style={{ width: config.questionReadingBarWidth, height: config.questionReadingMinBarHeight, borderRadius: config.questionReadingBarWidth / 2, backgroundColor: rgba(palette.waveformVoiced) }}
+        />
+      ))}
+    </div>
+  );
 }
 
 /** A ring `width` thick around its box, masked out of a conic gradient. Its inner edge fades over

@@ -27,13 +27,13 @@ export interface ChatQuestion {
   event: EventQuestion | null;
   /** What the user said to it, when they answered aloud. */
   spoken: string | null;
-  /** How it was settled: confirmed or declined (by a click, or by the model for an answer aloud),
-   * or nothing done (its time ran out, or the model did nothing with the answer aloud); null while
-   * the model reads an answer aloud. */
+  /** How it was settled: confirmed or declined (by a click, its time running out, or the model for
+   * an answer aloud; an answer aloud the model did not act on is declined); null while the model
+   * reads an answer aloud. */
   answer: QuestionAnswer | null;
 }
 
-export type QuestionAnswer = "confirmed" | "declined" | "unanswered";
+export type QuestionAnswer = "confirmed" | "declined";
 
 /**
  * The conversation in the chat window the pill grows into once the Answer tool replies: each request
