@@ -199,13 +199,14 @@ and fix the put-back.
   Mac at the end of the helper's input, `HelperChannel.onEnd`; Windows by `WM_RENDERALLFORMATS` as the
   owner window closes), so the clipboard keeps the text, not nothing. Ubuntu is unchanged: the portal
   serves the text only from the session.
-- **Residuals.** On the Mac and Windows the text is handed over once (the system keeps it after), so
+- **Residuals (accepted by the owner, 2026-10-20).** On the Mac and Windows the text is handed over once (the system keeps it after), so
   a clipboard manager or Universal Clipboard that reads every new clipboard and ignores
   the transient and concealed markers counts as the read, so the put-back falls back to today's timing
   after that read. A target slower than `readWait` still gets the clipboard as it was. On the Mac
   another app's read needs the helper's main thread free; it is, except while a Calendar or Contacts
   request runs, which ends before its paste. A helper killed (not ended) with the text unread leaves
-  an empty clipboard on the Mac and Windows, where it would have held the text.
+  an empty clipboard on the Mac and Windows, where it would have held the text; tracked as a P3
+  issue (#241).
 - **Tests.** Mac `ClipboardKeeperTests` › `aBusyAppReadingAfterTheDelayGetsThePastesText`,
   `putsTheClipboardBackWhenNoAppReadsThePaste`, `handsOverAnUnreadPasteAsTheHelperEnds`,
   `keepsANewerCopyAsTheHelperEnds`, `aPasteOvertakenAsItsKeysGoLeavesTheNewerPastesWait`,
