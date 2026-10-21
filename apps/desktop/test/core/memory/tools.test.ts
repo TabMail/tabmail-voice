@@ -167,6 +167,35 @@ describe("MemoryTools", () => {
       expectSmallRequests();
     });
 
+    /** A listing ends where the exchanges do, an empty one too: whole pages, the last with the
+     * totals and no "more pages", each exchange once, newest first, none removed. */
+    test.each([0, config.memorySearchPageSize, config.memorySearchPageSize * 2])("with no query lists %i exchanges to their end", async (count) => {
+      keep(count, "budget");
+      const newestFirst = [...memory.rows].sort((x, y) => y.dateMs - x.dateMs).map((row) => row.dateMs);
+      if (count === 0) {
+        expect(await run(config.memorySearchTool, {})).toEqual({ results: "No relevant memories found for this query.", page: 1, totalPages: 1, pageCount: 0, totalItems: 0 });
+        expect(memory.searches.length).toBeGreaterThan(0);
+        return;
+      }
+      const { stamps, last } = await listAll({});
+      expect(stamps).toEqual(newestFirst);
+      expect(last).toMatchObject({ page: count / config.memorySearchPageSize, totalPages: count / config.memorySearchPageSize, totalItems: count });
+      expect(memory.rows).toHaveLength(count);
+    });
+
+    /** A first request that fails is the tool's error; asked again in the same request, the listing
+     * starts over and lists every exchange. */
+    test("with no query lists every exchange after its first request failed", async () => {
+      keep(config.memorySearchPageSize + 3, "budget");
+      const newestFirst = [...memory.rows].sort((x, y) => y.dateMs - x.dateMs).map((row) => row.dateMs);
+      memory.failing = true;
+      expect(await run(config.memorySearchTool, {})).toEqual({ error: "memory search failed" });
+      memory.failing = false;
+      const { stamps, last } = await listAll({});
+      expect(stamps).toEqual(newestFirst);
+      expect(last).toMatchObject({ totalItems: newestFirst.length });
+    });
+
     /** A request that fails mid-listing is the tool's error; the next call goes on from where the
      * listing got to, leaving none out and listing none twice. */
     test("with no query reports a failed request, and goes on from where it got to", async () => {
