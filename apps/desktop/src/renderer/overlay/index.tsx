@@ -4,7 +4,7 @@
 
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { type AgentChat, type ChatTurn, type EventQuestion, type EventQuestionLine, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
+import { type AgentChat, type ChatQuestion, type ChatTurn, type EventQuestion, type EventQuestionLine, formattedReply, type QuestionAnswer, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
 import { type BubbleKey, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, shownBubbles } from "../../core/agent/bubbleOrder.js";
 import { isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
@@ -17,7 +17,7 @@ import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
 import { brandBlue, brandColor, rgba } from "../shared/brand.js";
 import { brandGlow, glassShadow, glassStyle } from "../shared/glass.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { ClipboardIcon, ConnectorIcon, CopyIcon, EventLineIcon, ExclamationIcon, MemoryIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
+import { CheckIcon, ClipboardIcon, ConnectorIcon, CopyIcon, CrossIcon, EventLineIcon, ExclamationIcon, MemoryIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
 import { applyPalette } from "../shared/theme.js";
 import "./index.css";
 
@@ -409,7 +409,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
   // The newest turn, what is being worked on, or the tool's question in view: only when one of them
   // changes, since every state push (a follow-up's level, many times a second) brings a new copy of
   // the same chat, and the user may have scrolled up to read an earlier answer.
-  useLayoutEffect(toBottom, [chat.turns.length, chat.pendingRequest, status, chat.confirmation, toBottom]);
+  useLayoutEffect(toBottom, [chat.turns.length, chat.pendingRequest, chat.questions.length, status, chat.confirmation, toBottom]);
   const revealed = useCallback(() => {
     if (atBottom.current) toBottom();
   }, [toBottom]);
@@ -450,12 +450,14 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
         {chat.turns.map((turn) => (
           <div key={turn.id} className="chat-turn" style={{ gap: config.chatTurnSpacing }}>
             <RequestBubble text={turn.request} />
+            <AnsweredQuestions questions={turn.questions} />
             <Reply turn={turn} onReveal={revealed} />
           </div>
         ))}
         {chat.pendingRequest !== null && <RequestBubble text={chat.pendingRequest} />}
+        <AnsweredQuestions questions={chat.questions} />
         {status !== null && <Activity label={status} />}
-        {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} event={chat.confirmationEvent} expiresAt={chat.confirmationExpiresAt} />}
+        {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} event={chat.confirmationEvent} expiresAt={chat.confirmationExpiresAt} state="asking" />}
       </div>
       {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} timeout={config.chatTimeout} inset={config.chatCornerRadius} />}
       <button
@@ -485,37 +487,78 @@ function Activity({ label }: { label: string }) {
   );
 }
 
+/** The questions a request asked, each as it was answered, and under one answered aloud the user's
+ * words, as any request of theirs shows. */
+function AnsweredQuestions({ questions }: { questions: ChatQuestion[] }) {
+  return questions.map((question) => (
+    <div key={question.id} className="chat-turn" style={{ gap: config.chatTurnSpacing }}>
+      <ConfirmationCard question={question.text} event={question.event} expiresAt={null} state={question.answer ?? "reading"} />
+      {question.spoken !== null && <RequestBubble text={question.spoken} />}
+    </div>
+  ));
+}
+
 /** What a tool asks before it sends or creates anything: it runs only on Confirm, and a bar along its
  * bottom edge shows the time left to answer. A question about a calendar event draws the event, and
- * its button says what confirming does (red for a delete). */
-function ConfirmationCard({ question, event, expiresAt }: { question: string; event: EventQuestion | null; expiresAt: number | null }) {
+ * its button says what confirming does (red for a delete). Once answered it stays where it was asked
+ * (owner, 2026-10-20: chosen from a page of candidates), a label in its buttons' place: confirmed, it
+ * is ringed in the brand's blue; declined, tinted red; declined or with nothing done, faded. */
+function ConfirmationCard({ question, event, expiresAt, state }: { question: string; event: EventQuestion | null; expiresAt: number | null; state: "asking" | "reading" | QuestionAnswer }) {
   const button = (title: string, confirmed: boolean) => (
     <button
       type="button"
       className={confirmed ? `chat-confirm${event?.action === "delete" ? " destructive" : ""}` : "chat-cancel"}
       onClick={() => void send({ type: "answerConfirmation", confirmed })}
-      style={{
-        fontSize: config.chatCaptionFontSize,
-        padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`,
-      }}
+      style={{ fontSize: config.chatCaptionFontSize, padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px` }}
     >
       {title}
     </button>
   );
+  const ring = state === "confirmed" ? "var(--brand-blue)" : state === "declined" ? "var(--question-declined-border)" : null;
+  const faded = state === "declined" || state === "unanswered";
   return (
-    <div className="chat-confirmation" style={{ gap: config.chatBubblePadding, padding: config.chatBubblePadding, borderRadius: config.chatBubbleCornerRadius }}>
-      {event === null ? (
-        <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
-          {question}
-        </div>
-      ) : (
-        <EventCard event={event} />
-      )}
+    <div
+      className={`chat-confirmation${state === "asking" ? "" : ` answered ${state}`}`}
+      style={{ gap: config.chatBubblePadding, padding: config.chatBubblePadding, borderRadius: config.chatBubbleCornerRadius, boxShadow: ring === null ? undefined : `inset 0 0 0 ${config.chatQuestionRingWidth}px ${ring}` }}
+    >
+      <div className="chat-question" style={{ opacity: faded ? config.chatQuestionDeclinedOpacity : 1 }}>
+        {event === null ? (
+          <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
+            {question}
+          </div>
+        ) : (
+          <EventCard event={event} />
+        )}
+      </div>
       <div className="chat-confirmation-buttons" style={{ gap: config.chatBubblePadding }}>
-        {button("Cancel", false)}
-        {button(event === null ? "Confirm" : config.eventQuestionButtons[event.action], true)}
+        {state === "asking" ? (
+          <>
+            {button("Cancel", false)}
+            {button(event === null ? "Confirm" : config.eventQuestionButtons[event.action], true)}
+          </>
+        ) : (
+          <QuestionStatus state={state} event={event} />
+        )}
       </div>
       {expiresAt !== null && <TimeoutBar closesAt={expiresAt} timeout={config.chatConfirmationTimeout} inset={config.chatBubbleCornerRadius} />}
+    </div>
+  );
+}
+
+/** An answered question's label, the height of the buttons it replaces: what confirming did (a tick),
+ * that it was declined (a cross), that nothing was done, or that the model reads the answer aloud. */
+function QuestionStatus({ state, event }: { state: "reading" | QuestionAnswer; event: EventQuestion | null }) {
+  const label = {
+    confirmed: config.questionConfirmedLabels[event?.action ?? "question"],
+    declined: config.questionDeclinedLabel,
+    unanswered: config.questionUnansweredLabel,
+    reading: config.questionReadingLabel,
+  }[state];
+  return (
+    <div className="chat-question-status" style={{ fontSize: config.chatCaptionFontSize, padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`, gap: config.chatBubblePadding / 2 }}>
+      {state === "confirmed" && <CheckIcon size={config.chatCaptionFontSize} />}
+      {state === "declined" && <CrossIcon size={config.chatCaptionFontSize} />}
+      {label}
     </div>
   );
 }

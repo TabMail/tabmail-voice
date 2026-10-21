@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
-import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion } from "../agent/chat.js";
+import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
 import { type BubbleKey, memoryBubble, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
 import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
@@ -260,8 +260,11 @@ export class DictationController extends Observable {
   private secondPressTimer: Timer | null = null;
   /** Closes the chat window when its timeout runs out. */
   private chatCloseTimer: Timer | null = null;
-  /** Gives the user's answer to the question the chat window shows, awaited by the tool that asked. */
-  private confirmationReply: ((answer: ConfirmationAnswer) => void) | null = null;
+  /** Gives the user's answer to the question the chat window shows, awaited by the tool that asked,
+   * with the id it keeps in the chat window once answered (null with the window closed). */
+  private confirmationReply: ((answer: ConfirmationAnswer, question: number | null) => void) | null = null;
+  /** How many questions the chat window has kept once answered, for each its own id. */
+  private questionsKept = 0;
   /** Declines the question when it has gone unanswered for `confirmationTimeout`. */
   private confirmationTimer: Timer | null = null;
   /** When the question now showing appeared. */
@@ -272,9 +275,10 @@ export class DictationController extends Observable {
   private spokenAnswer: { id: number; recorder: AudioRecorder; abort: AbortController; startedAt: number; handsFree: boolean; resume: Phase } | null = null;
   private spokenAnswers = 0;
   /** The call whose question the user answered aloud: the model, having read the answer, confirms or
-   * declines it for them (`config.confirmationTool`), naming the question by its `id`. Dropped by any
-   * other call, and with its request. */
-  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown>; round: number; id: string } | null = null;
+   * declines it for them (`config.confirmationTool`), naming the question by its `id`; `question` is
+   * the one the chat window keeps, ticked with what the model answers. Dropped by any other call, and
+   * with its request (`dropAnsweredAloud`). */
+  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown>; round: number; id: string; question: number | null } | null = null;
   /** How many questions have been answered aloud, for each its own id. */
   private questionsAnsweredAloud = 0;
 
@@ -1100,16 +1104,19 @@ export class DictationController extends Observable {
         return config.confirmationToolNothingWaiting;
       }
       // Otherwise the call the user answered aloud is answered by the model's very next call only.
-      this.answeredAloud = null;
       if (!isJSONObject(answer) || typeof answer.confirmed !== "boolean") {
+        this.dropAnsweredAloud();
         log.error(`DictationController: ${config.confirmationTool} called without true or false`);
         return config.confirmationToolNoAnswer;
       }
+      this.answeredAloud = null;
       log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
+      // The question the user answered aloud shows the model's answer ticked, as a click would.
+      this.settleQuestion(waiting.question, answer.confirmed ? "confirmed" : "declined");
       return answer.confirmed ? this.runTool(waiting.tool, waiting.args, settings, isCurrent, signal) : config.connectorToolDeclined;
     }
     // Any other call drops the call answered aloud: the answer covered only what its question showed.
-    this.answeredAloud = null;
+    this.dropAnsweredAloud();
     if (MemoryTools.handles(call.function.name)) return this.runMemoryTool(call, memoryTools, isCurrent);
     const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
@@ -1136,12 +1143,12 @@ export class DictationController extends Observable {
     // open from the request's start.
     if (asked !== null) {
       const question = typeof asked === "string" ? asked : asked.text;
-      const answer = await this.confirm(question, typeof asked === "string" ? null : asked.event);
+      const { answer, kept } = await this.confirm(question, typeof asked === "string" ? null : asked.event);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
         this.questionsAnsweredAloud += 1;
         const id = `q${this.questionsAnsweredAloud}`;
-        if (isCurrent()) this.answeredAloud = { tool, args, round, id };
+        if (isCurrent()) this.answeredAloud = { tool, args, round, id, question: kept };
         return config.connectorToolAnsweredAloud(question, answer.spoken, id);
       }
       if (answer !== "confirmed") {
@@ -1239,11 +1246,11 @@ export class DictationController extends Observable {
   /** Shows `question` in the chat window, and waits for the user to confirm or decline it
    * (`answerConfirmation`) or answer it aloud (`startSpokenAnswer`); closing the window or canceling
    * the request declines it, and so does leaving it unanswered for `confirmationTimeout`. */
-  private confirm(question: string, event: EventQuestion | null): Promise<ConfirmationAnswer> {
+  private confirm(question: string, event: EventQuestion | null): Promise<{ answer: ConfirmationAnswer; kept: number | null }> {
     this.confirmationShownAt = Date.now();
     this.updateChat({ confirmation: question, confirmationEvent: event });
     return new Promise((resolve) => {
-      this.confirmationReply = resolve;
+      this.confirmationReply = (answer, kept) => resolve({ answer, kept });
       this.startConfirmationClock();
     });
   }
@@ -1278,8 +1285,32 @@ export class DictationController extends Observable {
     this.confirmationTimer = null;
     // Answered another way (a click, the window closing) while an answer was being spoken.
     this.endSpokenAnswer();
-    this.updateChat({ confirmation: null, confirmationEvent: null, confirmationExpiresAt: null });
-    reply(answer);
+    // The question stays where it was asked, its answer ticked on it; one answered aloud waits for
+    // the model's reading of the words (owner, 2026-10-20: the answer shows, and the question stays).
+    const chat = this.currentChat;
+    let kept: number | null = null;
+    if (chat !== null && chat.confirmation !== null) {
+      this.questionsKept += 1;
+      kept = this.questionsKept;
+      const spoken = typeof answer === "string" ? null : answer.spoken;
+      const question = { id: kept, text: chat.confirmation, event: chat.confirmationEvent, spoken, answer: typeof answer === "string" ? answer : null };
+      this.setChat({ ...chat, questions: [...chat.questions, question], confirmation: null, confirmationEvent: null, confirmationExpiresAt: null });
+    }
+    reply(answer, kept);
+  }
+
+  /** Ticks `answer` on the question the chat window keeps as `id`. */
+  private settleQuestion(id: number | null, answer: QuestionAnswer): void {
+    const chat = this.currentChat;
+    if (id !== null && chat !== null) this.setChat(settleQuestion(chat, id, answer));
+  }
+
+  /** The call answered aloud is dropped unanswered: nothing it asked about was done, and its question
+   * shows so. */
+  private dropAnsweredAloud(): void {
+    const waiting = this.answeredAloud;
+    this.answeredAloud = null;
+    if (waiting !== null) this.settleQuestion(waiting.question, "unanswered");
   }
 
   /** The hotkey while the chat window asks a tool's question: the user answers it aloud. The
@@ -1762,11 +1793,12 @@ export class DictationController extends Observable {
     this.startedAt = null;
     this.currentLevel = 0;
     this.runningApps.clear();
-    // A tool runs only with its request pending.
-    const chat = this.currentChat;
-    if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
     this.replyToConfirmation("declined");
-    this.answeredAloud = null;
+    this.dropAnsweredAloud();
+    // A tool runs only with its request pending; a request that ended without its turn takes the
+    // questions it asked with it.
+    const chat = this.currentChat;
+    if (chat !== null && (chat.pendingRequest !== null || chat.questions.length > 0)) this.setChat({ ...chat, pendingRequest: null, questions: [], activity: null });
     // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
     // canceled or ended with the account: the pill says what failed, and the next hold dictates.
     if (this.currentChat?.turns.length === 0) this.dropChat();

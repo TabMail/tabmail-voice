@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test, vi } from "vitest";
-import { type AgentChat, appendTurn, chatTranscript, emptyChat, formattedReply, opensLink, type ReplyRun, remainingFraction, replyBlocks, revealSteps } from "../../../src/core/agent/chat.js";
+import { type AgentChat, appendTurn, type ChatQuestion, chatTranscript, emptyChat, formattedReply, opensLink, type ReplyRun, remainingFraction, replyBlocks, revealSteps, settleQuestion } from "../../../src/core/agent/chat.js";
 
 const empty: AgentChat = emptyChat;
 
@@ -46,7 +46,32 @@ describe("AgentChat", () => {
 
     expect(chat.pendingRequest).toBeNull();
     expect(chat.closesAt).toBe(42);
-    expect(chat.turns).toEqual([{ id: 0, request: "and tomorrow?", tool: "answer", reply: "Tomorrow too." }]);
+    expect(chat.turns).toEqual([{ id: 0, request: "and tomorrow?", tool: "answer", reply: "Tomorrow too.", questions: [] }]);
+  });
+
+  /** The questions a request asked join its turn with it, and the next request starts with none. */
+  test("adding a turn takes the questions asked on the way", () => {
+    const asked: ChatQuestion = { id: 1, text: "Add this event?", event: null, spoken: "Yes.", answer: "confirmed" };
+    let chat = appendTurn({ ...empty, questions: [asked] }, "add the review", "answer", "Added.");
+    chat = appendTurn(chat, "thanks", "answer", "You're welcome.");
+
+    expect(chat.turns.map((turn) => turn.questions)).toEqual([[asked], []]);
+    expect(chat.questions).toEqual([]);
+  });
+
+  /** An answer is ticked once on its question, wherever it is by then; a settled one keeps its own. */
+  test("settling a question ticks it once, under the request or in its turn", () => {
+    const reading = (id: number): ChatQuestion => ({ id, text: "Add this event?", event: null, spoken: "Yes.", answer: null });
+    const inTurn = appendTurn({ ...empty, questions: [reading(1)] }, "add the review", "answer", "Added.");
+    let chat = { ...inTurn, questions: [reading(2), reading(3)] };
+
+    chat = settleQuestion(chat, 1, "confirmed");
+    chat = settleQuestion(chat, 2, "declined");
+    chat = settleQuestion(chat, 2, "confirmed");
+    chat = settleQuestion(chat, 9, "confirmed");
+
+    expect(chat.turns.map((turn) => turn.questions.map((question) => question.answer))).toEqual([["confirmed"]]);
+    expect(chat.questions.map((question) => question.answer)).toEqual(["declined", null]);
   });
 
   /** The timeout bar: full as the window opens, empty as it closes, and never outside that. */

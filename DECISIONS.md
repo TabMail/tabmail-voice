@@ -1923,6 +1923,24 @@ the hotkey answers it (it still starts no new request).
   card it names showed. Text the model read earlier in the request (a page, search results) could
   steer it to confirm once the user has said anything; the damage is still bounded by that card.
 
+**Amendment 2026-10-20: an answered question stays, with its answer.** Owner: "when the user answers
+vocally, the answer doesn't really show up. We should make the user answer show up as normally, and
+have the confirmation dialogue not disappear either", then, of a page of candidates, the status
+label, "I would not cross things out ... The gray and the declined label is already good enough.
+And also the border."
+- Once answered, a question stays in the chat window where it was asked (`ChatQuestion`, in
+  `chat.questions` until its request's turn is added, then in that turn's `questions`), its buttons
+  replaced by a label: confirmed, "Added", "Saved" or "Deleted" for a calendar event, otherwise
+  "Confirmed", with a tick, the card ringed in the brand's blue; declined, "Declined" with a cross,
+  the card tinted red and faded; with nothing done (left to time out, or an answer aloud the model
+  did nothing with), "Not done", faded. Nothing is struck out.
+- An answer given aloud shows as the user's own bubble under the question. Until the model's
+  `confirmation_answer` reads it, the label says "Answered aloud"; the model's answer is then ticked
+  on that question (by the id the chat window keeps for it), and dropping the answer (any other call,
+  a confirmation with neither true nor false, the request ending) marks it "Not done".
+- A request that ends without its turn (canceled, failed) takes its questions with it, as it takes
+  its pending request: the chat window is left as it was.
+
 ## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
 
 **Context:** Owner, 2026-09-26: the Answer prompt's tools reach the user's apps, each a switch in

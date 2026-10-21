@@ -62,6 +62,13 @@ const light = {
    * 2026-09-28). */
   chatRequestFill: "#E8F0FE",
   chatRequestBorder: "#C6DAFC",
+  /** An answered question (owner, 2026-10-20: chosen from a page of candidates): confirmed, a ring
+   * of the brand's blue and its label on a wash of it; declined, a red tint, a red hairline and its
+   * label on a wash of the red. */
+  questionConfirmedWash: "rgba(0, 145, 255, 0.12)",
+  questionDeclinedFill: "rgba(215, 0, 21, 0.07)",
+  questionDeclinedBorder: "rgba(215, 0, 21, 0.35)",
+  questionDeclinedWash: "rgba(215, 0, 21, 0.1)",
   /** A countdown: a faint hairline inset from its surface's edges, never across it. */
   countdown: "rgba(0, 0, 0, 0.14)",
   /** An off switch's track: opaque, so its white thumb stands 3:1 from it. */
@@ -103,6 +110,10 @@ const dark: Theme = {
   ambient: "rgba(0, 0, 0, 0.45)",
   chatRequestFill: "rgba(10, 132, 255, 0.2)",
   chatRequestBorder: "rgba(10, 132, 255, 0.38)",
+  questionConfirmedWash: "rgba(0, 145, 255, 0.2)",
+  questionDeclinedFill: "rgba(255, 69, 58, 0.1)",
+  questionDeclinedBorder: "rgba(255, 69, 58, 0.4)",
+  questionDeclinedWash: "rgba(255, 69, 58, 0.16)",
   countdown: "rgba(255, 255, 255, 0.22)",
   switchOff: "rgba(120, 120, 128, 0.36)",
   switchThumbShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",

@@ -166,6 +166,24 @@ export function CopyIcon({ size }: { size: number }) {
   );
 }
 
+/** A tick: a question confirmed, on its label; in the label's text color. */
+export function CheckIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <path d="M5 12.5 10 17.5 19 7" />
+    </PlainIcon>
+  );
+}
+
+/** A cross: a question declined, on its label; in the label's text color. */
+export function CrossIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
+    </PlainIcon>
+  );
+}
+
 /** A line icon in the text's color. */
 function PlainIcon({ size, children }: { size: number; children: ReactNode }) {
   return (

@@ -897,6 +897,17 @@ export const chatRevealRise = 4;
 export const chatThinkingLabel = "Thinking…";
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
+/** A question once answered stays where it was asked (owner, 2026-10-20: chosen from a page of
+ * candidates): a label takes its buttons' place, saying what confirming did (a calendar event's by
+ * its action), that it was declined, that nothing was done, or that the model is reading the answer
+ * given aloud. Confirmed or declined, a ring of this width shows its color. */
+export const questionConfirmedLabels = { question: "Confirmed", add: "Added", change: "Saved", delete: "Deleted" } as const;
+export const questionDeclinedLabel = "Declined";
+export const questionUnansweredLabel = "Not done";
+export const questionReadingLabel = "Answered aloud";
+export const chatQuestionRingWidth = 1.5;
+/** A question declined, or left with nothing done, fades to this opacity. */
+export const chatQuestionDeclinedOpacity = 0.5;
 /** A calendar question's card (owner, 2026-10-18: the date tile, chosen from a page of candidates): a
  * small calendar page for the event's day beside its title and time, then a line for each other
  * thing, with an icon. Its button says what confirming does. */

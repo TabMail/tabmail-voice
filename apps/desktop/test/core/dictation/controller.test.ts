@@ -3215,7 +3215,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         expect(pastes).toEqual([]);
         expect(controller.phase).toEqual(idle);
-        expect(controller.chat?.turns).toEqual([{ id: 0, request: question, tool: "answer", reply: answer }]);
+        expect(controller.chat?.turns).toEqual([{ id: 0, request: question, tool: "answer", reply: answer, questions: [] }]);
         expect(controller.chat?.closesAt).not.toBeNull();
         expect(chatChanges).toEqual([true]);
         expect(completions.requests).toHaveLength(1);
@@ -4069,7 +4069,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read"]);
           expect(completions.body(0).disable_tools).toBe(false);
           expect(told(1)).toEqual(["Added."]);
-          expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer }]);
+          expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer, questions: [] }]);
           expect(controller.chat?.activity).toBeNull();
           expect(controller.chat?.pendingRequest).toBeNull();
           expect(controller.chat?.closesAt).not.toBeNull();
@@ -4450,6 +4450,46 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Added.", config.connectorToolDeclined]);
         });
 
+        /** A question answered with a click stays where it was asked, its answer ticked on it, and
+         * so does one left unanswered (owner, 2026-10-20). */
+        test.each([
+          ["confirmed with a click", "confirmed"],
+          ["declined with a click", "declined"],
+          ["left unanswered", "unanswered"],
+        ] as const)("a question %s stays in its turn, ticked", async (_, ticked) => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], (controller) => {
+            if (ticked === "unanswered") controller.confirmationTimeout = 100;
+          });
+          if (ticked !== "unanswered") {
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            controller.answerConfirmation(ticked === "confirmed");
+          }
+          await done;
+
+          expect(controller.chat?.turns.map((turn) => turn.questions)).toEqual([[{ id: 1, text: confirmationQuestion, event: null, spoken: null, answer: ticked }]]);
+          expect(controller.chat?.questions).toEqual([]);
+          expect(tool.runs).toHaveLength(ticked === "confirmed" ? 1 : 0);
+        });
+
+        /** A follow-up that fails after its question was answered takes the question with it, as it
+         * takes its request: the chat window is left as it was. */
+        test("a follow-up that fails after its question was answered leaves the chat as it was", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          // No reply queued after the tool runs: the round after fails as an unreachable server does.
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"])], () => {}, { inChat: true });
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          controller.answerConfirmation(true);
+          expect(await eventually(() => controller.chat?.questions.length === 1)).toBe(true);
+          await done;
+
+          expect(tool.runs).toEqual([{}]);
+          expect(controller.chat?.turns.map((turn) => [turn.request, turn.questions])).toEqual([[question, []]]);
+          expect(controller.chat?.questions).toEqual([]);
+          expect(controller.chat?.pendingRequest).toBeNull();
+          controller.closeChat();
+        });
+
         /** Closing the chat window declines its question at once, however recently it appeared: only
          * the user's own answers wait out its minimum display. */
         test("closing the chat window as soon as it asks declines the question", async () => {
@@ -4726,6 +4766,60 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(tool.runs).toEqual([]);
             expect(told(3)).toEqual([config.confirmationToolNothingWaiting]);
             expect(told(4).at(-1)).toBe(config.confirmationToolNothingWaiting);
+          });
+
+          /** The question stays in the chat window once answered aloud, with the user's words under
+           * it: while the model reads them nothing is ticked, then its answer is, in the turn of the
+           * request that asked (owner, 2026-10-20). */
+          test.each([
+            [true, "Yes, go ahead.", "confirmed"],
+            [false, "No, leave it.", "declined"],
+          ] as const)("the question answered aloud stays, ticked with the model's answer (confirmed: %s)", async (confirmed, words, ticked) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: { text: confirmationQuestion, event: confirmationEvent } });
+            const reading = deferred<undefined>();
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(answering("q1", confirmed)), reply(answer)], () => {
+              completions.gate = async () => {
+                if (completions.requests.length === 2) await reading.promise;
+              };
+            });
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, words);
+            expect(await eventually(() => completions.requests.length === 2)).toBe(true);
+            expect(controller.chat?.questions).toEqual([{ id: 1, text: confirmationQuestion, event: confirmationEvent, spoken: words, answer: null }]);
+            expect(controller.chat?.confirmation).toBeNull();
+            reading.resolve(undefined);
+            await done;
+
+            expect(controller.chat?.questions).toEqual([]);
+            expect(controller.chat?.turns.map((turn) => turn.questions)).toEqual([[{ id: 1, text: confirmationQuestion, event: confirmationEvent, spoken: words, answer: ticked }]]);
+            expect(tool.runs).toHaveLength(confirmed ? 1 : 0);
+          });
+
+          /** An answer aloud the model does nothing with (it replies, calls the tool with other
+           * arguments, or confirms with neither true nor false) did nothing: its question stays with
+           * nothing ticked. */
+          test.each([
+            ["replies", [reply("Nothing was added.")], false],
+            ["calls the tool with other arguments", [calling(["example_create", '{"title":"Launch review","day":"monday"}']), reply("Nothing was added.")], true],
+            ["confirms without true or false", [calling([config.confirmationTool, '{"question_id":"q1"}']), reply("Nothing was added.")], false],
+          ] as const)("the question answered aloud stays unanswered when the model %s", async (_, after, asksAgain) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), ...after]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Make it Monday.");
+            if (asksAgain) {
+              expect(await eventually(() => completions.requests.length === 2 && controller.chat?.confirmation != null)).toBe(true);
+              controller.answerConfirmation(false);
+            }
+            await done;
+
+            expect(tool.runs).toEqual([]);
+            const declined = { id: 2, text: confirmationQuestion, event: null, spoken: null, answer: "declined" };
+            expect(controller.chat?.turns.map((turn) => turn.questions)).toEqual([
+              [{ id: 1, text: confirmationQuestion, event: null, spoken: "Make it Monday.", answer: "unanswered" }, ...(asksAgain ? [declined] : [])],
+            ]);
           });
 
           /** Two questions answered aloud, in one round or one after the other, each with its own id:
@@ -5503,7 +5597,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           finish.resolve();
           await sleep(100);
 
-          expect(controller.chat).toEqual({ ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer }], touched: true });
+          expect(controller.chat).toEqual({ ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer, questions: [] }], touched: true });
           expect(controller.phase).toEqual(idle);
           expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
           expect(completions.requests).toHaveLength(2);
@@ -5694,7 +5788,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           expect(pending).toContain(toolRequest);
           if (then === "answers") {
-            expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer }]);
+            expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer, questions: [] }]);
             expect(controller.chat?.pendingRequest).toBeNull();
             expect(chatChanges).toEqual([true]);
             expect(pastes).toEqual([]);
@@ -5761,7 +5855,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await followUp(controller);
 
           expect(whileRunning).toEqual([
-            { ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer }], pendingRequest: toolRequest, touched: true, activity: "Adding it to your calendar" },
+            { ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer, questions: [] }], pendingRequest: toolRequest, touched: true, activity: "Adding it to your calendar" },
           ]);
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Added it."]);
           expect(controller.chat?.closesAt).toBeNull();

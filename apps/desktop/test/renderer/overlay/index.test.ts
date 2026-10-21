@@ -577,7 +577,7 @@ describe("overlay page", () => {
     const tools: OverlayState["tools"] = ["compose", "answer"];
     const apps: OverlayState["connectors"] = ["calendar", "contacts", "email", "files"];
     const width = config.chatWidth + 2 * config.chatShadowMargin;
-    await page.show({ ...idle, mode: "agent", tools, connectors: apps, chat: { turns: [], pendingRequest: null, closesAt: null, touched: true, activity: null, confirmation: null, confirmationEvent: null, confirmationExpiresAt: null }, chatPlacement: { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: width / 2 + 40 } });
+    await page.show({ ...idle, mode: "agent", tools, connectors: apps, chat: { turns: [], pendingRequest: null, questions: [], closesAt: null, touched: true, activity: null, confirmation: null, confirmationEvent: null, confirmationExpiresAt: null }, chatPlacement: { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: width / 2 + 40 } });
     const bubble = [...document.querySelectorAll<HTMLElement>(".bubble")].at(-1) as HTMLElement;
     await act(async () => {
       bubble.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
@@ -735,10 +735,11 @@ describe("the chat window", () => {
   function chat(closesAt: number | null, touched = closesAt === null): AgentChat {
     return {
       turns: [
-        { id: 0, request: "When do we ship", tool: "answer", reply: "We ship on **Friday**, see [the plan](https://example.com/plan)" },
-        { id: 1, request: "Say it shorter", tool: "edit", reply: "Friday" },
+        { id: 0, request: "When do we ship", tool: "answer", reply: "We ship on **Friday**, see [the plan](https://example.com/plan)", questions: [] },
+        { id: 1, request: "Say it shorter", tool: "edit", reply: "Friday", questions: [] },
       ],
       pendingRequest: "And the launch party",
+      questions: [],
       closesAt,
       touched,
       activity: null,
@@ -849,7 +850,7 @@ describe("the chat window", () => {
     try {
       const page = await overlayPage();
       const reply = "Two options:\nboth this week\n\n3. Friday\n4. Saturday, after\n   the launch\n\n## Then\nShip it";
-      const show = page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "When", tool: "answer", reply }], pendingRequest: null } });
+      const show = page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "When", tool: "answer", reply, questions: [] }], pendingRequest: null } });
       await vi.advanceTimersByTimeAsync(0);
       await show;
       const revealed = () => texts(".chat-text .reveal");
@@ -882,7 +883,7 @@ describe("the chat window", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       const page = await overlayPage();
-      const show = page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "When", tool: "answer", reply: "One\nTwo\nThree\nFour" }], pendingRequest: null } });
+      const show = page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "When", tool: "answer", reply: "One\nTwo\nThree\nFour", questions: [] }], pendingRequest: null } });
       await vi.advanceTimersByTimeAsync(0);
       await show;
       const scroll = document.querySelector<HTMLElement>(".chat-scroll");
@@ -916,7 +917,7 @@ describe("the chat window", () => {
   test("a reply's inline Markdown shows as it reads", async () => {
     const page = await overlayPage();
     const reply = "Run `npm test`, **now**, *please*, ~~not~~ [the plan](https://example.com/plan)";
-    await page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "What next", tool: "answer", reply }], pendingRequest: null } });
+    await page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "What next", tool: "answer", reply, questions: [] }], pendingRequest: null } });
 
     expect(texts(".chat-text")).toEqual(["Run npm test, now, please, not the plan"]);
     expect(texts(".chat-text code")).toEqual(["npm test"]);
@@ -1126,7 +1127,7 @@ describe("the chat window", () => {
     scroll.scrollTop = 0;
 
     const longer = chat(null);
-    await page.show({ ...idle, chatPlacement: above, chat: { ...longer, turns: [...longer.turns, { id: 2, request: "And the launch party", tool: "answer", reply: "Saturday" }], pendingRequest: null } });
+    await page.show({ ...idle, chatPlacement: above, chat: { ...longer, turns: [...longer.turns, { id: 2, request: "And the launch party", tool: "answer", reply: "Saturday", questions: [] }], pendingRequest: null } });
 
     expect(scroll.scrollTop).toBe(500);
   });
@@ -1258,6 +1259,45 @@ describe("the chat window", () => {
     await act(async () => button?.click());
 
     expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed }]);
+  });
+
+  /** An answered question stays in its turn between the request and the reply, the user's words
+   * under it when they answered aloud (owner, 2026-10-20): a label takes its buttons' place, so
+   * nothing more answers it, saying what was done. */
+  test.each([
+    ["confirmed", null, "Yes, go ahead.", config.questionConfirmedLabels.question],
+    ["confirmed", "add", "Yes, go ahead.", config.questionConfirmedLabels.add],
+    ["confirmed", "delete", "Yes, go ahead.", config.questionConfirmedLabels.delete],
+    ["declined", "add", "No, leave it.", config.questionDeclinedLabel],
+    ["unanswered", null, "Make it Monday.", config.questionUnansweredLabel],
+    ["reading", null, "Yes.", config.questionReadingLabel],
+  ] as const)("a question answered (%s, %s) stays in its turn, with what the user said", async (state, action, spoken, label) => {
+    const page = await overlayPage();
+    const answer = state === "reading" ? null : state;
+    const event: EventQuestion | null = action === null ? null : { action, caption: "New event", month: "Oct", day: 21, weekday: "Wed", title: "Launch party", newTitle: null, time: "18:00 – 19:00", newTime: null, lines: [] };
+    const turn = { id: 0, request: "Add the launch party", tool: "answer" as const, reply: "Done.", questions: [{ id: 1, text: "Add the launch party?", event, spoken, answer }] };
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), turns: [turn], pendingRequest: null } });
+
+    const card = document.querySelector(".chat-confirmation");
+    expect(card?.classList.contains("answered")).toBe(true);
+    expect(card?.classList.contains(state)).toBe(true);
+    expect(document.querySelectorAll(".chat-confirmation button")).toHaveLength(0);
+    expect(card?.querySelector(".chat-question-status")?.textContent).toBe(label);
+    // The request, the question, what the user said to it, then the reply.
+    const order = [...document.querySelectorAll(".chat-turn .chat-request, .chat-turn .chat-text, .chat-turn .event-card")].map((element) => (element.classList.contains("event-card") ? "event" : element.textContent));
+    const asked = event === null ? "Add the launch party?" : "event";
+    expect(order.indexOf("Add the launch party")).toBeLessThan(order.indexOf(asked));
+    expect(order.indexOf(asked)).toBeLessThan(order.indexOf(spoken));
+    expect(order.indexOf(spoken)).toBeLessThan(order.indexOf("Done."));
+  });
+
+  /** A question answered with a click has no words under it. */
+  test("a question answered with a click shows no words of the user's under it", async () => {
+    const page = await overlayPage();
+    const turn = { id: 0, request: "Add the launch party", tool: "answer" as const, reply: "Done.", questions: [{ id: 1, text: "Add the launch party?", event: null, spoken: null, answer: "confirmed" as const }] };
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), turns: [turn], pendingRequest: null } });
+
+    expect(texts(".chat-turn .chat-request, .chat-turn .chat-text")).toEqual(["Add the launch party", "Add the launch party?", "Done."]);
   });
 
   /** What `element` shows on screen: its text without the words only a screen reader hears. */
