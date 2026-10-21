@@ -1267,6 +1267,7 @@ describe("the chat window", () => {
   test.each([
     ["confirmed", null, "Yes, go ahead.", config.questionConfirmedLabels.question],
     ["confirmed", "add", "Yes, go ahead.", config.questionConfirmedLabels.add],
+    ["confirmed", "change", "Yes, go ahead.", config.questionConfirmedLabels.change],
     ["confirmed", "delete", "Yes, go ahead.", config.questionConfirmedLabels.delete],
     ["declined", "add", "No, leave it.", config.questionDeclinedLabel],
     ["reading", null, "Yes.", config.questionReadingLabel],
@@ -1288,6 +1289,17 @@ describe("the chat window", () => {
     // While the model reads an answer aloud a small spinner shows; a screen reader hears the label.
     expect(card?.querySelectorAll(".chat-question-status .reading-spinner .spinning")).toHaveLength(state === "reading" ? 1 : 0);
     expect(seen(card?.querySelector(".chat-question-status") ?? null)).toBe(state === "reading" ? "" : label);
+    // A tick for done, a cross for declined, nothing drawn beside the spinner.
+    const glyphs = [...(card?.querySelectorAll(".chat-question-status > svg path") ?? [])].map((path) => path.getAttribute("d"));
+    expect(glyphs).toEqual({ confirmed: ["M5 12.5 10 17.5 19 7"], declined: ["M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5"], reading: [] }[state]);
+    // The spinner is small: square, and no taller than the pill.
+    const spinner = card?.querySelector<HTMLElement>(".reading-spinner");
+    if (state === "reading") {
+      const width = Number.parseFloat(spinner?.style.width ?? "0");
+      expect(width).toBeGreaterThan(0);
+      expect(width).toBeLessThanOrEqual(config.pillHeight);
+      expect(spinner?.style.height).toBe(spinner?.style.width);
+    }
     // Declined, the question and the button left fade; otherwise neither does.
     const faded = state === "declined";
     expect(card?.querySelector<HTMLElement>(".chat-question")?.style.opacity).toBe(String(faded ? config.chatQuestionDeclinedOpacity : 1));
@@ -1330,15 +1342,42 @@ describe("the chat window", () => {
     expect(texts(".chat-turn .chat-request, .chat-turn .chat-text")).toEqual(["Add the launch party", "Add the launch party?", "Done."]);
   });
 
-  /** While a request is still carried out, the questions it asked and was answered show under it, in
-   * the order answered, each with the user's words, and the question it asks now under them. */
-  test("a request still carried out shows its answered questions under it, then the one it asks", async () => {
+  /** The questions a request asked and was answered show in the order answered, each with the
+   * user's words: under the request while it is still carried out, with the question it asks now
+   * under them, and in its turn once done. */
+  test.each(["still carried out", "done"] as const)("a request's answered questions keep their order (%s)", async (where) => {
     const page = await overlayPage();
-    const answered = { id: 1, text: "Add the launch party?", event: null, spoken: "Yes.", answer: null };
-    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), turns: [], pendingRequest: "Add the launch party", questions: [answered], confirmation: "Invite Sam Lee?", confirmationExpiresAt: Date.now() + config.chatConfirmationTimeout } });
+    const questions = [
+      { id: 1, text: "Add the first event?", event: null, spoken: "Yes, the first.", answer: "confirmed" as const },
+      { id: 2, text: "Add the second event?", event: null, spoken: "No, leave the second.", answer: "declined" as const },
+    ];
+    const pending = where === "still carried out";
+    const turn = { id: 0, request: "Add two events", tool: "answer" as const, reply: "Done.", questions };
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), turns: pending ? [] : [turn], pendingRequest: pending ? "Add two events" : null, questions: pending ? questions : [], confirmation: pending ? "Add the third event?" : null, confirmationExpiresAt: pending ? Date.now() + config.chatConfirmationTimeout : null } });
 
-    const order = [...document.querySelectorAll(".chat-scroll .chat-request, .chat-scroll .chat-confirmation")].map((element) => (element.classList.contains("chat-confirmation") ? (element.classList.contains("answered") ? "answered" : "asking") : element.textContent));
-    expect(order).toEqual(["Add the launch party", "answered", "Yes.", "asking"]);
+    const order = [...document.querySelectorAll(".chat-scroll .chat-request, .chat-scroll .chat-text")].map((element) => `${element.closest(".chat-confirmation:not(.answered)") ? "asking: " : ""}${element.textContent}`);
+    expect(order).toEqual(["Add two events", "Add the first event?", "Yes, the first.", "Add the second event?", "No, leave the second.", pending ? "asking: Add the third event?" : "Done."]);
+  });
+
+  /** A question answered scrolls the chat to the bottom, even when the next it asks has the same
+   * words, so the question asked now stays in view; nothing new keeps the place the user scrolled to. */
+  test("an answered question scrolls the chat to its end", async () => {
+    const page = await overlayPage();
+    const asking = { ...chat(null), turns: [], pendingRequest: "Add the launch party", questions: [], confirmation: "Add it?", confirmationExpiresAt: null };
+    const state = { ...running, chatPlacement: above, chat: asking };
+    await page.show(state);
+    const scroll = document.querySelector<HTMLElement>(".chat-scroll");
+    if (scroll === null) throw new Error("no chat");
+    Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
+    Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 200 });
+    scroll.scrollTop = 120;
+    scroll.dispatchEvent(new Event("scroll"));
+
+    await page.show({ ...state, level: 0.1, chat: structuredClone(asking) });
+    expect(scroll.scrollTop).toBe(120);
+    await page.show({ ...state, chat: { ...asking, questions: [{ id: 1, text: "Add it?", event: null, spoken: "No.", answer: "declined" as const }] } });
+    expect(texts(".chat-request")).toEqual(["Add the launch party", "No."]);
+    expect(scroll.scrollTop).toBe(500);
   });
 
   /** What `element` shows on screen: its text without the words only a screen reader hears. */
