@@ -158,8 +158,6 @@ struct MacServiceRequestTests {
         }
     }
 
-    /// As the helper ends (stdin closed), a paste's text no app has read is written in full, so the
-    /// clipboard keeps it once the helper is gone.
     /// As the app closes the helper's input, a paste's text no app read is written in full, whether
     /// the wait for its read is still on or has run out with nothing saved to put back.
     @Test(arguments: [false, true]) func anUnreadPasteIsKeptAsTheHelperEnds(waitedOut: Bool) async throws {

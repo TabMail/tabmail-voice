@@ -86,8 +86,8 @@ public:
         else { log("no save of the clipboard as it was; it won't be put back"); saved.reset(); }
     }
     // Puts the saved clipboard back `restoreDelay` after an app reads the paste's text, or once
-    // `readWait` from now passes with no app having read it (at once for a paste whose keys were
-    // never sent, or whose text was never offered), if this session still owns the selection it
+    // `readWait` from now passes with no app having read it (`restoreDelay` alone for a paste whose keys
+    // were never sent, or whose text was never offered), if this session still owns the selection it
     // offered the paste's text in (`ours`).
     void restore(uint64_t ours, bool keysSent) {
         const auto started = std::chrono::steady_clock::now();

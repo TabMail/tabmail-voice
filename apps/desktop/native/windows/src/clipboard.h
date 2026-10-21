@@ -289,8 +289,8 @@ public:
         state->saving = 0;
     }
     // Puts the saved clipboard back `restoreDelay` after an app reads the paste's text, or once
-    // `readWait` from now passes with none having read it (at once for a paste whose keys were never
-    // sent), if the clipboard still holds the paste's text: `ours`, its sequence number, and the
+    // `readWait` from now passes with none having read it (`restoreDelay` alone for a paste whose keys
+    // were never sent), if the clipboard still holds the paste's text: `ours`, its sequence number, and the
     // owner window's. The number is read once the paste closes the clipboard, by when another
     // program may have copied, so the owner is checked too. `paste` is the number `offer` gave it: a
     // put-back whose thread starts after a later paste's offer is still only its own paste's.

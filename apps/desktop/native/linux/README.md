@@ -110,8 +110,8 @@ loop, once the portal has announced the selection) and puts it back
 for after the compositor answers the first paste key, whose bytes were written:
 GNOME's clipboard manager and its X bridge read every new selection as it is set,
 before any key, and a failed transfer gave the app nothing),
-or once `readWait` from the paste keys passes with no read (at once for a paste
-refused before its keys), only while this session still owns the
+or once `readWait` from the paste keys passes with no read (`restoreDelay` alone for
+a paste refused before its keys), only while this session still owns the
 selection it offered the text in (amended 2026-10-20); a password manager's copy
 (`x-kde-passwordManagerHint`) and a file transfer are not saved (ADR-DESK-002,
 amended 2026-10-08). Clipboard portal version 1 has no atomic owner check, so a copy

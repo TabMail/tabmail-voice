@@ -14,6 +14,9 @@ struct ClipboardKeeperTests {
     private let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))
     private let customType = NSPasteboard.PasteboardType("ai.tabmail.test.custom")
     private static let rules = SharedRequest.ClipboardRules(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8)
+    /// How long a test waits for something that never comes when the code under test is wrong: far
+    /// past `readWait`, even with every suite running at once.
+    private static let stuck = Duration.seconds(10)
 
     private func keeper(read: @escaping ClipboardKeeper.Reader = ClipboardKeeper.readItems,
                         delay: ClipboardKeeper.Delay? = nil) -> ClipboardKeeper {
@@ -212,6 +215,28 @@ struct ClipboardKeeperTests {
         }
     }
 
+    /// A wait for the paste's read that starts once the offer has already ended (the provider can
+    /// run on the main thread as the put-back hops off it) returns at once: false once `readWait`
+    /// ran out, true once an app read the text. It never waits for an end that already came.
+    @Test func aWaitStartedAfterTheOfferEndedReturnsAtOnce() async {
+        for read in [false, true] {
+            let text = OfferedText("Dictated text")
+            if read {
+                let item = NSPasteboardItem()
+                text.pasteboard(nil, item: item, provideDataForType: .string)
+                #expect(item.string(forType: .string) == "Dictated text")
+            } else {
+                text.endWait()
+            }
+            let answer = OSAllocatedUnfairLock<Bool?>(initialState: nil)
+            Task.detached { let ended = await text.waitForRead(); answer.withLock { $0 = ended } }
+            let deadline = ContinuousClock.now + Self.stuck
+            while answer.withLock({ $0 }) == nil, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+            #expect(answer.withLock { $0 } == read)
+            #expect(text.wasRead == read)
+        }
+    }
+
     /// A copy made after the paste, while no app has read its text, is not written over as the helper
     /// ends.
     @Test func keepsANewerCopyAsTheHelperEnds() async {
@@ -322,8 +347,8 @@ struct ClipboardKeeperTests {
         await keeper.restoreTask?.value
         #expect(pasteboard.string(forType: .string) == "Second")
         let done = OSAllocatedUnfairLock(initialState: false)
-        Task { await second?.value; done.withLock { $0 = true } }
-        let deadline = ContinuousClock.now + .milliseconds(Self.rules.readWait * 5)
+        Task.detached { await second?.value; done.withLock { $0 = true } }
+        let deadline = ContinuousClock.now + Self.stuck
         while !done.withLock({ $0 }), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         #expect(done.withLock { $0 })
         #expect(pasteboard.string(forType: .string) == "user text")
