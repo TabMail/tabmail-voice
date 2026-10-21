@@ -220,6 +220,9 @@ describe("MemoryTools", () => {
       memory.failing = true;
       expect(await run(config.memorySearchTool, { page_index: 2 })).toEqual({ error: "memory search failed" });
       memory.failing = false;
+      // Kept before the retry, an exchange newer than the listing's first page shows in the next
+      // listing, not this one: the retry goes on from the page it had, listing none twice.
+      memory.rows.push(memoryRow("budget question kept late", "About budget: answer late", now, "budget-late"));
       const stamps: number[] = [];
       for (const page of [1, 2, 3]) {
         const result = (await run(config.memorySearchTool, { page_index: page })) as { results: string };
