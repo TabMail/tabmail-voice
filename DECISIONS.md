@@ -167,6 +167,59 @@ Windows bitmap, palette and metafile handles go uncounted toward `maxBytes` (#20
   it), and a dictation canceled or ended with its note stops saving; Mac `ClipboardKeeperTests` ›
   `putsTheNewestSavedClipboardBack` (a copy saved by a later ask goes back, every type of it).
 
+**Amendment (owner, 2026-10-20) — the clipboard goes back only after the target reads the paste.**
+Owner: under high load, *"something in the clipboard is being directly pasted instead of what I
+dictated."* The cause: the put-back ran a fixed `restoreDelay` (500 ms) after the paste keys, with no
+sign the target had read the clipboard yet. A busy target handles the keys late, reads the clipboard
+after the put-back, and pastes what the user had copied before. Reproduced on the Mac with a target
+reading 700 ms after the keys (`aBusyAppReadingAfterTheDelayGetsThePastesText`, red before this
+change). Asked whether to stop going through the clipboard at all, the owner chose to keep the paste
+and fix the put-back.
+- **The text is offered, not written, and its read is seen.** Each helper hands the paste's text over
+  only when an app asks for it, and so knows when the target has read it: on the Mac an
+  `NSPasteboardItemDataProvider` (`OfferedText`; macOS asks on the main thread for another app's
+  read); on Ubuntu the portal's `SelectionTransfer` for the session's offer (as before; the keeper now
+  counts one, but only one asked for after the compositor answers the paste's first key, and only
+  once its bytes were written: GNOME's clipboard manager and its X bridge read every new selection
+  as it is set, before any key, the target reads only once it has the keys, and a failed transfer
+  gave the app nothing); on Windows delayed rendering (`SetClipboardData(CF_UNICODETEXT, NULL)`, then
+  `WM_RENDERFORMAT` to a message-only owner window on a thread of the keeper's own). Markers and
+  privacy formats are written as before.
+- **Put back `restoreDelay` after the read, or after `readWait`.** The put-back waits for the first
+  read of the paste's text, at most `readWait` (the shared core's, 10 s, now in the
+  `{"clipboard": {}}` reply) from the paste keys, then `restoreDelay` as before, then the same checks
+  (the clipboard still holds the paste's text, the save is of the clipboard as it was). 10 s covers a
+  target stalled by the load that caused this, and still returns the user's clipboard soon when the
+  keys went nowhere. A paste refused before its keys (a modifier held, focus moved, a failed
+  `SendInput`) goes back after `restoreDelay` alone on Windows and Ubuntu, with no read to wait for. A later paste replaces
+  the earlier one's text, and its own put-back is the one that waits: each put-back is bound to its
+  own paste as it is scheduled (on Windows the number `offer` gives it), so an earlier paste's
+  put-back that runs late never waits for, nor puts the clipboard back over, a later one's text.
+- **The helper's exit.** The Mac and Windows write a still-unread text in full as the helper ends (the
+  Mac at the end of the helper's input, `HelperChannel.onEnd`; Windows by `WM_RENDERALLFORMATS` as the
+  owner window closes), so the clipboard keeps the text, not nothing. Ubuntu is unchanged: the portal
+  serves the text only from the session.
+- **Residuals (accepted by the owner, 2026-10-20).** On the Mac and Windows the text is handed over once (the system keeps it after), so
+  a clipboard manager or Universal Clipboard that reads every new clipboard and ignores
+  the transient and concealed markers counts as the read, so the put-back falls back to today's timing
+  after that read. A target slower than `readWait` still gets the clipboard as it was. On the Mac
+  another app's read needs the helper's main thread free; it is, except while a Calendar or Contacts
+  request runs, which ends before its paste. A helper killed (not ended) with the text unread leaves
+  an empty clipboard on the Mac and Windows, where it would have held the text; tracked as a P3
+  issue (#241).
+- **Tests.** Mac `ClipboardKeeperTests` › `aBusyAppReadingAfterTheDelayGetsThePastesText`,
+  `putsTheClipboardBackWhenNoAppReadsThePaste`, `handsOverAnUnreadPasteAsTheHelperEnds`,
+  `keepsANewerCopyAsTheHelperEnds`, `aPasteOvertakenAsItsKeysGoLeavesTheNewerPastesWait`,
+  `aWaitStartedAfterTheOfferEndedReturnsAtOnce`, `anAppReadingNearTheEndOfTheWaitGetsThePastesText` (the stub
+  paste keystroke now reads the clipboard, as a target does), `MacServiceRequestTests` › `anUnreadPasteIsKeptAsTheHelperEnds` (the helper's closed input wired
+  to the hand-over, with the wait for a read still on and run out), `HelperChannelTests` ›
+  `closedInputRunsTheEndHandlersInOrderBeforeExiting`; Windows `clipboard-keeper.cpp` (a late
+  reader gets the text, an unread paste goes back after `readWait`, a refused paste at once, a refused
+  paste's put-back run after a newer paste leaves that paste, an unread text kept as the keeper ends); Ubuntu `input-session.cpp` (a read 250 ms after the keys gets the
+  text, an unread paste goes back after `readWait`, both with the fake portal reading the offer as it
+  is set, as GNOME does; a paste refused before its keys goes back without waiting; a failed transfer after the keys leaves
+  the text for a later read; checked on GNOME, where those reads come before any key); the shared `request-cases.json` (`readWait`).
+
 ## ADR-DESK-003: Not sandboxed; Developer ID distribution
 
 **Context:** The global hotkey (`NSEvent` global monitors) and ⌘V posting both need Accessibility,

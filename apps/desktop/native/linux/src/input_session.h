@@ -46,6 +46,11 @@ public:
         Offer offer;
         std::vector<Completion> waiting;
         std::function<void()> onOwnerChange;
+        // Another app has read this session's offer (a transfer ended, whether or not it got it all).
+        // Run once a transfer of this session's offer ends, with the number it was asked as.
+        std::function<void(uint64_t)> onTransferred;
+        // Transfers asked for so far, numbered as they come.
+        uint64_t transferRequests = 0;
         using Call = std::function<void(Variant, Object<GUnixFDList>)>;
         explicit State(Output& output, std::string tokenPath) : output(output), tokenStore(std::move(tokenPath)) {
             Error error; bus = own(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.value));
@@ -262,6 +267,7 @@ public:
         }
         void transfer(const std::string& mime, guint serial) {
             auto self = shared_from_this();
+            const auto request = ++transferRequests;
             const auto found = offer.find(mime);
             auto finish = [self, serial](bool success) {
                 self->call(desktop, clipboard, "SelectionWriteDone", g_variant_new("(oub)", self->session.c_str(), serial, success), nullptr, [](auto, auto) {});
@@ -274,8 +280,13 @@ public:
                 g_cancellable_cancel(G_CANCELLABLE(data)); return G_SOURCE_REMOVE;
             }, g_object_ref(cancel.get()), g_object_unref);
             call(desktop, clipboard, "SelectionWrite", g_variant_new("(ou)", session.c_str(), serial), cancel.get(),
-                [self, bytes, cancel, timer, finish](Variant result, Object<GUnixFDList> fds) {
-                    auto complete = [self, timer, finish](bool success) { if (g_main_context_find_source_by_id(nullptr, timer)) g_source_remove(timer); --self->transfers; finish(success); };
+                [self, bytes, cancel, timer, finish, request](Variant result, Object<GUnixFDList> fds) {
+                    auto complete = [self, timer, finish, request](bool success) {
+                        if (g_main_context_find_source_by_id(nullptr, timer)) g_source_remove(timer);
+                        --self->transfers; finish(success);
+                        // Only delivered bytes count as a read; a failed transfer gave the app nothing.
+                        if (success && self->onTransferred) self->onTransferred(request);
+                    };
                     gint handle = -1; Error error;
                     if (!result || !fds || !g_variant_is_of_type(result.get(), G_VARIANT_TYPE("(h)"))) { complete(false); return; }
                     g_variant_get(result.get(), "(h)", &handle);

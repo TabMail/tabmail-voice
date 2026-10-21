@@ -53,13 +53,13 @@ struct TextInserterTests {
         let copied = "Copied \(UUID().uuidString)"
         pasteboard.clearContents()
         pasteboard.setString(copied, forType: .string)
-        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: .init(restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
+        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: .init(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
         let pipe = Pipe()
         let saved = dup(STDERR_FILENO)
         dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
         keeper.save()
         await keeper.saveTask?.value
-        await TextInserter(clipboard: keeper, pasteKeystroke: {}).insert(marker)
+        await TextInserter(clipboard: keeper, pasteKeystroke: { _ = self.pasteboard.string(forType: .string) }).insert(marker)
         await keeper.restoreTask?.value
         dup2(saved, STDERR_FILENO)
         close(saved)

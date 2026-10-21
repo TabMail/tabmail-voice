@@ -70,6 +70,7 @@ public enum MacService {
     ) -> AnyObject {
         let activator = AccessibilityActivator()
         let clipboard = clipboard ?? ClipboardKeeper()
+        channel.onEnd { clipboard.handOver() }
         let paste: @MainActor @Sendable (String) async -> Void = { await TextInserter(clipboard: clipboard, pasteKeystroke: pasteKeystroke).insert($0) }
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
         channel.on("redactText") { params in

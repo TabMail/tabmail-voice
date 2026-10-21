@@ -19,6 +19,7 @@ public final class HelperChannel: Sendable {
     public typealias Handler = @Sendable (JSON) async throws -> JSON
 
     private let handlers: OSAllocatedUnfairLock<[String: Handler]> = .init(initialState: [:])
+    private let endings: OSAllocatedUnfairLock<[@Sendable () -> Void]> = .init(initialState: [])
     private let output: @Sendable (Data) -> Void
 
     /// `output` receives each line, newline included; stdout by default.
@@ -34,6 +35,16 @@ public final class HelperChannel: Sendable {
     /// Answers `method` with `handler`'s result.
     public func on(_ method: String, _ handler: @escaping Handler) {
         handlers.withLock { $0[method] = handler }
+    }
+
+    /// Runs `handler` as stdin closes, on stdin's thread, before the process exits.
+    public func onEnd(_ handler: @escaping @Sendable () -> Void) {
+        endings.withLock { $0.append(handler) }
+    }
+
+    /// Runs the `onEnd` handlers, in the order they were added.
+    private func end() {
+        for ending in endings.withLock({ $0 }) { ending() }
     }
 
     /// Sends an event the app did not ask for.
@@ -65,14 +76,18 @@ public final class HelperChannel: Sendable {
     }
 
     /// Reads stdin on its own thread, each request handled in its own task, and exits the process
-    /// when stdin closes. Returns at once; the caller runs the main run loop.
-    public func start() {
+    /// when stdin closes, once the `onEnd` handlers have run. Returns at once; the caller runs the
+    /// main run loop. `input` and `exit` are the package's tests' own pipe and stand-in.
+    public func start(input: FileHandle = .standardInput, exit: @escaping @Sendable () -> Void = { Foundation.exit(0) }) {
         let thread = Thread { [self] in
-            let input = FileHandle.standardInput
             var buffer = Data()
             while true {
                 let chunk = input.availableData
-                if chunk.isEmpty { exit(0) }
+                if chunk.isEmpty {
+                    end()
+                    exit()
+                    return
+                }
                 buffer.append(chunk)
                 while let newline = buffer.firstIndex(of: 0x0A) {
                     let line = buffer[buffer.startIndex..<newline]

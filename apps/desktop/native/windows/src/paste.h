@@ -39,7 +39,7 @@ inline DWORD integrity(DWORD pid) {
     return *GetSidSubAuthority(label->Label.Sid, count - 1);
 }
 // Pastes `text` into `window`'s focused field. The clipboard as it was is never read here:
-// `keeper` saved it ahead, and puts it back after the paste keys.
+// `keeper` saved it ahead, and puts it back once an app has read the paste's text.
 inline void paste(HWND window, const std::wstring& text, uint64_t deadline, const std::function<bool()>& canceled, ClipboardKeeper& keeper) {
     const auto started = GetTickCount64();
     const auto stage = [started](const char* name) {
@@ -75,7 +75,7 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     GUITHREADINFO focus{}; focus.cbSize = sizeof(focus);
     const DWORD thread = GetWindowThreadProcessId(window, nullptr);
     if (!GetGUIThreadInfo(thread, &focus) || !focus.hwndFocus) throw std::runtime_error("focus unavailable");
-    Clipboard clipboard;
+    Clipboard clipboard(keeper.owner());
     stage("clipboard-open");
     const auto now = unixMilliseconds();
     clipboard.open(std::min<unsigned long long>(HelperConfig::clipboardOpenWaitMs, deadline > now ? deadline - now : 0));
@@ -83,18 +83,22 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     stage("final-focus-check");
     guard();
     stage("clipboard-write");
-    clipboard.putText(text);
+    clipboard.offerText();
+    // Before the close: no app can read the text while the clipboard is open.
+    const auto paste = keeper.offer(text);
     clipboard.close();
     // Read once closed: closing adds the formats Windows makes from the text, each a new number.
     const DWORD ours = GetClipboardSequenceNumber();
     keeper.wrote(before, ours);
-    // Whether the keys are sent or the paste is refused from here, the clipboard as it was goes back.
+    // Whether the keys are sent or the paste is refused from here, the clipboard as it was goes back:
+    // once an app has read the text when the keys went, at once when they didn't.
     struct PutBack {
         ClipboardKeeper& keeper;
         DWORD ours;
-        const std::wstring& text;
-        ~PutBack() { keeper.restore(ours, text); }
-    } const putBack{keeper, ours, text};
+        uint64_t paste;
+        bool keysSent = false;
+        ~PutBack() { keeper.restore(ours, paste, keysSent); }
+    } putBack{keeper, ours, paste};
     GUITHREADINFO current{}; current.cbSize = sizeof(current);
     if (canceled() || unixMilliseconds() >= deadline || GetForegroundWindow() != window ||
         !GetGUIThreadInfo(thread, &current) || current.hwndFocus != focus.hwndFocus) {
@@ -110,6 +114,7 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     keys[3].ki.wVk = VK_LCONTROL; keys[3].ki.dwFlags = KEYEVENTF_KEYUP;
     stage("send-input");
     const auto sent = SendInput(4, keys, sizeof(INPUT));
+    putBack.keysSent = sent > 0;
     if (sent != 4) {
         // Release only our own injected keys if a partial insertion was reported.
         if (sent) SendInput(2, keys + 2, sizeof(INPUT));

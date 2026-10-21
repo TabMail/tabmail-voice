@@ -58,8 +58,8 @@ class Inserter {
         item->timer = 0;
         g_cancellable_cancel(item->cancel.get());
         // Whether the keys went or the paste was refused once its text was offered, the clipboard
-        // as it was goes back.
-        if (item->published) clipboard.restore(item->owned.value_or(item->before));
+        // as it was goes back: once an app has read the text when the keys went, at once when not.
+        if (item->published) clipboard.restore(item->owned.value_or(item->before), item->injectionStarted);
         stage(item, item->successful && !item->canceled ? "complete" : "not pasted");
         current.reset(); item->reply(nlohmann::json::object(), item->successful && !item->canceled);
     }
@@ -89,6 +89,7 @@ class Inserter {
         const int key = item->chordKeys[down ? step : count * 2 - step - 1];
         if (down) item->pressedKeys.push_back(key);
         input.state->key(key, down, nullptr, [this, item, step, down](bool success) {
+            if (step == 0) clipboard.keysReached();
             if (!success) { clean(item); return; }
             if (!down) item->pressedKeys.pop_back();
             chord(item, step + 1);

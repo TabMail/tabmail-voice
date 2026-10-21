@@ -17,7 +17,7 @@ using JSON = nlohmann::json;
 // What a saved clipboard may hold, and when it goes back: the shared core's.
 voice::ClipboardKeeper::Rules clipboardRules() {
     const auto rules = voice::core::request({{"clipboard", JSON::object()}}, voice_core_request_json);
-    return {rules.at("restoreDelay").get<unsigned>(), rules.at("maxBytes").get<unsigned long long>(), rules.at("maxFormats").get<size_t>()};
+    return {rules.at("readWait").get<unsigned>(), rules.at("restoreDelay").get<unsigned>(), rules.at("maxBytes").get<unsigned long long>(), rules.at("maxFormats").get<size_t>()};
 }
 JSON appInfo(const JSON& params) {
     if (!params.is_object() || !params.contains("path") || !params["path"].is_string())

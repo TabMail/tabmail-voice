@@ -14,7 +14,10 @@ namespace voice {
 // The paste never reads the clipboard: reading it asks its owner for every format's data, which a
 // busy app hands over late. It is saved ahead, while the user speaks (`save`, which the app asks for
 // from key-down until the paste, every `clipboardSaveInterval`), by asynchronous portal reads on the event loop. The
-// clipboard goes back `restoreDelay` after the paste, and only while this session still owns the
+// clipboard goes back `restoreDelay` after an app reads the paste's text (a transfer of its offer),
+// or `readWait` after the paste when no app has read it by then: a busy app handles the keys late,
+// and one that read the clipboard as it was would paste that (amended 2026-10-20). It goes back only
+// while this session still owns the
 // selection it offered the paste's text in (`ours`, its announcement) and the save was of the
 // selection just before the paste: a copy made in between is never overwritten, and a paste without
 // such a save leaves its text. A password manager's clipboard and a file transfer are not saved,
@@ -24,11 +27,18 @@ class ClipboardKeeper {
 public:
     // What a saved clipboard may hold, and when it goes back, from the shared core.
     struct Rules {
+        unsigned readWait = 0;
         unsigned restoreDelay = 0;
         unsigned long long maxBytes = 0;
         size_t maxFormats = 0;
     };
-    ClipboardKeeper(InputSession& input, Rules rules) : input(input), rules(rules) {}
+    ClipboardKeeper(InputSession& input, Rules rules) : input(input), rules(rules) {
+        input.state->onTransferred = [this](uint64_t request) { transferred(request); };
+    }
+    ~ClipboardKeeper() {
+        input.state->onTransferred = {};
+        endWait();
+    }
     // Saves the clipboard in the background, unless it is saved, or being saved, as it is now.
     void save() {
         const auto& selection = input.state->selection;
@@ -64,23 +74,40 @@ public:
     void begin() {
         if (saving) log("the clipboard's save still under way; it won't be put back");
         endSave();
+        endWait();
+        pasted.reset();
         ++restoreGeneration;
     }
     // The paste offered its text over the selection as it was at `before`, and this session owns
     // the selection at `ours`: the saved clipboard now holds while the text is there.
     void wrote(uint64_t before, uint64_t ours) {
+        pasted = Pasted{ours};
         if (saved && saved->epoch == before) saved->epoch = ours;
         else { log("no save of the clipboard as it was; it won't be put back"); saved.reset(); }
     }
-    // Puts the saved clipboard back `restoreDelay` from now, if this session still owns the
-    // selection it offered the paste's text in (`ours`).
-    void restore(uint64_t ours) {
-        struct Delay { ClipboardKeeper* self; uint64_t ours, generation; std::chrono::steady_clock::time_point started; };
-        g_timeout_add_full(G_PRIORITY_DEFAULT, rules.restoreDelay, [](gpointer data) -> gboolean {
-            const auto delay = static_cast<Delay*>(data);
-            if (delay->generation == delay->self->restoreGeneration) delay->self->putBack(delay->ours, delay->started);
+    // Puts the saved clipboard back `restoreDelay` after an app reads the paste's text, or once
+    // `readWait` from now passes with no app having read it (`restoreDelay` alone for a paste whose keys
+    // were never sent, or whose text was never offered), if this session still owns the selection it
+    // offered the paste's text in (`ours`).
+    void restore(uint64_t ours, bool keysSent) {
+        const auto started = std::chrono::steady_clock::now();
+        if (!keysSent || !pasted || pasted->epoch != ours || pasted->read) { later(ours, started); return; }
+        endWait();
+        waiting = Waiting{ours, started, g_timeout_add(rules.readWait, [](gpointer data) -> gboolean {
+            auto self = static_cast<ClipboardKeeper*>(data);
+            const auto waited = *self->waiting;
+            self->waiting.reset();
+            log("no app read the paste's text in " + std::to_string(self->rules.readWait) + "ms");
+            self->later(waited.ours, waited.started);
             return G_SOURCE_REMOVE;
-        }, new Delay{this, ours, restoreGeneration, std::chrono::steady_clock::now()}, [](gpointer data) { delete static_cast<Delay*>(data); });
+        }, this)};
+    }
+    // The compositor has answered the paste's first key (a failed answer may still mean it took the
+    // key). A transfer asked for before this is not the target's read: GNOME's clipboard manager, and
+    // its X bridge, read every new selection as it is set, before any key; the target reads only
+    // once it has the keys, and the compositor answers a key before the target sees it.
+    void keysReached() {
+        if (pasted && !pasted->keysAt) pasted->keysAt = input.state->transferRequests;
     }
 private:
     // Marks a password manager's copy, which its manager clears; KDE's, which GNOME apps carry too.
@@ -106,6 +133,31 @@ private:
     void endSave() {
         if (saving) g_cancellable_cancel(saving->cancel.get());
         saving.reset();
+    }
+    void endWait() {
+        if (waiting) g_source_remove(waiting->timer);
+        waiting.reset();
+    }
+    // An app read this session's offer: when it is the paste's text, the put-back waiting for that
+    // read goes ahead.
+    void transferred(uint64_t request) {
+        const auto& selection = input.state->selection;
+        if (!pasted || pasted->read || !pasted->keysAt || request <= *pasted->keysAt || !selection.ours || selection.epoch != pasted->epoch) return;
+        pasted->read = true;
+        if (!waiting || waiting->ours != pasted->epoch) return;
+        const auto waited = *waiting;
+        endWait();
+        log("the paste's text read after " + std::to_string(milliseconds(waited.started)) + "ms");
+        later(waited.ours, waited.started);
+    }
+    // Puts the saved clipboard back `restoreDelay` from now, unless another paste begins first.
+    void later(uint64_t ours, std::chrono::steady_clock::time_point started) {
+        struct Delay { ClipboardKeeper* self; uint64_t ours, generation; std::chrono::steady_clock::time_point started; };
+        g_timeout_add_full(G_PRIORITY_DEFAULT, rules.restoreDelay, [](gpointer data) -> gboolean {
+            const auto delay = static_cast<Delay*>(data);
+            if (delay->generation == delay->self->restoreGeneration) delay->self->putBack(delay->ours, delay->started);
+            return G_SOURCE_REMOVE;
+        }, new Delay{this, ours, restoreGeneration, started}, [](gpointer data) { delete static_cast<Delay*>(data); });
     }
     // Reads the save's next format, or keeps the save once every one is read. Its own reference:
     // `saving` is reset on the way.
@@ -148,6 +200,13 @@ private:
     std::shared_ptr<Save> saving;
     // The clipboard the last put-back offered.
     InputSession::Offer restored;
+    // The latest paste's text as offered: the selection it was offered in, whether the target has
+    // read it, and the transfers asked for by the time the compositor answered its first key.
+    struct Pasted { uint64_t epoch = 0; bool read = false; std::optional<uint64_t> keysAt = std::nullopt; };
+    std::optional<Pasted> pasted;
+    // A put-back waiting for an app to read the paste's text: its paste, since when, and its timer.
+    struct Waiting { uint64_t ours = 0; std::chrono::steady_clock::time_point started; guint timer = 0; };
+    std::optional<Waiting> waiting;
     // Counts the pastes begun: a put-back scheduled before the latest one is dropped.
     uint64_t restoreGeneration = 0;
 };

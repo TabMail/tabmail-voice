@@ -62,6 +62,22 @@ struct HelperChannelTests {
         #expect(JSON.string("7").integer == nil)
     }
 
+    @Test func closedInputRunsTheEndHandlersInOrderBeforeExiting() async {
+        let channel = HelperChannel(output: { _ in })
+        let ran = OSAllocatedUnfairLock<[String]>(initialState: [])
+        channel.onEnd { ran.withLock { $0.append("first") } }
+        channel.onEnd { ran.withLock { $0.append("second") } }
+        let input = Pipe()
+        await withCheckedContinuation { (exited: CheckedContinuation<Void, Never>) in
+            channel.start(input: input.fileHandleForReading, exit: {
+                ran.withLock { $0.append("exit") }
+                exited.resume()
+            })
+            try? input.fileHandleForWriting.close()
+        }
+        #expect(ran.withLock { $0 } == ["first", "second", "exit"])
+    }
+
     @Test func eventsCarryTheirName() {
         let (channel, lines) = channel()
         channel.emit("action", ["action": "start"])
