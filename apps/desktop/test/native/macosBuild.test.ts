@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildNative } from "../../scripts/macos/build-native.mts";
@@ -52,13 +52,15 @@ describe("the macOS helper build", () => {
 
   /** A checkout whose lockfile pins `packages`, with a fake Rust, Swift, lipo and npm registry: the
    *  registry serves `served` (by URL), SwiftPM's build writes each helper, marked with the triple
-   *  and Rust target it was given, and lipo writes what it joined. Returns the commands run and the
-   *  URLs fetched. */
-  function checkout(packages: Record<string, object>, served: Record<string, Buffer>): { root: string; commands: string[][]; fetched: string[]; unpacked: { tarball: string; existed: boolean }[] } {
+   *  and Rust target it was given (and `built`, if given, or what `built` gives for that helper) and a debug map naming its object file under
+   *  the home folder, which `strip -S` removes, and lipo writes what it joined. Returns the commands
+   *  run, each cargo build's CARGO_ENCODED_RUSTFLAGS and the URLs fetched. */
+  function checkout(packages: Record<string, object>, served: Record<string, Buffer>, built: string | ((helper: string) => string) = ""): { root: string; commands: string[][]; cargoFlags: (string | undefined)[]; fetched: string[]; unpacked: { tarball: string; existed: boolean }[] } {
     const root = mkdtempSync(join(tmpdir(), "voice-macos-build-"));
     roots.push(root);
     writeFileSync(join(root, "package-lock.json"), JSON.stringify({ packages: { "": {}, ...packages } }));
     const commands: string[][] = [];
+    const cargoFlags: (string | undefined)[] = [];
     const fetched: string[] = [];
     const unpacked: { tarball: string; existed: boolean }[] = [];
     vi.mocked(execFileSync).mockImplementation(((command: string, args: readonly string[], options?: { env?: NodeJS.ProcessEnv }) => {
@@ -67,6 +69,12 @@ describe("the macOS helper build", () => {
         return realExecFileSync(command, args);
       }
       commands.push([command, ...args]);
+      if (command === "cargo") cargoFlags.push(options?.env?.CARGO_ENCODED_RUSTFLAGS);
+      if (command === "strip" && args[0] === "-S") {
+        const path = args[1] ?? "";
+        writeFileSync(path, readFileSync(path, "utf8").replace(/ \[debug map [^\]]*\]/g, ""));
+        return Buffer.alloc(0);
+      }
       if (command === "lipo") {
         const output = args[args.indexOf("-output") + 1] ?? "";
         file(output, `lipo of ${args.slice(1, args.indexOf("-output")).map((input) => readFileSync(input, "utf8")).join(" and ")}`);
@@ -75,7 +83,7 @@ describe("the macOS helper build", () => {
       if (command !== "swift") return Buffer.alloc(0);
       const bin = join(args[args.indexOf("--scratch-path") + 1] ?? "", "release");
       if (args.includes("--show-bin-path")) return `${bin}\n`;
-      for (const helper of helpers) file(join(bin, helper), `${helper} ${args[args.indexOf("--triple") + 1]} ${options?.env?.VOICE_RUST_TARGET}`);
+      for (const helper of helpers) file(join(bin, helper), `${helper} ${args[args.indexOf("--triple") + 1]} ${options?.env?.VOICE_RUST_TARGET}${typeof built === "string" ? built : built(helper)} [debug map ${homedir()}/voice/.build/${helper}.o]`);
       return Buffer.alloc(0);
     }) as typeof execFileSync);
     vi.mocked(buildMemoryHelper).mockReset().mockImplementation((_root, target) => {
@@ -88,8 +96,67 @@ describe("the macOS helper build", () => {
       const bytes = served[url];
       return bytes ? new Response(bytes) : new Response(null, { status: 404 });
     }));
-    return { root, commands, fetched, unpacked };
+    return { root, commands, cargoFlags, fetched, unpacked };
   }
+
+  /** The Rust core's source paths, under the builder's home folder, name its user: they are built
+   *  as `~` (one flag, even for a home folder with a space in it), and a helper still holding the
+   *  home folder is never copied out as built. */
+  test.each<[string, NodeJS.ProcessEnv, string[]]>([
+    ["no flags", {}, []],
+    ["RUSTFLAGS", { RUSTFLAGS: "-C  target-cpu=native" }, ["-C", "target-cpu=native"]],
+    ["CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "-C\x1ftarget-cpu=native", RUSTFLAGS: "--ignored" }, ["-C", "target-cpu=native"]],
+    ["an empty CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "", RUSTFLAGS: "--ignored" }, []],
+  ])("builds the Rust core's source paths from a home folder with a space in it as ~, keeping %s already set", async (_name, set, inherited) => {
+    const saved = { HOME: process.env.HOME, RUSTFLAGS: process.env.RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS };
+    const home = join(tmpdir(), "First Last");
+    try {
+      delete process.env.RUSTFLAGS;
+      delete process.env.CARGO_ENCODED_RUSTFLAGS;
+      Object.assign(process.env, { HOME: home }, set);
+      const { root, cargoFlags } = checkout({}, {});
+      process.env.VOICE_MAC_ARCH = "universal";
+      await buildNative(root);
+      // Both architectures of the universal build.
+      const remapped = [...inherited, `--remap-path-prefix=${home}=~`];
+      expect(cargoFlags.map((flags) => flags?.split("\x1f"))).toEqual([remapped, remapped]);
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  test.each(["arm64", "universal"])("a %s app's Swift helpers ship without their debug map, which names the home folder", async (arch) => {
+    const { root, commands } = checkout({}, {});
+    process.env.VOICE_MAC_ARCH = arch;
+    await buildNative(root);
+    for (const helper of helpers) {
+      expect(commands).toContainEqual(["strip", "-S", join(root, "dist/helpers", helper)]);
+      expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).not.toContain(homedir());
+    }
+    // The build's own copy keeps it.
+    expect(readFileSync(join(root, "native/macos/.build/arm64/release/voice-hotkey"), "utf8")).toContain(`[debug map ${homedir()}`);
+  });
+
+  test.each(["arm64", "universal"])("a %s helper that still holds the home folder is refused", async (arch) => {
+    const { root } = checkout({}, {}, ` built from ${homedir()}/.cargo/registry`);
+    process.env.VOICE_MAC_ARCH = arch;
+    await expect(buildNative(root)).rejects.toThrow("voice-hotkey still contains this computer's home folder");
+  });
+
+  /** A source path can stay in one helper only: each is refused on its own, the others clean. */
+  test.each(helpers.flatMap((helper) => ["arm64", "universal"].map((arch) => [helper, arch])))("a %s (%s) still holding the home folder, alone, is refused", async (dirty, arch) => {
+    const { root } = checkout({}, {}, (helper) => (helper === dirty ? ` built from ${homedir()}/.cargo/registry` : ""));
+    process.env.VOICE_MAC_ARCH = arch;
+    await expect(buildNative(root)).rejects.toThrow(`${dirty} still contains this computer's home folder`);
+    // What was refused holds it, and the other helpers copied out are clean.
+    expect(readFileSync(join(root, "dist/helpers", dirty ?? ""), "utf8")).toContain(homedir());
+    for (const helper of helpers.filter((name) => name !== dirty && existsSync(join(root, "dist/helpers", name)))) {
+      expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).not.toContain(homedir());
+    }
+  });
 
   test("the Intel app's build makes x86_64 helpers for macOS 15 and installs both architectures' Mac packages, as the lockfile pins them", async () => {
     const scratch = mkdtempSync(join(tmpdir(), "voice-macos-tarball-"));

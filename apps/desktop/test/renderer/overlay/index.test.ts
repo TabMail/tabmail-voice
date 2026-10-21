@@ -323,7 +323,8 @@ describe("overlay page", () => {
     await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], tip: "handsFree", opensUpward: true });
 
     const bubbleTops = [...document.querySelectorAll(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
-    expect(bubbleTops).toHaveLength(2);
+    // The two tools' and memory's.
+    expect(bubbleTops).toHaveLength(3);
     const tipFrame = page.tipFrame();
     expect(tipFrame).not.toBeNull();
     for (const top of bubbleTops) expect(tipFrame?.bottom).toBeLessThanOrEqual(top);
@@ -429,6 +430,37 @@ describe("overlay page", () => {
     await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], emailAppIcon: null });
     expect(images()).toEqual([null, null]);
     expect(symbols()).toEqual([true, true]);
+  });
+
+  /** Memory's bubble shows with the tools' (its tools come with every request that offers one), with
+   * Settings' memory icon, and circles at the front while its tools run, like an app's (owner,
+   * 2026-10-19); none shows when no tool is offered. */
+  test("memory has a bubble that circles while its tools run", async () => {
+    const page = await overlayPage();
+    const memory = () => document.querySelector<HTMLElement>('.bubble[aria-label="memory"]');
+    const labels = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.getAttribute("aria-label"));
+
+    await page.show({ ...listening, mode: "agent", tools: ["compose", "answer"], connectors: ["web"] });
+    expect(labels()).toEqual(["answer", "compose", "memory", "web"]);
+    // Settings' memory icon: a clock with an arrow going back.
+    expect(memory()?.querySelector("svg path")?.getAttribute("d")).toContain("M3.5 12a8.5 8.5 0 1 0");
+    // In the bubbles' accent, as every other bubble (not Settings' plain clock).
+    expect(memory()?.querySelector("svg")?.outerHTML).toContain("var(--accent)");
+    expect(memory()?.querySelector(".spinning")).toBeNull();
+    // Hovered, it says what it is.
+    await act(async () => {
+      memory()?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect([...(document.querySelector('[role="tooltip"]')?.children ?? [])].map((line) => line.textContent)).toEqual([config.memoryBubbleName, config.memoryBubbleDescription]);
+
+    await page.show({ ...running, tools: ["compose", "answer"], connectors: ["web"], recentBubbles: ["memory"], runningBubble: "memory" });
+    expect(labels()[0]).toBe("memory");
+    const circling = [...document.querySelectorAll(".bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
+    expect(circling).toEqual(["memory"]);
+
+    await page.show({ ...listening, mode: "agent", tools: [] });
+    expect(memory()).toBeNull();
   });
 
   /** A bubble under the pointer grows and says what it is: its name over its Settings description, a
@@ -566,7 +598,8 @@ describe("overlay page", () => {
 
     expect(document.querySelector(".pill .message")?.textContent).toBe(retryingMessage);
     expect(document.querySelector(".pill svg")).toBeNull();
-    expect(document.querySelectorAll(".bubble")).toHaveLength(mode === "agent" ? 1 : 0);
+    // Compose's and memory's.
+    expect(document.querySelectorAll(".bubble")).toHaveLength(mode === "agent" ? 2 : 0);
   });
 
   test("no app's bubble shows in dictation mode", async () => {
@@ -920,8 +953,8 @@ describe("the chat window", () => {
     expect(parseFloat(document.querySelector<HTMLElement>(".chat-canvas .pill-anchor")?.style.left ?? "")).toBe(chatPlacement.pillX);
     // It grows no taller than the screen leaves it room for there, then scrolls.
     expect(document.querySelector<HTMLElement>(".chat-scroll")?.style.maxHeight).toBe(`${chatPlacement.maxHeight}px`);
-    // The last request's bubbles stay under the pill.
-    expect(document.querySelectorAll(".chat-canvas .bubble")).toHaveLength(1);
+    // The last request's bubbles (Compose's and memory's) stay under the pill.
+    expect(document.querySelectorAll(".chat-canvas .bubble")).toHaveLength(2);
   });
 
   /** A follow-up clears the tools until its screen read is done: meanwhile the last request's bubbles
@@ -930,13 +963,13 @@ describe("the chat window", () => {
     const page = await overlayPage();
     const labels = () => [...document.querySelectorAll(".chat-canvas .bubble")].map((bubble) => bubble.getAttribute("aria-label"));
     await page.show({ ...idle, mode: "agent", tools: ["compose", "answer"], chat: chat(null), chatPlacement: above });
-    expect(labels()).toEqual(["answer", "compose"]);
+    expect(labels()).toEqual(["answer", "compose", "memory"]);
 
     await page.show({ ...warmingUp, mode: "agent", tools: [], chat: chat(null), chatPlacement: above });
-    expect(labels()).toEqual(["answer", "compose"]);
+    expect(labels()).toEqual(["answer", "compose", "memory"]);
 
     await page.show({ ...warmingUp, mode: "agent", tools: ["edit"], chat: chat(null), chatPlacement: above });
-    expect(labels()).toEqual(["edit"]);
+    expect(labels()).toEqual(["edit", "memory"]);
   });
 
   /** In the chat as out of it, the pill circles whenever the agent works (owner, 2026-09-28: "whenever

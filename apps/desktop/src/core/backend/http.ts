@@ -105,6 +105,7 @@ export function requestHeaders(accessToken: string, clientVersion: string): Reco
     Authorization: `Bearer ${accessToken}`,
     "X-Client-Type": config.clientType,
     "X-Client-Version": clientVersion,
+    "X-Client-Protocol": config.clientProtocol,
   };
 }
 

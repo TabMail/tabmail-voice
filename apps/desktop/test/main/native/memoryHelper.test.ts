@@ -99,6 +99,26 @@ describe("MemoryHelper", () => {
     expect(await memory.stats()).toEqual({ docs: 0, usedBytes: 0 });
   });
 
+  /** "What have we discussed" in the dates asked: the tool's empty query reaches the helper with the
+   *  dates, which bound the listing (it ignores them only when none is given). */
+  test.each<[string, (now: number) => Record<string, string>, string[]]>([
+    ["a start", (now) => ({ from_date: new Date(now - 2.5 * day).toISOString() }), ["turn:3", "turn:2"]],
+    ["an end", (now) => ({ to_date: new Date(now - 2.5 * day).toISOString() }), ["turn:1", "turn:0"]],
+    ["a start and an end", (now) => ({ from_date: new Date(now - 3.5 * day).toISOString(), to_date: new Date(now - 1.5 * day).toISOString() }), ["turn:2", "turn:1"]],
+    ["no dates", () => ({}), ["turn:3", "turn:2", "turn:1", "turn:0"]],
+  ])("the memory search tool with no query lists only the exchanges in the dates asked: %s", async (_name, dates, expected) => {
+    const memory = make();
+    const now = Date.now();
+    const rows = [0, 1, 2, 3].map((i) => memoryRow(`question ${i}`, `answer ${i}`, now - (4 - i) * day, String(i)));
+    await memory.index(rows, 1 << 30);
+    const result = JSON.parse(await new MemoryTools(memory).run("memory_search", dates(now))) as { results: string; totalItems: number };
+    expect(result.totalItems).toBe(expected.length);
+    const shown = [...result.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]));
+    expect(shown).toEqual(expected.map((memId) => rows.find((row) => row.memId === memId)?.dateMs));
+    // The stored exchanges are all still there.
+    expect((await rowsOf(memory)).map((hit) => hit.memId)).toEqual(["turn:3", "turn:2", "turn:1", "turn:0"]);
+  });
+
   test("a reply longer than one pipe read arrives whole", async () => {
     const memory = make();
     const now = Date.now();

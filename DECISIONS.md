@@ -2927,6 +2927,21 @@ Answer, which also circled, went on behind it.
 > it; a follow-up during it keeps it open, taking clicks again), each red-verified against the
 > instant close.
 
+> **Amended (owner, 2026-10-19): memory has a bubble.** The owner: *"for the memory tool … we don't
+> seem to have a memory tool icon, like the bubble, like the other tools"*. The memory tools
+> (ADR-DESK-061) ran under no bubble. They now have one, `memoryBubble` ("Memory", with Settings'
+> memory icon, a clock with an arrow going back, in the bubbles' accent; its tooltip
+> `memoryBubbleDescription`). It shows whenever a tool's bubble does (`shownBubbles`), since the
+> memory tools come with every request that offers one (`loopTools`), and has no switch in Settings.
+> It runs as an app's does while a memory tool runs, at the front of the row, and stops with it; the
+> chat window's label for a memory search is unchanged.
+>
+> Tests: `bubbleOrder.test.ts` (memory's name and description; it shows with the tools' bubbles and
+> never alone; it sorts with them), `controller.test.ts` (it runs while `memory_search` does, moving to
+> the front, and stops before Answer's bubble runs for the reply), `overlay/index.test.ts` (its icon and
+> tooltip; it circles alone at the front while running; none without tools), each red-verified against
+> the bubble left out.
+
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
 > Since ADR-DESK-055 (2026-10-05) agent mode is one tool loop: bringing this tool back means offering it as a loop tool, and the chooser this ADR describes is gone.
@@ -5585,6 +5600,42 @@ Thunderbird's copy or its files.
   branch.
 - Tests: see `TESTS.md` (memory rows). The helper itself is tested in its repository.
 
+> **Amended (owner, 2026-10-19): a search with no query lists the most recent.** The owner: *"What
+> have we discussed thing should basically trigger a memory search with the most recent, like, 10
+> things"*, and of the refusal: *"That empty query is a bug. It should not reject it."* `memory_search`
+> refused a call without a query ("missing query"), as Thunderbird's and iOS's tools did, though the
+> helper lists the newest exchanges for an empty one (in the dates asked, if any). It now passes it
+> on: no query (left out, blank or not a string) lists the most recent exchanges, newest first, a page
+> (`memorySearchPageSize`) at a time like any search. The backend's schema at this app's protocol
+> version (ADR-DESK-064) no longer requires a query and says when to leave it out. Tests:
+> `memory/tools.test.ts` (no query lists the newest first, paged, in the dates asked), red-verified
+> against the refusal.
+>
+> **A day is the user's local day.** `from_date` and `to_date` given as a day alone (`YYYY-MM-DD`, the
+> form `time_delta` answers "yesterday" in) are the whole of that day where the user is: a start from
+> its local midnight, an end through its last millisecond, the next day's start less one (the helper's
+> bounds are inclusive and keep milliseconds), however long daylight saving makes the day (where it
+> skips midnight the day starts at 01:00 and the next at 00:00). JavaScript reads a bare day as UTC midnight, which made "yesterday" as start and end
+> an empty window, and shifted every day by the user's offset. A time without an offset is local too;
+> one with an offset is read as written. As `Arguments.localEnd` reads a day for the calendar and files
+> tools. Tests: `memory/tools.test.ts` (a day west of UTC, east of it and in UTC, red-verified).
+
+> **Amended (2026-10-19): the helper is native-fts 0.11.8, and no helper carries the home folder.**
+> The pin moves to the 0.11.8 commit (`04b19a3`), whose dependencies the security audit passes. A
+> Rust build keeps its dependencies' source paths in the binary, and on the builder's computer they
+> start at its home folder, which names its user: 0.2.4's Mac helpers carry it from the Rust core
+> (8 to 23 paths each), and in the Swift link's debug map, which names each object file by its path
+> in the checkout. `scripts/home-folder.mts` gives the Rust builds `--remap-path-prefix=<home>=~`
+> (after any `RUSTFLAGS` already set) and refuses a built helper that still holds the home folder;
+> `buildMemoryHelper` and the Mac build's Rust core use both. The Mac build strips the debug map from
+> the Swift helpers it ships (`strip -S`, observed to keep the linker's signature valid; the build's own
+> copies keep it, beside their debug symbols) and checks every helper it copies, as the memory
+> helper's own release build does. Windows and Linux release builds run on CI
+> runners, whose home folder names no one; their memory helper gets the same flags and check. Tests:
+> `native/memoryHelperBuild.test.ts` and `native/macosBuild.test.ts` (the flag, kept beside earlier
+> flags; the Swift helpers shipped without their debug map, thin and universal; a helper holding the
+> home folder refused), red-verified against the previous build scripts.
+
 ## ADR-DESK-062: The default event duration, in Settings and set by agent mode's Settings tool
 
 **Context:** Owner, 2026-10-18: an event added with no end lasted a fixed hour
@@ -5625,3 +5676,35 @@ menu ... settings tool").
   (`src/tools/voice/change_setting-v<version>.json`, with the key and range above); an older app is
   never offered it.
 - Tests: see `TESTS.md` (the default event duration row).
+
+---
+
+## ADR-DESK-064: The app sends a protocol version, and shares Thunderbird's and iOS's prompts and tools
+
+**Context:** Owner, 2026-10-19: Voice kept its own copies of prompts and tools that Thunderbird and
+iOS have too, because the backend picks them by the client's version and this app's version line
+(0.x) is not theirs (1.x). *"We could also introduce the protocol number pretty much similar to the
+other platforms ... and that could allow us to use their platform as a shared one instead of having
+an identical copy. We should do that ... because we already sent which tools are available and
+that's programmatically disabled on the backend, it should be fine."* In 0.3.0 (owner's choice).
+
+**Decision:**
+- Every backend request carries `X-Client-Protocol: <config.clientProtocol>` (`requestHeaders`) beside
+  `X-Client-Version`, the app's own version, which stays what users see and what reports carry. The
+  backend picks this app's prompts and tools at the protocol version (backend ADR-017 amendment,
+  "the protocol version"); a build without it (every one before 0.3.0) is read as before.
+- `config.clientProtocol` is `1.9.3` from 0.3.0: the version on Thunderbird's and iOS's line whose
+  common prompts and tools this app supports. The backend has, at it, the agent loop prompt with the
+  memory tools and `change_setting`, the common `memory_search` that takes no query, and the common
+  `memory_read`; this app's own tools (calendar, web, contacts, files, notes and the rest) keep their
+  own schemas whatever the number.
+- Raising it is a step taken with the backend: every common prompt and tool up to the new number
+  then reaches the app, offered only as the backend's `allowed_tools` for Voice and this app's
+  `available_tools` (`loopTools`) both list it, so a common tool the app does not run is never offered.
+
+**Consequences:**
+- A prompt or tool this app shares with Thunderbird and iOS is one file on the backend, not a copy.
+- A backend change meant for a newer Voice is versioned at the protocol version that first has it,
+  not at the app's version.
+- Tests: `backend/completions.test.ts` and `backend/transcription.test.ts` (the header on every
+  request, at 1.9.3).

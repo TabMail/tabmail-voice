@@ -25,6 +25,7 @@ apps/desktop/
 ├── scripts/
 │   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM, for `VOICE_MAC_ARCH` arm64, x64 or universal, with both architectures' lockfile-pinned Mac packages) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── memory-helper.mts        Builds `voice-memory`, Thunderbird's search helper, from `TabMail/tabmail-native-fts` at the commit `native/memory/native-fts.json` pins (fetched into `native/memory/.build`, with the app's Rust toolchain and the helper's own Cargo.lock), for every platform's build (ADR-DESK-061)
+│   ├── home-folder.mts          The Rust builds' `CARGO_ENCODED_RUSTFLAGS` that build source paths under the home folder as `~`, and the check that refuses a built helper still holding the home folder (it names the builder's user)
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries; `test` runs the shared Rust core's `cargo test` first
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs; exits 1 when a shot fails its checks (a page error, something cut off, the not-pasted note's layout as Chromium lays it out)

@@ -4,7 +4,7 @@
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildMemoryHelper, memoryHelperPin } from "../../scripts/memory-helper.mts";
@@ -32,8 +32,9 @@ describe("the memory helper build", () => {
   }
 
   /** An app checkout pinning `pin`, with fake git, rustup and cargo: git reports `head` as the
-   *  checkout's commit. Returns each command run, with its folder and environment. */
-  function checkoutPinning(pin: object, head = revision): { root: string; runs: { command: string[]; cwd?: string; env?: NodeJS.ProcessEnv }[] } {
+   *  checkout's commit, and cargo writes a helper holding `built`. Returns each command run, with
+   *  its folder and environment. */
+  function checkoutPinning(pin: object, head = revision, built = "fts_helper built from ~/.cargo/registry"): { root: string; runs: { command: string[]; cwd?: string; env?: NodeJS.ProcessEnv }[] } {
     const root = mkdtempSync(join(tmpdir(), "voice-memory-build-"));
     roots.push(root);
     file(join(root, "native/memory/native-fts.json"), JSON.stringify(pin));
@@ -43,6 +44,10 @@ describe("the memory helper build", () => {
       runs.push({ command: [command, ...args], cwd: options?.cwd, env: options?.env });
       if (command === "git" && args.includes("init")) mkdirSync(join(args[1] ?? "", ".git"), { recursive: true });
       if (command === "git" && args.includes("rev-parse")) return `${head}\n`;
+      if (command === "cargo") {
+        const target = args[args.indexOf("--target") + 1] ?? "";
+        file(join(options?.env?.CARGO_TARGET_DIR ?? "", target, "release", target.includes("-windows-") ? "fts_helper.exe" : "fts_helper"), built);
+      }
       return "";
     }) as typeof execFileSync);
     return { root, runs };
@@ -85,6 +90,39 @@ describe("the memory helper build", () => {
       ["rustup", "target", "add", "--toolchain", "1.97.1", "aarch64-pc-windows-msvc"],
       ["cargo", "build", "--release", "--locked", "--bin", "fts_helper", "--target", "aarch64-pc-windows-msvc"],
     ]);
+  });
+
+  /** A built helper holds its dependencies' source paths, under the builder's home folder, which
+   *  names its user: they are built as `~`, and a helper still holding the home folder ships nowhere.
+   *  The remap reaches rustc as one flag even when the home folder has a space in it (Cargo splits
+   *  `RUSTFLAGS` on whitespace, so the flags go as `CARGO_ENCODED_RUSTFLAGS`), after any flags set. */
+  test.each<[string, NodeJS.ProcessEnv, string[]]>([
+    ["no flags", {}, []],
+    ["RUSTFLAGS", { RUSTFLAGS: "-C  target-cpu=native" }, ["-C", "target-cpu=native"]],
+    ["CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "-C\x1ftarget-cpu=native", RUSTFLAGS: "--ignored" }, ["-C", "target-cpu=native"]],
+    // Set empty, it means no flags to Cargo, which then reads no RUSTFLAGS.
+    ["an empty CARGO_ENCODED_RUSTFLAGS", { CARGO_ENCODED_RUSTFLAGS: "", RUSTFLAGS: "--ignored" }, []],
+  ])("builds the source paths from a home folder with a space in it as ~, keeping %s already set", (_name, set, inherited) => {
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, RUSTFLAGS: process.env.RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS: process.env.CARGO_ENCODED_RUSTFLAGS };
+    const home = join(tmpdir(), "First Last");
+    try {
+      delete process.env.RUSTFLAGS;
+      delete process.env.CARGO_ENCODED_RUSTFLAGS;
+      Object.assign(process.env, { HOME: home, USERPROFILE: home }, set);
+      const { root, runs } = checkoutPinning({ repository, revision });
+      buildMemoryHelper(root, "x86_64-unknown-linux-gnu");
+      expect(runs.at(-1)?.env?.CARGO_ENCODED_RUSTFLAGS?.split("\x1f")).toEqual([...inherited, `--remap-path-prefix=${home}=~`]);
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  test("a helper that still holds the home folder is refused", () => {
+    const { root } = checkoutPinning({ repository, revision }, revision, `fts_helper built from ${homedir()}/.cargo/registry`);
+    expect(() => buildMemoryHelper(root, "aarch64-apple-darwin")).toThrow("The memory helper built for aarch64-apple-darwin still contains this computer's home folder");
   });
 
   test("a checkout that is not at the pinned commit is never built", () => {

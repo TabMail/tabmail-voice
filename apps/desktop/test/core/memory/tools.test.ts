@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
 import { MemoryError, memoryDate, memoryRow } from "../../../src/core/memory/store.js";
@@ -11,6 +11,8 @@ import { FakeMemory } from "../../support/fakeMemory.js";
 
 const minute = 60 * 1_000;
 const day = 24 * 60 * minute;
+/** How far ahead a test looks for a daylight-saving day: past two years, so every zone's next ones. */
+const transitionSearchDays = 800;
 
 /** The agent loop's memory tools, run on this computer: the same arguments, paging, results and
  * errors as Thunderbird's tools of the same names, each result the JSON of what the tool answers. */
@@ -45,11 +47,143 @@ describe("MemoryTools", () => {
   });
 
   describe(config.memorySearchTool, () => {
-    test("needs a query", async () => {
-      expect(await run(config.memorySearchTool, {})).toEqual({ error: "missing query" });
-      expect(await run(config.memorySearchTool, { query: "   " })).toEqual({ error: "missing query" });
-      expect(await run(config.memorySearchTool, { query: 42 })).toEqual({ error: "missing query" });
-      expect(memory.searches).toEqual([]);
+    /** "What have we discussed" names no topic: with no query the tool lists the most recent
+     * exchanges, newest first, a page at a time (the helper lists the newest for an empty query). */
+    test("with no query lists the most recent exchanges, newest first", async () => {
+      keep(config.memorySearchPageSize + 2, "budget");
+      keep(1, "travel", () => "travel today");
+      memory.rows[memory.rows.length - 1]!.dateMs = now;
+      const limit = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
+      for (const args of [{}, { query: "" }, { query: "   " }, { query: 42 }]) {
+        tools = new MemoryTools(memory);
+        memory.searches.length = 0;
+        const result = (await run(config.memorySearchTool, args)) as { results: string; totalItems: number; totalPages: number };
+        expect(memory.searches).toEqual([{ query: "", from: "", to: "", limit }]);
+        expect(result.totalItems).toBe(config.memorySearchPageSize + 3);
+        expect(result.totalPages).toBe(2);
+        expect(listed(result.results)).toHaveLength(config.memorySearchPageSize);
+        const stamps = [...result.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]));
+        expect(stamps[0]).toBe(now);
+        expect(stamps).toEqual([...stamps].sort((a, b) => b - a));
+        // The next page is the next exchanges, from the one listing.
+        const next = (await run(config.memorySearchTool, { ...args, page_index: 2 })) as { results: string; page: number };
+        expect(next.page).toBe(2);
+        expect(listed(next.results)).toEqual([config.memorySearchPageSize + 1, config.memorySearchPageSize + 2, config.memorySearchPageSize + 3]);
+        const nextStamps = [...next.results.matchAll(/\[timestamp: (\d+)\]/g)].map((m) => Number(m[1]));
+        expect(nextStamps).toEqual([...nextStamps].sort((a, b) => b - a));
+        expect(Math.max(...nextStamps)).toBeLessThan(Math.min(...stamps));
+        expect(memory.searches).toHaveLength(1);
+      }
+    });
+
+    /** The dates bound the listing as they bound a search: from a start, to an end, both, or neither. */
+    test.each<[string, Record<string, string>, number[]]>([
+      ["a start", { from_date: new Date(now - 3.5 * day).toISOString() }, [0, 1, 2]],
+      ["an end", { to_date: new Date(now - 2.5 * day).toISOString() }, [2, 3, 4]],
+      ["a start and an end", { from_date: new Date(now - 4.5 * day).toISOString(), to_date: new Date(now - 1.5 * day).toISOString() }, [1, 2, 3]],
+      ["no dates", {}, [0, 1, 2, 3, 4]],
+    ])("with no query keeps to the dates asked: %s", async (_name, dates, expected) => {
+      keep(5, "budget");
+      const result = (await run(config.memorySearchTool, dates)) as { results: string; totalItems: number };
+      expect(result.totalItems).toBe(expected.length);
+      for (let i = 0; i < 5; i += 1) {
+        if (expected.includes(i)) expect(result.results).toContain(`budget question ${i}`);
+        else expect(result.results).not.toContain(`budget question ${i}`);
+      }
+      expect(memory.rows).toHaveLength(5);
+    });
+
+    /** A day alone, as `time_delta` gives "yesterday", is the user's whole local day: west of UTC
+     * its evening falls in the next UTC day, east of it its morning in the previous one, and its
+     * last second still counts. */
+    describe.each(["America/Vancouver", "Asia/Tokyo", "UTC"])("in %s", (zone) => {
+      let savedZone: string | undefined;
+      beforeEach(() => {
+        savedZone = process.env.TZ;
+        process.env.TZ = zone;
+      });
+      afterEach(() => {
+        if (savedZone === undefined) delete process.env.TZ;
+        else process.env.TZ = savedZone;
+      });
+
+      test.each<[string, (day: string) => Record<string, string>, string[]]>([
+        ["that day as start and end", (day) => ({ from_date: day, to_date: day }), ["last second", "evening", "morning", "midnight"]],
+        ["that day as the end", (day) => ({ to_date: day }), ["last second", "evening", "morning", "midnight", "the night before"]],
+        ["that day as the start", (day) => ({ from_date: day }), ["today", "last second", "evening", "morning", "midnight"]],
+      ])("with no query lists the whole of a day asked as a date: %s", async (_name, dates, expected) => {
+        const today = new Date();
+        const at = (days: number, hour: number, minute = 0, second = 0, ms = 0) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + days, hour, minute, second, ms).getTime();
+        const exchanges: [string, number][] = [
+          ["the night before", at(-2, 23)],
+          ["midnight", at(-1, 0)],
+          ["morning", at(-1, 2)],
+          ["evening", at(-1, 22)],
+          ["last second", at(-1, 23, 59, 59, 500)],
+          ["today", at(0, 0)],
+        ];
+        for (const [name, dateMs] of exchanges) memory.rows.push(memoryRow(`${name} question`, `About ${name}`, dateMs, name));
+        const yesterday = new Date(at(-1, 12));
+        const day = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+        const result = (await run(config.memorySearchTool, dates(day))) as { results: string; totalItems: number };
+        expect(result.totalItems).toBe(expected.length);
+        expect([...result.results.matchAll(/^\[AGENT\]: About (.+)$/gm)].map((m) => m[1])).toEqual(expected);
+      });
+    });
+
+    /** A day is the user's whole local day however long daylight saving makes it (23 or 25 hours, or
+     * starting at 01:00 where midnight is skipped), and a time given is that instant: each bound
+     * included, the moment either side of it not. */
+    describe("date bounds, exactly", () => {
+      let savedZone: string | undefined;
+      beforeEach(() => {
+        savedZone = process.env.TZ;
+      });
+      afterEach(() => {
+        if (savedZone === undefined) delete process.env.TZ;
+        else process.env.TZ = savedZone;
+      });
+
+      const dayText = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+      /** The next day in `zone` that lasts `hours`, and, when `skipsMidnight`, starts after midnight. */
+      function transitionDay(zone: string, hours: number, skipsMidnight: boolean): Date {
+        process.env.TZ = zone;
+        const today = new Date();
+        for (let i = 0; i < transitionSearchDays; i += 1) {
+          const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+          const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+          if ((next.getTime() - start.getTime()) / (60 * minute) === hours && (start.getHours() !== 0) === skipsMidnight) return start;
+        }
+        throw new Error(`no ${hours}-hour day in ${zone}`);
+      }
+
+      /** Lists exactly the exchanges from `from` to `to` (milliseconds, both included). */
+      async function expectListed(from: number, to: number, args: Record<string, string>): Promise<void> {
+        const exchanges: [string, number][] = [["before", from - 1], ["start", from], ["inside", Math.floor((from + to) / 2)], ["end", to], ["after", to + 1]];
+        for (const [name, dateMs] of exchanges) memory.rows.push(memoryRow(`${name} question`, name, dateMs, name));
+        const result = (await run(config.memorySearchTool, args)) as { results: string };
+        expect([...result.results.matchAll(/^\[AGENT\]: (.+)$/gm)].map((m) => m[1])).toEqual(["end", "inside", "start"]);
+        expect(memory.rows).toHaveLength(exchanges.length);
+      }
+
+      test.each<[string, number, boolean]>([
+        ["America/Vancouver", 23, false],
+        ["America/Vancouver", 25, false],
+        ["America/Santiago", 23, true],
+      ])("a day in %s of %s hours (midnight skipped: %s) is that whole day", async (zone, hours, skipsMidnight) => {
+        const start = transitionDay(zone, hours, skipsMidnight);
+        const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+        await expectListed(start.getTime(), next.getTime() - 1, { from_date: dayText(start), to_date: dayText(start) });
+      });
+
+      test.each(["", "Z", "+09:00"])("a time with offset %j is that instant", async (offset) => {
+        process.env.TZ = "America/Vancouver";
+        const day = dayText(new Date());
+        const from = `${day}T10:15:00${offset}`;
+        const to = `${day}T11:15:00${offset}`;
+        await expectListed(Date.parse(from), Date.parse(to), { from_date: from, to_date: to });
+      });
     });
 
     test("lists matches, newest first, each with its timestamp, date and text", async () => {
@@ -130,14 +264,14 @@ describe("MemoryTools", () => {
       expect(await run(config.memorySearchTool, { query: "budget", page_index: "2" })).toMatchObject({ page: 1 });
     });
 
-    test("passes dates as ISO times to the second, drops one that isn't a date, and searches afresh for other dates", async () => {
+    test("passes dates as ISO times to the millisecond, drops one that isn't a date, and searches afresh for other dates", async () => {
       keep(1, "budget");
       const from = new Date(now - 7 * day);
       await run(config.memorySearchTool, { query: "budget", from_date: from.toISOString(), to_date: "last week" });
       await run(config.memorySearchTool, { query: "budget", from_date: from.toISOString(), to_date: "last week" });
       await run(config.memorySearchTool, { query: "budget" });
       expect(memory.searches.map(({ from, to }) => ({ from, to }))).toEqual([
-        { from: from.toISOString().replace(/\.\d{3}Z$/, "Z"), to: "" },
+        { from: from.toISOString(), to: "" },
         { from: "", to: "" },
       ]);
     });

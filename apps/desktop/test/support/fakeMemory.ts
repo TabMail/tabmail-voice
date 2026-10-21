@@ -7,7 +7,8 @@ import { HelperError } from "../../src/main/native/helperClient.js";
 
 /**
  * Memory held in a list, as the memory helper keeps it: a search finds the rows whose content holds
- * every word of the query, the newest first (an empty query lists them all so); a read gives those
+ * every word of the query, the newest first (an empty query lists them all so), from `from` to `to`
+ * when given (either may be empty, unbounded on that side); a read gives those
  * within the tolerance, the oldest first; a row's size is its content's length, and a limit removes
  * the oldest first. Its failures are `MemoryHelper`'s: a search its full-text query syntax can't take
  * (`re: invoice`, `50%`, `(x`, `x AND`) is refused with a `MemoryError` quoting the query, as SQLite's
@@ -39,8 +40,11 @@ export class FakeMemory implements AgentMemory {
     this.searches.push(search);
     if (/[%():]/.test(search.query) || /(^|\s)(AND|OR|NOT|NEAR)(\s|$)/.test(search.query)) throw new MemoryError("memorySearch", `fts5: syntax error near "${search.query}"`);
     const words = search.query.toLowerCase().split(/\s+/).filter((word) => word !== "");
+    const from = search.from === "" ? -Infinity : Date.parse(search.from);
+    const to = search.to === "" ? Infinity : Date.parse(search.to);
     return this.rows
       .filter((row) => words.every((word) => row.content.toLowerCase().includes(word)))
+      .filter((row) => row.dateMs >= from && row.dateMs <= to)
       .sort((a, b) => b.dateMs - a.dateMs)
       .slice(0, search.limit)
       .map(hit);

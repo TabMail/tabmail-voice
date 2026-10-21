@@ -49,6 +49,7 @@ describe("TranscriptionClient", () => {
     expect(request?.headers.Authorization).toBe("Bearer token-abc");
     expect(request?.headers["X-Client-Type"]).toBe("voice");
     expect(request?.headers["X-Client-Version"]).toBe("0.1.0");
+    expect(request?.headers["X-Client-Protocol"]).toBe("1.9.3");
     expect(stub.body(0)).toEqual({ format: "flac", audio: Buffer.from(flac).toString("base64") });
   });
 
@@ -64,6 +65,8 @@ describe("TranscriptionClient", () => {
     expect(request?.url).toBe("https://api.example.com/whoami");
     expect(request?.headers.Authorization).toBe("Bearer token-abc");
     expect(request?.headers["X-Client-Type"]).toBe("voice");
+    expect(request?.headers["X-Client-Version"]).toBe("0.1.0");
+    expect(request?.headers["X-Client-Protocol"]).toBe("1.9.3");
     expect(request?.body).toBe("");
   });
 
