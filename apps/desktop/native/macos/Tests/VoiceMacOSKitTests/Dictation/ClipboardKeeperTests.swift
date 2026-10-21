@@ -179,6 +179,28 @@ struct ClipboardKeeperTests {
         #expect(keys.duration(to: .now) < .milliseconds(rules.readWait / 2))
     }
 
+    /// The whole of `readWait` is waited for: an app reading near its end, well past most of it,
+    /// still gets the paste's text, and the clipboard as it was goes back after that read.
+    @Test func anAppReadingNearTheEndOfTheWaitGetsThePastesText() async {
+        copy("user text")
+        let rules = SharedRequest.ClipboardRules(readWait: 2000, restoreDelay: 20, maxBytes: 1024, maxFormats: 8)
+        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules)
+        keeper.save()
+        await keeper.saveTask?.value
+        // Read off the main actor, as another app does, so a busy main actor can't make it late.
+        let name = pasteboard.name
+        var app: Task<String?, Never>?
+        await TextInserter(clipboard: keeper, pasteKeystroke: {
+            app = Task.detached {
+                try? await Task.sleep(for: .milliseconds(rules.readWait * 9 / 10))
+                return NSPasteboard(name: name).string(forType: .string)
+            }
+        }).insert("Dictated text")
+        #expect(await app?.value == "Dictated text")
+        await keeper.restoreTask?.value
+        #expect(pasteboard.string(forType: .string) == "user text")
+    }
+
     /// A paste no app reads (the keys went where no text is taken) leaves its text on the clipboard
     /// until `readWait` passes, then the clipboard as it was goes back.
     @Test func putsTheClipboardBackWhenNoAppReadsThePaste() async {

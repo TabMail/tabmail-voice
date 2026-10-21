@@ -209,7 +209,7 @@ and fix the put-back.
 - **Tests.** Mac `ClipboardKeeperTests` › `aBusyAppReadingAfterTheDelayGetsThePastesText`,
   `putsTheClipboardBackWhenNoAppReadsThePaste`, `handsOverAnUnreadPasteAsTheHelperEnds`,
   `keepsANewerCopyAsTheHelperEnds`, `aPasteOvertakenAsItsKeysGoLeavesTheNewerPastesWait`,
-  `aWaitStartedAfterTheOfferEndedReturnsAtOnce` (the stub
+  `aWaitStartedAfterTheOfferEndedReturnsAtOnce`, `anAppReadingNearTheEndOfTheWaitGetsThePastesText` (the stub
   paste keystroke now reads the clipboard, as a target does), `MacServiceRequestTests` › `anUnreadPasteIsKeptAsTheHelperEnds` (the helper's closed input wired
   to the hand-over, with the wait for a read still on and run out), `HelperChannelTests` ›
   `closedInputRunsTheEndHandlersInOrderBeforeExiting`; Windows `clipboard-keeper.cpp` (a late
