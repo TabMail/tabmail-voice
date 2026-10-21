@@ -369,6 +369,10 @@ export const memorySizeLimitDefault = 1_024 * 1_024 * 1_024;
 export const memorySearchPageSize = 20;
 export const memorySearchPrefetchPages = 100;
 export const memorySearchFetchMax = 10_000;
+/** `memory_search` with no query lists every exchange, each in full, so it asks the helper for this
+ * many at a time (plus one, to know whether more follow) rather than all its pages' worth in one
+ * reply, as Thunderbird's tool does. */
+export const memoryListFetchRows = 5;
 /** A search result without a snippet shows this many characters of its exchange. */
 export const memorySearchPreviewLength = 400;
 /** `memory_read`: the window around the timestamp it is given (minutes), unless the model gives
