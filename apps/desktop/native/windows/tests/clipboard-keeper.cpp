@@ -96,7 +96,8 @@ std::wstring pasteAndPutBack(bool between) {
     const DWORD ours = write(keeper, dictated, between);
     check(text() == (between ? L"Newer copy" : dictated), "the clipboard at the paste keys");
     keeper.restore(ours, true);
-    Sleep(settle);
+    // A newer copy is never read as the paste's text, so its put-back decides only once `readWait` passes.
+    Sleep(between ? rules.readWait + settle : settle);
     return text();
 }
 

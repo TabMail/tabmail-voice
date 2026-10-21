@@ -456,6 +456,7 @@ int main() {
     {
         const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after");
         const auto transfers = fixture.completed, readsOnSet = fixture.readsOnSet;
+        const auto reads = count("the paste's text read after"), unread = count("no app read the paste's text in 600ms");
         keeper.save();
         until([&] { return count("clipboard saved after") == saves + 1; });
         std::function<void()> lateTransfer = transfer;
@@ -465,7 +466,8 @@ int main() {
         fixture.readOnSet = true;
         run(118, true);
         until([&] { return count("clipboard put back after") == putBacks + 1; });
-        require(fixture.completed == transfers + 1 && fixture.readsOnSet >= readsOnSet + 2 && count("the paste's text read after") >= 1 && putBack());
+        require(fixture.completed == transfers + 1 && fixture.readsOnSet >= readsOnSet + 2 && putBack());
+        require(count("the paste's text read after") == reads + 1 && count("no app read the paste's text in 600ms") == unread);
         fixture.readOnSet = false;
     }
     // A paste no app reads leaves its text past `restoreDelay`, until `readWait`; then the clipboard
@@ -521,6 +523,7 @@ int main() {
     {
         const auto saves = count("clipboard saved after"), putBacks = count("clipboard put back after");
         const auto transfers = fixture.completed, failures = fixture.failedWrites;
+        const auto reads = count("the paste's text read after");
         keeper.save();
         until([&] { return count("clipboard saved after") == saves + 1; });
         fixture.failWrite = true;
@@ -531,7 +534,7 @@ int main() {
         transfer();
         until([&] { return fixture.completed == transfers + 1; });
         until([&] { return count("clipboard put back after") == putBacks + 1; });
-        require(count("the paste's text read after") >= 1 && putBack());
+        require(count("the paste's text read after") == reads + 1 && putBack());
     }
     // The paste's own text, left on the clipboard where nothing was saved, is not saved.
     copy({"text/plain;charset=utf-8"});
