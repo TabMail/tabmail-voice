@@ -5703,6 +5703,24 @@ Thunderbird's copy or its files.
 > one with an offset is read as written. As `Arguments.localEnd` reads a day for the calendar and files
 > tools. Tests: `memory/tools.test.ts` (a day west of UTC, east of it and in UTC, red-verified).
 
+> **Amended (owner, 2026-10-20): a listing is fetched a few exchanges at a time.** The no-query
+> listing asked the helper for every page's worth at once (`memorySearchPageSize` times
+> `memorySearchPrefetchPages`, up to 2,000 exchanges), each exchange in full, in one reply. Voice's
+> pipe carries that, but Thunderbird's native messaging caps one reply at 1 MiB, and the owner: *"even
+> if they support going over 1 megabyte, I feel like it's probably a good idea to still do
+> pagination."* The listing still shows `memorySearchPageSize` exchanges a page, and now asks the helper
+> for `memoryListFetchRows` (5) at a time, as its pages are asked for: each request the newest no newer
+> than the last one listed (the helper's `to` includes it, to the millisecond), less those already
+> listed at that millisecond (by `memId`: the helper orders by date alone, so exchanges of one
+> millisecond can come in any order), and one more, to know whether more follow. Until all are listed a
+> page says more follow and gives no `totalPages` or `totalItems`, as Thunderbird's tool does. A
+> request that fails is the tool's error, and the next call goes on from where the listing got to. A
+> listing still ends at 2,000 exchanges (the same cap as a search): a far `page_index` lists at most
+> that, in about 400 requests, never the whole memory; older exchanges are reached with dates. A
+> search with a query is unchanged (its results are cut by relevance). The agent loop runs one tool
+> call at a time, so no two calls list the same search at once. Tests: `memory/tools.test.ts`
+> (mutation-verified).
+
 > **Amended (2026-10-19): the helper is native-fts 0.11.8, and no helper carries the home folder.**
 > The pin moves to the 0.11.8 commit (`04b19a3`), whose dependencies the security audit passes. A
 > Rust build keeps its dependencies' source paths in the binary, and on the builder's computer they

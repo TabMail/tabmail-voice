@@ -365,10 +365,14 @@ export const memoryHelperExitTimeout = 10_000;
 export const memorySizeLimitChoices: readonly number[] = [100, 250, 500, 1_024, 2_048, 5_120].map((megabytes) => megabytes * 1_024 * 1_024);
 export const memorySizeLimitDefault = 1_024 * 1_024 * 1_024;
 /** `memory_search`: results per page, and how many pages' worth one search fetches up front (at
- * most `memorySearchFetchMax` results), as Thunderbird's tool. */
+ * most `memorySearchFetchMax` results), as Thunderbird's tool. A listing (no query) ends there too. */
 export const memorySearchPageSize = 20;
 export const memorySearchPrefetchPages = 100;
 export const memorySearchFetchMax = 10_000;
+/** `memory_search` with no query lists every exchange, each in full, so it asks the helper for this
+ * many at a time (plus one, to know whether more follow) rather than all its pages' worth in one
+ * reply, as Thunderbird's tool does. */
+export const memoryListFetchRows = 5;
 /** A search result without a snippet shows this many characters of its exchange. */
 export const memorySearchPreviewLength = 400;
 /** `memory_read`: the window around the timestamp it is given (minutes), unless the model gives
