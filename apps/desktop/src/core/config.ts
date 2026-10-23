@@ -364,11 +364,10 @@ export const memoryHelperExitTimeout = 10_000;
  * exchanges are removed first. Thunderbird offers the same choices. */
 export const memorySizeLimitChoices: readonly number[] = [100, 250, 500, 1_024, 2_048, 5_120].map((megabytes) => megabytes * 1_024 * 1_024);
 export const memorySizeLimitDefault = 1_024 * 1_024 * 1_024;
-/** `memory_search`: results per page, and how many pages' worth one search fetches up front (at
- * most `memorySearchFetchMax` results), as Thunderbird's tool. A listing (no query) ends there too. */
+/** `memory_search`: results per page, and the best matches one search fetches, in one request, as
+ * Thunderbird's tool. A listing (no query) ends there too. */
 export const memorySearchPageSize = 20;
-export const memorySearchPrefetchPages = 100;
-export const memorySearchFetchMax = 10_000;
+export const memorySearchMaxResults = 100;
 /** `memory_search` with no query lists every exchange, each in full, so it asks the helper for this
  * many at a time (plus one, to know whether more follow) rather than all its pages' worth in one
  * reply, as Thunderbird's tool does. */

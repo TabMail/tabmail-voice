@@ -5721,6 +5721,19 @@ Thunderbird's copy or its files.
 > call at a time, so no two calls list the same search at once. Tests: `memory/tools.test.ts`
 > (mutation-verified).
 
+> **Amended (owner, 2026-10-22, #245): a search fetches its 100 best matches.** *"100 everywhere,
+> round numbers are good."* `memory_search` asked the helper for `memorySearchPageSize` times
+> `memorySearchPrefetchPages` results (2,000), capped at `memorySearchFetchMax` (10,000). Nobody reads
+> that many, and a hybrid search of 4 x 2,000 nearest vectors ran into sqlite-vec's largest `k`
+> (4,096), which made every memory search keyword-only until the helper capped it
+> (tabmail-native-fts#25). One setting, `memorySearchMaxResults` (100), replaces the two, as
+> Thunderbird's tool: a search asks for its 100 best matches in one request and serves pages of 20
+> from them, and past them the agent refines its query rather than paging deeper. A listing (no query)
+> ends at 100 exchanges too, in 20 requests at most. The helper's 512-result cap is a safety limit, not
+> the target size. The same rule: Thunderbird #150 and iOS #264. Tests: `memory/tools.test.ts` (a
+> search of 130 matches gives 100 in five pages of 20; the request's limit; a listing's far page),
+> red-verified against the previous settings.
+
 > **Amended (2026-10-19): the helper is native-fts 0.11.8, and no helper carries the home folder.**
 > The pin moves to the 0.11.8 commit (`04b19a3`), whose dependencies the security audit passes. A
 > Rust build keeps its dependencies' source paths in the binary, and on the builder's computer they
