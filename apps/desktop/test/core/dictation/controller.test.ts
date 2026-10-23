@@ -3824,7 +3824,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(searched.results).toContain("plan the launch review");
             expect(JSON.parse(told(2)[0] ?? "null")).toBe(`--- Conversation from ${memoryDate(dateMs)} ---\n[USER]: plan the launch review\n\n[AGENT]: Pasted at the cursor:\nLaunch review on Friday.`);
             expect(seen).toContain(config.memoryToolProgressLabel);
-            expect(memory.searches).toEqual([{ query: "launch review", from: "", to: "", limit: Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax) }]);
+            expect(memory.searches).toEqual([{ query: "launch review", from: "", to: "", limit: config.memorySearchMaxResults }]);
           });
 
           /** Holds the memory's `method` until `release` resolves; `entered` resolves as it is called. */

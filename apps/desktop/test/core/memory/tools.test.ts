@@ -184,10 +184,10 @@ describe("MemoryTools", () => {
       expect(memory.rows).toHaveLength(count);
     });
 
-    /** A listing ends where a search does (its pages times its page size): a far page asked for lists
-     * the newest that many, a few at a time, never the whole memory. */
+    /** A listing ends where a search does (`memorySearchMaxResults`): a far page asked for lists the
+     * newest that many, a few at a time, never the whole memory. */
     test("with no query lists at most a search's worth for a far page", async () => {
-      const max = Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax);
+      const max = config.memorySearchMaxResults;
       keep(max + config.memoryListFetchRows * 3, "budget");
       const newestFirst = [...memory.rows].sort((x, y) => y.dateMs - x.dateMs).map((row) => row.dateMs);
       const pages = max / config.memorySearchPageSize;
@@ -429,7 +429,7 @@ describe("MemoryTools", () => {
       });
     });
 
-    test("fetches up to the prefetch limit once, and serves later pages from it", async () => {
+    test("fetches its best matches once, and serves later pages from them", async () => {
       const total = config.memorySearchPageSize * 2 + 5;
       keep(total, "budget");
       const first = (await run(config.memorySearchTool, { query: "budget" })) as Record<string, unknown>;
@@ -443,8 +443,22 @@ describe("MemoryTools", () => {
       expect(listed(last.results)).toEqual(Array.from({ length: 5 }, (_, i) => config.memorySearchPageSize * 2 + i + 1));
 
       expect(memory.searches).toEqual([
-        { query: "budget", from: "", to: "", limit: Math.min(config.memorySearchPageSize * config.memorySearchPrefetchPages, config.memorySearchFetchMax) },
+        { query: "budget", from: "", to: "", limit: config.memorySearchMaxResults },
       ]);
+    });
+
+    // 100 everywhere, in pages of 20 (owner 2026-10-22, #245): past its 100 best matches the agent
+    // refines the query rather than paging deeper.
+    test("a search of more matches than 100 gives its 100 best, five pages of 20", async () => {
+      keep(130, "budget");
+      const first = (await run(config.memorySearchTool, { query: "budget" })) as Record<string, unknown>;
+      expect(first).toMatchObject({ page: 1, totalPages: 5, totalItems: 100 });
+      expect(listed(first.results)).toHaveLength(20);
+      const last = (await run(config.memorySearchTool, { query: "budget", page_index: 5 })) as Record<string, unknown>;
+      expect(last).toMatchObject({ page: 5, totalPages: 5 });
+      expect(last.comment).toBeUndefined();
+      expect(listed(last.results)).toEqual(Array.from({ length: 20 }, (_, i) => 81 + i));
+      expect(memory.searches).toEqual([{ query: "budget", from: "", to: "", limit: 100 }]);
     });
 
     test("keeps a page asked for within the pages there are", async () => {
