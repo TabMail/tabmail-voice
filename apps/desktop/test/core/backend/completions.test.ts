@@ -46,7 +46,7 @@ describe("CompletionsClient", () => {
       "X-Client-Version": "test-version",
       // The backend picks the prompts and tools at this version, on Thunderbird's and iOS's line: it
       // must have them there, so the number changes only with the backend's files.
-      "X-Client-Protocol": "1.9.3",
+      "X-Client-Protocol": "1.10.0",
     });
     const body = stub.body(0);
     expect(body.disable_tools).toBe(true);
@@ -169,7 +169,7 @@ describe("a tool-loop round", () => {
     expect(body.messages).toEqual([{ role: "system", content: "system_prompt_example", dictation: "hello world", app_name: "Example" }]);
     expect(stub.requests[0]?.headers.Authorization).toBe("Bearer token-abc");
     // The round that offers the tools reads them at the protocol version, beside the app's own.
-    expect(stub.requests[0]?.headers["X-Client-Protocol"]).toBe("1.9.3");
+    expect(stub.requests[0]?.headers["X-Client-Protocol"]).toBe("1.10.0");
     expect(stub.requests[0]?.headers["X-Client-Version"]).toBe("test-version");
   });
 
@@ -204,7 +204,7 @@ describe("a tool-loop round", () => {
     await client.round(message, tools, round.state, "t");
     expect(stub.body(1).conversation_state).toEqual(state);
     expect(stub.body(1).disable_tools).toBe(false);
-    expect(stub.requests[1]?.headers["X-Client-Protocol"]).toBe("1.9.3");
+    expect(stub.requests[1]?.headers["X-Client-Protocol"]).toBe("1.10.0");
     expect(stub.requests[1]?.headers["X-Client-Version"]).toBe("test-version");
   });
 
