@@ -1,0 +1,3 @@
+order	status	source_lines	sha256	path	title
+0	current	PROJECT_STRUCTURE.md:16-101@45d9c585	8408973af387f9421e0802490fa1686f1bc75910007e719383395b805ded2ab0	Companion/Memory/Current/001-desktop-file-tree.md	The `apps/desktop/` file tree, file by file
+1	current	PROJECT_STRUCTURE.md:121-182@45d9c585	6b1f0c23e611e27665f6b5f173d66ce48f28cb7d330c970d3585ff08e0c89f58	Companion/Memory/Current/002-dictation-flow.md	The dictation flow: start, finish, cancel, hands-free and agent mode
