@@ -204,7 +204,7 @@ export const clientType = "voice";
  * backend picks this app's prompts and tools (ADR-DESK-064), so it shares theirs rather than keeping
  * copies. Raised only with the backend's prompts and tools at the new version in place; the app's own
  * version (`X-Client-Version`) is the one users see. */
-export const clientProtocol = "1.9.3";
+export const clientProtocol = "1.10.0";
 /** Longest a dictation waits for its text after the release, every request and retry included, and
  * a long dictation's polish (owner, 2026-10-08: "nobody waits for dictation more than 10" seconds;
  * ADR-DESK-039). The backend gives the speech model 8 s and the cleanup 1.5 s inside it. */

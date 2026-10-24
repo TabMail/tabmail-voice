@@ -27,3 +27,10 @@ that's programmatically disabled on the backend, it should be fine."* In 0.3.0 (
   not at the app's version.
 - Tests: `backend/completions.test.ts` and `backend/transcription.test.ts` (the header on every
   request, at 1.9.3).
+
+**Amendment 2026-10-24 (owner): the protocol is 1.10.0 from 0.4.0.** Owner: *"the new search and all
+with bugfixes will be 1.10"*, with every client's number aligned. `config.clientProtocol` is
+`1.10.0`, the number Thunderbird (its add-on version) and iOS (`TABMAIL_PROTOCOL_VERSION`) report from
+their 1.10.0 releases. The backend's new common file at 1.10.0 is `email_search`, which this app does
+not list in `loopTools`, so it is never offered here; every prompt and tool this app uses resolves as
+it did at 1.9.3. Tests: the same two, at 1.10.0.
