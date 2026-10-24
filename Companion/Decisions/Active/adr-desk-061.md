@@ -183,3 +183,17 @@ Thunderbird's copy or its files.
 > flags; the Swift helpers shipped without their debug map, thin and universal; a helper holding the
 > home folder refused), red-verified against the previous build scripts.
 
+
+> **Amended (2026-10-24): the helper is native-fts 0.12.0.** The pin moves to the 0.12.0 release
+> commit (`484bb78`). Since 0.11.8 the helper gives memory search: dated matches kept and a page
+> listed without reading every entry (tabmail-native-fts#23), hybrid search at any limit (#25), an
+> answer by keyword when the merge keeps nothing (#30), any query text searched as text (#36),
+> memory reads and dated searches that stop scanning every entry (#34, #40, #45), both spellings of a
+> word with an inner apostrophe (#44), a search sorted before its limit is taken (#46), a search that
+> excludes a word answered by keyword (#52), and every keyword match of a word found in most entries
+> (#53). The requests Voice sends and the replies it reads keep their shape (`init`,
+> `memoryIndexBatch`, `memorySearch`, `memoryRead`, `memoryStats`, `memoryTrim`,
+> `memoryRemoveBatch`). The schema version is unchanged, so nothing is indexed again; a memory
+> database written before 0.12.0 gets its date index once, on the helper's next open (#45). Voice
+> sends no `hello` and no `previewChars`, so the new capability flags and previews change nothing
+> here. Checked with Voice's own requests against the built helper.
