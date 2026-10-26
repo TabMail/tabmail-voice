@@ -202,11 +202,12 @@ try {
   assert.equal(fixture.errors(), "");
   // Debug-only failure reasons are fixed phrases; anything else in the log fails these checks.
   const logged = (client) => client.errors().replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "")
-    .replace(/^debug focusedFieldValue failed after \d+ms: shared core refused\n/gmu, "");
+    .replace(/^debug focusedFieldValue failed after \d+ms: shared core refused\n/gmu, "")
+    .replace(/^debug caret start: (?:no|\d+) block starts near the caret; the caret (?:ends a line|starts its text)\n/gmu, "");
   assert.equal(logged(helper), document ? "" : "debug caret lookup: protected-field\n", "privacy refusals log only fixed categories");
   assert.equal(logged(reader), document ? "" : "debug screen access: excluded app not read\n", "the reader's privacy refusals log only fixed categories");
   assert.equal(logged(fieldReader), document ? "" : "debug screen access: excluded app not read\n", "the field reader's privacy refusals log only fixed categories");
-  process.stdout.write("Windows editable context, password, read-only, non-text and recovery checks passed\n");
+  process.stdout.write(document ? "Windows document checks passed\n" : "Windows editable context, password, read-only, non-text and recovery checks passed\n");
 } finally {
   clearTimeout(timeout);
   fixture.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill();
