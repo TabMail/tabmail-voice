@@ -86,7 +86,7 @@ try {
     const captured = await request("captureTarget");
     assert.equal(captured.window, window);
     const frontRead = await request("readScreen", { target: captured });
-    assert.ok(frontRead?.renderedText.includes("Before selected after."), "the native document has text before focus leaves");
+    assert.equal([frontRead?.textBeforeCaret, frontRead?.selectedText, frontRead?.textAfterCaret].join(""), "Before selected after.", "the native document has text before focus leaves");
     const other = await mode("second");
     assert.notEqual(other, window);
     const background = await request("readScreen", { target: captured, read: 40 });
