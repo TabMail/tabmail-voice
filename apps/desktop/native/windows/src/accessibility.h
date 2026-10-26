@@ -668,6 +668,14 @@ private:
         if (facts.role == "page") {
             page = pageHost(node);
             facts.pageExcluded = page && exclusions.excludes(*page);
+            // Native editors such as Notepad expose their document's text through
+            // TextPattern, with no text children. Read it by the bounded field path
+            // even without focus; web documents keep the page walk and host checks.
+            if (!page) {
+                ComPtr<IUIAutomationTextPattern> text;
+                if (SUCCEEDED(node->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text))) && text)
+                    facts.role = "field";
+            }
         }
         place = placement(node);
         if (!place) return facts.pageExcluded ? std::optional<walk::Facts>(facts) : std::nullopt;

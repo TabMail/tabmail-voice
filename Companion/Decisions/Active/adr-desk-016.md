@@ -164,3 +164,8 @@ window now in front. Exclusions and redaction are applied to the target before t
 A caret/selection is included only when it belongs to that exact window: another window of the
 same process cannot contribute it. Windows and Linux may return no caret for a background target.
 Legacy unaddressed diagnostic reads retain their foreground behavior.
+
+Windows native documents with a TextPattern (including Notepad) use the bounded field reader
+when the walk reaches them, including without focus. Web documents retain the page walk and
+host checks; documents without a TextPattern retain their children walk. The existing aggregate
+privacy preflight and shown/whole field limits apply before reading native document text.

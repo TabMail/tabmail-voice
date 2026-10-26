@@ -195,7 +195,8 @@ going off after each dictation (the engine's release has no automated test, by t
   actual named-pasteboard preparation/restore, native expiry and lost acknowledgement cleanup.
 - `native/shared/context/request-cases.json`: target and guarded-paste validation across all helpers.
 - Windows `accessibility.mjs` / `paste.mjs`: background HWND reads and restoring the original window
-  before a paste. Linux `accessibility.mjs` / `fixture.py`: background reads with duplicate titles;
+  before a paste; `voice-document-background` uses a native rich-text document with no text children
+  to require its editor text in both background read scopes. Linux `accessibility.mjs` / `fixture.py`: background reads with duplicate titles;
   `screen.cpp`: background terminals stay on the viewport reader in both scopes;
   `input-session.cpp`: activation success/refusal before clipboard publication; `gnome-caret.cpp`:
   compositor target/activation wire contracts.
