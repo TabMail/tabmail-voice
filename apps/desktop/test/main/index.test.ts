@@ -958,9 +958,11 @@ describe("main process wiring", () => {
     expect(app.overlay?.updates.at(-1)).toEqual(["idle", false]);
   });
 
-  /** While the chat window is open, a click the overlay doesn't take (elsewhere) and another app in
-   * front close it, through the controller, which keeps it unless idle; a click on the chat window,
-   * or either with Settings' switch off, closes nothing (ADR-DESK-022). */
+  /** While the chat window is open, a click elsewhere and another app in front close it, through the
+   * controller, which keeps it unless idle; with Settings' switch off, neither closes anything
+   * (ADR-DESK-022). macOS and Windows tell every click, so one the overlay takes (on the chat) closes
+   * nothing; GNOME tells only clicks elsewhere, and its overlay frame takes every click on it, so
+   * there a click told closes the chat whatever the overlay takes. */
   test.each(["darwin", "win32", "linux"] as const)("a click elsewhere or an app switch closes the chat window, on %s", async (platform) => {
     await launch(platform);
     const hotkey = app.helpers.get("voice-hotkey");
@@ -974,18 +976,20 @@ describe("main process wiring", () => {
 
     overlay.isTakingClicks = true;
     click();
-    expect(controller.calls).toEqual([]);
+    const told = platform === "linux" ? ["dismissChat"] : [];
+    expect(controller.calls).toEqual(told);
     overlay.isTakingClicks = false;
     click();
     appSwitch();
-    expect(controller.calls).toEqual(["dismissChat", "dismissChat"]);
+    expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat"]);
 
     expect(await send({ type: "setClosesChatElsewhere", value: false })).toEqual({ error: null });
     expect(state().closesChatElsewhere).toBe(false);
     expect(app.stored.get("closesChatElsewhere")).toBe(false);
+    overlay.isTakingClicks = false;
     click();
     appSwitch();
-    expect(controller.calls).toEqual(["dismissChat", "dismissChat"]);
+    expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat"]);
     expect(await send({ type: "setClosesChatElsewhere", value: "no" } as never)).toEqual({ error: expect.any(String) });
   });
 

@@ -562,15 +562,15 @@ describe("helper wire contract", () => {
 
   /** What voice-hotkey tells while the chat window is open (ADR-DESK-022) is named alike by every
    * helper and by the app: an event named otherwise is dropped at the wire, and the chat window never
-   * closes on a click elsewhere. Linux tells only the focus moving (the Shell sees no clicks). */
+   * closes on a click elsewhere. On Linux the GNOME extension tells both, through `GnomeControls`. */
   test("the chat window's click and focus events are the ones the app listens for", () => {
     const names = (path: string, pattern: RegExp) => new Set([...readFileSync(join(root, path), "utf8").matchAll(pattern)].map((match) => match[1]));
     const heard = names("src/main/index.ts", /hotkeyHelper\.on\("(chat\w+)"/g);
     expect(heard).toEqual(new Set(["chatMouseDown", "chatFocusChanged"]));
     expect(names("native/macos/Sources/VoiceHotkeyKit/HotkeyMonitor.swift", /case \w+ = "(chat\w+)"/g)).toEqual(heard);
     expect(names("native/windows/src/output.h", /"(chat\w+)"/g)).toEqual(heard);
-    expect(names("native/linux/src/gnome_controls.h", /\{"event", "(chat\w+)"\}/g)).toEqual(new Set(["chatFocusChanged"]));
-    expect(names("native/linux/gnome/voice-caret@tabmail.ai/extension.js", /_send\('(chat\w+)'\)/g)).toEqual(new Set(["chatFocusChanged"]));
+    expect(names("native/linux/src/gnome_controls.h", /\{"event", "(chat\w+)"\}/g)).toEqual(heard);
+    expect(names("native/linux/gnome/voice-caret@tabmail.ai/extension.js", /_send\('(chat\w+)'\)/g)).toEqual(heard);
   });
 
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {

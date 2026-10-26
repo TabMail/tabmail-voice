@@ -3447,6 +3447,45 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(chatChanges).toEqual([true, false]);
       });
 
+      /** A follow-up that failed leaves the chat window resting: a click elsewhere closes it, and nothing
+       * is pasted. */
+      test("a click elsewhere closes the chat window after a follow-up failed", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
+        transcription.enqueue(200, { text: "make it shorter" });
+        completions.enqueue(500, "");
+        await followUp(controller);
+        expect(controller.phase.kind).toBe("failed");
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
+        controller.dismissChat();
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+        expect(pastes).toEqual([]);
+        expect(chatChanges).toEqual([true, false]);
+      });
+
+      /** A follow-up whose transcription is being tried again is still under way: a click elsewhere keeps
+       * the chat window open, and the retry's answer arrives in it, from the same recording. */
+      test("a click elsewhere keeps the chat window open while a follow-up is tried again", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
+        controller.transcriptionRetryDelays = [200];
+        controller.transcriptionRetryNoticeDelay = 0;
+        transcription.enqueue(500, "");
+        queue("retry follow up", "answer", "Retried reply.");
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => controller.phase.kind === "retrying")).toBe(true);
+        controller.dismissChat();
+        expect(controller.phase.kind).toBe("retrying");
+        expect(controller.chat).not.toBeNull();
+        expect(await eventually(() => controller.phase.kind === "idle" && controller.chat?.turns.length === 2)).toBe(true);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Retried reply."]);
+        expect(pastes).toEqual([]);
+        expect(chatChanges).toEqual([true]);
+        expect(transcription.requests).toHaveLength(3);
+        expect(transcription.requests[1]?.body).toBe(transcription.requests[2]?.body);
+      });
+
       /** Escape or the close button: the conversation is gone, and a follow-up under way is dropped
        * without its reply being shown, pasted or asked about further. */
       test("closing the chat window drops the follow-up under way", async () => {

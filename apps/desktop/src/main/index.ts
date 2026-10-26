@@ -719,12 +719,15 @@ function launch(): void {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
   // While the chat window is open: a click elsewhere, or another app or window in front, closes it
-  // when idle, if the user wants that (ADR-DESK-022). A click the overlay takes is on the chat.
+  // when idle, if the user wants that (ADR-DESK-022). macOS and Windows tell every click, the chat's
+  // own too: a click the overlay takes is on the chat. GNOME tells only clicks elsewhere (the window
+  // in front raised, or the Shell's own UI), and there the overlay's frame takes every click on it,
+  // so whether it takes clicks says nothing of where this one was.
   const dismissChat = () => {
     if (settings.closesChatElsewhere) controller.dismissChat();
   };
   hotkeyHelper.on("chatMouseDown", () => {
-    if (!overlay.isTakingClicks) dismissChat();
+    if (process.platform === "linux" || !overlay.isTakingClicks) dismissChat();
   });
   hotkeyHelper.on("chatFocusChanged", dismissChat);
   nativeHelper.onStart = () => {

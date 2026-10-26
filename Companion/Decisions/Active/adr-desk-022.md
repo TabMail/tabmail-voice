@@ -107,12 +107,17 @@ listening, or thinking". This replaces "a click elsewhere does not close it" abo
   a click raises the window it lands on, even the one already in front: the focus window's
   `raised` signal is that click (measured: each click on the focused window raised it once). A
   press on the Shell's own UI comes through a `Clutter.Event.add_filter` filter, added only while
-  the chat is wanted, that always lets the press go on. The actions are additive: the extension's
+  the chat is wanted, that always lets the press go on. The extension forgets the open chat
+  window when it is turned off and on (or the screen locks), and then tells every helper `ready`:
+  `GnomeControls` answers with `SetChatOpen(true)` again while its chat window is open, as it asks
+  for the hotkey again. The actions are additive: the extension's
   `Version` stays 3, and a Shell still running the older extension until the next login just never
   sends them (an older helper ignores an action it does not know).
-- The main process drops a `chatMouseDown` while the overlay takes clicks
+- On macOS and Windows the main process drops a `chatMouseDown` while the overlay takes clicks
   (`OverlayWindowController.isTakingClicks`): the pointer is over the chat window or its bubbles, so
-  the click is theirs. Otherwise either event calls `DictationController.dismissChat()` when the
+  the click is theirs. On Linux it never drops one: the extension tells only clicks elsewhere (the
+  overlay is not the focus window, and the Shell's UI is not the overlay), and in frame mode the
+  overlay takes every click, so the check would drop them all. Otherwise either event calls `DictationController.dismissChat()` when the
   switch is on, which closes the window as Escape does only while the phase is resting
   (`isResting`): a follow-up listening or being transcribed, a request running, and a tool's
   question waiting for its answer (asked while the request runs) all keep it open.

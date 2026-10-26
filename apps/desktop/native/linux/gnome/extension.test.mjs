@@ -321,6 +321,23 @@ test('while the chat window is open, a click in the window in front or on the Sh
     assert.equal(f.chat(true), true);
     f.extension.disable();
     assert.equal(f.filters.size, 0, 'disabling leaves no filter');
+    // Turned on again, the Shell tells every helper it is ready, and the helper whose chat window is
+    // still open tells it so again: clicks and focus changes are followed as before.
+    f.actions.length = 0;
+    f.extension.enable();
+    assert.deepEqual(f.actions.map(([destination, , , , value]) => [destination, value.value[0]]), [[null, 'ready']]);
+    f.actions.length = 0;
+    other.emit('raised');
+    assert.deepEqual(told(), [], 'told before the chat window was told again');
+    assert.equal(f.chat(true), true);
+    assert.equal(f.filters.size, 1);
+    other.emit('raised');
+    assert.deepEqual(press(6), [false]);
+    f.display.focus_window = f.window; f.display.emit('notify::focus-window');
+    assert.deepEqual(told(), [':1.42', ':1.42']);
+    assert.ok(f.actions.some(([destination, , , , value]) => destination === ':1.42' && value.value[0] === 'chatFocusChanged'));
+    f.extension.disable();
+    assert.equal(f.filters.size, 0);
 });
 
 test('a window-relative caret is placed in the focused window\'s content, scaled, and refused outside it', async () => {
