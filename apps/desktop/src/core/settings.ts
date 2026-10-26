@@ -32,6 +32,7 @@ const Key = {
   excludedSites: "excludedSites",
   memorySizeLimit: "memorySizeLimit",
   eventDuration: "eventDurationMinutes",
+  closesChatElsewhere: "closesChatElsewhere",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -293,6 +294,16 @@ export class AppSettings extends Observable {
 
   set learnsWords(value: boolean) {
     this.write(Key.learnsWords, value);
+  }
+
+  /** Close the chat window on a click elsewhere or a switch to another app, while it is idle
+   * (ADR-DESK-022). On unless the user switches it off (owner, 2026-10-25). */
+  get closesChatElsewhere(): boolean {
+    return storedBool(this.store, Key.closesChatElsewhere) ?? true;
+  }
+
+  set closesChatElsewhere(value: boolean) {
+    this.write(Key.closesChatElsewhere, value);
   }
 
   /** Smart dictation: the AI cleanup of each dictation, which adds a second or more. Off unless the

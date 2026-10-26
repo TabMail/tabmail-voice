@@ -14,6 +14,14 @@
 namespace voice {
 using JSON = nlohmann::json;
 
+// What voice-hotkey tells while the chat window is open: a mouse button went down anywhere, or
+// another window came to the front. The app closes the chat window on either, if the user wants
+// that and the click wasn't on it (ADR-DESK-022).
+enum class ChatEvent : WPARAM { mouseDown, focusChanged };
+inline const char* chatEventName(ChatEvent value) {
+    return value == ChatEvent::mouseDown ? "chatMouseDown" : "chatFocusChanged";
+}
+
 // One writer per helper. PostThreadMessage provides a bounded queue: a parent that stops
 // reading cannot grow the helper indefinitely. Failure ends the helper, releasing its devices.
 // Actions are small integers until this thread encodes them, never I/O in the keyboard hook.
@@ -33,6 +41,8 @@ public:
                     JSON value;
                     if (message.message == actionMessage) {
                         value = {{"event", "action"}, {"action", actionName(static_cast<Action>(message.wParam))}};
+                    } else if (message.message == chatMessage) {
+                        value = {{"event", chatEventName(static_cast<ChatEvent>(message.wParam))}};
                     } else if (message.message == jsonMessage) {
                         std::unique_ptr<JSON> response(reinterpret_cast<JSON*>(message.lParam));
                         value = std::move(*response);
@@ -48,6 +58,7 @@ public:
         CloseHandle(ready);
     }
     void action(Action value) const { post(actionMessage, static_cast<WPARAM>(value), 0); }
+    void chat(ChatEvent value) const { post(chatMessage, static_cast<WPARAM>(value), 0); }
     void send(JSON value) const {
         auto message = std::make_unique<JSON>(std::move(value));
         post(jsonMessage, 0, reinterpret_cast<LPARAM>(message.release()));
@@ -58,6 +69,7 @@ private:
     static constexpr UINT actionMessage = WM_APP + 20;
     static constexpr UINT jsonMessage = WM_APP + 21;
     static constexpr UINT endMessage = WM_APP + 22;
+    static constexpr UINT chatMessage = WM_APP + 23;
     DWORD thread = 0;
     mutable std::atomic<unsigned> queued{0};
     void post(UINT message, WPARAM value, LPARAM data) const {

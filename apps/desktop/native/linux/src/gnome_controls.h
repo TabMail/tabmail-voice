@@ -36,11 +36,27 @@ public:
                 const std::string name = action;
                 // Announced to every helper when the Shell enables the extension or
                 // unlocks: a held key was let go then, so ask for it again.
-                if (name == "ready") { if (self->hotkey) self->requestHotkey(); return; }
+                // An open chat window is told again too: the Shell dropped what it watched for it.
+                if (name == "ready") {
+                    if (self->hotkey) self->requestHotkey();
+                    if (self->chat) self->call("SetChatOpen", true);
+                    return;
+                }
                 // Right Alt can't be had: it is AltGr on this keyboard layout, and the Shell
                 // holds it no longer (or never did).
                 if (name == "hotkeyUnavailable") {
                     if (self->hotkey) { self->installed(false); self->output.send({{"event", "hotkeyUnavailable"}}); }
+                    return;
+                }
+                // Another window took the focus while the chat window is open: the app may close it.
+                if (name == "chatFocusChanged") {
+                    if (self->chat) self->output.send({{"event", "chatFocusChanged"}});
+                    return;
+                }
+                // A click elsewhere while the chat window is open: in the window in front, or on
+                // the Shell's own UI. The app checks it isn't on the chat.
+                if (name == "chatMouseDown") {
+                    if (self->chat) self->output.send({{"event", "chatMouseDown"}});
                     return;
                 }
                 if (name == "hotkeyDown" || name == "hotkeyAgentDown" || name == "hotkeyUp") {

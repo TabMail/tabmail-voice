@@ -627,6 +627,24 @@ describe("apps excluded from screen reading", () => {
   });
 });
 
+/** Agent mode's switch for closing the chat window on a click elsewhere or an app switch: on by
+ * default (owner, 2026-10-25), and kept across a relaunch. */
+test("the chat window closes on a click elsewhere unless switched off", () => {
+  const store = new MemoryStore();
+  const app = settings(store);
+  expect(app.closesChatElsewhere).toBe(true);
+  let changes = 0;
+  app.observe(() => (changes += 1));
+  app.closesChatElsewhere = false;
+  expect(changes).toBe(1);
+  expect(settings(store).closesChatElsewhere).toBe(false);
+  // Switched on again, it is on after a relaunch too.
+  app.closesChatElsewhere = true;
+  expect(changes).toBe(2);
+  expect(store.get("closesChatElsewhere")).toBe(true);
+  expect(settings(store).closesChatElsewhere).toBe(true);
+});
+
 /** The user's dictionary (ADR-DESK-038): words typed in Settings, and words learned from the user's
  * corrections, kept on this computer in the order added. */
 describe("dictionary", () => {

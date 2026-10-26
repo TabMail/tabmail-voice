@@ -26,6 +26,7 @@ const signedIn: SettingsState = {
   dictionary: [],
   learnsWords: true,
   smartDictation: false,
+  closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,
   excludedApps: [],
@@ -228,6 +229,13 @@ describe("Settings page", () => {
         { type: "addDictionaryWord", word: "Xyvora" },
         { type: "addDictionaryWord", word: `LEARNED${config.dictionaryMaxTypedWords}` },
       ]);
+    });
+
+    test("agent mode's switch for closing the chat on a click elsewhere sends the choice", async () => {
+      const page = await open(signedIn);
+      expect(toggle("Close the chat when I click elsewhere").checked).toBe(true);
+      await act(async () => toggle("Close the chat when I click elsewhere").click());
+      expect(page.commands).toEqual([{ type: "setClosesChatElsewhere", value: false }]);
     });
 
     test("the learning switch sends the choice, and shows only where corrections can be learned", async () => {
@@ -693,7 +701,7 @@ describe("Settings page", () => {
       Account: ["Sign Out"],
       Dictation: ["Hold to dictate", "Smart dictation", "Read the screen while dictating"],
       Dictionary: ["No words yet.", "Learn from my corrections"],
-      "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
+      "Agent mode": ["Your name", "Edit", "Compose", "Answer", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
@@ -1000,8 +1008,9 @@ describe("Settings page", () => {
 
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
-    // Smart dictation, screen reading, learning the user's corrections, debug mode and the three agent tools.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(7);
+    // Smart dictation, screen reading, learning the user's corrections, debug mode, the three agent
+    // tools and closing the chat window on a click elsewhere.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(8);
     expect(page.commands).toEqual([]);
   });
 
@@ -1131,6 +1140,8 @@ describe("Settings page", () => {
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
       "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up: your earlier requests and its replies go with the follow-up.",
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
+      // Closing the chat window on a click elsewhere, which the Swift app never had (owner, 2026-10-25).
+      "It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.",
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
       `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,

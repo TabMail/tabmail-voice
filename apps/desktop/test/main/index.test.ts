@@ -58,7 +58,7 @@ const app = vi.hoisted(() => ({
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
-  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; drags: unknown[]; hitTest?: string } | null,
+  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; drags: unknown[]; isTakingClicks: boolean; hitTest?: string } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[]; phase: object } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
@@ -400,6 +400,9 @@ vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
     closeChat() {
       this.calls.push("closeChat");
     }
+    dismissChat() {
+      this.calls.push("dismissChat");
+    }
     answerConfirmation(confirmed: boolean) {
       this.calls.push(`answerConfirmation ${confirmed}`);
     }
@@ -432,6 +435,7 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
     readonly pointers: boolean[] = [];
+    isTakingClicks = false;
     constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null, _fallback?: unknown, readonly hitTest?: string) {
       app.overlay = this;
     }
@@ -952,6 +956,48 @@ describe("main process wiring", () => {
 
     expect(chatRequests()).toEqual([{ isOpen: false }, { isOpen: true }, { isOpen: true }, { isOpen: false }, { isOpen: false }]);
     expect(app.overlay?.updates.at(-1)).toEqual(["idle", false]);
+  });
+
+  /** While the chat window is open, a click elsewhere and another app in front close it, through the
+   * controller, which keeps it unless idle; with Settings' switch off, neither closes anything
+   * (ADR-DESK-022). macOS and Windows tell every click, so one the overlay takes (on the chat) closes
+   * nothing; GNOME tells only clicks elsewhere, and its overlay frame takes every click on it, so
+   * there a click told closes the chat whatever the overlay takes. */
+  test.each(["darwin", "win32", "linux"] as const)("a click elsewhere or an app switch closes the chat window, on %s", async (platform) => {
+    await launch(platform);
+    const hotkey = app.helpers.get("voice-hotkey");
+    const controller = app.controller;
+    const overlay = app.overlay;
+    if (!hotkey || !controller || !overlay) throw new Error("not launched");
+    const click = () => hotkey.events.get("chatMouseDown")?.({ event: "chatMouseDown" });
+    const appSwitch = () => hotkey.events.get("chatFocusChanged")?.({ event: "chatFocusChanged" });
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { closesChatElsewhere: boolean };
+    expect(state().closesChatElsewhere).toBe(true);
+
+    overlay.isTakingClicks = true;
+    click();
+    const told = platform === "linux" ? ["dismissChat"] : [];
+    expect(controller.calls).toEqual(told);
+    overlay.isTakingClicks = false;
+    click();
+    appSwitch();
+    expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat"]);
+
+    expect(await send({ type: "setClosesChatElsewhere", value: false })).toEqual({ error: null });
+    expect(state().closesChatElsewhere).toBe(false);
+    expect(app.stored.get("closesChatElsewhere")).toBe(false);
+    overlay.isTakingClicks = false;
+    click();
+    appSwitch();
+    expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat"]);
+    // Switched on again: both close it again.
+    expect(await send({ type: "setClosesChatElsewhere", value: true })).toEqual({ error: null });
+    expect(state().closesChatElsewhere).toBe(true);
+    expect(app.stored.get("closesChatElsewhere")).toBe(true);
+    click();
+    appSwitch();
+    expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat", "dismissChat", "dismissChat"]);
+    expect(await send({ type: "setClosesChatElsewhere", value: "no" } as never)).toEqual({ error: expect.any(String) });
   });
 
   /** `voice-hotkey` applies the requests it holds in any order (each runs in its own task): the chat

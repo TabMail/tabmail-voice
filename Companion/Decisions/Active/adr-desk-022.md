@@ -85,3 +85,41 @@ memory only and gone when the window closes. Each agent-mode request and what ca
 kept in memory on this computer (ADR-DESK-061), which the agent can search in later requests. The
 Answer tool's Settings description no longer says the follow-up's earlier requests "aren't stored".
 
+
+**Amendment 2026-10-25 — a click elsewhere closes the idle chat window (issue #250).** Owner,
+2026-10-25: an option to close the chat window "when I click somewhere else or the focus of the app
+changes", in Settings › Agent mode, on by default, and only "when it's idle", "not while it's
+listening, or thinking". This replaces "a click elsewhere does not close it" above.
+- `AppSettings.closesChatElsewhere` (stored `closesChatElsewhere`, default true), the switch "Close
+  the chat when I click elsewhere" in Settings › Agent mode (`setClosesChatElsewhere`). It is read
+  as each click or switch arrives, which is that close's whole operation.
+- The overlay is never focused, so it has no blur to watch. While the chat window is open
+  (`setChatOpen`), `voice-hotkey` tells the app `chatMouseDown` (a mouse button went down anywhere)
+  and `chatFocusChanged` (another app or window came to the front), and stops when it closes.
+  macOS: a second event tap, listen-only so no click is ever held back, and
+  `NSWorkspace.didActivateApplicationNotification`. Windows: `WH_MOUSE_LL` and a
+  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` hook, out of context, on the hook thread, which only
+  post to the writer thread. Linux: the GNOME extension sends `chatFocusChanged` over its `Action`
+  signal when the focus window changes while the chat is wanted, and `chatMouseDown` for a click
+  elsewhere, which `GnomeControls` forwards. Mutter hands a click on an app window to the app
+  before any Shell event filter runs (measured on GNOME 50, Wayland: a `Clutter.Event.add_filter`
+  filter and the stage's `captured-event` see presses on the top bar, none on an app window), but
+  a click raises the window it lands on, even the one already in front: the focus window's
+  `raised` signal is that click (measured: each click on the focused window raised it once). A
+  press on the Shell's own UI comes through a `Clutter.Event.add_filter` filter, added only while
+  the chat is wanted, that always lets the press go on. The extension forgets the open chat
+  window when it is turned off and on (or the screen locks), and then tells every helper `ready`:
+  `GnomeControls` answers with `SetChatOpen(true)` again while its chat window is open, as it asks
+  for the hotkey again. The actions are additive: the extension's
+  `Version` stays 3, and a Shell still running the older extension until the next login just never
+  sends them (an older helper ignores an action it does not know).
+- On macOS and Windows the main process drops a `chatMouseDown` while the overlay takes clicks
+  (`OverlayWindowController.isTakingClicks`): the pointer is over the chat window or its bubbles, so
+  the click is theirs. On Linux it never drops one: the extension tells only clicks elsewhere (the
+  overlay is not the focus window, and the Shell's UI is not the overlay), and in frame mode the
+  overlay takes every click, so the check would drop them all. Otherwise either event calls `DictationController.dismissChat()` when the
+  switch is on, which closes the window as Escape does only while the phase is resting
+  (`isResting`): a follow-up listening or being transcribed, a request running, and a tool's
+  question waiting for its answer (asked while the request runs) all keep it open.
+- A link clicked in the chat window opens a browser, which comes to the front and so closes the
+  idle window, as any other app switch does.

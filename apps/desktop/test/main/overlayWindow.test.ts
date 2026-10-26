@@ -464,7 +464,8 @@ describe("OverlayWindowController", () => {
    * was spoken over, only while the chat is open; the pill stays where it was as it opens and as it
    * fits the height the chat window measures, and closed it lets every click through again (the
    * pointer's moves still reaching the page, for a bubble's hover), and a chat's height measured
-   * after it closed doesn't resize it. */
+   * after it closed doesn't resize it. Here and below, `isTakingClicks` says what the window does:
+   * a click it takes is on the chat, and doesn't close it (#250). */
   test("the chat window takes the mouse only while it is open, and the pill stays put", async () => {
     const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
     const overlay = recordingWindow();
@@ -476,15 +477,19 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     const pill = pillOnScreen(overlay.bounds());
 
     controller.update({ kind: "running", tool: "answer" }, true);
     // Over the chat only, as the page says the pointer is.
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     controller.pointerOver(true);
     expect(overlay.ignoresMouse()).toBe(false);
+    expect(controller.isTakingClicks).toBe(true);
     controller.pointerOver(false);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     expect(overlay.forwardsMouse()).toBe(true);
     controller.pointerOver(true);
     expect(overlay.visible()).toBe(true);
@@ -510,17 +515,21 @@ describe("OverlayWindowController", () => {
     expect(controller.chatPlacement).not.toBeNull();
     expect(overlay.bounds()).toEqual(fitted);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     controller.pointerOver(true);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     await chatShrunk();
     expect(controller.chatPlacement).toBeNull();
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     expect(overlay.forwardsMouse()).toBe(true);
     const closed = overlay.bounds();
     controller.fitChat(200);
     controller.pointerOver(true);
     expect(overlay.bounds()).toEqual(closed);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
   });
 
   /** The page says the pointer is over `.chat, .bubble` on every move: over a pill bubble once the
@@ -533,10 +542,12 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "running", tool: "answer" }, true);
     // The pointer never went over the open chat window.
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     controller.update({ kind: "idle" }, false);
     controller.update({ kind: "listening" });
     controller.pointerOver(true);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     expect(overlay.forwardsMouse()).toBe(true);
   });
 
@@ -547,12 +558,14 @@ describe("OverlayWindowController", () => {
     const controller = new OverlayWindowController(overlay.window, async () => null);
     controller.update({ kind: "running", tool: "answer" }, true);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(controller.isTakingClicks).toBe(false);
     const tallest = overlay.bounds();
     // The pointer the chat opened at: the pill's, under the chat.
     screenNow.pointer = { x: pointerAtRest.x, y: tallest.y + tallest.height - config.chatShadowMargin - 1 };
     try {
       controller.fitChat(120);
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
     } finally {
       screenNow.pointer = pointerAtRest;
     }
@@ -564,6 +577,7 @@ describe("OverlayWindowController", () => {
     try {
       controller.fitChat(120);
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(controller.isTakingClicks).toBe(false);
     } finally {
       screenNow.pointer = pointerAtRest;
     }
@@ -588,31 +602,40 @@ describe("OverlayWindowController", () => {
       expect(tallest.height).toBe(2 * config.chatShadowMargin + config.chatMaxHeight + config.chatPillGap + config.chatStripHeight);
       expect(controller.chatPlacement?.below).toBe(y < 100);
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
       controller.fitChat(120);
       expect(overlay.bounds()).toEqual(tallest);
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
       // The page's word on the pointer is not taken.
       controller.pointerOver(false);
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
       // Placed afresh, it still takes them.
       controller.refreshPlacement();
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
 
       controller.update({ kind: "idle" }, false);
       expect(controller.chatPlacement).not.toBeNull();
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(controller.isTakingClicks).toBe(false);
       controller.pointerOver(true);
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(controller.isTakingClicks).toBe(false);
       vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
       expect(controller.chatPlacement).toBeNull();
       expect(overlay.visible()).toBe(false);
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(controller.isTakingClicks).toBe(false);
 
       // Opened again, it takes clicks again.
       controller.update({ kind: "running", tool: "answer" }, true);
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
       controller.update({ kind: "idle" }, false);
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(controller.isTakingClicks).toBe(false);
       vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -633,11 +656,14 @@ describe("OverlayWindowController", () => {
       controller.fitChat(120);
       controller.update({ kind: "idle" }, false);
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(controller.isTakingClicks).toBe(false);
       controller.update({ kind: "arming" }, true);
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
       vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
       expect(controller.chatPlacement).not.toBeNull();
       expect(overlay.ignoresMouse()).toBe(false);
+      expect(controller.isTakingClicks).toBe(true);
     } finally {
       screenNow.pointer = pointerAtRest;
       vi.clearAllTimers();

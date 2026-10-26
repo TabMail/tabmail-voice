@@ -83,17 +83,24 @@ int main() {
         require(states.size() == before + 2 && !states.back());
     }
     {
-        // The chat window, open between dictations, takes Escape alone; nothing records.
+        // The chat window, open between dictations, takes Escape alone; nothing records. Another
+        // window taking the focus, or a click elsewhere, is told only while it is open.
         Output output; Gesture gesture; GnomeControls controls(output, gesture);
         const auto before = states.size();
-        action("cancel");
+        action("cancel"); action("chatFocusChanged"); action("chatMouseDown");
         gesture.chatOpen = true; controls.setChatOpen(true); drain();
         require(calls.chat == std::vector<bool>{true});
+        action("chatFocusChanged"); action("chatMouseDown");
         action("toggleMode"); action("cancel");
         require(states.size() == before);
+        // The Shell started again (its extension was turned off and on) and lost what it watched:
+        // the open chat window is told to it again, and no hotkey is asked for (F8).
+        action("ready");
+        require(calls.chat == std::vector<bool>({true, true}) && calls.hotkey.empty());
         gesture.chatOpen = false; controls.setChatOpen(false); drain();
-        action("cancel");
-        require(calls.chat == std::vector<bool>({true, false}));
+        action("cancel"); action("chatFocusChanged"); action("chatMouseDown");
+        action("ready");
+        require(calls.chat == std::vector<bool>({true, true, false}) && calls.hotkey.empty());
     }
     {
         // Right Alt, held by the Shell: its press drives the gesture once, an unmatched release
@@ -124,5 +131,19 @@ int main() {
     }
     drain();
     require(calls.hotkey == std::vector<bool>({true, true, false, true, false}));
+    {
+        // Right Alt with the chat window open: the Shell's "ready" asks for both again.
+        Output output; Gesture gesture; GnomeControls controls(output, gesture);
+        controls.setHotkey(true); controls.setChatOpen(true); drain();
+        const auto chats = calls.chat.size(), hotkeys = calls.hotkey.size();
+        action("ready");
+        require(calls.chat.size() == chats + 1 && calls.chat.back());
+        require(calls.hotkey.size() == hotkeys + 1 && calls.hotkey.back());
+        controls.setChatOpen(false); drain();
+        action("ready");
+        require(calls.chat.size() == chats + 2 && !calls.chat.back());
+        require(calls.hotkey.size() == hotkeys + 2 && calls.hotkey.back());
+    }
+    drain();
     g_dbus_connection_unregister_object(bus.get(), registration);
 }

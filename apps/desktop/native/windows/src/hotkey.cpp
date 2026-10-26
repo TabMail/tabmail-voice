@@ -22,6 +22,9 @@ constexpr size_t maxRequestBytes = 1024 * 1024;
 DWORD hookThread = 0;
 voice::Output* output = nullptr;
 HHOOK hook = nullptr;
+// While the chat window is open: a mouse button going down anywhere, and the window in front changing.
+HHOOK mouseHook = nullptr;
+HWINEVENTHOOK foregroundHook = nullptr;
 std::atomic<unsigned> queuedRequests{0};
 voice::Gesture gesture;
 voice::ModifierChoice modifier;
@@ -89,6 +92,30 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
     return owns ? 1 : CallNextHookEx(hook, code, message, data);
 }
 
+// Only observes: every click goes on. No JSON encoding, heap allocation or pipe I/O here either.
+LRESULT CALLBACK mouse(int code, WPARAM message, LPARAM data) {
+    if (code >= 0 && gesture.chatOpen &&
+        (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN || message == WM_XBUTTONDOWN)) {
+        output->chat(voice::ChatEvent::mouseDown);
+    }
+    return CallNextHookEx(mouseHook, code, message, data);
+}
+
+void CALLBACK foreground(HWINEVENTHOOK, DWORD, HWND window, LONG object, LONG, DWORD, DWORD) {
+    if (gesture.chatOpen && window && object == OBJID_WINDOW) output->chat(voice::ChatEvent::focusChanged);
+}
+
+// Both hooks run on this thread, through its message loop, and only while the chat window is open.
+void watchChat(bool open) {
+    if (open && !mouseHook) mouseHook = SetWindowsHookExW(WH_MOUSE_LL, mouse, GetModuleHandleW(nullptr), 0);
+    if (open && !foregroundHook) {
+        foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, foreground, 0, 0,
+                                         WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    }
+    if (!open && mouseHook) { UnhookWindowsHookEx(mouseHook); mouseHook = nullptr; }
+    if (!open && foregroundHook) { UnhookWinEvent(foregroundHook); foregroundHook = nullptr; }
+}
+
 JSON handle(const std::string& method, const JSON& params) {
     if (method == "configure") {
         if (!params.is_object()) throw std::runtime_error("configure needs parameters");
@@ -127,6 +154,7 @@ JSON handle(const std::string& method, const JSON& params) {
             throw std::runtime_error("setChatOpen needs isOpen");
         }
         gesture.chatOpen = params["isOpen"].get<bool>();
+        watchChat(gesture.chatOpen);
         return JSON::object();
     }
     throw std::runtime_error("unknown method");
@@ -179,5 +207,6 @@ int main() {
         }
     }
     if (hook) UnhookWindowsHookEx(hook);
+    watchChat(false);
     ExitProcess(0);
 }

@@ -1730,6 +1730,14 @@ export class DictationController extends Observable {
     log.debug("DictationController: chat window closed");
   }
 
+  /** A click elsewhere, or another app in front (ADR-DESK-022): the chat window closes as Escape
+   * closes it, but only while it is idle (owner, 2026-10-25): not while a follow-up listens, or the
+   * request thinks or runs, a question it asks waiting for its answer among them. */
+  dismissChat(): void {
+    if (!isResting(this.currentPhase)) return;
+    this.closeChat();
+  }
+
   /** The conversation and any request under way end: the chat window closes. */
   private endConversation(): void {
     // A failure still showing goes too: the pill it shows is where the conversation started.

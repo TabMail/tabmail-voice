@@ -3416,6 +3416,76 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(await throughout(firstDeadline - Date.now() + 500, () => controller.chat !== null)).toBe(true);
       });
 
+      /** A click elsewhere or another app in front (`dismissChat`) closes the chat window only while it
+       * is idle (owner, 2026-10-25): a follow-up arming, listening, transcribed or thinking keeps it,
+       * and gets its answer. */
+      test("a click elsewhere closes the chat window only while it is idle", async () => {
+        const { controller, chatChanges, pastes } = await openChat();
+        queue("and how do I fix it", "answer", "Define it before the call.");
+        // Each busy phase a click came in, and whether the chat window was still open after it.
+        const clicked: [Phase["kind"], boolean][] = [];
+        const clickElsewhere = () => {
+          const kind = controller.phase.kind;
+          controller.dismissChat();
+          clicked.push([kind, controller.chat !== null]);
+        };
+        transcription.gate = async () => clickElsewhere();
+        completions.gate = async () => clickElsewhere();
+
+        controller.handle("start");
+        clickElsewhere();
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        clickElsewhere();
+        controller.handle("finish");
+        expect(await eventually(() => settled(controller))).toBe(true);
+
+        expect(clicked).toEqual([["arming", true], ["listening", true], ["transcribing", true], ["running", true]]);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Define it before the call."]);
+        expect(pastes).toEqual([]);
+        controller.dismissChat();
+        expect(controller.chat).toBeNull();
+        expect(chatChanges).toEqual([true, false]);
+      });
+
+      /** A follow-up that failed leaves the chat window resting: a click elsewhere closes it, and nothing
+       * is pasted. */
+      test("a click elsewhere closes the chat window after a follow-up failed", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
+        transcription.enqueue(200, { text: "make it shorter" });
+        completions.enqueue(500, "");
+        await followUp(controller);
+        expect(controller.phase.kind).toBe("failed");
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
+        controller.dismissChat();
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+        expect(pastes).toEqual([]);
+        expect(chatChanges).toEqual([true, false]);
+      });
+
+      /** A follow-up whose transcription is being tried again is still under way: a click elsewhere keeps
+       * the chat window open, and the retry's answer arrives in it, from the same recording. */
+      test("a click elsewhere keeps the chat window open while a follow-up is tried again", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
+        controller.transcriptionRetryDelays = [200];
+        controller.transcriptionRetryNoticeDelay = 0;
+        transcription.enqueue(500, "");
+        queue("retry follow up", "answer", "Retried reply.");
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => controller.phase.kind === "retrying")).toBe(true);
+        controller.dismissChat();
+        expect(controller.phase.kind).toBe("retrying");
+        expect(controller.chat).not.toBeNull();
+        expect(await eventually(() => controller.phase.kind === "idle" && controller.chat?.turns.length === 2)).toBe(true);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Retried reply."]);
+        expect(pastes).toEqual([]);
+        expect(chatChanges).toEqual([true]);
+        expect(transcription.requests).toHaveLength(3);
+        expect(transcription.requests[1]?.body).toBe(transcription.requests[2]?.body);
+      });
+
       /** Escape or the close button: the conversation is gone, and a follow-up under way is dropped
        * without its reply being shown, pasted or asked about further. */
       test("closing the chat window drops the follow-up under way", async () => {
@@ -4268,6 +4338,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Added."]);
           expect(controller.chat?.confirmation).toBeNull();
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
+        });
+
+        /** A click elsewhere leaves the chat window open while its question waits for an answer. */
+        test("a question waiting for its answer keeps the chat window open on a click elsewhere", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", '{"title":"Launch review"}']), reply(answer)]);
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+          controller.dismissChat();
+          expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+
+          controller.answerConfirmation(true);
+          await done;
+          expect(tool.runs).toEqual([{ title: "Launch review" }]);
+          expect(controller.chat).not.toBeNull();
         });
 
         /** A question about a calendar event shows its card beside its words while it waits, and both

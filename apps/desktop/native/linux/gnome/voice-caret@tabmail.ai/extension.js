@@ -40,6 +40,7 @@ export default class VoiceCaret extends Extension {
         this._grabs = [];
         this._wanted = {recording: false, chat: false, hotkey: false};
         this._hold = null;
+        this._clickFilter = 0;
         const listen = (object, signal, callback) => {
             this._signals.push([object, object.connect(signal, callback)]);
         };
@@ -102,17 +103,46 @@ export default class VoiceCaret extends Extension {
         this._send('ready', null);
     }
 
+    /** The focus window changed. While the chat window is open its helper is told, so the app can
+     * close it: a click on another window, or a switch to one, focuses it (the chat window itself
+     * never takes the focus). A click inside the window in front raises it again: Mutter gives the
+     * click itself to the app, where no Shell event filter sees it, so its `raised` is the click. */
     _focusChanged() {
         for (const [object, id] of this._windowSignals)
             object.disconnect(id);
         this._windowSignals = [];
         this._rect = null;
+        const previous = this._window;
         this._window = global.display.focus_window;
+        if (this._owner && this._wanted.chat && this._window !== previous) this._send('chatFocusChanged');
         if (this._window) {
             for (const signal of ['position-changed', 'size-changed', 'unmanaged']) {
                 const object = this._window;
                 this._windowSignals.push([object, object.connect(signal, () => { this._rect = null; })]);
             }
+            this._windowSignals.push([this._window, this._window.connect('raised', () => this._chatClicked())]);
+        }
+    }
+
+    /** A click elsewhere while the chat window is open: its helper is told, and the app may close it
+     * (a click the overlay takes is on the chat, and the app checks that). */
+    _chatClicked() {
+        if (this._owner && this._wanted.chat) this._send('chatMouseDown');
+    }
+
+    /** While the chat window is open, a press on the Shell's own UI (the top bar, the dash) is a
+     * click elsewhere too. The filter only looks: every press goes on where it was going. */
+    _followChat() {
+        const open = Boolean(this._owner) && this._wanted.chat;
+        if (open && !this._clickFilter) {
+            this._clickFilter = Clutter.Event.add_filter(global.stage, event => {
+                const type = event.type();
+                if (type === Clutter.EventType.BUTTON_PRESS || type === Clutter.EventType.TOUCH_BEGIN) this._chatClicked();
+                return Clutter.EVENT_PROPAGATE;
+            });
+        } else if (!open && this._clickFilter) {
+            Clutter.Event.remove_filter(this._clickFilter);
+            this._clickFilter = 0;
         }
     }
 
@@ -274,6 +304,7 @@ export default class VoiceCaret extends Extension {
             // Right Alt is AltGr on this layout (it types characters): the helper says so.
             if (kind === 'hotkey') this._send('hotkeyUnavailable', owner);
         }
+        this._followChat();
         // Letting go always succeeds, even when it was the last key and the owner is gone.
         return !active || (Boolean(this._owner) && this._wanted[kind]);
     }
@@ -321,6 +352,7 @@ export default class VoiceCaret extends Extension {
             this._ungrab(grab);
         this._grabs = [];
         this._wanted = {recording: false, chat: false, hotkey: false};
+        this._followChat();
         if (this._ownerWatch) Gio.bus_unwatch_name(this._ownerWatch);
         this._ownerWatch = 0;
         this._owner = null;
