@@ -206,3 +206,46 @@ Answer, which also circled, went on behind it.
 > tooltip; it circles alone at the front while running; none without tools), each red-verified against
 > the bubble left out.
 
+
+> **Amended (owner, 2026-10-25): the chat window can be dragged (issue #249).** The owner: *"if I were
+> to drag the answer part or the part where the chat appears, I should be able to drag it to somewhere
+> in the screen"*, and *"pill and everything should move together"*. A mouse press anywhere on the chat
+> window that moves `chatDragThreshold` points drags it (`useChatDrag` in the overlay page); less is
+> a click. Only the primary mouse button drags: not from a button or a link, which keep their clicks,
+> nor the scroll bar, nor a touch, which scrolls. The press ends with its pointer's release, a cancel,
+> or the capture lost, and a move with the primary button no longer held (let go outside the chat
+> before it dragged, which the page is never told) drops it, so a hover never drags. Leaving the
+> chat before it drags ends the press too: off the chat the window lets clicks through, so a press
+> made there is the window under it's, and coming back over the chat with it held drags nothing. A
+> new press always replaces the one before, even one that cannot drag. The page sends `chatDragStart`, then `dragChat {dx, dy}`, the pointer's distance on
+> the screen since the press (the window moves under it), with pointer capture so the moves keep
+> coming past the window's edge.
+>
+> `OverlayWindowController.startChatDrag` / `dragChat` move the overlay window, so the pill and its
+> bubbles move with the chat and nothing moves inside the window: as a drag starts, the pill's
+> distance from the window's left edge is taken from the window as placed (centered, or off center
+> where the window was kept on screen by an edge), and the window and the pill move as one from then
+> on, so a drag never starts with a jump and the pill never slides inside the window, even once the
+> area around it has widened. `draggedChat` places it: the window moved by the drag and kept in the
+> work area across, the chat on the same side of the pill as it opened (it never flips mid-drag), the
+> pill, its bubbles and the chat at its measured height, but no taller than the area has room for,
+> kept inside the work area of the display it is dragged to, and the chat's `maxHeight` the room on
+> its side there (at most `chatMaxHeight`), so it still grows on screen. The chat stays where it was
+> dragged for follow-ups and when the shell's coverage changes (`refreshPlacement` re-clamps it in
+> place). With no usable area left there (Windows Start or Search over the whole screen), it hides as
+> an undragged one does and is shown again where it was once there is room, and a drag onto a screen
+> with no room leaves it where it is. The next chat window opens by the caret again.
+>
+> Tests: `overlayGeometry.test.ts` (it moves by the drag; dragged past every edge, it and its tallest
+> growth stay on screen, the pill where it was in the window; its room by an edge; a pill by the edge
+> doesn't jump, nor its window; window and pill move together after the area widens; a short area's
+> chat fits), `overlayWindow.test.ts` (the overlay moves by the drag with its pill; it stays through a
+> follow-up and a shell change; no drag without a start or once closing; the next chat opens at the
+> caret; each move is told to the page with its growth limit, the measured height reaching the top;
+> it moves as one as the shell's surfaces change the room, from the first drag in a narrow area on,
+> and onto another display, kept in that display's area; it hides with no room and comes back),
+> `overlay/index.test.ts` (the threshold; the distance sent; pointer capture; a button, a link, the
+> scroll bar, another button, a chord or a touch drags nothing; another pointer, a cancel, a lost
+> capture, a release outside or leaving the chat before it drags ends the press, a drag under way goes
+> on past the chat's edge, and a new press replaces the one before), and `index.test.ts` (the commands reach the overlay;
+> malformed and non-finite distances are refused). Each was red-verified by a mutation.

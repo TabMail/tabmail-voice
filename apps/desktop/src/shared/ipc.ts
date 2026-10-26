@@ -237,6 +237,10 @@ export type Command =
   | { type: "answerConfirmation"; confirmed: boolean }
   | { type: "chatHeight"; height: number }
   | { type: "pointerOver"; over: boolean }
+  /** The chat window is dragged, its pill and bubbles with it: the drag started, and how far it has
+   * gone since (points, across and down). */
+  | { type: "chatDragStart" }
+  | { type: "dragChat"; dx: number; dy: number }
   /** The note for a text not pasted: clicked, to copy the text; its x, to dismiss it. */
   | { type: "copyNotPasted" }
   | { type: "dismissNotPasted" }
@@ -298,6 +302,7 @@ export function isCommand(value: unknown): value is Command {
     case "fixVSCodeSettings":
     case "keepChatOpen":
     case "closeChat":
+    case "chatDragStart":
     case "closeHistory":
     case "excludeApp":
     case "copyNotPasted":
@@ -354,6 +359,8 @@ export function isCommand(value: unknown): value is Command {
       return isConnectorID(command.connector) && typeof command.value === "boolean";
     case "pointerOver":
       return typeof command.over === "boolean";
+    case "dragChat":
+      return typeof command.dx === "number" && Number.isFinite(command.dx) && typeof command.dy === "number" && Number.isFinite(command.dy);
     case "chatHeight":
     case "historyHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;

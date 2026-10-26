@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { type AgentChat, type ChatQuestion, type ChatTurn, type EventQuestion, type EventQuestionLine, formattedReply, type QuestionAnswer, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
 import { type BubbleKey, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, shownBubbles } from "../../core/agent/bubbleOrder.js";
@@ -336,6 +336,59 @@ function PillLayout({
   );
 }
 
+/** Dragging the chat window (ADR-DESK-036 amendment; owner, 2026-10-25): a mouse press on it that
+ * moves `chatDragThreshold` drags it, the pill and its bubbles with it, the main process moving the
+ * overlay; less is a click. Not from a button, a link or the scroll bar, which keep their own, nor a
+ * touch, which scrolls. The distance is the pointer's on the screen since the press: the window moves
+ * under it. */
+function useChatDrag(): {
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerLeave: () => void;
+} {
+  // `onPointerUp` also ends it on a cancel and on the pointer's capture lost.
+  const press = useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    press.current = null;
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("button, a") !== null) return;
+    if (target instanceof HTMLElement && target.classList.contains("chat-scroll") && event.nativeEvent.offsetX >= target.clientWidth) return;
+    press.current = { id: event.pointerId, x: event.screenX, y: event.screenY, dragging: false };
+  };
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const current = press.current;
+    if (current === null || current.id !== event.pointerId) return;
+    // Let go somewhere this page wasn't told of (outside the chat, before the drag took the pointer):
+    // the press is over, and a hover never drags.
+    if ((event.buttons & 1) === 0) {
+      press.current = null;
+      return;
+    }
+    const dx = event.screenX - current.x;
+    const dy = event.screenY - current.y;
+    if (!current.dragging) {
+      if (Math.hypot(dx, dy) < config.chatDragThreshold) return;
+      current.dragging = true;
+      // The moves keep coming here as the window moves, and past its edge.
+      event.currentTarget.setPointerCapture(event.pointerId);
+      void send({ type: "chatDragStart" });
+    }
+    void send({ type: "dragChat", dx, dy });
+  };
+  const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (press.current?.id === event.pointerId) press.current = null;
+  };
+  // A press that leaves the chat before it drags is over: off the chat, the window lets clicks
+  // through, so its release and any press after it go to the window under it, unseen here. A drag
+  // under way has the pointer, and goes on.
+  const onPointerLeave = () => {
+    if (press.current?.dragging === false) press.current = null;
+  };
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerLeave };
+}
+
 /** The chat window over the pill once agent mode answers (owner, 2026-09-28: it "appears smoothly
  * above in a subtle way, and then it just keeps on showing the answers"): each request and its reply,
  * revealed as TabMail's chat in Thunderbird reveals one (`RevealedReply`), what is being worked on, a
@@ -416,6 +469,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
   const touch = () => {
     if (!chat.touched) void send({ type: "keepChatOpen" });
   };
+  const drag = useChatDrag();
   const margin = config.chatShadowMargin;
   const offset = margin + config.chatStripHeight + config.chatPillGap;
   return (
@@ -423,8 +477,18 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
       ref={appearRef}
       className="chat"
       onPointerEnter={touch}
-      onPointerMove={touch}
-      onPointerDown={touch}
+      onPointerMove={(event) => {
+        touch();
+        drag.onPointerMove(event);
+      }}
+      onPointerDown={(event) => {
+        touch();
+        drag.onPointerDown(event);
+      }}
+      onPointerUp={drag.onPointerUp}
+      onPointerCancel={drag.onPointerUp}
+      onLostPointerCapture={drag.onPointerUp}
+      onPointerLeave={drag.onPointerLeave}
       onWheel={touch}
       style={{
         left: margin,
