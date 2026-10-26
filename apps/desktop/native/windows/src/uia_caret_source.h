@@ -14,6 +14,7 @@
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
 #include "../../shared/context/screen_context.h"
+#include "../../shared/context/walk.h"
 
 namespace voice {
 static_assert(HelperConfig::blockControlTypes[0] == UIA_GroupControlTypeId && HelperConfig::blockControlTypes[1] == UIA_ListControlTypeId &&
@@ -306,6 +307,12 @@ public:
         return {{"surface", {{"id", id}, {"frame", {frame.x, frame.y, frame.width, frame.height}}, {"runs", runs},
             {"selection", {{"complete", completeSelection}, {"ranges", selections}}}}}, {"caret", anchor}};
     }
+    // A field is read whole up to what the read's scope allows (`fieldPlan`: the screen's budget
+    // reading the whole window, a short field reading what it shows).
+    static nlohmann::json fieldPlan(nlohmann::json request) {
+        request["wholeWindow"] = walk::readingWholeWindow();
+        return core::request({{"fieldPlan", request}}, voice_core_context_json);
+    }
     // Caller has approved the entire field subtree. UIA positions stay opaque;
     // Rust owns whole eligibility, probe sizes, source edges and projection.
     static void appendField(IUIAutomationTextPattern* pattern, VisibleContext& context,
@@ -314,6 +321,10 @@ public:
         ComPtr<IUIAutomationTextRange> document;
         require(pattern->get_DocumentRange(&document));
         if (!document) throw std::runtime_error("field document unavailable");
+        // Whole as `fieldPlan` allows, else the text around a visible range, for recognition, up
+        // to a window each side.
+        const auto plan = fieldPlan;
+        const auto wholeLimit = plan(nlohmann::json::object()).at("wholeBytes").get<size_t>();
         const auto limit = core::request({{"limits", true}}, voice_core_context_json).at("sourceWindowBytes").get<size_t>();
         const auto unchangedDocument = [&] {
             ComPtr<IUIAutomationTextRange> current;
@@ -321,9 +332,9 @@ public:
             if (!current) return false;
             BOOL same = FALSE; require(document->Compare(current.Get(), &same)); return same != FALSE;
         };
-        if (const auto whole = reader.text(document.Get(), limit);
-            whole && core::request({{"fieldPlan", {{"text", *whole}}}}, voice_core_context_json).at("useWhole").get<bool>()) {
-            if (!unchangedDocument() || reader.text(document.Get(), limit) != whole) throw std::runtime_error("field changed");
+        if (const auto whole = reader.text(document.Get(), wholeLimit);
+            whole && plan({{"text", *whole}}).at("useWhole").get<bool>()) {
+            if (!unchangedDocument() || reader.text(document.Get(), wholeLimit) != whole) throw std::runtime_error("field changed");
             context.appendField({"", *whole, ""}, frame);
             return;
         }

@@ -28,6 +28,9 @@ add_test(NAME voice-screen-context COMMAND voice-screen-context-tests "${CMAKE_C
 add_executable(voice-microphone-sessions-tests ../shared/microphone/session-test.cpp)
 target_link_libraries(voice-microphone-sessions-tests PRIVATE nlohmann_json::nlohmann_json voice-core)
 add_test(NAME voice-microphone-sessions COMMAND voice-microphone-sessions-tests "${CMAKE_CURRENT_SOURCE_DIR}/../shared/microphone/session-cases.json")
+add_executable(voice-last-read-window-tests ../shared/context/last-read-window-test.cpp)
+target_link_libraries(voice-last-read-window-tests PRIVATE nlohmann_json::nlohmann_json voice-core)
+add_test(NAME voice-last-read-window COMMAND voice-last-read-window-tests)
 add_executable(voice-activation-retry-tests tests/activation-retry.cpp)
 target_include_directories(voice-activation-retry-tests PRIVATE src)
 add_test(NAME voice-activation-retry COMMAND voice-activation-retry-tests)
@@ -186,7 +189,7 @@ if(WIN32)
     endif()
     add_executable(voice-privacy-fixture tests/privacy-fixture.cpp)
     target_compile_definitions(voice-privacy-fixture PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(voice-privacy-fixture PRIVATE nlohmann_json::nlohmann_json user32 ole32 oleaut32 uiautomationcore uuid gdi32)
+    target_link_libraries(voice-privacy-fixture PRIVATE nlohmann_json::nlohmann_json user32 ole32 oleaut32 uiautomationcore uuid gdi32 voice-core)
     if(MSVC)
       target_compile_options(voice-privacy-fixture PRIVATE /W4 /WX /utf-8)
     endif()
@@ -194,6 +197,8 @@ if(WIN32)
     add_test(NAME voice-output COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/output.mjs $<TARGET_FILE:voice-output-fixture>)
     add_test(NAME voice-privacy-provider COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/privacy-provider.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-privacy-fixture>)
+    add_test(NAME voice-privacy-budgets COMMAND ${NODE_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/privacy-provider.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-privacy-fixture> --budgets)
     add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-ui-fixture>)
     add_test(NAME voice-paste COMMAND ${NODE_EXECUTABLE}
@@ -229,8 +234,9 @@ if(WIN32)
     # Its fixture clicks the mouse (on its own window), which no other test may be using.
     set_tests_properties(voice-hotkey-protocol PROPERTIES RUN_SERIAL TRUE)
     # No screen read has a time limit: each case too large to look through whole walks the look's
-    # whole node budget.
+    # whole node budget, one to six minutes over UI Automation on an ARM64 VM (2026-10-25).
     set_tests_properties(voice-privacy-provider PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
+    set_tests_properties(voice-privacy-budgets PROPERTIES RUN_SERIAL TRUE TIMEOUT 3000)
   endif()
   if(MSVC)
     target_compile_options(voice-windows PRIVATE /W4 /WX /utf-8)
@@ -240,5 +246,6 @@ if(WIN32)
     target_compile_options(voice-gesture-tests PRIVATE /W4 /WX /utf-8)
     target_compile_options(voice-screen-context-tests PRIVATE /W4 /WX /utf-8)
     target_compile_options(voice-activation-retry-tests PRIVATE /W4 /WX /utf-8)
+    target_compile_options(voice-last-read-window-tests PRIVATE /W4 /WX /utf-8)
   endif()
 endif()

@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/accessibility.h"
+#include "../../shared/rust/VoiceCore.h"
 #include <gio/gio.h>
 #include <glib-unix.h>
 #include <map>
@@ -67,13 +68,16 @@ gboolean command(gint fd, GIOCondition, gpointer) {
     char value;
     if (::read(fd, &value, 1) != 1) return G_SOURCE_REMOVE;
     if (value == 'l' || value == 'v' || value == 'q' || value == 'c' || value == 'U') {
-        const auto before = value == 'v' ? std::string(300000, 'a') + ". Before " : std::string("Before ");
-        std::string selected(value == 'q' ? 262139 : 20001, 'x');
+        // Sizes from the shared core's limits: a selection one byte, or one emoji, past what is read.
+        const auto limit = [](const char* name) { return voice::core::request({{"limits", true}}, voice_core_context_json).at(name).get<size_t>(); };
+        const auto screenBytes = limit("screenBytes"), selectionBytes = limit("selectionSourceBytes");
+        const auto before = value == 'v' ? std::string(screenBytes, 'a') + ". Before " : std::string("Before ");
+        std::string selected(value == 'q' ? selectionBytes + 1 : 20001, 'x');
         if (value == 'c' || value == 'U') {
             selected.clear();
-            for (int i = 0; i < (value == 'U' ? 65535 : 7000); ++i) selected += value == 'U' ? "😀" : "😀é";
+            for (size_t i = 0; i < (value == 'U' ? selectionBytes / 4 + 1 : 7000); ++i) selected += value == 'U' ? "😀" : "😀é";
         }
-        const auto after = value == 'v' ? std::string(" after! ") + std::string(300000, 'b') : std::string(" after");
+        const auto after = value == 'v' ? std::string(" after! ") + std::string(screenBytes, 'b') : std::string(" after");
         items.at(fields[active]).text = before + selected + after;
         selectionStart = before.size(); selectionEnd = selectionStart + g_utf8_strlen(selected.c_str(), -1);
     }
@@ -207,7 +211,9 @@ extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* r
 extern "C" AtspiRole __wrap_atspi_accessible_get_role(AtspiAccessible* value, GError**) { return items.at(value).role; }
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto states = atspi_state_set_new(nullptr);
+    // What AT-SPI calls showing is visible too.
     atspi_state_set_add(states, ATSPI_STATE_SHOWING);
+    atspi_state_set_add(states, ATSPI_STATE_VISIBLE);
     if (active >= 0 && value == windows[active]) atspi_state_set_add(states, ATSPI_STATE_ACTIVE);
     if (active >= 0 && containerFocused && value == documents[active]) atspi_state_set_add(states, ATSPI_STATE_FOCUSED);
     if (active >= 0 && exposed && !focusLost && value == (inDialog ? dialogFields[active] : fields[active])) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }

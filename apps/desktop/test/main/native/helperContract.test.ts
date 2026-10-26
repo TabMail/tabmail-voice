@@ -38,6 +38,10 @@ function registered(source: string): Map<string, Set<string>> {
     if (/bundleIdentifier\(params\)/.test(section)) params.add("bundleIdentifier");
     // `ScreenExclusions(params:method:)` reads both lists, and refuses a request without either.
     if (/ScreenExclusions\(params: params,/.test(section)) for (const name of ["excludedAppIDs", "excludedHosts"]) params.add(name);
+    // `readNumber(params, method)` forwards the request's `read` to the shared core to check.
+    if (/readNumber\(params, /.test(section)) params.add("read");
+    // `screenRead(params)` forwards the request's `read`, `wholeWindow` and `sameWindowAs` to the shared core to check.
+    if (/screenRead\(params\)/.test(section)) for (const name of ["read", "wholeWindow", "sameWindowAs"]) params.add(name);
     // This handler forwards the JSON unchanged to the shared Rust text operation.
     if (/Redactor\.request\(JSONEncoder\(\)\.encode\(params\), operation: \.text\)/.test(section)) {
       const ffi = readFileSync(join(root, "native/shared/rust/src/ffi.rs"), "utf8");
@@ -116,16 +120,25 @@ describe("helper wire contract", () => {
     }
   });
 
-  /** The screen is read by voice-screen-reader, a program of its own (ADR-DESK-053). */
+  /** The screen is read by voice-screen-reader, a program of its own (ADR-DESK-053): what the
+   * window shows, and the whole window of the window that read read. Every param sent is one the
+   * handler reads, and every param it reads is sent by one of them. */
   test("every request ScreenReader sends is one voice-screen-reader handles, with the params it reads", async () => {
     const { helper, requests } = recordingHelper();
-    await new ScreenReader(helper).read({ apps: ["org.example.app"], sites: ["example.com"] });
+    const reader = new ScreenReader(helper);
+    const read = reader.read({ apps: ["org.example.app"], sites: ["example.com"] });
+    reader.stop(read);
+    await read;
+    await reader.read({ apps: ["org.example.app"], sites: ["example.com"] }, read);
 
     const handlers = registered("native/macos/Sources/VoiceMacOSKit/ScreenReaderService.swift");
-    expect(requests.map((request) => request.method)).toEqual([...handlers.keys()]);
+    expect([...new Set(requests.map((request) => request.method))].sort()).toEqual([...handlers.keys()].sort());
+    const sent = new Map<string, Set<string>>();
     for (const { method, params } of requests) {
-      expect(Object.keys(params).sort(), method).toEqual([...(handlers.get(method) ?? [])].sort());
+      for (const name of Object.keys(params)) expect(handlers.get(method)?.has(name), `${method} ${name}`).toBe(true);
+      sent.set(method, new Set([...(sent.get(method) ?? []), ...Object.keys(params)]));
     }
+    for (const [method, params] of handlers) expect([...(sent.get(method) ?? [])].sort(), method).toEqual([...params].sort());
   });
 
   /** The focused field for correction learning is read by voice-field-reader, a program of its own. */
@@ -603,7 +616,7 @@ describe("MacSystem and ScreenReader requests", () => {
     const sent: unknown[] = [];
     const reader = new ScreenReader({ request: async (_method: string, params: unknown) => (sent.push(params), null), on() {} } as unknown as HelperClient);
     expect(await reader.read({ apps: ["org.example.vault", "org.example.bank"], sites: ["example.com", "example.org"] })).toBeNull();
-    expect(sent).toStrictEqual([{ excludedAppIDs: ["org.example.vault", "org.example.bank"], excludedHosts: ["example.com", "example.org"] }]);
+    expect(sent).toStrictEqual([{ excludedAppIDs: ["org.example.vault", "org.example.bank"], excludedHosts: ["example.com", "example.org"], read: 1, wholeWindow: false }]);
 
     const picked = replying({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
     expect(await picked.mac.appInfo("/Applications/Example Bank.app")).toEqual({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });

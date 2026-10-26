@@ -112,15 +112,45 @@ try {
   assert.deepEqual([protectedContext.textBeforeCaret, protectedContext.selectedText, protectedContext.textAfterCaret], ["", "", ""]);
   assert.ok(protectedContext.renderedText.includes("» ‸"), "protected focus contributes only the caret marker");
   assert.ok(!JSON.stringify(protectedContext).includes("Before selected after."), "password value never enters the reply");
+  const protectedWhole = await request("readScreen", { wholeWindow: true });
+  assert.ok(protectedWhole.renderedText.includes("» ‸"), "reading the whole window, a protected focus is still only the caret marker");
+  assert.ok(!JSON.stringify(protectedWhole).includes("Before selected after."), "reading the whole window, the password value never enters the reply");
   assert.equal(await request("caretAnchor", { window }), null, "password caret is refused");
   await mode("readOnly");
   assert.equal(await request("focusedFieldValue", fieldParams), null, "read-only learning is refused");
   assert.ok(await request("readScreen"), "read-only focus still permits visible window context");
   await mode("button");
   assert.equal(await request("focusedFieldValue", fieldParams), null, "non-text learning is refused");
-  assert.ok(await request("readScreen"), "non-text focus still permits visible window context");
+  // A classic edit control has no text pattern: out of focus, it is read by its value, whole as
+  // it is short, in both scopes.
+  const unfocused = await request("readScreen");
+  assert.ok(unfocused.renderedText.includes("> Before selected after."), "non-text focus still permits visible window context, its field read by value");
+  assert.ok((await request("readScreen", { wholeWindow: true })).renderedText.includes("> Before selected after."), "the whole window reads a field out of focus by value");
   await mode("editable");
   assert.equal((await request("readScreen")).selectedText, "selected", "refusal does not poison subsequent reads");
+  // Reading the whole window, the focused field is read whole like any field, just after the caret
+  // block that marks it; none of the caret's text is sent apart from it, the selection included.
+  const whole = await request("readScreen", { wholeWindow: true });
+  assert.deepEqual([whole.textBeforeCaret, whole.selectedText, whole.textAfterCaret], ["", "", ""], "the whole window keeps none of the caret's text");
+  assert.ok(whole.renderedText.includes("> Before selected after."), "the whole window reads the focused field whole");
+  assert.ok(whole.renderedText.indexOf("» ‸") >= 0 && whole.renderedText.indexOf("» ‸") < whole.renderedText.indexOf("> Before selected after."), "the caret block marks the field just before it");
+  // A whole-window read bound to an earlier read (`sameWindowAs`) reads that read's window only
+  // while that read is the last one numbered and its window is in front; else null.
+  const restarted = client(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
+  const unbound = await rawRequest(restarted, "readScreen", { excludedAppIDs: [], excludedHosts: [], read: 1, wholeWindow: true, sameWindowAs: 1 });
+  assert.deepEqual(unbound, { id, result: null }, "a reader that has read nothing yet (a restarted one) reads no bound window");
+  const restartedExit = once(restarted.child, "exit");
+  restarted.child.stdin.end();
+  assert.deepEqual(await restartedExit, [0, null]);
+  assert.equal(restarted.errors(), "", "a bound read refused reads nothing, so logs nothing");
+  assert.ok(await request("readScreen", { read: 1 }), "the first read");
+  assert.ok((await request("readScreen", { read: 2, wholeWindow: true, sameWindowAs: 1 })).renderedText.includes("> Before selected after."), "the same window, still in front, is read");
+  assert.equal(await request("readScreen", { read: 3, wholeWindow: true, sameWindowAs: 1 }), null, "a read bound to one that is no longer the last numbered is not read");
+  assert.ok(await request("readScreen", { read: 4 }), "a newer first read");
+  await mode("second");
+  assert.equal(await request("readScreen", { read: 5, wholeWindow: true, sameWindowAs: 4 }), null, "another window of the app in front is not read in its place");
+  await mode("editable");
+  assert.ok(await request("readScreen", { read: 6, wholeWindow: true, sameWindowAs: 4 }), "the read's window back in front is read; the refused read did not become the last");
   await mode("secret");
   const privateContext = await request("readScreen");
   assert.equal(privateContext.windowTitle, "password: [redacted]", "window title is filtered before the reply");

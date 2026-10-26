@@ -213,8 +213,8 @@ struct MacServiceRequestTests {
         withExtendedLifetime(service) {}
 
         let shown = "Dear Xyvora"
-        let screen = ScreenAccess(frontmost: { (8, "Notes", "org.example.notes") }, bundleIdentifier: { _ in "org.example.notes" },
-                                  read: { _, _, _, _ in nil }, focusedField: { _, _ in .text(shown) })
+        let screen = ScreenAccess(frontmost: { (8, "Notes", "org.example.notes") }, bundleIdentifier: { _ in "org.example.notes" }, window: { _ in nil },
+                                  read: { _, _, _, _, _, _, _ in nil }, focusedField: { _, _ in .text(shown) })
         let others = ["caretAnchor", "insert", "keyboardLanguage", "startActivator"]
         let request = { (offset: Int, method: String) in #"{"id":\#(offset),"method":"\#(method)","params":{}}"# }
         let screenReader = try await replies({ ScreenReaderService.register(on: $0, screen: screen) },
@@ -238,12 +238,118 @@ struct MacServiceRequestTests {
         }
     }
 
+    /// `readScreenStop` asks the read it names, and every read numbered before it, to stop; a read
+    /// numbered after it, or with no number, is never asked. A read number the shared core refuses
+    /// (not a whole number from 1) refuses the request.
+    @Test func aStopAsksTheReadsNumberedUpToItAndNoLaterOne() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let asked = OSAllocatedUnfairLock<[Bool]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let screen = ScreenAccess(frontmost: { (8, "Notes", "org.example.notes") }, bundleIdentifier: { _ in "org.example.notes" }, window: { _ in nil },
+                                  read: { _, _, _, _, _, _, stop in let now = stop(); asked.withLock { $0.append(now) }; return nil }, focusedField: { _, _ in nil })
+        ScreenReaderService.register(on: channel, screen: screen)
+        let read = { (id: Int, number: String?) in
+            #"{"id":\#(id),"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":[]\#(number.map { ",\"read\":\($0)" } ?? "")}}"#
+        }
+        let requests = [
+            read(1, "1"),
+            #"{"id":2,"method":"readScreenStop","params":{"read":2}}"#,
+            read(3, "1"), read(4, "2"), read(5, "3"), read(6, nil),
+            #"{"id":7,"method":"readScreenStop","params":{"read":1}}"#,
+            read(8, "3"),
+            read(9, "0"), read(10, "1.5"), read(11, "\"2\""),
+            #"{"id":12,"method":"readScreenStop","params":{}}"#,
+            #"{"id":13,"method":"readScreenStop","params":{"read":-4}}"#,
+        ]
+        for request in requests { await channel.handle(line: Data(request.utf8)) }
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == requests.count)
+        guard replies.count == requests.count else { return }
+        // A later, lower stop does not lower what was asked; read 3 still goes on.
+        #expect(asked.withLock { $0 } == [false, true, true, false, false, false])
+        #expect(replies[1]["error"] == nil && replies[1]["result"] is NSNull)
+        #expect(replies[6]["error"] == nil && replies[6]["result"] is NSNull)
+        #expect(replies[8...].allSatisfy { $0["error"] != nil && $0["result"] == nil })
+    }
+
+    /// `readScreen`'s `wholeWindow` reaches the read as sent, false when absent; one that is not true
+    /// or false refuses the request, and nothing is read.
+    @Test func aReadTakesTheWholeWindowOnlyWhenAsked() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let scopes = OSAllocatedUnfairLock<[Bool]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let screen = ScreenAccess(frontmost: { (8, "Notes", "org.example.notes") }, bundleIdentifier: { _ in "org.example.notes" }, window: { _ in nil },
+                                  read: { _, _, _, _, _, whole, _ in scopes.withLock { $0.append(whole) }; return nil }, focusedField: { _, _ in nil })
+        ScreenReaderService.register(on: channel, screen: screen)
+        let requests = [",\"wholeWindow\":true", "", ",\"wholeWindow\":false", ",\"wholeWindow\":\"yes\"", ",\"wholeWindow\":1"].enumerated().map { id, whole in
+            #"{"id":\#(id),"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":[],"read":1\#(whole)}}"#
+        }
+        for request in requests { await channel.handle(line: Data(request.utf8)) }
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == requests.count)
+        guard replies.count == requests.count else { return }
+        #expect(scopes.withLock { $0 } == [true, false, false])
+        #expect(replies[..<3].allSatisfy { $0["error"] == nil })
+        #expect(replies[3...].allSatisfy { $0["error"] != nil && $0["result"] == nil })
+    }
+
+    /// A read of the whole window bound to an earlier read (`sameWindowAs`) reads only the window that
+    /// read read, while it is still the one in front, and only when that was the last read; else
+    /// the answer is null and nothing is read: another window of the app, or another app, that came
+    /// to the front meanwhile is never read in its place.
+    @Test func aBoundReadReadsOnlyTheWindowItsReadRead() async throws {
+        struct Front: @unchecked Sendable { var pid: pid_t; var window: AXUIElement }
+        struct Windows: @unchecked Sendable { let first = AXUIElementCreateApplication(101), second = AXUIElementCreateApplication(102) }
+        let windows = Windows()
+        let front = OSAllocatedUnfairLock<Front>(uncheckedState: Front(pid: 8, window: windows.first))
+        let reads = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let lookups = OSAllocatedUnfairLock<[pid_t]>(initialState: [])
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let screen = ScreenAccess(
+            frontmost: { (front.withLockUnchecked { $0.pid }, "Notes", "org.example.notes") }, bundleIdentifier: { _ in "org.example.notes" },
+            window: { pid in lookups.withLock { $0.append(pid) }; return front.withLockUnchecked { $0.window } },
+            read: { pid, _, _, window, _, whole, _ in
+                let name = window.map { CFEqual($0, windows.first) ? "first" : "second" } ?? "none"
+                reads.withLock { $0.append("\(pid) \(name) \(whole ? "whole" : "shown")") }
+                return nil
+            }, focusedField: { _, _ in nil })
+        ScreenReaderService.register(on: channel, screen: screen)
+        func send(_ id: Int, _ params: String) async {
+            await channel.handle(line: Data(#"{"id":\#(id),"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":[],\#(params)}}"#.utf8))
+        }
+        // Bound before any read: nothing to follow.
+        await send(1, #""read":1,"wholeWindow":true,"sameWindowAs":1"#)
+        // The window still in front: read.
+        await send(2, #""read":2"#)
+        await send(3, #""read":3,"wholeWindow":true,"sameWindowAs":2"#)
+        // Bound to a read that is no longer the last one.
+        await send(4, #""read":4,"wholeWindow":true,"sameWindowAs":2"#)
+        // Another window of the same app came to the front.
+        await send(5, #""read":5"#)
+        front.withLockUnchecked { $0.window = windows.second }
+        await send(6, #""read":6,"wholeWindow":true,"sameWindowAs":5"#)
+        // Another app came to the front: its window is not even looked up.
+        await send(7, #""read":7"#)
+        front.withLockUnchecked { $0.pid = 9 }
+        await send(8, #""read":8,"wholeWindow":true,"sameWindowAs":7"#)
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == 8)
+        guard replies.count == 8 else { return }
+        let answered = replies.map { reply -> String in
+            reply["error"] != nil ? "error" : reply["result"] is NSNull ? "null" : "read"
+        }
+        #expect(answered == ["null", "read", "read", "null", "read", "null", "read", "null"])
+        #expect(reads.withLock { $0 } == ["8 first shown", "8 first whole", "8 first shown", "8 second shown"])
+        #expect(lookups.withLock { $0 } == [8, 8, 8, 8, 8])
+    }
+
     /// A field read the reader can't carry out is refused, never trapped on.
     @Test func theFieldReaderRefusesAMalformedRequest() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        FieldReaderService.register(on: channel, screen: ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil },
-                                                                      read: { _, _, _, _ in nil }, focusedField: { _, _ in .text("x") }))
+        FieldReaderService.register(on: channel, screen: ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, window: { _ in nil },
+                                                                      read: { _, _, _, _, _, _, _ in nil }, focusedField: { _, _ in .text("x") }))
         let requests = [
             #"{"id":1,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10,"excludedAppIDs":[],"excludedHosts":[]}}"#,
             #"{"id":2,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1,"excludedAppIDs":[],"excludedHosts":[]}}"#,

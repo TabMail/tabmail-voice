@@ -173,3 +173,10 @@ its line after an edit that changes a word's length, so rows joined the way the 
 can run two words together or split one in a later read: while the field has rows, only a word read
 whole on one of them is learned (a corrected word the terminal split across rows is not).
 
+**Amendment 2026-10-25 (owner): terms from the whole window fill the room left.** The owner: *"for
+dictation, first create keywords from shown screen content and add more from off screen if needed"*,
+and *"for off screen keywords, i meant if there is room"*. The screen's terms (`contextTerms`) come
+from what the window shows first, as before, in the room the dictionary leaves of
+`vocabularyMaxTerms`; then the whole window's (ADR-DESK-016's second read, 2026-10-25), none the same
+word as the dictionary's or the shown ones, in the room still left, only if that read is done by the
+upload. It is never waited for, so a long page never holds up a dictation.

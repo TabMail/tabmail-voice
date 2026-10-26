@@ -60,7 +60,13 @@ impl Source {
         }
         let mut state = Self {
             offset_unit: OffsetUnit::Utf16,
-            source_limit: crate::context::SOURCE_WINDOW_BYTES,
+            // A field read whole takes up to the screen's budget; a window around a part shown,
+            // or around a caret, its own.
+            source_limit: if field && !projected {
+                crate::context::SCREEN_BYTES
+            } else {
+                crate::context::SOURCE_WINDOW_BYTES
+            },
             field_edges: field.then_some([start == 0, end == count]),
             complete: true,
             projected,
@@ -443,9 +449,14 @@ mod tests {
     }
     #[test]
     fn block_sources_preserve_the_final_screen_fragment_before_budget_stop() {
+        // One over the screen's budget, within a block's source; one past a block's source.
+        let whole = crate::context::SCREEN_BYTES + 1;
         for text in [
-            "x".repeat(300_000),
-            format!("Visible. password: {}", "x".repeat(600_000)),
+            "x".repeat(whole),
+            format!(
+                "Visible. password: {}",
+                "x".repeat(crate::context::BLOCK_SOURCE_BYTES)
+            ),
         ] {
             let mut source = Source::block_scalar(text.len(), 0, text.len()).unwrap();
             while let Some((at, length)) = source.next().unwrap() {
@@ -453,7 +464,7 @@ mod tests {
             }
             let result: serde_json::Value =
                 serde_json::from_slice(&source.finish().unwrap()).unwrap();
-            if text.len() == 300_000 {
+            if text.len() == whole {
                 assert_eq!(result["text"], text);
                 assert_eq!(result["complete"], true);
                 let admission: serde_json::Value = serde_json::from_slice(
@@ -496,7 +507,10 @@ mod tests {
     }
     #[test]
     fn complete_selection_at_exact_utf8_budget_keeps_split_surrogates() {
-        let text = format!("a{}x", "😀".repeat(65534));
+        let text = format!(
+            "a{}x",
+            "😀".repeat((crate::context::SELECTION_SOURCE_BYTES - 2) / 4)
+        );
         assert_eq!(text.len(), crate::context::SELECTION_SOURCE_BYTES);
         let result = read(&text, 0, text.encode_utf16().count());
         assert_eq!(result["parts"], json!(["", text, ""]));
@@ -504,7 +518,7 @@ mod tests {
     }
     #[test]
     fn oversized_selection_is_unavailable_not_a_prefix() {
-        let text = "😀".repeat(65535);
+        let text = "😀".repeat(crate::context::SELECTION_SOURCE_BYTES / 4 + 1);
         let result = read(&text, 0, text.encode_utf16().count());
         assert_eq!(result["parts"], json!(["", "[redacted]", ""]));
         assert_eq!(result["selectionUnavailable"], true);
@@ -555,7 +569,7 @@ mod tests {
     }
     #[test]
     fn scalar_selection_uses_utf8_bytes_not_character_count() {
-        let text = "😀".repeat(65535);
+        let text = "😀".repeat(crate::context::SELECTION_SOURCE_BYTES / 4 + 1);
         let result = read_scalar(&text, 0, text.chars().count());
         assert_eq!(result["parts"], json!(["", "[redacted]", ""]));
         assert_eq!(result["selectionUnavailable"], true);
@@ -637,7 +651,7 @@ mod tests {
     }
     #[test]
     fn field_byte_overflow_reports_incomplete_and_withholds_open_tail() {
-        let text = format!("Visible! {}", "😀".repeat(80000));
+        let text = format!("Visible! {}", "😀".repeat(crate::context::SCREEN_BYTES / 4));
         for scalar in [false, true] {
             let end = if scalar {
                 text.chars().count()

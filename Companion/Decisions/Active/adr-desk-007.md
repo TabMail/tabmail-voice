@@ -27,6 +27,8 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 - The tmux pane is the most recently active client's, and is used only when most of its last
   lines appear in the front terminal's text; a tmux attached in another tab or window is ignored.
 - OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
+- *(Amended by ADR-DESK-016, 2026-10-25: a second read takes the whole window, on screen or not,
+  within count budgets only; the first still takes what the window shows.)*
 - *(Amended by ADR-DESK-016, 2026-09-26: the visible text is laid out in lines from the elements'
   frames, web controls and toolbars are read, and text in point-thin boxes is left out.)*
 - *(Amended 2026-09-30, owner: a password field (`kAXSecureTextFieldSubrole`) is never read, focused

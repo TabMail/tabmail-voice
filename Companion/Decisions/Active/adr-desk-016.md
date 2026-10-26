@@ -69,3 +69,88 @@ rest and just have this marker that some area is hidden."
   is shown as hidden though it holds no page, and a slow one can use up the read's time, so the
   rest of the window after it goes unread: context lost, never the field's text.
 
+
+**Amendment 2026-10-25: two reads, what the window shows and the whole window (owner).** Owner:
+"that decision not reading thing was the wrong decision ... we should read the whole thing ...
+everything that the accessibility tree gives and screen readers are able to read ... for both agent
+mode and dictation." Referring to a page or a conversation means its whole text, not the part
+scrolled into view. Then, the same day, on cost: "for dictation, first create keywords from shown
+screen content and add more from off screen if needed. Now, for off screen reading, for the agent,
+this should then be a tool, so that it's used only when agent thinks it needs more context about
+what the user is talking about, eg, can you summarize, or can you write a comment about this
+considering others. Otherwise we'd waste a lot of tokens?", and "for off screen keywords, i meant if
+there is room".
+- **Two scopes.** A `readScreen` request takes what the window shows (the rule above, unchanged), or
+  with `wholeWindow: true` the whole window, as a screen reader reads it. The shared core validates
+  the flag (`request.rs`, absent = false) and the walk decides by it (`walk.rs`, the node's
+  `wholeWindow` fact): reading the whole window, an element outside the window and text in a box at
+  most a point thin are read (Chromium squashes what is scrolled out of view into such a strip at the
+  window's edge, and keeps screen-reader-only labels and hover-only actions in such boxes).
+- **Layout of the whole window.** A thin box says nothing of where its text is, so the core marks it
+  `unplaced` and the helpers lay it out with no frame: it starts a line of its own, never joined to a
+  neighbour as if side by side. Text that is on screen is laid out as before.
+- **What each OS calls hidden.** A new `offscreen` fact carries what the OS says is scrolled out of
+  view: Windows `IsOffscreen`, Linux not `SHOWING`. It hides an element only when reading what the
+  window shows; reading the whole window it does not, and only `hidden` (Windows: no `IsOffscreen`
+  any more; Linux: not `VISIBLE`, meant to be seen) skips, after its look. The Mac has no such fact
+  and keeps geometry, as before. Password fields, interface chrome outside web content, excluded apps
+  and websites and secret-looking text stay out in both scopes. Terminals keep the on-screen rule
+  (`shown`): their surface is what the terminal shows.
+- **Who reads which.** The app reads what the window shows at key-down, then, once that has answered,
+  the whole window (`ScreenContextProbe.window`), numbered after it so a stop of the first never
+  reaches it.
+- **The same window, or none.** The whole window is read after the first read has answered, so the
+  user may have brought another window to the front meanwhile, and every helper reads the window in
+  front. The request carries the first read's number (`sameWindowAs`, only with `wholeWindow`, the
+  core validates it), and the helper reads only that read's window, while it is still the one in
+  front and that read was its last: otherwise it answers null, the whole window not read, as when no
+  app is in front. Each helper keeps its last numbered read's window by the OS's name for it (macOS:
+  the app's process and focused `AXUIElement`, compared with `CFEqual`; Windows: the `HWND`; Linux:
+  `Foreground`'s window token; `walk::LastReadWindow` in C++). Another app in front is refused
+  before anything of it is looked at. A helper restarted between the reads keeps nothing, so the
+  whole window is not read.
+- **Fields by scope.** Reading what the window shows, a field is read whole only when it is short
+  (at most 20,000 characters within a 256 KiB source window), as before; a longer one is read by
+  the part it shows, so no text scrolled out of view enters what the window shows. Reading the whole
+  window, a field the screen's budget holds is read whole. The core decides both (`fieldPlan` with
+  the read's `wholeWindow`, which also gives the bound of the whole-field probe, `wholeBytes`).
+  On Windows a classic edit control has no text pattern, so the walk reads it by its value (as the
+  caret read always did), whole when `fieldPlan` allows and not at all otherwise, since it gives no
+  part it shows. Before, the walk read nothing of one, in focus or not; the Windows VM pass found
+  the gap when the focused field came to be read like any field (2026-10-26).
+  On the Mac a field's whole text is what its provider gives: AppKit gives a text view's whole
+  text, so its two scopes differ; Chromium caps a text field's character count and value at 10,000
+  characters (measured 2026-10-26: 10,000 of a 23,045-character textarea), so reading the whole
+  window can't take more of one than what the window shows. An unfocused long AppKit text view is
+  left out of what the window shows, as before the two scopes (#266).
+- **The field in focus.** Reading what the window shows, the focused field is the caret block: the
+  text around the caret, at most 2,000 characters a side, as before. Reading the whole window, it is
+  read whole like any field (an editable page walked like any page), just after the caret block,
+  which then only marks it: none of the caret's text is sent apart from the field, the selection
+  included. A selection kept apart from the text around it loses what a redactor needs to know it
+  (`token=` before a selected value), while in the field it is redacted in place; the request's
+  selection (Edit) comes from what the window shows. The core decides both (`walk::node` with the
+  scope; `around` says what is kept of the caret's text). A focused password field is only the
+  caret block in both. (Review, 2026-10-26: round 4 found the whole window still read the focused
+  field by its caret, losing a long document past 2,000 characters; round 5 found the first fix's
+  selection-only caret block sent a selected secret unredacted.) The same gap in what the window
+  shows for a selection in a focused page (not a field) predates this and is tabmail-voice #263.
+- **What each takes.** Dictation takes the terms of what the window shows first, then the whole window's in
+  the room left in the vocabulary, only if that read is done by the upload: it is never waited for
+  (ADR-DESK-038). Agent mode's request carries what the window shows (`screen_text`); the model reads
+  the whole window only by calling `screen_read` (ADR-DESK-061's local-tool pattern, below), so a
+  long page costs its tokens only when the request needs it.
+- **Budgets.** Counts only, set for a desktop reading in memory: the walk's node budget 5,000 →
+  100,000 (the look for an excluded page uses the same count), and the read's text budget
+  (`SCREEN_BYTES`) 256 KiB → 1 MiB, with the block and selection snapshots sized from it. A
+  heading, link or row has no budget of its own any more (it was 20,000 characters or 256 KiB): it
+  is read, like the rest of the window, until the screen's budget fills, and one piece of it (a
+  text, or a field read whole, up to the screen's budget reading the whole window) is taken whole however large. Nor is there
+  a count of blocks: 5,000 short pieces no longer refuse the read. No time limit returns
+  (ADR-DESK-053, 2026-10-06); a read still going when the app stops waiting answers with what it
+  has read so far (ADR-DESK-053, 2026-10-25).
+- **Consequences.** A second read runs after every screen read, in its own helper process, while the
+  user speaks; one still going when the next dictation starts is ended with the reader. The agent's
+  prompt stays the size of what is shown; `screen_read` adds a round when the model wants the rest.
+  Tests that sized a tree one element past the budget size it from the core's limits, so they follow
+  the rule rather than a copy of the number.

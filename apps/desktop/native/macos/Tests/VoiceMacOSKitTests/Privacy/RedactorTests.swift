@@ -209,7 +209,8 @@ struct RedactorTests {
     /// A run far longer than any real text never stops a redactor short: what follows it is still
     /// redacted.
     @Test func aVeryLongRunDoesNotStopTheRedactionOfWhatFollows() throws {
-        let length = 400_000
+        // Past the screen's text budget, so the run fills it.
+        let length = try SharedContext.limit("screenBytes")
         let runs = [
             "sk" + "-" + String(repeating: "a", count: length),
             "data token=7" + String(repeating: "a", count: length),

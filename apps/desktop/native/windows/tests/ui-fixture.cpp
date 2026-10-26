@@ -117,6 +117,16 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
     }
     if (message == WM_APP + 1) {
         if (value == 5) { DestroyWindow(window); return 0; }
+        // A second window of this app in front, for a read bound to the first one's window.
+        if (value == 11) {
+            static const HWND second = CreateWindowExW(0, L"TabMailVoiceSyntheticFields", L"Synthetic second window", WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT, CW_USEDEFAULT, 320, 120, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+            if (!second) ExitProcess(1);
+            ShowWindow(second, SW_SHOW);
+            SetForegroundWindow(second);
+            ready(second, "second");
+            return 0;
+        }
         const std::wstring text = value == 6 ? std::wstring(20001, L'x') : value == 7 ? std::wstring(20000, L'x') :
             value == 8 ? L"Before Xyvora \U0001F642 after." : value == 9 ? L"" : value == 10 ? L"password: synthetic" L"value123" : L"Before selected after.";
         SetWindowTextW(window, value == 10 ? L"password: synthetic" L"title123" : L"Native editor integration test");
@@ -161,7 +171,7 @@ int run(bool preservesClipboard) {
                 PostMessageW(window, WM_APP + 2, command == "seed" ? 1 : command == "copy" ? 2 : command == "value" ? 3 : command == "clipboard" ? 4 : command == "lock" ? 5 : command == "delayed" ? 7 : command == "asked" ? 9 : command == "conceal" ? 10 : 6, 0);
                 continue;
             }
-            const WPARAM mode = command == "password" ? 2 : command == "readOnly" ? 3 : command == "button" ? 4 : command == "close" ? 5 : command == "long" ? 6 : command == "limit" ? 7 : command == "unicode" ? 8 : command == "empty" ? 9 : command == "secret" ? 10 : 1;
+            const WPARAM mode = command == "password" ? 2 : command == "readOnly" ? 3 : command == "button" ? 4 : command == "close" ? 5 : command == "long" ? 6 : command == "limit" ? 7 : command == "unicode" ? 8 : command == "empty" ? 9 : command == "secret" ? 10 : command == "second" ? 11 : 1;
             if (!PostMessageW(window, WM_APP + 1, mode, 0)) ExitProcess(1);
         }
         PostMessageW(window, WM_APP + 1, 5, 0);

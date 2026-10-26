@@ -129,3 +129,10 @@ terminal window it could not look through whole are not read. It used to treat s
 gathered when its own budget runs out, and the 0.2 s look before a field is read for corrections
 does not stop that read.)*
 
+
+*(Amended 2026-10-25, with ADR-DESK-016's two reads: reading the whole window, an excluded page
+refuses the window wherever it is, outside the window too.* The 2026-10-01 exception skipped a page
+wholly outside the window because nothing outside it was read; it still holds for the read of what the
+window shows. The whole window's read takes such a page's text, so the page hides that read as one on
+screen does, and a field framing one gets the hidden marker in its place. The Windows follow-up (#97)
+is moot for the whole window, which every helper refuses.)*

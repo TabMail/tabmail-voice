@@ -10,35 +10,53 @@ import VoiceHelperSupport
 /// Reads a `ScreenContext` from an app through Accessibility. Blocking: call off the main thread.
 enum ScreenContextReader {
     /// The screen context of the app, or nil when a website the user excludes is showing: nothing of
-    /// the window is kept then.
-    static func read(pid: pid_t, appName: String, bundleID: String?, excluding exclusions: ScreenExclusions) -> ScreenContext? {
+    /// the window is kept then. `wholeWindow`: everything the window holds, on screen or not, else
+    /// only what it shows (the walk's `wholeWindow`). `asked` true (the app stopped waiting,
+    /// `readScreenStop`) ends the walk at its next element, and what it read so far is the context.
+    static func read(pid: pid_t, appName: String, bundleID: String?, excluding exclusions: ScreenExclusions,
+                     wholeWindow: Bool = false, asked: () -> Bool = { false }) -> ScreenContext? {
+        read(pid: pid, appName: appName, bundleID: bundleID, window: focusedWindow(pid: pid), excluding: exclusions,
+             wholeWindow: wholeWindow, asked: asked)
+    }
+
+    /// The app's focused window, the one a screen read of it reads.
+    static func focusedWindow(pid: pid_t) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
+        return CaretLocator.attribute(app, kAXFocusedWindowAttribute).map { $0 as! AXUIElement }
+    }
+
+    /// As `read(pid:appName:bundleID:excluding:wholeWindow:asked:)`, of `window`, the app's focused
+    /// window as looked up before (`focusedWindow`), so the read is of the window that was checked.
+    static func read(pid: pid_t, appName: String, bundleID: String?, window: AXUIElement?, excluding exclusions: ScreenExclusions,
+                     wholeWindow: Bool, asked: () -> Bool) -> ScreenContext? {
         let started = Date()
         var start = ScreenContext(appName: appName, bundleID: bundleID)
+        start.wholeWindow = wholeWindow
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
 
         let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
         start.focusedRole = focused.flatMap { string($0, kAXRoleAttribute) }
         let focusPath = focused.map(ancestors) ?? []
-        let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute).map { $0 as! AXUIElement }
         return read(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(),
             current: { name in
                 guard let value = CaretLocator.attribute(app, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
                 return (value as! AXUIElement)
-            }, excluding: exclusions, started: started, from: start)
+            }, excluding: exclusions, started: started, from: start, asked: asked)
     }
 
     /// Dispatch after native focus acquisition, shared by live AX and collector fixtures.
     static func read<Tree: TerminalTree>(window: Tree.Element?, focused: Tree.Element?, focusPath: [Tree.Element],
                                         in tree: Tree, current: (String) -> Tree.Element?,
                                         excluding exclusions: ScreenExclusions, started: Date,
-                                        from start: ScreenContext) -> ScreenContext? {
+                                        from start: ScreenContext, asked: () -> Bool = { false }) -> ScreenContext? {
         if start.bundleID.map(HelperConfig.terminalBundleIDs.contains) ?? false {
             return TerminalViewportReader.read(window: window, focused: focused, focusPath: focusPath,
                 in: tree, current: current, excluding: exclusions, started: started, from: start)
         }
         guard var context = gather(window: window, focused: focused, focusPath: focusPath, in: tree, excluding: exclusions,
-                                   from: start) else {
+                                   from: start, asked: asked) else {
             HelperLog.debug("ScreenContext: the window shows a page of an excluded website, or one whose address is unknown; not read")
             return nil
         }
@@ -51,7 +69,8 @@ enum ScreenContextReader {
     /// is read (the caret's text, the window's title), and any other page as the walk reaches it;
     /// nothing gathered is given back then.
     static func gather<Tree: ScreenTree>(window: Tree.Element?, focused: Tree.Element?, focusPath: [Tree.Element], in tree: Tree,
-                                         excluding exclusions: ScreenExclusions, from start: ScreenContext) -> ScreenContext? {
+                                         excluding exclusions: ScreenExclusions, from start: ScreenContext,
+                                         asked: () -> Bool = { false }) -> ScreenContext? {
         let hosts = focused.map { pageHosts(of: $0, above: focusPath, in: tree) } ?? []
         if hosts.contains(where: exclusions.excludes) { return nil }
         if let focused, holdsExcludedPage(focused, in: tree, excluding: exclusions) {
@@ -62,11 +81,21 @@ enum ScreenContextReader {
             readCaret(of: focused, in: tree, into: &context)
             // A focused element that is no field (a page clicked on, a list, a row) is read by the
             // walk like any element: the text around its caret is its own, which the walk reads as
-            // it is laid out (Safari and Chrome give none there at all). Only what is selected in
-            // it is kept.
-            if !isFieldInFocus(focused, in: tree) {
+            // it is laid out (Safari and Chrome give none there at all): only what is selected in it
+            // is kept. Reading the whole window, nothing of the caret's text is: the walk reads the
+            // field whole (the core's `around`).
+            let keep: SharedWalk.Around
+            do { keep = try SharedWalk.around(focusedField: isFieldInFocus(focused, in: tree), wholeWindow: context.wholeWindow) } catch {
+                keep = SharedWalk.Around(around: false, selection: false)
+                context.coreFailed = true
+            }
+            if !keep.around {
                 context.textBeforeCaret = ""
                 context.textAfterCaret = ""
+            }
+            if !keep.selection {
+                context.selectedText = ""
+                context.selectionUnavailable = false
             }
         }
         // The page the caret is in: the nearest web area (Notion nests its web page in a local app
@@ -75,7 +104,7 @@ enum ScreenContextReader {
         guard let window else { return context }
         context.windowTitle = tree.sourceString(window, kAXTitleAttribute)
         let read = walk(window, in: tree, frame: tree.frame(of: window), focused: focused,
-                        focusPath: focusPath, excluding: exclusions, into: &context)
+                        focusPath: focusPath, excluding: exclusions, into: &context, asked: asked)
         return read ? context : nil
     }
 
@@ -94,8 +123,9 @@ enum ScreenContextReader {
     }
 
     /// Whether a page of an excluded website is inside `element`: a page that frames it has the
-    /// focus itself, or a focused group holds it. The walk never goes into a focused field, and
-    /// goes into any other focused element only after the text around its caret was asked for, so
+    /// focus itself, or a focused group holds it. The walk reads a focused field by its caret (or,
+    /// reading the whole window, looks inside it first as it reads it), and goes into any other
+    /// focused element only after the text around its caret was asked for, so
     /// it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started` (the screen read
@@ -332,8 +362,8 @@ enum ScreenContextReader {
     /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (at most a point thin)
     /// is left out, but its box is still walked into: Slack keeps its message list in one.
     /// The focused field becomes the caret block at its place in that order; a focused element that
-    /// is no field (`isFieldInFocus`: a page clicked on, a list, a row) is read like any element,
-    /// after its selection, if any, as the caret block.
+    /// is no field (`isFieldInFocus`: a page clicked on, a list, a row), and reading the whole window
+    /// a field too, is read like any element, after its selection, if any, as the caret block.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
     /// A password field is never read, nor anything inside it (one above the focused element is
@@ -347,14 +377,14 @@ enum ScreenContextReader {
     /// refuses the window; one too large to look through is not read, and the marker stands in its place.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions,
-                                       into context: inout ScreenContext) -> Bool {
+                                       into context: inout ScreenContext, asked: () -> Bool = { false }) -> Bool {
         // Each element with whether it is inside a web area.
         context.prepareTextBudget()
         var stack = [(window, false)]
         while let (element, inWeb) = stack.popLast() {
             if context.coreFailed { return true }
             do {
-                if let stopped = try SharedWalk.stop(nodes: context.nodesVisited, textFull: context.textBudgetFull) {
+                if let stopped = try SharedWalk.stop(nodes: context.nodesVisited, textFull: context.textBudgetFull, asked: asked()) {
                     context.stoppedEarly = stopped
                     return true
                 }
@@ -366,15 +396,20 @@ enum ScreenContextReader {
                 let frame = tree.frame(of: element)
                 var facts = SharedWalk.Node(role: HelperConfig.contextRoles[role] ?? "other", focus: isFocus ? "self" : onPath ? "path" : nil,
                                             inPage: inWeb, frame: frame, window: windowFrame)
+                facts.wholeWindow = context.wholeWindow
                 facts.password = isPasswordField(element, in: tree)
                 facts.pageExcluded = page.map(exclusions.excludes) ?? false
                 facts.focusedField = isFocus && isFieldInFocus(element, in: tree)
                 facts.selection = isFocus && !context.selectedText.isEmpty
                 let step = try SharedWalk.node(facts)
                 if step.caretFirst == true { context.appendCaret(frame: frame) }
+                // Text whose box says nothing of where it is (Chrome squashes what is off screen to a
+                // point-thin strip at the window's edge) is laid out with no frame: it starts a line.
+                let placed = step.unplaced == true ? nil : frame
                 // A part read in one piece is looked through first: its label can be made of what it holds.
+                // A stop cuts the look short: not seen whole, so the part is not read.
                 func look(_ read: SharedWalk.Step.Action) throws -> SharedWalk.Outcome {
-                    try SharedWalk.look(read, found: lookForExcludedPage(in: element, tree, excluding: exclusions))
+                    try SharedWalk.look(read, found: lookForExcludedPage(in: element, tree, excluding: exclusions, valid: { !asked() }))
                 }
                 switch step.action {
                 case .refuse:
@@ -389,9 +424,9 @@ enum ScreenContextReader {
                 case .text:
                     switch try look(.text) {
                     case .refuse: return false
-                    case .marker: context.append(.text, context.hiddenMarker, frame: frame)
-                    case .read: context.append(.text, tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame,
-                                               ends: frame == nil ? nil : tree.ends(of: element))
+                    case .marker: context.append(.text, context.hiddenMarker, frame: placed)
+                    case .read: context.append(.text, tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: placed,
+                                               ends: placed == nil ? nil : tree.ends(of: element))
                     }
                     continue
                 case .semantic:
@@ -411,23 +446,23 @@ enum ScreenContextReader {
                     }
                     if try reducer.decision == .descendants {
                         guard try subtreeText(of: element, in: tree, reducer: reducer, inWeb: inWeb, windowFrame: windowFrame,
-                                              excluding: exclusions, context: &context) else { return false }
+                                              excluding: exclusions, context: &context, asked: asked) else { return false }
                     }
                     if try reducer.decision == .root {
                         guard let root = try rootLabel() else { return false }
                         try reducer.offer(.root, root)
                     }
-                    context.appendSemantic(kind, try reducer.projectedSource(), frame: frame,
-                                           ends: kind == .link && frame != nil ? tree.ends(of: element) : nil)
+                    context.appendSemantic(kind, try reducer.projectedSource(), frame: placed,
+                                           ends: kind == .link && placed != nil ? tree.ends(of: element) : nil)
                     continue
                 case .field:
                     // A field is read by its value and not walked into, so a page framed in it is looked for:
                     // a field holding one, or too large to look through, is not read, and the read says
                     // that something there is hidden.
                     if try look(.field) != .read {
-                        context.append(.field, context.hiddenMarker, frame: frame)
-                    } else if let source = tree.fieldSource(of: element, windowFrame: windowFrame) {
-                        context.appendField(source, frame: frame)
+                        context.append(.field, context.hiddenMarker, frame: placed)
+                    } else if let source = tree.fieldSource(of: element, windowFrame: windowFrame, wholeWindow: context.wholeWindow) {
+                        context.appendField(source, frame: placed)
                     }
                     continue
                 case .caption:
@@ -435,8 +470,8 @@ enum ScreenContextReader {
                         // Looked inside whether shown or not: an excluded page under it refuses the window.
                         switch try look(.caption) {
                         case .refuse: return false
-                        case .marker: if step.shown == true { context.append(.text, context.hiddenMarker, frame: frame) }
-                        case .read: if step.shown == true { context.append(.text, title, frame: frame) }
+                        case .marker: if step.shown == true { context.append(.text, context.hiddenMarker, frame: placed) }
+                        case .read: if step.shown == true { context.append(.text, title, frame: placed) }
                         }
                         continue
                     }
@@ -475,9 +510,9 @@ enum ScreenContextReader {
     /// row). Nil when a page of an excluded website is among them.
     private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, reducer: SharedSemanticText, inWeb: Bool, windowFrame: CGRect?,
                                                       excluding exclusions: ScreenExclusions,
-                                                      context: inout ScreenContext) throws -> Bool {
+                                                      context: inout ScreenContext, asked: () -> Bool) throws -> Bool {
         func stopped() throws -> Bool {
-            guard let reason = try SharedWalk.stop(nodes: context.nodesVisited, textFull: false) else { return false }
+            guard let reason = try SharedWalk.stop(nodes: context.nodesVisited, textFull: false, asked: asked()) else { return false }
             context.stoppedEarly = reason
             return true
         }
@@ -493,11 +528,12 @@ enum ScreenContextReader {
             let role = tree.string(element, kAXRoleAttribute) ?? ""
             var facts = SharedWalk.Node(role: HelperConfig.contextRoles[role] ?? "other", part: true, inPage: inPage,
                                         frame: tree.frame(of: element), window: windowFrame)
+            facts.wholeWindow = context.wholeWindow
             facts.password = isPasswordField(element, in: tree)
             facts.pageExcluded = role == "AXWebArea" && exclusions.excludes(tree.page(of: element))
             let step = try SharedWalk.node(facts)
             func found() -> PageLook {
-                lookForExcludedPage(in: element, tree, excluding: exclusions)
+                lookForExcludedPage(in: element, tree, excluding: exclusions, valid: { !asked() })
             }
             switch step.action {
             case .refuse:
@@ -508,7 +544,7 @@ enum ScreenContextReader {
                 // says that something there is hidden.
                 if try SharedWalk.look(.field, found: found()) != .read {
                     try reducer.offer(.descendant, context.hiddenMarker)
-                } else if let parts = tree.fieldSource(of: element, windowFrame: windowFrame) {
+                } else if let parts = tree.fieldSource(of: element, windowFrame: windowFrame, wholeWindow: context.wholeWindow) {
                     try reducer.offerProjected(.descendant, parts)
                 } else if let label = label(of: element, in: tree) {
                     // Value-less native fields can still expose an approved caption.
@@ -543,7 +579,7 @@ enum ScreenContextReader {
     }
 
     /// OS capability/visibility adapter; no native text clipping or byte policy.
-    fileprivate static func visibleSource(of element: AXUIElement, windowFrame: CGRect?) -> [String]? {
+    fileprivate static func visibleSource(of element: AXUIElement, windowFrame: CGRect?, wholeWindow: Bool) -> [String]? {
         func attribute(_ name: String) throws -> CFTypeRef? {
             var value: CFTypeRef?
             switch AXUIElementCopyAttributeValue(element, name as CFString, &value) {
@@ -612,7 +648,7 @@ enum ScreenContextReader {
                 return NSRange(location: start, length: end - start)
             }
             var visibleSnapshot: (Int, NSRange)?
-            let result = try BoundedFieldReader.read(count: count, whole: {
+            let result = try BoundedFieldReader.read(count: count, wholeWindow: wholeWindow, whole: {
                 (try? attribute(kAXValueAttribute)) as? NSString
             }, range: reader, visible: { actualCount in
                 guard let interval = visible(actualCount) else { return nil }
@@ -709,8 +745,9 @@ protocol ScreenTree {
     func sourceString(_ element: Element, _ name: String) -> String?
     /// What a web area says of its page's address.
     func page(of webArea: Element) -> PageHost
-    /// A text field's visible text.
-    func fieldSource(of element: Element, windowFrame: CGRect?) -> [String]?
+    /// A text field's text: the part it shows, or all of it when `fieldPlan` reads it whole for the
+    /// read's scope (`wholeWindow`).
+    func fieldSource(of element: Element, windowFrame: CGRect?, wholeWindow: Bool) -> [String]?
     /// The focused field's text before the caret, selected, and after it.
     func caretWindow(of element: Element) -> SharedContext.CaretWindow?
     func isSame(_ first: Element, _ second: Element) -> Bool
@@ -744,8 +781,8 @@ struct LiveScreenTree: ScreenTree {
 
     func page(of webArea: AXUIElement) -> PageHost { ScreenContextReader.page(of: webArea) }
 
-    func fieldSource(of element: AXUIElement, windowFrame: CGRect?) -> [String]? {
-        ScreenContextReader.visibleSource(of: element, windowFrame: windowFrame)
+    func fieldSource(of element: AXUIElement, windowFrame: CGRect?, wholeWindow: Bool) -> [String]? {
+        ScreenContextReader.visibleSource(of: element, windowFrame: windowFrame, wholeWindow: wholeWindow)
     }
 
     func caretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? { ScreenContextReader.caretWindow(of: element) }

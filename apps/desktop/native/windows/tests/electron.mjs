@@ -120,7 +120,7 @@ async function main() {
       <button aria-label="undrawn-icon-secret"><span aria-hidden="true">+</span></button>
       <p>Unrelated footer outside focused field</p>
       <div style="display:none">hidden-display-secret</div>
-      <div style="position:fixed;top:-5000px">offscreen-secret</div>
+      <div style="position:fixed;top:-5000px">Offscreen fixture text</div>
       <div style="position:absolute;width:1px;height:1px;overflow:hidden">Screen-reader-only label</div>
       <a href="https://example.com">Visible link</a>
       <!-- Pieces of one line (a run of bold, a link), in the window's corner so nothing above moves. -->
@@ -176,7 +176,19 @@ async function main() {
     // A box that shows nothing is walked into on every platform (owner, 2026-10-05; ADR-DESK-054), and
     // Chromium gives the text in it its own unclipped frame here, so a screen-reader-only label is read.
     assert.ok(context.renderedText.includes("Screen-reader-only label"), "a screen-reader-only label is read, as decided");
-    for (const secret of ["synthetic-secret", "hidden-display-secret", "offscreen-secret", "undrawn-button-secret", "undrawn-icon-secret"]) {
+    // A read takes what the window shows; asked for the whole window, it takes text placed off screen
+    // too (ADR-DESK-016, 2026-10-25), password and hidden text still never.
+    assert.ok(!context.renderedText.includes("Offscreen fixture text"), "text placed off screen is not read by default");
+    const whole = await request("readScreen", { wholeWindow: true });
+    assert.ok(whole.renderedText.includes("Offscreen fixture text"), "the whole window holds text placed off screen");
+    // The focused field is read whole there, after the caret block that marks it (ADR-DESK-016).
+    const field = whole.renderedText.indexOf("> Before selected after. 🙂");
+    assert.ok(field >= 0 && whole.renderedText.lastIndexOf("» ‸", field) >= 0, "the whole window reads the focused field whole, marked just before it");
+    assert.deepEqual([whole.textBeforeCaret, whole.selectedText, whole.textAfterCaret], ["", "", ""], "the whole window keeps none of the caret's text");
+    for (const secret of ["synthetic-secret", "hidden-display-secret", "undrawn-button-secret", "undrawn-icon-secret"]) {
+      assert.ok(!whole.renderedText.includes(secret), `password and hidden text never enter the whole window either: ${secret}`);
+    }
+    for (const secret of ["synthetic-secret", "hidden-display-secret", "undrawn-button-secret", "undrawn-icon-secret"]) {
       assert.ok(!context.renderedText.includes(secret), `password and hidden text never enter screen context: ${secret}`);
     }
     assert.ok(!context.summary.includes("Before") && !context.summary.includes("Unrelated"), "summary contains only sizes and timing");

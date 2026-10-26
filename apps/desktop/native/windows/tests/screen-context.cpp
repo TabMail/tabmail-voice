@@ -14,6 +14,8 @@ using namespace voice;
 static void expect(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
+// One of the shared core's context limits, so a test sizes its text from the core, not a copy of it.
+static size_t contextLimit(const char* name) { return core::request({{"limits", true}}, voice_core_context_json).at(name).get<size_t>(); }
 int main(int argc, char** argv) {
     expect(argc == 2, "shared context corpus path required");
     {
@@ -31,7 +33,7 @@ int main(int argc, char** argv) {
     }
 
     {
-        const std::u16string value = u"Visible. password: " + std::u16string(600000, u'x');
+        const std::u16string value = u"Visible. password: " + std::u16string(contextLimit("blockSourceBytes") + 1, u'x');
         const auto snapshot = readUtf16Snapshot(std::u16string_view(value));
         expect(!snapshot.complete && snapshot.text == "Visible. ", "native snapshot withholds incomplete credential suffix");
         const auto complete = readUtf16Snapshot(std::u16string_view(u"é😀 Caption"));
@@ -67,17 +69,18 @@ int main(int argc, char** argv) {
             return text.substr(from, to - from);
         });
     };
+    const auto selectionBytes = contextLimit("selectionSourceBytes");
     std::u16string complete = u"a";
-    for (size_t i = 0; i < 65534; ++i) complete += u"\U0001F600";
+    for (size_t i = 0; i < (selectionBytes - 2) / 4; ++i) complete += u"\U0001F600";
     complete += u"x";
     auto acquired = readSource(complete, 0, complete.size());
-    expect(!acquired.selectionUnavailable && acquired.parts[1].size() == 262138, "complete exact-byte selection across surrogate chunks");
+    expect(!acquired.selectionUnavailable && acquired.parts[1].size() == selectionBytes, "complete exact-byte selection across surrogate chunks");
     complete += u"x";
     acquired = readSource(complete, 0, complete.size());
     expect(acquired.selectionUnavailable && acquired.parts[1] == "[redacted]", "oversized selection never becomes a prefix");
-    const std::u16string left = std::u16string(300000, u'a') + u". Before ";
+    const std::u16string left = std::u16string(contextLimit("screenBytes"), u'a') + u". Before ";
     const std::u16string selected(20001, u's');
-    acquired = readSource(left + selected + u" after! " + std::u16string(300000, u'b'), left.size(), left.size() + selected.size());
+    acquired = readSource(left + selected + u" after! " + std::u16string(contextLimit("screenBytes"), u'b'), left.size(), left.size() + selected.size());
     expect(!acquired.selectionUnavailable && acquired.parts[1] == std::string(20001, 's'), "large field retains the complete selection");
     bool shortRefused = false;
     try { readUtf16Caret(10, 0, 10, [](size_t, size_t) { return std::u16string(9, u'a'); }); }

@@ -161,12 +161,14 @@ export const pasteHistoryCornerRadius = 20;
 // MARK: Screen context
 
 /** How long a dictation's upload waits for the screen read, which the cleanup's variables travel with.
- * The read is best effort: not done by then, the cleanup runs without it (ADR-DESK-008). The read
- * started at key-down, so it is usually done. */
+ * The read started at key-down, so it is usually done. One not done by then is asked to answer with
+ * what it has read so far (ADR-DESK-053), waited for as long again; if that does not come either, the
+ * cleanup runs without it (ADR-DESK-008). */
 export const contextWait = 500;
 /** How long agent mode waits for that read once its transcript is ready: it needs all of it (the
- * selection decides between Edit and Compose), so longer than a dictation, but a read not done by
- * then (a hung app) leaves the request without the screen rather than holding it up. */
+ * selection decides between Edit and Compose), so longer than a dictation. One not done by then is
+ * asked for what it has read so far, waited for as long again; a read that gives nothing even then
+ * (a hung app) leaves the request without the screen rather than holding it up. */
 export const agentScreenWait = 5_000;
 /** The cleanup gets only the screen text around the caret, not the whole screen: this much before
  * the caret (about a paragraph) and after it, in UTF-16 code units, rounded to whole characters.
@@ -337,6 +339,15 @@ export const webReadMaxBytes = webReadMaxCharacters * 4;
 /** The agent loop's memory tools, as the backend names them. */
 export const memorySearchTool = "memory_search";
 export const memoryReadTool = "memory_read";
+/** The agent loop's tool that reads the whole window of the app in front (ADR-DESK-016, 2026-10-25):
+ * the request is given what the window shows, and the model asks for the rest only when it needs it,
+ * so a long page costs its tokens only then. */
+export const screenReadTool = "screen_read";
+/** What the chat window says while `screen_read` waits for the whole window. */
+export const screenReadProgressLabel = "Reading the whole window";
+/** What `screen_read` tells the model when the whole window gave nothing, even when asked for what it
+ * had read so far. */
+export const screenReadUnavailable = "The window could not be read.";
 /** The memory helper starts when memory is first used and ends after this long unused (ms), once
  * its embedding model has loaded: it holds a large read cache and the model, so it is not kept
  * between uses. One that started without the model (its download failed) is kept until the app
@@ -482,9 +493,9 @@ export const helperRequestTimeout = 3_000;
  * The native compositor call has its own shorter deadline; this bounds a stalled helper. */
 export const linuxCaretRequestTimeout = 200;
 /** Longest a screen read may run in voice-screen-reader (`ScreenReader`) before that process is
- * ended: past the longest dictation, nothing it reads is used. On Windows and Linux a terminal read
- * has no time limit of its own; a dictation takes a read only if it is done in time (`contextWait`,
- * agent mode `agentScreenWait`). */
+ * ended: past the longest dictation, nothing it reads is used. A read has no time limit of its own; a
+ * dictation that stops waiting for it (`contextWait`, agent mode `agentScreenWait`) asks it for what it
+ * has read so far. */
 export const screenReaderTimeout = maxRecordingDuration;
 /** Longest a request to voice-field-reader (`FieldReader`) may run before that process is ended
  * (ms): past a correction watch, nothing it reads is used. */

@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { screen as blankScreen } from "../support/screens.js";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ConnectorTool } from "../../src/core/agent/connectors/contract.js";
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
@@ -1341,8 +1342,52 @@ describe("main process wiring", () => {
     expect(await controller.captureContext({ apps: ["com.example.vault", "org.example.bank"], sites: ["example.com"] })).toBeNull();
 
     expect(helper?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toStrictEqual([
-      { excludedAppIDs: ["com.example.vault", "org.example.bank"], excludedHosts: ["example.com"] },
+      { excludedAppIDs: ["com.example.vault", "org.example.bank"], excludedHosts: ["example.com"], read: 1, wholeWindow: false },
     ]);
+  });
+
+  /** Once the screen read has answered, the whole window is read (ADR-DESK-016, 2026-10-25), numbered
+   * after it, with the same exclusions, bound to the window that read read (`sameWindowAs`); the
+   * controller reaches it through `captureWindow`. */
+  test("the whole window is read by voice-screen-reader after the screen read", async () => {
+    await launch("darwin");
+    const controller = app.controller as unknown as {
+      captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null;
+      captureWindow: (capture: Promise<unknown>) => Promise<unknown> | null;
+    };
+    const helper = app.helpers.get("voice-screen-reader")!;
+    const shown = { ...blankScreen({ appName: "Example Notes" }), renderedText: "Shown" };
+    helper.replies.set("readScreen", shown);
+    const capture = controller.captureContext({ apps: [], sites: ["example.com"] })!;
+    const window = controller.captureWindow(capture);
+
+    expect(await window).toEqual(shown);
+    expect(helper.requests.map((request) => request.params)).toStrictEqual([
+      { excludedAppIDs: [], excludedHosts: ["example.com"], read: 1, wholeWindow: false },
+      { excludedAppIDs: [], excludedHosts: ["example.com"], read: 2, wholeWindow: true, sameWindowAs: 1 },
+    ]);
+  });
+
+  /** A dictation that stops waiting for its screen read asks `voice-screen-reader` for what that read,
+   * by its number, has read so far (ADR-DESK-053), and the capture yields the answer. */
+  test("a stopped screen read asks voice-screen-reader for what it has read so far", async () => {
+    await launch("darwin");
+    const controller = app.controller as unknown as {
+      captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null;
+      stopContext: (read: Promise<unknown>) => void;
+    };
+    const helper = app.helpers.get("voice-screen-reader")!;
+    helper.replies.set("readScreen", null);
+    helper.hold = true;
+    const capture = controller.captureContext({ apps: [], sites: [] })!;
+    controller.stopContext(capture);
+
+    expect(helper.requests.map((request) => [request.method, request.params])).toStrictEqual([
+      ["readScreen", { excludedAppIDs: [], excludedHosts: [], read: 1, wholeWindow: false }],
+      ["readScreenStop", { read: 1 }],
+    ]);
+    for (const { answer } of helper.unanswered) answer();
+    expect(await capture).toBeNull();
   });
 
   /** Settings › Privacy's commands (ADR-DESK-045): Add App… asks for an app in the Applications
@@ -1422,7 +1467,7 @@ describe("main process wiring", () => {
     const reader = app.helpers.get("voice-screen-reader");
     reader?.replies.set("readScreen", null);
     await controller.captureContext({ apps: ["Example.exe"], sites: ["example.com"] });
-    expect(reader?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toEqual([{ excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }]);
+    expect(reader?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toEqual([{ excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"], read: 1, wholeWindow: false }]);
     expect(helper?.requests.some((request) => request.method === "readScreen")).toBe(false);
     expect(await send({ type: "removeExcludedApp", bundleIdentifier: "example.EXE" })).toEqual({ error: null });
     expect(app.stored.get("excludedApps")).toEqual([]);

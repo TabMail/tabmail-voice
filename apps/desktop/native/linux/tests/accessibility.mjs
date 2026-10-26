@@ -77,6 +77,28 @@ try {
   assert.equal(read.textBeforeCaret, "Synthetic field content");
   assert.ok(read.renderedText.includes("Synthetic visible heading"));
   assert.ok(!JSON.stringify(read).includes("synthetic-password-must-not-be-read"));
+  // The app numbers its reads and can stop one (ADR-DESK-053): a stop answers null, a read numbered
+  // after it is not cut short, and a read number the shared core refuses refuses the request.
+  const stop = await send(reader, "readScreenStop", { read: 5 });
+  assert.equal(stop.result, null);
+  assert.equal(stop.error, undefined);
+  assert.equal((await send(reader, "readScreen", { ...policy, read: 6 })).result?.renderedText, read.renderedText, "a later read is read whole");
+  const stopped = await send(reader, "readScreen", { ...policy, read: 4 });
+  assert.equal(stopped.error, undefined, "a stopped read answers with what it read");
+  assert.ok(!JSON.stringify(stopped).includes("synthetic-password-must-not-be-read"));
+  for (const number of [0, -1, 1.5, "2", null]) {
+    assert.ok((await send(reader, "readScreen", { ...policy, read: number })).error, `read ${JSON.stringify(number)} is refused`);
+    assert.ok((await send(reader, "readScreenStop", { read: number })).error, `a stop of read ${JSON.stringify(number)} is refused`);
+  }
+  assert.ok((await send(reader, "readScreenStop", {})).error, "a stop names its read");
+  // A read takes the whole window only when asked with true (ADR-DESK-016, 2026-10-25): the
+  // fixture's window is all on screen, so both scopes read it alike.
+  const whole = await send(reader, "readScreen", { ...policy, wholeWindow: true });
+  assert.ok(whole.result?.renderedText.includes("Synthetic visible heading"), "a read of the whole window is answered");
+  assert.ok(!JSON.stringify(whole).includes("synthetic-password-must-not-be-read"));
+  for (const wholeWindow of ["yes", 1, null]) {
+    assert.ok((await send(reader, "readScreen", { ...policy, wholeWindow })).error, `whole window ${JSON.stringify(wholeWindow)} is refused`);
+  }
   const helperTarget = (await request("frontmostApp")).result.window;
   assert.ok(Number.isSafeInteger(helperTarget) && helperTarget > 0);
   const target = await fieldTarget();

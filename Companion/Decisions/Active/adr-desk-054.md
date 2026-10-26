@@ -124,6 +124,10 @@ reference for a behaviour difference, the more robust option for a conflict):
   or thin, still refuses it.
 - A piece of text, field, heading, link or row whose box shows nothing is skipped, not walked into
   (Linux walked into hidden text); containers and a page's list items are still walked into.
+- *(Both rules above amended 2026-10-25, ADR-DESK-016's two reads: they hold for the read of what the
+  window shows; reading the whole window (`wholeWindow`), an element outside the window and text in
+  a point-thin box are read, the thin one `unplaced` on a line of its own, and an excluded page
+  refuses the window wherever it is. The node budget is 100,000.)*
 - A heading, link or row is read as on the Mac: its own label is looked through when it is read,
   and each of its parts is judged and looked through on its own; the whole block is no longer
   withheld when one look of everything under it runs out (Windows, Linux).

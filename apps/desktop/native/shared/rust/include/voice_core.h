@@ -148,6 +148,16 @@ void voice_core_microphone_failed(VoiceMicrophoneSessions *state, int64_t sessio
 uint32_t voice_core_microphone_may_prepare(const VoiceMicrophoneSessions *state);
 int64_t voice_core_microphone_running(const VoiceMicrophoneSessions *state);
 
+/* Screen read stops ABI (`readScreenStop`, ADR-DESK-053): zero-initialize one state per reader
+ * process and never touch its field; the core owns the rule. The app numbers its reads from 1; a stop
+ * asks that read, and every read numbered before it, to end at its next element with what it has read
+ * so far. A read numbered after the highest stop, or with no number (0), is never asked; a number
+ * below 1 stops nothing. Both calls may run at once on different threads (atomic); no allocation,
+ * callbacks or retained pointers. `asked` returns 1 when the read is asked to stop. */
+typedef struct { int64_t stopped; } VoiceScreenReadStops;
+void voice_core_screen_read_stop(const VoiceScreenReadStops *state, int64_t read);
+uint32_t voice_core_screen_read_asked(const VoiceScreenReadStops *state, int64_t read);
+
 #ifdef __cplusplus
 }
 #endif

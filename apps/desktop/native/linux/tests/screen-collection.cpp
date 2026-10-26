@@ -70,6 +70,7 @@ struct AdapterTree : voice::LiveScreenTree {
     }
     bool editable(const Node&) { return false; }
     bool shown(const Node&) { return true; }
+    bool visible(const Node&) { return true; }
     std::optional<voice::ContextFrame> frame(const Node&) { return {}; }
     std::string label(const Node& n) { ++contentReads; return items.at(n.get()).text; }
     std::optional<std::string> field(const Node& n, int) { ++contentReads; return items.at(n.get()).text; }

@@ -1,5 +1,5 @@
 {
-  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), the clipboard a paste saves and puts back (500 ms after the paste keys; at most 64 MiB and 256 formats), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), the clipboard a paste saves and puts back (500 ms after the paste keys; at most 64 MiB and 256 formats), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000), and a screen read's number (a whole number from 1; a read may have none, a stop may not). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
   "cases": [
     {
       "name": "a field bound at the most a request may ask",
@@ -101,7 +101,7 @@
         }
       },
       "expected": {
-        "value": " $ echo one\u2029 one\u2029 Note:\u2029"
+        "value": " $ echo one  one  Note: "
       }
     },
     {
@@ -146,7 +146,7 @@
         }
       },
       "expected": {
-        "value": " $ echo one\u2029 你好\u2029 Note:"
+        "value": " $ echo one  你好  Note:"
       }
     },
     {
@@ -191,7 +191,7 @@
         }
       },
       "expected": {
-        "value": "> fix the Zivora\u2029  build"
+        "value": "> fix the Zivora   build"
       }
     },
     {
@@ -199,7 +199,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "Dear team\u2029thanks"
+          "text": "Dear team thanks"
         }
       },
       "expected": {
@@ -211,7 +211,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "Notes:\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029end"
+          "text": "Notes: a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 end"
         }
       },
       "expected": {
@@ -260,7 +260,7 @@
         }
       },
       "expected": {
-        "value": "key [redacted]\u2029$ "
+        "value": "key [redacted] $ "
       }
     },
     {
@@ -268,7 +268,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "sk-ReviewField1234567890abcd\u2029sk-ReviewLink1234567890abcd"
+          "text": "sk-ReviewField1234567890abcd sk-ReviewLink1234567890abcd"
         }
       },
       "expected": {
@@ -317,7 +317,7 @@
         }
       },
       "expected": {
-        "value": "[redacted]\u2029[redacted]\u2029$ "
+        "value": "[redacted] [redacted] $ "
       }
     },
     {
@@ -934,6 +934,230 @@
       "expected": {
         "value": "[redacted]\"\"\""
       }
+    },
+    {
+      "name": "a screen read's number",
+      "request": {
+        "readScreen": {
+          "read": 3
+        }
+      },
+      "expected": {
+        "read": 3,
+        "wholeWindow": false,
+        "sameWindowAs": null
+      }
+    },
+    {
+      "name": "a screen read with no number",
+      "request": {
+        "readScreen": {}
+      },
+      "expected": {
+        "read": null,
+        "wholeWindow": false,
+        "sameWindowAs": null
+      }
+    },
+    {
+      "name": "a screen read numbered 0",
+      "request": {
+        "readScreen": {
+          "read": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read numbered by a fraction",
+      "request": {
+        "readScreen": {
+          "read": 1.5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read numbered by a string",
+      "request": {
+        "readScreen": {
+          "read": "1"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read with a null number",
+      "request": {
+        "readScreen": {
+          "read": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read with another field",
+      "request": {
+        "readScreen": {
+          "read": 1,
+          "excludedHosts": []
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read of the whole window",
+      "request": {
+        "readScreen": {
+          "read": 5,
+          "wholeWindow": true
+        }
+      },
+      "expected": {
+        "read": 5,
+        "wholeWindow": true,
+        "sameWindowAs": null
+      }
+    },
+    {
+      "name": "a screen read of what the window shows, said so",
+      "request": {
+        "readScreen": {
+          "read": 5,
+          "wholeWindow": false
+        }
+      },
+      "expected": {
+        "read": 5,
+        "wholeWindow": false,
+        "sameWindowAs": null
+      }
+    },
+    {
+      "name": "a screen read whose whole-window flag is not true or false",
+      "request": {
+        "readScreen": {
+          "read": 5,
+          "wholeWindow": "yes"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read stop with a whole-window flag",
+      "request": {
+        "readScreenStop": {
+          "read": 5,
+          "wholeWindow": true
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a whole-window read bound to the window an earlier read read",
+      "request": {
+        "readScreen": {
+          "read": 6,
+          "wholeWindow": true,
+          "sameWindowAs": 5
+        }
+      },
+      "expected": {
+        "read": 6,
+        "wholeWindow": true,
+        "sameWindowAs": 5
+      }
+    },
+    {
+      "name": "a read of what the window shows bound to an earlier read's window",
+      "request": {
+        "readScreen": {
+          "read": 6,
+          "wholeWindow": false,
+          "sameWindowAs": 5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a read bound to an earlier read's window without the whole window",
+      "request": {
+        "readScreen": {
+          "read": 6,
+          "sameWindowAs": 5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a whole-window read bound to read 0",
+      "request": {
+        "readScreen": {
+          "read": 6,
+          "wholeWindow": true,
+          "sameWindowAs": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a whole-window read bound to a read named by a string",
+      "request": {
+        "readScreen": {
+          "read": 6,
+          "wholeWindow": true,
+          "sameWindowAs": "5"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a whole-window read bound to a null read",
+      "request": {
+        "readScreen": {
+          "read": 6,
+          "wholeWindow": true,
+          "sameWindowAs": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read stop bound to an earlier read's window",
+      "request": {
+        "readScreenStop": {
+          "read": 6,
+          "sameWindowAs": 5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read stop's number",
+      "request": {
+        "readScreenStop": {
+          "read": 4
+        }
+      },
+      "expected": {
+        "read": 4
+      }
+    },
+    {
+      "name": "a screen read stop with no number",
+      "request": {
+        "readScreenStop": {}
+      },
+      "refused": true
+    },
+    {
+      "name": "a screen read stop numbered below 1",
+      "request": {
+        "readScreenStop": {
+          "read": -2
+        }
+      },
+      "refused": true
     }
   ]
 }

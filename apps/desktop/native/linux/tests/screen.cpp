@@ -32,6 +32,7 @@ struct Tree {
     }
     bool editable(Node node) { return node->editable; }
     bool shown(Node node) { return node->visible; }
+    bool visible(Node node) { return node->visible; }
     std::optional<voice::ContextFrame> frame(Node node) { return node->bounds; }
     std::string label(Node node) { if (node->role == ATSPI_ROLE_FRAME) ++titles; else ++values; return node->label; }
     std::optional<std::string> field(Node node, int) { ++counts; if (!node->fieldAvailable) return {}; ++values; return node->label; }
@@ -98,16 +99,31 @@ int main() {
         expect(rowText(voice::ContextFrame{0, 0, 100, 100}) == "same" && tree.counts == 2, "off-window semantic descendants are not read");
         last.bounds = voice::ContextFrame{0, 0, 20, 1}; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2, "clipped semantic descendants are not read");
+        // Reading the whole window (`readScreen`'s `wholeWindow`), they are.
+        voice::walk::readingWholeWindow() = true;
+        last.bounds = voice::ContextFrame{200, 200, 20, 20}; tree = Tree{};
+        expect(rowText(voice::ContextFrame{0, 0, 100, 100}) == "same | must not be read after refusal" && tree.counts == 3,
+            "off-window semantic descendants are read with the whole window");
+        last.bounds = voice::ContextFrame{0, 0, 20, 1}; tree = Tree{};
+        expect(rowText() == "same | must not be read after refusal" && tree.counts == 3,
+            "a point-thin semantic descendant is read with the whole window (Chrome's strip for what is scrolled out of view)");
+        voice::walk::readingWholeWindow() = false;
         last.bounds = voice::ContextFrame{0, 0, 0, 0}; tree = Tree{};
         expect(rowText() == "same | must not be read after refusal", "a 0x0 cell in a row counts as shown");
-        last.bounds = voice::ContextFrame{0, 0, 20, 1};
+        last.visible = false;
         row.label = "Root label"; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
         tree = Tree{}; visited = 0;
         expect(voice::semanticLabel(tree, &row, voice::SemanticText::Kind::heading, visited, none) == "Root label" && tree.counts == 0,
             "heading root prevents all descendant value reads");
+        // A row has no budget of its own: two cells of 10,000 characters, the old row limit's
+        // reach, leave room for the third.
         row.label.clear(); first.label = std::string(10000, 'a'); second.label = std::string(10000, 'b'); tree = Tree{};
-        last.bounds.reset();
+        last.bounds.reset(); last.visible = true;
+        expect(rowText() == first.label + " | " + second.label + " | must not be read after refusal" && tree.counts == 3,
+            "a row is read past the old 20,000-character row limit");
+        // The screen's budget stops it: the cell that fills it is kept whole, the next never read.
+        first.label = std::string(voice::VisibleContext::sourceLimit() - 1, 'a'); tree = Tree{};
         expect(rowText() == first.label + " | " + second.label && tree.counts == 2,
             "budget stop keeps the final complete source fragment and prevents later value reads");
     }
@@ -244,10 +260,16 @@ int main() {
     window.children = {&field, &outside}; tree = Tree{};
     result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
     expect(result.dump().find("outside window") == std::string::npos, "off-window text is skipped");
+    voice::walk::readingWholeWindow() = true; tree = Tree{};
+    result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
+    expect(result.dump().find("outside window") != std::string::npos, "off-window text is read with the whole window");
+    voice::walk::readingWholeWindow() = false;
     window.bounds.reset();
     // The hidden-box rule every platform shares (ADR-DESK-054): a box at most a pixel thin
     // either way shows nothing, a 0×0 frame says nothing and counts as shown, and a hidden
-    // box is still walked into (Slack keeps its message list in a 1×2 one).
+    // box is still walked into (Slack keeps its message list in a 1×2 one). Reading the whole
+    // window, such a box says nothing of where it is (Chrome squashes what is scrolled out of view
+    // to such a strip), so its text is read on a line of its own.
     {
         Element unsized{ATSPI_ROLE_STATIC, "Unsized words", {}, {}};
         unsized.bounds = voice::ContextFrame{10, 10, 0, 0};
@@ -263,8 +285,13 @@ int main() {
         expect(text.find("Unsized words") != std::string::npos, "a 0x0 box counts as shown");
         expect(text.find("Thin words") == std::string::npos, "a box a pixel thin shows nothing");
         expect(text.find("Listed message") != std::string::npos, "a hidden box is walked into");
-        // A row's cells count toward the walk's 5000 nodes: one that uses them up stops the walk.
-        std::vector<Element> cells(4997, Element{ATSPI_ROLE_PANEL, "", {}, {}});
+        voice::walk::readingWholeWindow() = true; tree = Tree{};
+        result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
+        voice::walk::readingWholeWindow() = false;
+        expect(result["renderedText"].get<std::string>().find("\nThin words\n") != std::string::npos,
+            "with the whole window, a box a pixel thin is read on a line of its own");
+        // A row's cells count toward the walk's node budget: one that uses them up stops the walk.
+        std::vector<Element> cells(voice::walk::limits().nodeBudget - 3, Element{ATSPI_ROLE_PANEL, "", {}, {}});
         Element wide{ATSPI_ROLE_TABLE_ROW, "", {}, {}};
         for (auto& cell : cells) wide.children.push_back(&cell);
         Element after{ATSPI_ROLE_STATIC, "Unreached words", {}, {}};
@@ -296,7 +323,7 @@ int main() {
     page.page = voice::hostOfAddress("https://secret.example/"); refused = false;
     try { voice::safeSubtree(bulk, &page, policy, false); } catch (const voice::PrivacyHidden&) { refused = true; }
     expect(refused, "bulk excluded page refuses");
-    bulk.census = std::vector<Element*>(5001, &heading);
+    bulk.census = std::vector<Element*>(voice::walk::limits().nodeBudget + 1, &heading);
     expect(!voice::safeSubtree(bulk, &page, policy, false), "truncated bulk result never authorizes content");
     bulk.census.reset(); page.page = voice::hostOfAddress("https://allowed.example/"); page.children = {&heading};
     expect(voice::safeSubtree(bulk, &page, policy, true) && bulk.childQueries > 0,
@@ -389,6 +416,10 @@ int main() {
         thinPanel.bounds = voice::ContextFrame{10, 10, 1, 2};
         Element thinPartRow{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &thinPanel}};
         expect(read({&focus, &thinPartRow}) == voice::hiddenScreen(), "an excluded page under a row's part too thin to show refuses the window");
+        // Reading the whole window, that part is read, and looked through first.
+        voice::walk::readingWholeWindow() = true;
+        expect(read({&focus, &thinPartRow}) == voice::hiddenScreen(), "with the whole window, an excluded page under a thin row part refuses the window");
+        voice::walk::readingWholeWindow() = false;
         // A page's hidden control with a caption is looked through: an excluded page in it refuses.
         Element framed{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
         Element button{ATSPI_ROLE_PUSH_BUTTON, "Pay", {}, {&framed}};
@@ -426,6 +457,15 @@ int main() {
         far.bounds = voice::ContextFrame{0, 900, 100, 100};
         screen = read({&focus, &seen, &far});
         expect(shows(screen, "Visible words") && !shows(screen, "Far words"), "an excluded page outside the window is skipped");
+        // Reading the whole window, it refuses the window wherever it is: what is scrolled out of
+        // view is read, so the page would be (ADR-DESK-047, 2026-10-25).
+        voice::walk::readingWholeWindow() = true;
+        expect(read({&focus, &seen, &far}) == voice::hiddenScreen(), "with the whole window, an excluded page outside it refuses it");
+        far.page = voice::hostOfAddress("https://allowed.example/");
+        screen = read({&focus, &seen, &far});
+        expect(shows(screen, "Visible words") && shows(screen, "Far words"), "with the whole window, an allowed page outside it is read");
+        voice::walk::readingWholeWindow() = false;
+        far.page = voice::hostOfAddress("https://secret.example/");
         far.bounds = voice::ContextFrame{0, 100, 100, 100};
         expect(read({&focus, &seen, &far}) == voice::hiddenScreen(), "an excluded page in the window refuses it");
         frame.bounds.reset();

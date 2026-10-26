@@ -70,8 +70,10 @@ enum SharedContext {
         return try JSONDecoder().decode(Admission.self, from: Redactor.request(input, operation: .context))
     }
     struct FieldPlan: Decodable { var probeWhole: Bool; var useWhole: Bool }
-    static func fieldPlan(count: Int?, text: String? = nil) throws -> FieldPlan {
-        var value: [String: Any] = [:]
+    /// `wholeWindow`: the read's scope; reading what the window shows, only a short field is read
+    /// whole, so nothing scrolled out of view enters it.
+    static func fieldPlan(count: Int?, text: String? = nil, wholeWindow: Bool) throws -> FieldPlan {
+        var value: [String: Any] = ["wholeWindow": wholeWindow]
         if let count { value["count"] = count }
         if let text { value["text"] = text }
         let input = try JSONSerialization.data(withJSONObject: ["fieldPlan": value])

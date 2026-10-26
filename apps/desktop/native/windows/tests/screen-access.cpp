@@ -160,11 +160,35 @@ static int run(int argc, char** argv) {
     // A list wider than the node budget is listed only in part, and an excluded page in that part is
     // still found: the go-on callers (the focus and correction-window looks) refuse on it.
     Tree wideList{{{false, {}, {1}}, {false, {}, {}}}};
-    for (int item = 2; item < 6002; ++item) {
+    for (int item = 2; item < budget + 1002; ++item) {
         wideList.nodes[1].children.push_back(item);
         wideList.nodes.push_back({false, item == 12 ? std::optional{refused} : std::nullopt, {}});
     }
     expect(voice::walk::lookForExcludedPage(wideList, 0, policy, true) == PageLook::excluded, "an excluded page in a list wider than the budget is found");
+    // A stop (`readScreenStop`, ADR-DESK-053) asks the read now walking, and any numbered before it:
+    // the walk stops at its next element, and the walk's own looks are cut short, not seen whole, so
+    // the part is withheld. The checks before the walk never are: a stop there would let a page go
+    // unlooked-for. A read numbered after the stop, or with no number, is never asked.
+    auto& stops = voice::walk::readStops();
+    const auto stopped = [&] { return voice::walk::stop(0, false); };
+    Tree page{{{false, {}, {1}}, {false, {}, {}}}};
+    stops.reading = 3;
+    expect(!stopped() && voice::walk::lookForExcludedPage(page, 0, policy, true, true) == PageLook::none, "nothing is asked before a stop");
+    stops.ask(3);
+    expect(stopped() == std::optional<std::string>("asked"), "a stopped read's walk stops, saying why");
+    expect(voice::walk::lookForExcludedPage(page, 0, policy, true, true) == PageLook::notSeenWhole, "a stopped look inside a part has not seen it whole");
+    expect(voice::walk::lookForExcludedPage(page, 0, policy, true) == PageLook::none, "a check before the walk is not cut short");
+    Tree pageCheck{{{false, {}, {1}}, {false, refused, {}}}};
+    expect(voice::walk::lookForExcludedPage(pageCheck, 0, policy, true) == PageLook::excluded, "a stopped read still finds an excluded page before its walk");
+    expect(!voice::walk::holdsNoPassword(plainTree, 0), "a stopped census for passwords refuses what it would allow");
+    stops.reading = 4;
+    expect(!stopped() && voice::walk::holdsNoPassword(plainTree, 0), "a read numbered after the stop is not cut short");
+    stops.ask(2);
+    expect(!stopped(), "a lower stop after a higher one changes nothing");
+    stops.reading = 0;
+    expect(!stopped(), "a read with no number is never asked");
+    stops.ask(4);
+    expect(!stopped(), "a read with no number is never asked, whatever is stopped");
     std::cout << "Screen handlers refuse excluded and malformed requests before any read\n";
     return 0;
 }

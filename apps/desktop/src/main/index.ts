@@ -245,8 +245,9 @@ function launch(): void {
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
-    (exclusions) => screenReader.read(exclusions),
+    (exclusions, wholeWindowOf) => screenReader.read(exclusions, wholeWindowOf),
     () => windows.push("contextDebug"),
+    (read) => screenReader.stop(read),
   );
 
   const history = new PasteHistory();
@@ -297,6 +298,8 @@ function launch(): void {
       : undefined,
   });
   controller.captureContext = (exclusions) => probe.capture(exclusions);
+  controller.stopContext = (read) => probe.stop(read);
+  controller.captureWindow = (capture) => probe.window(capture);
 
   const shellGeometry = system instanceof WindowsSystem ? new ShellGeometry(() => system.shellExclusionBounds()) : null;
   const overlay = new OverlayWindowController(windows.overlay(), async () => {

@@ -75,6 +75,7 @@ extern "C" AtspiRole __wrap_atspi_accessible_get_role(AtspiAccessible* value, GE
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto result = atspi_state_set_new(nullptr);
     atspi_state_set_add(result, ATSPI_STATE_SHOWING);
+    atspi_state_set_add(result, ATSPI_STATE_VISIBLE);
     if (!elements.count(value) || at(value).focused) atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
     if (elements.count(value) && at(value).editable) atspi_state_set_add(result, ATSPI_STATE_EDITABLE);
     return result;
@@ -225,10 +226,10 @@ int main() {
             expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]" && largestRead <= 1, "a selection in a rich text too large is withheld");
         }
         {
-            // A rich field within the read's bytes but holding more than a field is read whole up
-            // to: its text is read, but not shown, and the rest of the screen still is.
-            const auto graphemes = voice::core::request({{"limits", true}}, voice_core_context_json).at("semanticGraphemes").get<size_t>();
-            auto text = element({std::string(graphemes + 1, 'x'), -1, std::nullopt, {}, "block"});
+            // A rich field holding more than a field is read whole up to (the read's bytes): its
+            // text is read, but not shown, and the rest of the screen still is.
+            const auto screenBytes = voice::core::request({{"limits", true}}, voice_core_context_json).at("screenBytes").get<size_t>();
+            auto text = element({std::string(screenBytes + 1, 'x'), -1, std::nullopt, {}, "block"});
             auto root = voice::own(element({object, 0, std::nullopt, {{0, text}}, "block"}));
             voice::LiveScreenTree tree(root);
             voice::VisibleContext context;
@@ -236,7 +237,7 @@ int main() {
             largestRead = 0;
             tree.appendFieldSource(root, voice::ContextFrame{0, 0, 90, 80}, context, voice::ContextFrame{10, 20, 100, 100});
             const auto rendered = context.render();
-            expect(largestRead == static_cast<int>(graphemes + 1) && rendered.find("xxxx") == std::string::npos &&
+            expect(largestRead == static_cast<int>(screenBytes + 1) && rendered.find("xxxx") == std::string::npos &&
                    rendered.find("Synthetic label") != std::string::npos, "a rich field longer than a whole read is not shown, and the rest of the screen is");
         }
         {

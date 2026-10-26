@@ -4,6 +4,7 @@
 
 #pragma once
 #include <windows.h>
+#include <limits>
 #include <string>
 #include <stdexcept>
 
@@ -11,6 +12,8 @@ namespace voice {
 inline std::wstring utf16(const std::string& value) {
     // What may be pasted is the shared core's; a Windows string ends at its first NUL.
     if (value.find('\0') != std::string::npos) throw std::runtime_error("text holds a NUL");
+    // The conversion takes an int length; how much is read is the shared core's limits, not this.
+    if (value.size() > static_cast<size_t>(std::numeric_limits<int>::max())) throw std::runtime_error("text too long");
     const auto size = static_cast<int>(value.size());
     const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), size, nullptr, 0);
     if (!count) throw std::runtime_error("text conversion failed");
@@ -20,7 +23,8 @@ inline std::wstring utf16(const std::string& value) {
 }
 inline std::string utf8(const std::wstring& value) {
     if (value.empty()) return {};
-    if (value.size() > 1024 * 1024) throw std::runtime_error("text too long");
+    // The conversion takes an int length; how much is read is the shared core's limits, not this.
+    if (value.size() > static_cast<size_t>(std::numeric_limits<int>::max() / 3)) throw std::runtime_error("text too long");
     const auto size = static_cast<int>(value.size());
     const int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), size, nullptr, 0, nullptr, nullptr);
     if (!count) throw std::runtime_error("text conversion failed");

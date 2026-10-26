@@ -251,7 +251,7 @@
       }
     },
     {
-      "name": "exact multibyte grapheme budget stops acquisition",
+      "name": "the screen budget stops acquisition however many characters it holds",
       "kind": 2,
       "initial": 1,
       "events": [
@@ -259,12 +259,12 @@
           "event": 1,
           "text": "é",
           "decision": 4,
-          "repeat": 20000
+          "repeat": 524288
         }
       ],
       "expected": {
         "text": "é",
-        "repeat": 20000
+        "repeat": 524288
       }
     },
     {
@@ -276,12 +276,35 @@
           "event": 2,
           "text": "x",
           "decision": 4,
-          "repeat": 20001
+          "repeat": 1048577
         }
       ],
       "expected": {
         "text": "x",
-        "repeat": 20001
+        "repeat": 1048577
+      }
+    },
+    {
+      "name": "a piece past a window is kept whole and reading goes on",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 2,
+          "text": "x",
+          "decision": 2,
+          "repeat": 262145
+        },
+        {
+          "event": 3,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "x",
+        "repeat": 262145
       }
     }
   ]

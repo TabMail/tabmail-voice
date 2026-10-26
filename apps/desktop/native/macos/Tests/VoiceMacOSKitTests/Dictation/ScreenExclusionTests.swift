@@ -33,7 +33,8 @@ struct ScreenExclusionTests {
         let screen = ScreenAccess(
             frontmost: { frontmost },
             bundleIdentifier: { apps[$0] },
-            read: { pid, name, bundleID, exclusions in
+            window: { _ in nil },
+            read: { pid, name, bundleID, _, exclusions, _, _ in
                 reads.screens.withLock { $0.append("\(pid) \(name) \(bundleID ?? "-")") }
                 reads.exclusions.withLock { $0.append(exclusions) }
                 if refuses { return nil }
@@ -241,8 +242,9 @@ struct ScreenExclusionTests {
     }
 
     private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = [],
-                      excluding hosts: [String]) -> (read: Bool, text: String) {
+                      excluding hosts: [String], whole: Bool = false) -> (read: Bool, text: String) {
         var context = ScreenContext(appName: "Example")
+        context.wholeWindow = whole
         let read = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: focused, focusPath: focusPath,
                                             excluding: ScreenExclusions(hosts: hosts), into: &context)
         return (read, try! context.renderedText())
@@ -301,10 +303,10 @@ struct ScreenExclusionTests {
             return tree.string(element, name)
         }
         func page(of webArea: FakeElement) -> PageHost { tree.page(of: webArea) }
-        func fieldSource(of element: FakeElement, windowFrame: CGRect?) -> [String]? {
+        func fieldSource(of element: FakeElement, windowFrame: CGRect?, wholeWindow: Bool) -> [String]? {
             asked.texts += 1
             asked.elements.insert(ObjectIdentifier(element))
-            return tree.fieldSource(of: element, windowFrame: windowFrame)
+            return tree.fieldSource(of: element, windowFrame: windowFrame, wholeWindow: wholeWindow)
         }
         func caretWindow(of element: FakeElement) -> SharedContext.CaretWindow? {
             asked.caret += 1
@@ -318,8 +320,9 @@ struct ScreenExclusionTests {
     private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
 
     private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement],
-                        excluding hosts: [String]) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
-        let start = ScreenContext(appName: "Example")
+                        excluding hosts: [String], whole: Bool = false) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
+        var start = ScreenContext(appName: "Example")
+        start.wholeWindow = whole
         let tree = RecordingTree()
         let context = ScreenContextReader.gather(window: window, focused: focused, focusPath: focusPath, in: tree,
                                                  excluding: ScreenExclusions(hosts: hosts), from: start)
@@ -485,13 +488,14 @@ struct ScreenExclusionTests {
         let web = FakeElement("AXWindow", children: [area])
         #expect(try gather(web, focused: button, focusPath: [area, web], excluding: []).context.renderedText() == "Draft\nSend")
 
-        // Outside the window it is not read, as any element there.
+        // Outside the window it is not read, as any element there; it is when the whole window is.
         let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
         let away = FakeElement("AXStaticText", [kAXValueAttribute: "Elsewhere"], frame: CGRect(x: 0, y: 900, width: 100, height: 16))
         let framed = FakeElement("AXWindow", frame: frame, children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: CGRect(x: 0, y: 10, width: 100, height: 16)), away,
         ])
         #expect(try gather(framed, focused: away, focusPath: [framed], excluding: []).context.renderedText() == "Draft")
+        #expect(try gather(framed, focused: away, focusPath: [framed], excluding: [], whole: true).context.renderedText() == "Draft\nElsewhere")
 
         // A field in focus is still the caret block and is not walked into, whatever its role.
         for role in ["AXComboBox", "AXTextArea", "AXTextField"] {
@@ -558,8 +562,9 @@ struct ScreenExclusionTests {
     }
 
     /// An excluded page wholly outside the window is skipped with what it holds, like any element
-    /// there: the window it is not shown in is read (ADR-DESK-047, 2026-10-01).
-    @Test func anExcludedPageOutsideTheWindowIsSkipped() throws {
+    /// there: the window it is not shown in is read (ADR-DESK-047, 2026-10-01). Reading the whole
+    /// window, the page would be read, so it refuses the window as one on screen does (2026-10-25).
+    @Test func anExcludedPageOutsideTheWindowIsSkippedUnlessTheWholeWindowIsRead() throws {
         let away = FakeElement("AXWebArea", ["host": "pay.example.com"], frame: CGRect(x: 0, y: 900, width: 400, height: 300),
                                children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
         let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300),
@@ -567,6 +572,10 @@ struct ScreenExclusionTests {
         let read = gather(window, focused: nil, focusPath: [], excluding: ["example.com"])
         #expect(read.read)
         #expect(try read.context.renderedText() == "Visible")
+        #expect(!gather(window, focused: nil, focusPath: [], excluding: ["example.com"], whole: true).read)
+        let whole = gather(window, focused: nil, focusPath: [], excluding: ["example.net"], whole: true)
+        #expect(whole.read)
+        #expect(try whole.context.renderedText() == "Visible\ncard 4242")
     }
 
     /// With the caret outside every page (the browser's address field), a page of an excluded
@@ -604,7 +613,8 @@ struct ScreenExclusionTests {
     /// read by its value and never walked into, so the page is looked for first. The field is not
     /// read and a marker stands in its place; the rest of the window is read. So with the page
     /// framed in another website's page there. A field too thin to show anything is not read
-    /// either way, and leaves no marker.
+    /// either way, and leaves no marker; reading the whole window it is read as a shown one is
+    /// (Chrome squashes what is scrolled out of view to a point-thin strip).
     @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
     func aFieldFramingAnExcludedWebsiteIsMarkedHiddenAndTheRestRead(role: String, inRow: Bool) throws {
         let excluded = page("pay.example.com", "card 4242")
@@ -615,7 +625,7 @@ struct ScreenExclusionTests {
             ("in another page", shown, FakeElement("AXWebArea", ["host": "news.example.org"], children: [excluded])),
         ]
         let marker = try SharedContext.hiddenMarker()
-        for shape in shapes {
+        for shape in shapes { for whole in [false, true] {
             let field = FakeElement(role, [kAXValueAttribute: "Field words"], frame: shape.frame, children: [shape.inside])
             let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300), children: [
                 FakeElement("AXStaticText", [kAXValueAttribute: "Outer"], frame: CGRect(x: 10, y: 10, width: 100, height: 16)),
@@ -624,18 +634,18 @@ struct ScreenExclusionTests {
                 ])]) : field,
                 FakeElement("AXStaticText", [kAXValueAttribute: "After"], frame: CGRect(x: 10, y: 100, width: 100, height: 16)),
             ])
-            let isShown = shape.name != "too thin to show"
-            let hidden = walk(window, excluding: ["example.com"])
-            #expect(hidden.read, "\(shape.name)")
-            #expect(!hidden.text.contains("Field words") && !hidden.text.contains("card 4242"), "\(shape.name)")
+            let isShown = whole || shape.name != "too thin to show"
+            let hidden = walk(window, excluding: ["example.com"], whole: whole)
+            #expect(hidden.read, "\(shape.name) \(whole)")
+            #expect(!hidden.text.contains("Field words") && !hidden.text.contains("card 4242"), "\(shape.name) \(whole)")
             let place = inRow ? (isShown ? "| 10:15 | \(marker)" : "| 10:15") : (isShown ? "> \(marker)" : nil)
-            #expect(hidden.text == ["Outer", place, "After"].compactMap { $0 }.joined(separator: "\n"), "\(shape.name)")
+            #expect(hidden.text == ["Outer", place, "After"].compactMap { $0 }.joined(separator: "\n"), "\(shape.name) \(whole)")
 
-            let read = walk(window, excluding: ["example.net"])
-            #expect(read.read, "\(shape.name)")
-            #expect(read.text.contains("Field words") == isShown, "\(shape.name)")
-            #expect(!read.text.contains(marker), "\(shape.name)")
-        }
+            let read = walk(window, excluding: ["example.net"], whole: whole)
+            #expect(read.read, "\(shape.name) \(whole)")
+            #expect(read.text.contains("Field words") == isShown, "\(shape.name) \(whole)")
+            #expect(!read.text.contains(marker), "\(shape.name) \(whole)")
+        } }
     }
 
     /// A field too large to look through is not read either: the look gives up at the element
@@ -695,11 +705,15 @@ struct ScreenExclusionTests {
         else { #expect(read.text.contains("Pay now") && !read.text.contains("card 4242")) }
 
         // One too thin to show anything is not read, but is looked through: the page it holds may
-        // still be on screen, and refuses the window (ADR-DESK-047).
+        // still be on screen, and refuses the window (ADR-DESK-047). Reading the whole window, it is
+        // read as one with no place (Chrome's strip for what is scrolled out of view).
         let thin = window(frame: CGRect(x: 0, y: 0, width: 200, height: 1))
         #expect(!walk(thin.window, excluding: ["example.com"]).read)
         let hidden = walk(thin.window, excluding: ["example.net"])
         #expect(hidden.read && hidden.text == "Outer")
+        #expect(!walk(thin.window, excluding: ["example.com"], whole: true).read)
+        let unplaced = walk(thin.window, excluding: ["example.net"], whole: true)
+        #expect(unplaced.read && unplaced.text == read.text)
 
         // Inside a row with no label, whose text is gathered: a piece of text or a titled control
         // that holds the page refuses the window there too.
@@ -709,12 +723,16 @@ struct ScreenExclusionTests {
             let inRow = FakeElement("AXWindow", children: [area])
             #expect(!walk(inRow, excluding: ["example.com"]).read)
             #expect(walk(inRow, excluding: ["example.net"]).text == "| 10:15 | Pay now")
-            // Too thin to show, it is not read there either, but is looked through.
+            // Too thin to show, it is not read there either, but is looked through; read with the
+            // whole window.
             let thinRow = FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "10:15"]), thin.holder])
             let thinWindow = FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [thinRow])])
             #expect(!walk(thinWindow, excluding: ["example.com"]).read)
             let thinInRow = walk(thinWindow, excluding: ["example.net"])
             #expect(thinInRow.read && thinInRow.text == "| 10:15")
+            #expect(!walk(thinWindow, excluding: ["example.com"], whole: true).read)
+            let wholeRow = walk(thinWindow, excluding: ["example.net"], whole: true)
+            #expect(wholeRow.read && wholeRow.text == "| 10:15 | Pay now")
         }
 
         // The page framed in another website's page inside it is found too.
