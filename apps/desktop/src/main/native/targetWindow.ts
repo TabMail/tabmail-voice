@@ -63,20 +63,27 @@ export class TargetWindows {
     }
     // Clipboard ownership stays in the system helper. The reader that retains the AX window does
     // the final check and posts the keys, without an IPC gap between those two operations.
-    const { transaction } = await this.system.request<{ transaction: number }>("preparePaste", { text }, config.helperRequestTimeout, signal);
+    const finish = () => this.system.request("finishPaste", { operation: handle }).catch((error: unknown) => {
+      log.debug(`TargetWindows: clipboard finish failed: ${errorName(error)}`);
+    });
+    const cancel = () => { void finish(); };
+    signal.addEventListener("abort", cancel, { once: true });
+    let prepared = false;
     try {
+      const { transaction } = await this.system.request<{ transaction: number }>("preparePaste", { text, operation: handle, deadline }, config.helperRequestTimeout, signal);
+      prepared = true;
       if (signal.aborted) throw new CancellationError();
       await this.reader.pasteTarget(target, transaction, deadline, signal);
     } catch (error) {
       if (signal.aborted) throw new CancellationError();
+      if (!prepared) throw error;
       log.debug(`TargetWindows: target could not receive paste: ${errorName(error)}`);
       throw new PasteTargetError();
     } finally {
-      // Cleanup has its own lifetime, including when the dictation was canceled. The native helper
-      // checks this transaction before restoring, so a later copy or paste always wins.
-      await this.system.request("finishPaste", { transaction }).catch((error: unknown) => {
-        log.debug(`TargetWindows: clipboard finish failed: ${errorName(error)}`);
-      });
+      signal.removeEventListener("abort", cancel);
+      // The operation id is known before preparation: even an unknown/late acknowledgement is
+      // finished. Native expiry independently cleans up if this message cannot be delivered.
+      await finish();
     }
   }
 }

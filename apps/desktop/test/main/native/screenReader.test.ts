@@ -176,3 +176,33 @@ test("the debug log times each read and says when a read restarts the reader", a
     expect.stringMatching(/^ScreenReader: read answered in \d+ms$/),
   ]);
 });
+
+test("a new target survives reader restart and both scopes read it after focus moves", async () => {
+  let epoch = 0;
+  let release!: (value: null) => void;
+  const oldRead = new Promise<null>(resolve => { release = resolve; });
+  const identity = () => ({ window: `00000000-0000-0000-0000-${String(epoch).padStart(12, "0")}`, pid: 123 });
+  let first = true;
+  let foreground = "Captured";
+  const helper = {
+    request: async (method: string, params: Record<string, unknown> = {}) => {
+      if (method === "captureTarget") return identity();
+      if (method !== "readScreen") return null;
+      if (first) { first = false; return oldRead; }
+      const target = params.target as { window?: string } | undefined;
+      if (target && target.window !== identity().window) return null;
+      return { renderedText: `${target ? "Captured" : foreground} ${params.wholeWindow ? "whole" : "shown"}` };
+    },
+    restart: () => { epoch += 1; release(null); },
+  } as unknown as HelperClient;
+  const screen = new ScreenReader(helper);
+  const superseded = screen.read(exclusions);
+  const target = await screen.captureTarget();
+  await superseded;
+  foreground = "Competing";
+  const shown = screen.read(exclusions, undefined, Promise.resolve(target));
+  expect((await shown as { renderedText: string } | null)?.renderedText).toBe("Captured shown");
+  const whole = await screen.read(exclusions, shown);
+  expect((whole as { renderedText: string } | null)?.renderedText).toBe("Captured whole");
+  expect(JSON.stringify([await shown, whole])).not.toContain("Competing");
+});

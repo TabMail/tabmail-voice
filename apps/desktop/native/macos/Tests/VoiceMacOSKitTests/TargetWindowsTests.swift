@@ -19,17 +19,19 @@ import VoiceHelperSupport
         var keys = 0
         var raised = 0
         var allowsRaise = true
+        var time = Date().timeIntervalSince1970 * 1000
+        var onFocus: () -> Void = {}
         init() { focused = first; living = [first, second] }
         func system() -> TargetWindows.System {
             .init(frontmost: { (self.front, "Synthetic app", nil) },
-                  focusedWindow: { _ in self.focused }, windows: { _ in self.living },
+                  focusedWindow: { _ in self.onFocus(); return self.focused }, windows: { _ in self.living },
                   raise: { pid, window in
                     self.raised += 1
                     if self.allowsRaise { self.front = pid; self.focused = window }
                   },
-                  clipboardCount: { self.clipboard }, post: { self.keys += 1 })
+                  clipboardCount: { self.clipboard }, now: { self.time }, post: { self.keys += 1 })
         }
-        var deadline: Double { Date().timeIntervalSince1970 * 1000 + 1000 }
+        var deadline: Double { time + 1000 }
     }
 
     @Test func voiceInFrontKeepsTheExactWindowBeforeIt() throws {
@@ -91,7 +93,7 @@ import VoiceHelperSupport
         fixture.clipboard += 1
         await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.deadline) }
         fixture.clipboard = 7
-        await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: Date().timeIntervalSince1970 * 1000 - 1) }
+        await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.time - 1) }
         #expect(fixture.keys == 0)
     }
 
@@ -106,6 +108,67 @@ import VoiceHelperSupport
         try targets.cancel(first)
         try await targets.paste(second, transaction: 7, deadline: fixture.deadline)
         #expect(fixture.keys == 1)
+    }
+
+    @Test func cancellationDuringActivationPreventsKeyDownAfterTheNativeLookupReturns() async throws {
+        let fixture = Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let captured = targets.capture()
+        fixture.front = 202; fixture.focused = fixture.second
+        fixture.onFocus = {
+            if fixture.raised > 0 { try? targets.cancel(captured); fixture.onFocus = {} }
+        }
+        await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.deadline) }
+        #expect(fixture.raised == 1)
+        #expect(fixture.keys == 0)
+    }
+
+    @Test func expiryDuringActivationPreventsKeyDownAfterTheNativeLookupReturns() async throws {
+        let fixture = Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let captured = targets.capture()
+        let deadline = fixture.deadline
+        fixture.front = 202; fixture.focused = fixture.second
+        fixture.onFocus = {
+            if fixture.raised > 0 { fixture.time = deadline + 1; fixture.onFocus = {} }
+        }
+        await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: deadline) }
+        #expect(fixture.raised == 1)
+        #expect(fixture.keys == 0)
+    }
+
+    @Test func delayedActivationSucceedsOnceAndRefusalNeverPosts() async throws {
+        let fixture = Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let captured = targets.capture()
+        fixture.front = 202; fixture.focused = fixture.second; fixture.allowsRaise = false
+        let activated = Task { @MainActor in
+            try await Task.sleep(for: .milliseconds(40))
+            fixture.front = 101; fixture.focused = fixture.first
+        }
+        try await targets.paste(captured, transaction: 7, deadline: fixture.deadline)
+        try await activated.value
+        #expect(fixture.keys == 1)
+        let next = targets.capture()
+        fixture.front = 202; fixture.focused = fixture.second
+        await #expect(throws: (any Error).self) { try await targets.paste(next, transaction: 7, deadline: fixture.deadline) }
+        #expect(fixture.keys == 1)
+    }
+
+    @Test func aTargetLostOrSupersededDuringActivationNeverPosts() async throws {
+        for superseded in [false, true] {
+            let fixture = Fixture()
+            let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+            let captured = targets.capture()
+            fixture.front = 202; fixture.focused = fixture.second; fixture.allowsRaise = false
+            let changed = Task { @MainActor in
+                try await Task.sleep(for: .milliseconds(30))
+                if superseded { _ = targets.capture() } else { fixture.living = [fixture.second] }
+            }
+            await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.deadline) }
+            try await changed.value
+            #expect(fixture.keys == 0)
+        }
     }
 
     @Test func aRestartedReaderNeverResolvesAnOldToken() throws {

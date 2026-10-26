@@ -27,6 +27,7 @@ final class TargetWindows {
         var windows: (pid_t) -> [AXUIElement]
         var raise: (pid_t, AXUIElement) -> Void
         var clipboardCount: () -> Int
+        var now: () -> Double = { Date().timeIntervalSince1970 * 1000 }
         var post: () async throws -> Void
 
         static let live = System(
@@ -150,17 +151,17 @@ final class TargetWindows {
     func paste(_ json: JSON, transaction: Int, deadline: Double) async throws {
         guard let target = try resolve(json) else { throw HelperError("target window unavailable") }
         let end = ContinuousClock.now.advanced(by: HelperConfig.targetActivationTimeout)
-        guard Date().timeIntervalSince1970 * 1000 < deadline else { throw HelperError("paste expired") }
+        guard system.now() < deadline else { throw HelperError("paste expired") }
         guard !isCanceled(target) else { throw HelperError("paste canceled") }
         if !inFront(target) { system.raise(target.pid, target.window) }
         while !inFront(target) {
-            guard !isCanceled(target), ContinuousClock.now < end, Date().timeIntervalSince1970 * 1000 < deadline,
+            guard !isCanceled(target), ContinuousClock.now < end, system.now() < deadline,
                   exists(target) else { throw HelperError("target activation refused") }
             try await Task.sleep(for: HelperConfig.targetActivationPoll)
         }
         // Nothing may suspend or make another helper round trip between these checks and key-down.
         guard captured?.token == target.token, exists(target), inFront(target),
-              Date().timeIntervalSince1970 * 1000 < deadline, system.clipboardCount() == transaction, !isCanceled(target) else {
+              system.now() < deadline, system.clipboardCount() == transaction, !isCanceled(target) else {
             throw HelperError("paste is no longer current")
         }
         try await system.post()

@@ -183,11 +183,14 @@ changes, keeps the last external window before Voice, reads the retained window,
 checks it before Cmd-V. It validates that the retained AX element still belongs to the app's live
 window list; neither titles nor geometry identify windows.
 
-Clipboard ownership remains with `voice-macos`: `preparePaste {text}` offers the text and returns
+Clipboard ownership remains with `voice-macos`: `preparePaste {text, operation, deadline}` validates its lifetime immediately before offering the text and returns
 its pasteboard change count (`transaction`); `pasteTarget {target, transaction, deadline}` in the
 reader restores and checks the exact window and clipboard generation immediately before key-down;
-`finishPaste {transaction}` in the system helper schedules the existing ownership-checked restore.
-The main process always finishes a prepared transaction, including failure and cancellation.
+`finishPaste {operation}` in the system helper schedules the existing ownership-checked restore.
+The operation id is known before preparation, so the main process finishes even an unknown acknowledgement
+outcome, and cancellation can end an operation before its queued preparation runs. The native writer
+independently expires an outstanding offer and schedules the same ownership-checked restore if the
+acknowledgement or finish message is lost; an expired preparation cannot overwrite a newer copy.
 `cancelPaste {target}` records cancellation off the main actor, so a blocked AX lookup cannot hide
 it from the final key-down guard. The key-up still completes once key-down was sent.
 

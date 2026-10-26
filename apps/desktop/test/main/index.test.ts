@@ -350,6 +350,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
+      if (typeof this.replies.get(method) === "function") return (this.replies.get(method) as (params: unknown) => unknown)(params);
       return this.replies.has(method) ? this.replies.get(method) : { value: null, events: [], calendars: [], contacts: [], items: [] };
     }
   },
@@ -585,6 +586,33 @@ function send(command: unknown): Promise<unknown> {
 }
 
 describe("main process wiring", () => {
+test("the real capture pipeline reads the delayed captured identity in both scopes after focus changes", async () => {
+  await launch("darwin");
+  const reader = app.helpers.get("voice-screen-reader")!;
+  const captured = { window: "00000000-0000-0000-0000-000000000001", pid: 42 };
+  const identity = Promise.withResolvers<typeof captured>();
+  reader.replies.set("captureTarget", identity.promise);
+  let front = "Captured";
+  reader.replies.set("readScreen", (params: { target?: typeof captured; wholeWindow?: boolean }) => blankScreen({
+    appName: params.target?.window === captured.window ? "Captured" : front,
+    renderedText: `${params.target?.window === captured.window ? "Captured" : front} ${params.wholeWindow ? "whole" : "shown"}`,
+  }));
+  const controller = app.controller as unknown as {
+    captureContext: (policy: { apps: string[]; sites: string[] }, target: Promise<number | null>) => Promise<unknown>;
+    captureWindow: (shown: Promise<unknown>) => Promise<unknown>;
+  };
+  const target = app.frontmostApp!();
+  const shown = controller.captureContext({ apps: [], sites: [] }, target);
+  expect(reader.requests.some(request => request.method === "readScreen")).toBe(false);
+  front = "Competing";
+  identity.resolve(captured);
+  expect(await shown).toMatchObject({ renderedText: "Captured shown" });
+  const whole = await controller.captureWindow(shown);
+  expect(whole).toMatchObject({ renderedText: "Captured whole" });
+  expect(JSON.stringify([await shown, whole])).not.toContain("Competing");
+});
+
+
   test("shell geometry events move, hide and restore active overlay placement", async () => {
     await launch("win32");
     const helper = app.helpers.get("voice-windows")!;

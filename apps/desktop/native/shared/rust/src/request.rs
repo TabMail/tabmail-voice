@@ -185,7 +185,7 @@ fn target_window(request: &Value) -> Result<Value, u32> {
     let valid_pid = object
         .get("pid")
         .and_then(Value::as_u64)
-        .is_some_and(|pid| pid > 0 && pid <= i32::MAX as u64);
+        .is_some_and(|pid| pid > 0 && pid <= u32::MAX as u64);
     if !valid_window || !valid_pid {
         return Err(1);
     }
@@ -253,6 +253,28 @@ fn screen_read(request: &Value, stop: bool) -> Result<Value, u32> {
     Ok(reply)
 }
 
+fn preparation(request: &Value, finish: bool) -> Result<Value, u32> {
+    let object = request.as_object().ok_or(1u32)?;
+    let operation = object
+        .get("operation")
+        .and_then(Value::as_u64)
+        .filter(|n| *n > 0 && *n <= 9_007_199_254_740_991)
+        .ok_or(1u32)?;
+    if object.keys().any(|key| {
+        key != "operation" && (finish || !matches!(key.as_str(), "text" | "deadline" | "now"))
+    }) {
+        return Err(1);
+    }
+    if finish {
+        return Ok(json!({"operation": operation}));
+    }
+    if !object.contains_key("deadline") || !object.contains_key("now") {
+        return Err(1);
+    }
+    let deadline = insert(request)?;
+    Ok(json!({"operation": operation, "wait": deadline["wait"]}))
+}
+
 fn paste_target(request: &Value) -> Result<Value, u32> {
     let object = request.as_object().ok_or(1u32)?;
     if object
@@ -267,7 +289,7 @@ fn paste_target(request: &Value) -> Result<Value, u32> {
     let transaction = object
         .get("transaction")
         .and_then(Value::as_u64)
-        .filter(|n| *n <= i32::MAX as u64)
+        .filter(|n| *n <= 9_007_199_254_740_991)
         .ok_or(1u32)?;
     let wait = insertion_deadline(request)?;
     Ok(json!({"target": target, "transaction": transaction, "wait": wait["wait"]}))
@@ -280,6 +302,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         .filter(|object| object.len() == 1)
         .ok_or(1u32)?;
     let reply = match object.iter().next() {
+        Some((key, request)) if key == "preparePaste" => preparation(request, false)?,
+        Some((key, request)) if key == "finishPaste" => preparation(request, true)?,
         Some((key, request)) if key == "pasteTarget" => paste_target(request)?,
         Some((key, request)) if key == "targetWindow" => target_window(request)?,
         Some((key, request)) if key == "field" => field(request)?,

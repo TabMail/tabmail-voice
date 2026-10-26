@@ -161,6 +161,17 @@ int main() {
             "live terminal dispatch preserves reference typed caret");
         expect(screen["renderedText"]=="[Terminal surface 0]\nfirst line\n> hello world\nstatus bar" && terminalTree.selections==0 && terminalTree.terminalSelections==0,
             "terminal never enters generic caret/selection or field path");
+        for (bool whole : {false, true}) {
+            voice::walk::readingWholeWindow() = whole;
+            terminalTree = Tree{};
+            screen = voice::gatherScreen(terminalTree,&terminalWindow,&terminalWindow,{},app,policy);
+            expect(screen["terminalViewport"]["surfaces"].size()==1 &&
+                screen["terminalViewport"]["caret"]["status"]=="unavailable" &&
+                screen["renderedText"]=="[Terminal surface 0]\nfirst line\n> hello world\nstatus bar" &&
+                terminalTree.selections==0 && terminalTree.terminalSelections==0 && terminalTree.counts==1,
+                "background terminal uses only the viewport reader in either scope");
+        }
+        voice::walk::readingWholeWindow() = false;
         terminal.selected="hello";terminalTree=Tree{};
         screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
         expect(screen["selectedText"]=="hello" && screen["textBeforeCaret"]=="" && screen["textAfterCaret"]=="", "selection remains independent on wire");

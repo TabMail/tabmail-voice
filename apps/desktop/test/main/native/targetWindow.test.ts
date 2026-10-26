@@ -2,10 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { PasteTargetError } from "../../../src/core/dictation/targetWindow.js";
 import { CancellationError } from "../../../src/core/util/timeout.js";
-import { HelperError, type HelperClient } from "../../../src/main/native/helperClient.js";
+import { HelperError, HelperClient } from "../../../src/main/native/helperClient.js";
 import { ScreenReader } from "../../../src/main/native/screenReader.js";
 import { TargetWindows } from "../../../src/main/native/targetWindow.js";
 
@@ -47,15 +48,15 @@ test.each(["pasteTarget", "insert"])("a refused %s reports an unavailable target
   const handle = await targets.capture();
   failures.set(method, new HelperError("failed", method));
   await expect(targets.paste("Synthetic text", new AbortController().signal, handle!)).rejects.toBeInstanceOf(PasteTargetError);
-  if (method === "pasteTarget") expect(calls.at(-1)).toMatchObject({ method: "finishPaste", params: { transaction: 7 } });
+  if (method === "pasteTarget") expect(calls.at(-1)).toMatchObject({ method: "finishPaste", params: { operation: handle } });
 });
 
-test("a failed clipboard preparation sends no paste keys and needs no finish", async () => {
+test("an unknown clipboard preparation outcome is finished without sending keys", async () => {
   const { targets, calls, failures } = setup("darwin");
   const handle = await targets.capture();
   failures.set("preparePaste", new HelperError("failed", "preparePaste"));
   await expect(targets.paste("Synthetic text", new AbortController().signal, handle!)).rejects.toBeInstanceOf(HelperError);
-  expect(calls.map(call => call.method)).toEqual(["captureTarget", "preparePaste"]);
+  expect(calls.map(call => call.method)).toEqual(["captureTarget", "preparePaste", "finishPaste"]);
 });
 
 test("a new key-down invalidates the old target, including when its capture fails", async () => {
@@ -93,3 +94,19 @@ test("a delayed old capture cannot replace the next dictation's window", async (
   expect(await old).toBeNull();
   expect(targets.native(current)).toEqual({ window: 84, pid: 456 });
 });
+
+
+test("a lost preparation acknowledgement still finishes its known operation before any keys", async () => {
+  const main = new HelperClient({ name: "prepared-paste-fixture", executable: process.execPath,
+    args: [join(__dirname, "../../support/preparedPasteHelper.mjs")] });
+  main.start();
+  const { reader, calls } = setup("darwin");
+  const targets = new TargetWindows(main, reader, "darwin");
+  try {
+    const handle = await targets.capture();
+    await expect(targets.paste("Synthetic dictated text", new AbortController().signal, handle!))
+      .rejects.toMatchObject({ kind: "timeout", method: "preparePaste" });
+    expect(await main.request("state")).toEqual({ clipboard: "Synthetic prior copy", prepares: 1, finishes: [handle] });
+    expect(calls.map(call => call.method)).toEqual(["captureTarget"]);
+  } finally { main.stop(); }
+}, 10_000);
