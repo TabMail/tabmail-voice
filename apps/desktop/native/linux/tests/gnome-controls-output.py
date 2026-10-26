@@ -15,8 +15,9 @@ assert [line['action'] for line in lines if line['event'] == 'action'] == [
     'start', 'finish', 'startAgent', 'finish'
 ], result.stdout
 # Right Alt held by the Shell, given back as AltGr, held again once the Shell is ready, let go,
-# then held again.
-assert [line['installed'] for line in lines if line['event'] == 'hotkeyInstallationChanged'] == [True, False, True, False, True], result.stdout
+# then held again; and held once more with the chat window open (asked for again on "ready",
+# which changes nothing the app is told).
+assert [line['installed'] for line in lines if line['event'] == 'hotkeyInstallationChanged'] == [True, False, True, False, True, True], result.stdout
 # Only while Right Alt is wanted does its refusal reach the app.
 assert len([line for line in lines if line['event'] == 'hotkeyUnavailable']) == 1, result.stdout
 # Another window taking the focus, and a click elsewhere, reach the app once each, while the chat
