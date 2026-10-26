@@ -305,6 +305,17 @@ describe("LevelEnvelope", () => {
     expect(hear(envelope, -33)).toBeGreaterThan(0.5);
   });
 
+  /** A loud first reading (a knock as the dictation starts) doesn't hold the loud end up: the room
+   * still reads nothing, and the ordinary speech after it moves the waveform clearly. */
+  test("a loud start doesn't flatten the speech after it", () => {
+    const envelope = new LevelEnvelope();
+    hear(envelope, -5);
+    const room = Array.from({ length: 10 }, () => hear(envelope, -45));
+    expect(room.every((level) => level === 0)).toBe(true);
+    expect(envelope.room).toBeCloseTo(-45, 5);
+    expect(hear(envelope, -33)).toBeGreaterThan(0.5);
+  });
+
   /** Until the room is known (the first dictation after launch, its warm-up readings) and on digital
    * silence, the bars rest. */
   test("the waveform rests until the room is known, and on digital silence", () => {

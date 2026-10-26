@@ -1222,6 +1222,48 @@ describe("the chat window", () => {
     }
   });
 
+  /** The bars' motion keeps time, not frames: at the same moment after a level arrives, a 25, 50 or
+   * 125 Hz display shows the same bars, rising and falling. */
+  test("the waveform moves the same at any frame rate", async () => {
+    const heights = async (hz: number) => {
+      const step = 1_000 / hz;
+      let now = 0;
+      let nextHandle = 1;
+      const queued = new Map<number, FrameRequestCallback>();
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        queued.set(nextHandle, callback);
+        return nextHandle++;
+      });
+      vi.stubGlobal("cancelAnimationFrame", (handle: number) => queued.delete(handle));
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const advance = (milliseconds: number) => {
+        for (let frame = 0; frame < milliseconds / step; frame += 1) {
+          now += step;
+          const due = [...queued.values()];
+          queued.clear();
+          for (const callback of due) callback(now);
+        }
+      };
+      const page = await overlayPage();
+      const center = () => parseFloat(document.querySelectorAll<HTMLElement>(".pill .bar")[(config.overlayMeterBarCount - 1) / 2]?.style.height ?? "");
+      await page.show({ ...listening, level: 0 });
+      advance(200);
+      await page.show({ ...listening, level: 1 });
+      advance(200);
+      const risen = center();
+      await page.show({ ...listening, level: 0 });
+      advance(200);
+      const fallen = center();
+      return { risen, fallen };
+    };
+    const [slow, usual, fast] = [await heights(25), await heights(50), await heights(125)];
+    expect(usual.risen).toBeGreaterThan(usual.fallen);
+    for (const other of [slow, fast]) {
+      expect(other.risen).toBeCloseTo(usual.risen, 6);
+      expect(other.fallen).toBeCloseTo(usual.fallen, 6);
+    }
+  });
+
   /** The timeout bar runs down by itself, with no state pushed: full, half gone, then empty; gone once
    * touched, it asks for no more frames. */
   test("the timeout bar runs down with no state pushed", async () => {
