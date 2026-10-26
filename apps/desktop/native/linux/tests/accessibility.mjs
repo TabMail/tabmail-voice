@@ -77,6 +77,15 @@ try {
   assert.equal(read.textBeforeCaret, "Synthetic field content");
   assert.ok(read.renderedText.includes("Synthetic visible heading"));
   assert.ok(!JSON.stringify(read).includes("synthetic-password-must-not-be-read"));
+  const target = (await request("captureTarget")).result;
+  assert.equal(target.pid, fixture.pid, "the target belongs to the original fixture process");
+  await command({ kind: "second" });
+  const captured = (await request("readScreen", { ...policy, target, read: 40 })).result;
+  assert.ok(captured?.renderedText.includes("Synthetic visible heading"), "the captured background frame is read");
+  assert.ok(!captured.renderedText.includes("Synthetic other window"), "another window with the same title is never substituted");
+  const entire = (await request("readScreen", { ...policy, target, read: 41, wholeWindow: true, sameWindowAs: 40 })).result;
+  assert.ok(entire?.renderedText.includes("Synthetic visible heading"), "the whole read uses that same background frame");
+  await command({ kind: "first" });
   // The app numbers its reads and can stop one (ADR-DESK-053): a stop answers null, a read numbered
   // after it is not cut short, and a read number the shared core refuses refuses the request.
   const stop = await send(reader, "readScreenStop", { read: 5 });

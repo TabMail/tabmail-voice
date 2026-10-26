@@ -105,3 +105,18 @@ copied it into your history and also your clipboard" (the history is ADR-DESK-04
 - The clipboard keeps the text after an unpasted dictation: the user's earlier clipboard is replaced,
   which is what "copied to your clipboard" means.
 
+
+
+**Amendment 2026-10-26 (owner): restore the captured window before pasting.** At each key-down,
+Voice captures the exact window in front; when Voice itself is in front, it captures the external
+window that had focus immediately before Voice. Both plain dictation and agent Edit/Compose use
+that target. Each new key-down over another external window chooses that window for that operation.
+Reads use the same captured identity, including the subsequent whole-window read. A paste brings
+that exact living window back to the front, verifies it, then pastes into whatever field currently
+has focus within it. It does not restore a field's earlier caret or selection. A focus switch alone
+no longer produces the not-pasted note. A gone window, lost identity, refused activation or failed
+native final check still produces the existing note and preserves the text in paste history. There
+is no alternative-window, title, geometry or process-only substitution. Native cancellation,
+deadlines and clipboard ownership checks remain in force. Implementation: `TargetWindows` in the
+main process; each platform's capture and activation adapters. macOS's ownership split is recorded
+in ADR-DESK-053's amendment of the same date.

@@ -139,14 +139,15 @@ struct ScreenRead {
     int64_t number = 0;
     bool wholeWindow = false;
     int64_t sameWindowAs = 0;
+    JSON target = nullptr;
 };
 inline ScreenRead screenRead(const JSON& params) {
     JSON fields = JSON::object();
-    for (const char* name : {"read", "wholeWindow", "sameWindowAs"})
+    for (const char* name : {"read", "wholeWindow", "sameWindowAs", "target"})
         if (params.is_object() && params.contains(name)) fields[name] = params[name];
     const auto reply = core::request({{"readScreen", fields}}, voice_core_request_json);
     const auto number = [&](const char* name) { return reply.at(name).is_null() ? int64_t{0} : reply.at(name).get<int64_t>(); };
-    return {number("read"), reply.at("wholeWindow").get<bool>(), number("sameWindowAs")};
+    return {number("read"), reply.at("wholeWindow").get<bool>(), number("sameWindowAs"), reply.value("target", JSON(nullptr))};
 }
 // The window the helper's last numbered read read, so a read of the whole window bound to it
 // (`sameWindowAs`) reads that window or nothing: `Window` is the OS's name for it.

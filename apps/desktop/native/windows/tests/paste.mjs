@@ -222,6 +222,16 @@ try {
   assert.equal((await command("value")).text, "Before selected after.", "expired request never sends input");
   assert.deepEqual(await command("clipboard"), original, "expired request leaves the clipboard intact");
   assert.equal((await request("frontmostApp").result).result.window, window, "helper remains available after a refused late insertion");
+  // A captured target restores the original window even when another window of the same app
+  // takes focus. The text goes to the original field, not the newer foreground window.
+  await command("editable");
+  const target = (await request("captureTarget").result).result;
+  assert.equal(target.window, window);
+  await command("second");
+  const restored = await request("insert", { target, text: "Synthetic inserted text", deadline: Date.now() + 2000 }).result;
+  assert.equal(restored.error, undefined, "the captured original window is restored for paste");
+  await until("the target window receives its paste", "Before Synthetic inserted text after.");
+  assert.equal((await request("frontmostApp").result).result.window, window);
   const exits = [once(fixture, "exit"), once(helper, "exit")];
   fixture.stdin.end(); helper.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);

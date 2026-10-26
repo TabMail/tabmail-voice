@@ -19,6 +19,8 @@ const IFACE = `<node><interface name="ai.tabmail.Voice.Caret">
 <method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="Holding"><arg type="b" direction="out"/></method>
+<method name="Target"><arg type="u" direction="in"/><arg type="t" direction="out"/><arg type="u" direction="out"/></method>
+<method name="Activate"><arg type="t" direction="in"/><arg type="b" direction="out"/></method>
 <method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal>
 </interface></node>`;
@@ -114,6 +116,10 @@ export default class VoiceCaret extends Extension {
         this._rect = null;
         const previous = this._window;
         this._window = global.display.focus_window;
+        if (this._window) {
+            if (this._lastWindow && this._lastWindow.get_pid() !== this._window.get_pid()) this._beforeApp = this._lastWindow;
+            this._lastWindow = this._window;
+        }
         if (this._owner && this._wanted.chat && this._window !== previous) this._send('chatFocusChanged');
         if (this._window) {
             for (const signal of ['position-changed', 'size-changed', 'unmanaged']) {
@@ -194,7 +200,7 @@ export default class VoiceCaret extends Extension {
         return JSON.stringify({...rect, source: 'accessibility'});
     }
 
-    Version() { return 3; }
+    Version() { return 4; }
 
     /** The window with the keyboard focus, as the Shell knows it: its id, which stays the window's for
      * as long as it lives, and its process. Unchanged while the dictation key holds the keyboard (the
@@ -206,6 +212,26 @@ export default class VoiceCaret extends Extension {
         const window = global.display.focus_window;
         if (!window || Main.sessionMode.isLocked || Main.modalCount > (this._hold ? 1 : 0)) return [0, 0];
         return [window.get_id(), Math.max(0, window.get_pid())];
+    }
+
+    /** Voice in front targets the exact window of the previous application. Remembered by the
+     * compositor even if accessibility's corresponding focus event is still in flight. */
+    Target(owner) {
+        const [id, pid] = this.Focus();
+        if (!id || pid !== owner) return [id, pid];
+        const window = this._beforeApp;
+        if (!window || !global.get_window_actors().some(actor => actor.meta_window === window)) return [0, 0];
+        return [window.get_id(), Math.max(0, window.get_pid())];
+    }
+
+    /** Restore only the compositor's exact live window; titles and geometry never identify it. */
+    Activate(id) {
+        if (Main.sessionMode.isLocked || Main.modalCount > 0) return false;
+        const window = global.get_window_actors().map(actor => actor.meta_window)
+            .find(window => window.get_id() === id);
+        if (!window) return false;
+        Main.activateWindow(window, global.get_current_time());
+        return true;
     }
 
     /** Space and Escape while dictating. */
@@ -367,6 +393,8 @@ export default class VoiceCaret extends Extension {
         this._signals = [];
         this._windowSignals = [];
         this._window = null;
+        this._lastWindow = null;
+        this._beforeApp = null;
         this._rect = null;
         this._focus = null;
     }

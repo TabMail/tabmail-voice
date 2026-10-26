@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import type { NativeTargetWindow } from "./targetWindow.js";
+import { CancellationError } from "../../core/util/timeout.js";
 import * as config from "../../core/config.js";
 import type { ScreenExclusions } from "../../core/dictation/excludedSites.js";
 import type { ScreenRead } from "../../core/dictation/screenContext.js";
@@ -27,7 +29,30 @@ export class ScreenReader {
 
   constructor(private readonly helper: HelperClient) {}
 
-  read(exclusions: ScreenExclusions, wholeWindowOf?: Promise<ScreenRead | null>): Promise<ScreenRead | null> {
+  /** End an obsolete read before capturing a target: a macOS target belongs to this reader
+   * instance and must never be captured just before that instance is restarted. */
+  async captureTarget(helper: HelperClient = this.helper): Promise<NativeTargetWindow | null> {
+    if (this.reading) {
+      this.helper.restart();
+      this.reading = null;
+    }
+    return helper.request<NativeTargetWindow | null>("captureTarget");
+  }
+
+  async pasteTarget(target: NativeTargetWindow, transaction: number, deadline: number, signal: AbortSignal): Promise<unknown> {
+    if (signal.aborted) throw new CancellationError();
+    const cancel = () => {
+      void this.helper.request("cancelPaste", { target }).catch((error: unknown) => log.debug(`ScreenReader: paste cancellation failed (${errorName(error)})`));
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      return await this.helper.request("pasteTarget", { target, transaction, deadline }, config.helperRequestTimeout + config.insertionReplyGrace, signal);
+    } finally { signal.removeEventListener("abort", cancel); }
+  }
+
+  private readonly targets = new WeakMap<Promise<ScreenRead | null>, Promise<NativeTargetWindow | null>>();
+
+  read(exclusions: ScreenExclusions, wholeWindowOf?: Promise<ScreenRead | null>, target?: Promise<NativeTargetWindow | null>): Promise<ScreenRead | null> {
     const wholeWindow = wholeWindowOf !== undefined;
     const sameWindowAs = wholeWindowOf === undefined ? undefined : this.numbers.get(wholeWindowOf);
     if (wholeWindow && sameWindowAs === undefined) {
@@ -41,7 +66,10 @@ export class ScreenReader {
     const started = performance.now();
     this.reads += 1;
     const number = this.reads;
-    const read = this.helper.request<ScreenRead | null>("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites, read: number, wholeWindow, ...(wholeWindow ? { sameWindowAs } : {}) }, config.screenReaderTimeout);
+    const identity = wholeWindowOf === undefined ? target : this.targets.get(wholeWindowOf);
+    const request = (target?: NativeTargetWindow | null) => target === null ? Promise.resolve(null) : this.helper.request<ScreenRead | null>("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites, read: number, wholeWindow, ...(wholeWindow ? { sameWindowAs } : {}), ...(target === undefined ? {} : { target }) }, config.screenReaderTimeout);
+    const read = identity === undefined ? request() : identity.then(request);
+    if (identity) this.targets.set(read, identity);
     this.numbers.set(read, number);
     read.then(
       () => log.debug(() => `ScreenReader: read${wholeWindow ? " of the whole window" : ""} answered in ${elapsed(started)}`),

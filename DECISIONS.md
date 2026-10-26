@@ -51,7 +51,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-039](Companion/Decisions/Active/adr-desk-039.md)**: A shorter wait between the release and the text
 - **[ADR-DESK-040](Companion/Decisions/Active/adr-desk-040.md)**: The recording is peak-normalized before it is uploaded
 - **[ADR-DESK-041](Companion/Decisions/Active/adr-desk-041.md)**: The app updates itself from cdn.tabmail.ai
-- **[ADR-DESK-042](Companion/Decisions/Active/adr-desk-042.md)**: The text goes where the caret was at key-down, or onto the clipboard
+- **[ADR-DESK-042](Companion/Decisions/Active/adr-desk-042.md)**: The text goes where the caret was at key-down, or onto the clipboard Captured target window, before Voice, background reads, restore/activate before paste (2026-10-26).
 - **[ADR-DESK-043](Companion/Decisions/Active/adr-desk-043.md)**: The paste history, on a triple tap
 - **[ADR-DESK-044](Companion/Decisions/Active/adr-desk-044.md)**: The code in folders by concern, each with a place for what comes next
 - **[ADR-DESK-045](Companion/Decisions/Active/adr-desk-045.md)**: Apps the screen is never read in, with the password managers built in
@@ -62,7 +62,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-050](Companion/Decisions/Active/adr-desk-050.md)**: Windows and Linux update themselves too, from signed packages proven by the app *(Linux half superseded by ADR-DESK-058)*
 - **[ADR-DESK-051](Companion/Decisions/Active/adr-desk-051.md)**: Agent mode reads a PDF the user approves, parsed in a disposable sandbox, redacted in the helper
 - **[ADR-DESK-052](Companion/Decisions/Active/adr-desk-052.md)**: Right Alt as an Ubuntu dictation key, held by the GNOME extension
-- **[ADR-DESK-053](Companion/Decisions/Active/adr-desk-053.md)**: The screen is read by a program of its own; 2026-10-25: numbered reads, `readScreenStop` answers with what was read so far (stop rule in Rust `read_stops.rs`); the whole window is read after, numbered after
+- **[ADR-DESK-053](Companion/Decisions/Active/adr-desk-053.md)**: The screen is read by a program of its own; 2026-10-25: numbered reads, `readScreenStop` answers with what was read so far (stop rule in Rust `read_stops.rs`); the whole window is read after, numbered after Reader-owned AX window tokens and guarded paste, preparePaste/finishPaste/cancelPaste (2026-10-26).
 - **[ADR-DESK-054](Companion/Decisions/Active/adr-desk-054.md)**: Shared logic lives in Rust only; native code is thin OS adapters
 - **[ADR-DESK-055](Companion/Decisions/Active/adr-desk-055.md)**: Agent mode is one tool loop; Compose and Edit end it by pasting; 2026-10-25: `screen_read` local tool reads the whole window (no protocol bump; listed only when the window was read)
 - **[ADR-DESK-056](Companion/Decisions/Active/adr-desk-056.md)**: On GNOME, the extension says which window is in front

@@ -16,6 +16,7 @@ import { NativeTextRedactor } from "../../../src/main/native/textRedactor.js";
 import { MacSystem } from "../../../src/main/native/macos/system.js";
 import { decodeSamples, NativeMicrophone } from "../../../src/main/native/microphone.js";
 import { FieldReader } from "../../../src/main/native/fieldReader.js";
+import { TargetWindows } from "../../../src/main/native/targetWindow.js";
 import { ScreenReader } from "../../../src/main/native/screenReader.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
 
@@ -41,7 +42,7 @@ function registered(source: string): Map<string, Set<string>> {
     // `readNumber(params, method)` forwards the request's `read` to the shared core to check.
     if (/readNumber\(params, /.test(section)) params.add("read");
     // `screenRead(params)` forwards the request's `read`, `wholeWindow` and `sameWindowAs` to the shared core to check.
-    if (/screenRead\(params\)/.test(section)) for (const name of ["read", "wholeWindow", "sameWindowAs"]) params.add(name);
+    if (/screenRead\(params\)/.test(section)) for (const name of ["read", "wholeWindow", "sameWindowAs", "target"]) params.add(name);
     // This handler forwards the JSON unchanged to the shared Rust text operation.
     if (/Redactor\.request\(JSONEncoder\(\)\.encode\(params\), operation: \.text\)/.test(section)) {
       const ffi = readFileSync(join(root, "native/shared/rust/src/ffi.rs"), "utf8");
@@ -60,6 +61,8 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
+      if (method === "captureTarget") return { window: "00000000-0000-0000-0000-000000000001", pid: 123 };
+      if (method === "preparePaste") return { transaction: 7 };
       return { text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, calendars: [], occurrence: null, recurrence: null };
     },
     on() {},
@@ -75,6 +78,9 @@ describe("helper wire contract", () => {
     const app = "org.example.app";
     mac.saveClipboard();
     await mac.paste("text");
+    const targetWindows = new TargetWindows(helper, new ScreenReader(recordingHelper().helper), "darwin");
+    const target = await targetWindows.capture();
+    await targetWindows.paste("text", new AbortController().signal, target!);
     await mac.frontmostApp();
     await mac.keyboardLanguage();
     await mac.fullUserName();
@@ -126,10 +132,15 @@ describe("helper wire contract", () => {
   test("every request ScreenReader sends is one voice-screen-reader handles, with the params it reads", async () => {
     const { helper, requests } = recordingHelper();
     const reader = new ScreenReader(helper);
-    const read = reader.read({ apps: ["org.example.app"], sites: ["example.com"] });
+    const target = await reader.captureTarget();
+    const read = reader.read({ apps: ["org.example.app"], sites: ["example.com"] }, undefined, Promise.resolve(target));
     reader.stop(read);
     await read;
     await reader.read({ apps: ["org.example.app"], sites: ["example.com"] }, read);
+    const cancel = new AbortController();
+    const pasting = reader.pasteTarget(target!, 7, Date.now() + config.helperRequestTimeout, cancel.signal);
+    cancel.abort();
+    await pasting;
 
     const handlers = registered("native/macos/Sources/VoiceMacOSKit/ScreenReaderService.swift");
     expect([...new Set(requests.map((request) => request.method))].sort()).toEqual([...handlers.keys()].sort());

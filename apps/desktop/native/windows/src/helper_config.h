@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 namespace voice::HelperConfig {
+inline constexpr unsigned targetActivationWaitMs = 1000;
+inline constexpr unsigned targetActivationPollMs = 20;
 inline constexpr uint32_t accessibilityRequestTimeoutMs = 1000;
 inline constexpr uint32_t accessibilityRetryIntervalMs = 1000;
 inline constexpr unsigned accessibilityMaxAttempts = 5;

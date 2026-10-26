@@ -172,3 +172,26 @@ and a read that missed the caller's wait used to give nothing.
   took one to six minutes (about 0.65-3.7 ms an element, cross-process), so on a very large window
   the stop, not the budget, is what ends a dictation's read. The CTest cases that walk the whole
   budget run as `voice-privacy-budgets`, apart from `voice-privacy-provider`.
+
+
+**Amendment 2026-10-26: the macOS reader owns captured AX window identities and guarded keys.**
+Public AX APIs do not serialize an `AXUIElement` between processes. A token retained by
+`voice-macos` alone therefore cannot identify the same window in the separate screen reader.
+`voice-screen-reader` now retains the captured AX window, with a per-capture UUID that never
+resolves in a restarted reader. It observes app activation/deactivation and same-app focused-window
+changes, keeps the last external window before Voice, reads the retained window, and raises and
+checks it before Cmd-V. It validates that the retained AX element still belongs to the app's live
+window list; neither titles nor geometry identify windows.
+
+Clipboard ownership remains with `voice-macos`: `preparePaste {text}` offers the text and returns
+its pasteboard change count (`transaction`); `pasteTarget {target, transaction, deadline}` in the
+reader restores and checks the exact window and clipboard generation immediately before key-down;
+`finishPaste {transaction}` in the system helper schedules the existing ownership-checked restore.
+The main process always finishes a prepared transaction, including failure and cancellation.
+`cancelPaste {target}` records cancellation off the main actor, so a blocked AX lookup cannot hide
+it from the final key-down guard. The key-up still completes once key-down was sent.
+
+This adds two local pipe round trips to a macOS paste and lets a restarted reader invalidate a
+pending paste. That identity loss produces the existing not-pasted note. The read remains isolated
+from the microphone and system clipboard work; a superseded busy reader is restarted **before** a
+new target is captured. No private AX window-id API, new service, or persistent user data is added.

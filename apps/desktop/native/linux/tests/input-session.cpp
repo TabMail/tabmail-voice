@@ -204,10 +204,12 @@ int main() {
     g_variant_builder_add(&malformed, "{sv}", "session_is_owner", g_variant_new_boolean(true));
     emitOwner(g_variant_builder_end(&malformed));
     require(!input.state->selection.ours);
-    bool focused = true, terminal = false;
+    bool focused = true, terminal = false, allowsActivation = false;
+    unsigned activations = 0;
     // Short waits keep the run quick; the shared core's own are checked by its cases.
     ClipboardKeeper keeper(input, {600, 100, 1024 * 1024, 8});
-    Inserter inserter(input, keeper, [&](uint64_t token) { return focused && token == 42; }, [&] { return terminal; });
+    Inserter inserter(input, keeper, [&](uint64_t token) { return focused && token == 42; }, [&] { return terminal; },
+        [&](uint64_t token, auto done) { ++activations; require(token == 42); if (allowsActivation) focused = true; done(allowsActivation); });
     { auto inner = input.state->onOwnerChange; input.state->onOwnerChange = [&changes, inner] { ++changes; inner(); }; }
     const auto parameters = [] {
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -263,6 +265,16 @@ int main() {
     require(offered());
     run(92, true);
     require(fixture.publications == 2 && fixture.keys.size() == 8 && offered());
+    reset();
+    focused = false; allowsActivation = true;
+    const auto beforeActivation = activations;
+    run(94, true);
+    require(activations == beforeActivation + 1 && fixture.keys.size() == 4 && fixture.publications == 1);
+    reset();
+    focused = false; allowsActivation = false;
+    run(95, false);
+    require(fixture.keys.empty() && fixture.publications == 0);
+    focused = true;
     reset();
     // Another app copying between the publish and the paste vetoes the paste.
     fixture.copyAfterPublish = true;

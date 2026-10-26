@@ -56,7 +56,7 @@ What a new file, target or name must match (the folders' rules are ADR-DESK-044'
 `voice-hotkey` sends each gesture action to `DictationController` (`src/core/dictation/controller.ts`):
 start (arming, the microphone, caret, keyboard language and target app, ADR-DESK-042), finish
 (transcribe and clean up in one backend request, paste through `TextInserter` with the clipboard put
-back by `ClipboardKeeper`, ADR-DESK-002; `notPasted` when the front app changed; chunked long
+back by `ClipboardKeeper`, ADR-DESK-002; `notPasted` when the captured window cannot be restored; chunked long
 dictations, ADR-DESK-049), cancel, the `generation` counter, hands-free and the triple tap
 (ADR-DESK-021, ADR-DESK-043), tips, and agent mode (`DesktopAgent.run`, the bubbles and the chat
 window, ADR-DESK-011/033/036/055): [the dictation flow](Companion/Memory/Current/002-dictation-flow.md).
@@ -70,3 +70,5 @@ Packaged macOS (universal, Apple silicon and Intel; each Mac app reads the feed 
 (`latest-mac.yml`, `latest.yml` on Windows) with `electron-updater`, sending no installation ID (ADR-DESK-041,
 ADR-DESK-050). On Linux apt updates the package from the signed repository at `cdn.tabmail.ai/releases/voice`,
 whose source and keys the package installs (ADR-DESK-058).
+
+Captured-window identities, helper methods and GNOME integration: [the target-window flow](Companion/Memory/Current/003-captured-windows.md).

@@ -30,6 +30,7 @@ struct Read {
     HWND window = nullptr;
     int64_t number = 0;
     bool wholeWindow = false;
+    bool targeted = false;
     ULONGLONG started = 0; // For the debug log's failure line.
 };
 
@@ -64,9 +65,9 @@ private:
             voice::walk::readingWholeWindow() = read.wholeWindow;
             try {
                 output.send({{"id", read.id}, {"result", voice::screenAccess(read.params, read.window, voice::executableName,
-                    [](HWND target, const voice::ScreenExclusions& exclusions) {
+                    [&read](HWND target, const voice::ScreenExclusions& exclusions) {
                         voice::Automation automation;
-                        return automation.readScreen(target, exclusions);
+                        return automation.readScreen(target, exclusions, read.targeted);
                     })}});
             } catch (const std::exception& error) {
                 // Never echo parameters or captured text into logs; our failure reasons are fixed phrases and HRESULT codes.
@@ -122,12 +123,20 @@ int main(int argc, char**) {
         }
         // A read of the whole window bound to an earlier read's window (`sameWindowAs`) reads that
         // window only if it is still the one in front; otherwise there is no screen to give.
-        const auto window = GetForegroundWindow();
-        if (!lastRead.admits(request, window)) {
+        HWND window = GetForegroundWindow();
+        if (!request.target.is_null()) {
+            if (!request.target["window"].is_number_unsigned()) window = nullptr;
+            else {
+                window = reinterpret_cast<HWND>(request.target["window"].get<uintptr_t>());
+                DWORD pid = 0; GetWindowThreadProcessId(window, &pid);
+                if (!IsWindow(window) || pid != request.target["pid"].get<DWORD>()) window = nullptr;
+            }
+        }
+        if (!window || !lastRead.admits(request, window)) {
             output.send({{"id", id}, {"result", nullptr}});
             continue;
         }
-        reads.add({id, params, window, request.number, request.wholeWindow, GetTickCount64()});
+        reads.add({id, params, window, request.number, request.wholeWindow, !request.target.is_null(), GetTickCount64()});
     }
     // Output owns a process-lifetime writer thread, and the reads theirs; EOF ends the process with them.
     ExitProcess(0);

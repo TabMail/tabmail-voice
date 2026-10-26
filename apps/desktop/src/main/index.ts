@@ -58,6 +58,7 @@ import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
 import { MemoryHelper, memoryFolders } from "./native/memoryHelper.js";
 import { FieldReader } from "./native/fieldReader.js";
+import { TargetWindows } from "./native/targetWindow.js";
 import { ScreenReader } from "./native/screenReader.js";
 import { NativeMicrophone } from "./native/microphone.js";
 import { KeychainSessionStore } from "./storage/keychainSessionStore.js";
@@ -182,7 +183,7 @@ function launch(): void {
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
   // It reads the paste's own target, named as the main helper named it: a Linux window token is each
   // process's own, so there the reader is given its window's process.
-  const fieldReader = new FieldReader(fieldReaderHelper, process.platform, system instanceof LinuxSystem ? (window) => system.appOf(window) : (target) => target);
+  const fieldReader = new FieldReader(fieldReaderHelper, process.platform, (target) => process.platform === "win32" ? targetWindows.windowOf(target) : targetWindows.appOf(target));
   const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
   const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), appImage ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
   if (appImage !== undefined) {
@@ -243,9 +244,11 @@ function launch(): void {
     },
   };
 
+  const targetWindows = new TargetWindows(nativeHelper, screenReader, process.platform);
+
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
-    (exclusions, wholeWindowOf) => screenReader.read(exclusions, wholeWindowOf),
+    (exclusions, wholeWindowOf, target) => screenReader.read(exclusions, wholeWindowOf, target?.then((handle) => targetWindows.native(handle))),
     () => windows.push("contextDebug"),
     (read) => screenReader.stop(read),
   );
@@ -257,13 +260,13 @@ function launch(): void {
     settings: () => settings.dictation(account.email),
     account,
     tips,
-    paste: (text, signal, target) => system instanceof WindowsSystem || system instanceof LinuxSystem ? system.paste(text, signal, target) : system.paste(text, signal),
+    paste: (text, signal, target) => targetWindows.paste(text, signal, target),
     copy: (text) => copyText(text),
     saveClipboard: () => system.saveClipboard(),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
-    frontmostApp: () => system.frontmostApp(),
+    frontmostApp: () => targetWindows.capture(),
     keyboardLanguage: () => system.keyboardLanguage(),
     systemEmailApp: () => process.platform === "darwin" ? mac.systemEmailApp() : Promise.resolve(null),
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
@@ -297,7 +300,7 @@ function launch(): void {
         }
       : undefined,
   });
-  controller.captureContext = (exclusions) => probe.capture(exclusions);
+  controller.captureContext = (exclusions, target) => probe.capture(exclusions, target);
   controller.stopContext = (read) => probe.stop(read);
   controller.captureWindow = (capture) => probe.window(capture);
 

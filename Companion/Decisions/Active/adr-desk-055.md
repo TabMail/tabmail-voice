@@ -84,3 +84,10 @@ excluded page outside the view), or that the window could not be read. When to c
 tool's description alone (backend `src/tools/voice/screen_read-v1.10.0.json`); no prompt names it,
 so the protocol stays 1.10.0 and Voice 0.4.0, which never lists it, is never offered it. The backend
 keeps its result out of `web_read`'s provenance (`NO_PROVENANCE_TOOLS`), as the screen text.
+
+
+**Amendment 2026-10-26: writing and `screen_read` share the captured window.** Compose/Edit
+restore the operation's captured target before pasting (ADR-DESK-042). The initial shown read and
+`screen_read`'s whole read address that same window even when Voice or another window is now in
+front (ADR-DESK-016). The chat continues to close before a write; clicking it is allowed to activate
+Voice, whose next follow-up targets the preceding external window.

@@ -90,6 +90,16 @@ public enum MacService {
             await clipboard.save()
             return [:]
         }
+        channel.on("preparePaste") { params in
+            guard let text = params["text"]?.string else { throw HelperError("preparePaste needs text") }
+            try SharedRequest.insert(text)
+            return await MainActor.run { ["transaction": .number(Double(clipboard.write(text)))] }
+        }
+        channel.on("finishPaste") { params in
+            guard let transaction = params["transaction"]?.integer else { throw HelperError("finishPaste needs transaction") }
+            await clipboard.restore(after: transaction)
+            return [:]
+        }
         channel.on("insert") { params in
             guard let text = params["text"]?.string else { throw HelperError("insert needs text") }
             try SharedRequest.insert(text)

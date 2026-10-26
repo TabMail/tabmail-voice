@@ -93,7 +93,7 @@ export class ScreenContextProbe {
      * the website in a browser), which the helper doesn't read. What the window shows, or with
      * `wholeWindowOf` the whole window of the window that read (one this gave) read: null when
      * that window is no longer the one in front. */
-    private readonly read: (exclusions: ScreenExclusions, wholeWindowOf?: Promise<ScreenRead | null>) => Promise<ScreenRead | null>,
+    private readonly read: (exclusions: ScreenExclusions, wholeWindowOf?: Promise<ScreenRead | null>, target?: Promise<number | null>) => Promise<ScreenRead | null>,
     private readonly onCapture: () => void = () => {},
     /** Asks a read `read` gave to stop and answer with what it has read so far. */
     private readonly stopRead: (read: Promise<ScreenRead | null>) => void = () => {},
@@ -124,11 +124,11 @@ export class ScreenContextProbe {
    * app in front when this was called; a newer capture ends this read, which then yields null. It
    * yields that the screen is hidden with an app or a website the dictation excludes from screen
    * reading (`exclusions`); null without an app in front, or when the read failed. */
-  capture(exclusions: ScreenExclusions): Promise<ScreenRead | null> | null {
+  capture(exclusions: ScreenExclusions, target?: Promise<number | null>): Promise<ScreenRead | null> | null {
     if (!this.isTrusted()) return null;
     this.generation += 1;
     const current = this.generation;
-    const read = this.read(exclusions);
+    const read = this.read(exclusions, undefined, target);
     const capture = read.then(
       (context) => {
         if (!context) return null;

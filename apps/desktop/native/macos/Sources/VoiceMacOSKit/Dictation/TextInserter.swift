@@ -32,6 +32,21 @@ struct TextInserter {
         clipboard.restore(after: ours)
     }
 
+    /// TargetWindows has just checked the exact window. Construct and post key-down without
+    /// suspension; event creation failure must be reported rather than counted as a paste.
+    static func postTargetCommandV() async throws {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
+            throw HelperError("could not create paste events")
+        }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        try? await Task.sleep(for: HelperConfig.pasteKeystrokeGap)
+        up.post(tap: .cghidEventTap)
+    }
+
     static func postCommandV() async {
         // Explicit flags: only ⌘, even if the user is still holding the hotkey modifier.
         await postKeystroke(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)

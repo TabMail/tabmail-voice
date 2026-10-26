@@ -45,6 +45,17 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     const auto stage = [started](const char* name) {
         std::cerr << "debug paste stage: " + std::string(name) + " after " + std::to_string(GetTickCount64() - started) + "ms\n";
     };
+    if (canceled() || unixMilliseconds() >= deadline || !IsWindow(window)) throw std::runtime_error("target window unavailable");
+    if (GetForegroundWindow() != window) {
+        if (IsIconic(window)) ShowWindowAsync(window, SW_RESTORE);
+        SetForegroundWindow(window);
+        const auto until = GetTickCount64() + HelperConfig::targetActivationWaitMs;
+        while (GetForegroundWindow() != window) {
+            if (canceled() || unixMilliseconds() >= deadline || GetTickCount64() >= until || !IsWindow(window))
+                throw std::runtime_error("target activation refused");
+            Sleep(HelperConfig::targetActivationPollMs);
+        }
+    }
     stage("focus-check");
     Automation automation;
     const char* refusal = nullptr;

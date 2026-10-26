@@ -35,6 +35,7 @@ import type { DictationSettings } from "../settings.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 import { type DictationTip, type TipBook, tipDetails } from "../onboarding/tips.js";
 import { CancellationError, sleep, TimeoutError, withTimeout } from "../util/timeout.js";
+import { PasteTargetError } from "./targetWindow.js";
 import { encodeWAV } from "../audio/wav.js";
 
 export type Phase =
@@ -199,7 +200,7 @@ export class DictationController extends Observable {
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). A screen
    * hidden for privacy is no context either; agent mode's tools are told it is hidden. */
-  captureContext: ((exclusions: ScreenExclusions) => Promise<ScreenRead | null> | null) | undefined;
+  captureContext: ((exclusions: ScreenExclusions, target: Promise<number | null>) => Promise<ScreenRead | null> | null) | undefined;
   /** Asks a read `captureContext` gave, still going, to answer with what it has read so far: the read
    * then yields that (ADR-DESK-053). */
   stopContext: ((read: Promise<ScreenRead | null>) => void) | undefined;
@@ -527,7 +528,7 @@ export class DictationController extends Observable {
     if (this.generation !== current) return;
     this.setPhase({ kind: "arming" });
     this.saveClipboardUntilThePaste();
-    this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
+    this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }, this.targetApp) ?? null) : null;
     const read = this.contextRead;
     if (read) {
       const reading = performance.now();
@@ -1496,37 +1497,27 @@ export class DictationController extends Observable {
   private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal, screenRead: ScreenContext | null = null): Promise<void> => {
     log.content("DictationController: pasting", text);
     const checking = performance.now();
-    const changed = await this.focusChanged(targetApp);
-    log.debug(() => `DictationController: app in front checked in ${elapsed(checking)}`);
-    // Canceled while the app in front was read: the text is no longer wanted anywhere, not even in
-    // the history.
+    const target = await targetApp;
+    log.debug(() => `DictationController: target window resolved in ${elapsed(checking)}`);
     if (signal.aborted) throw new CancellationError();
     this.deps.history.add(text);
-    if (changed) {
-      log.debug("DictationController: another app is in front; not pasted");
-      throw new NotPastedError(text);
-    }
-    const target = await targetApp;
-    if (signal.aborted) throw new CancellationError();
-    // focusChanged requires a positive identity; pass it through for the native final check.
-    if (target === null) throw new NotPastedError(text);
+    if (target === null || !Number.isSafeInteger(target) || target <= 0) throw new NotPastedError(text);
     // A save asked once the text is on the clipboard would be of the paste's own text.
     this.stopSavingClipboard();
     const pasting = performance.now();
-    await this.deps.paste(spacedFromCaret(screenRead?.textBeforeCaret ?? "", text, screenRead?.textAfterCaret ?? ""), signal, target);
+    try {
+      await this.deps.paste(spacedFromCaret(screenRead?.textBeforeCaret ?? "", text, screenRead?.textAfterCaret ?? ""), signal, target);
+    } catch (error) {
+      if (signal.aborted) throw new CancellationError();
+      if (error instanceof PasteTargetError) throw new NotPastedError(text);
+      throw error;
+    }
     log.debug(() => `DictationController: pasted in ${elapsed(pasting)}${this.sinceRelease()}`);
   };
 
   /** ", N ms after the release" once the key is released, for the debug log's step timings. */
   private sinceRelease(): string {
     return this.releasedAt === null ? "" : `, ${elapsed(this.releasedAt)} after the release`;
-  }
-
-  /** Whether the app in front now is not `targetApp`, the one at key-down (null for none, or one that
-   * couldn't be read). */
-  private async focusChanged(targetApp: Promise<number | null>): Promise<boolean> {
-    const [then, now] = await Promise.all([targetApp, this.deps.frontmostApp().catch(() => null)]);
-    return then === null || now === null || !Number.isSafeInteger(then) || !Number.isSafeInteger(now) || then <= 0 || now <= 0 || now !== then;
   }
 
   /** A triple tap: the paste history shows, by the pill (ADR-DESK-043), which is placed while the

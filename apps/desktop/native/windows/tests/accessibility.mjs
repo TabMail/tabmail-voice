@@ -147,6 +147,15 @@ try {
   assert.ok((await request("readScreen", { read: 2, wholeWindow: true, sameWindowAs: 1 })).renderedText.includes("> Before selected after."), "the same window, still in front, is read");
   assert.equal(await request("readScreen", { read: 3, wholeWindow: true, sameWindowAs: 1 }), null, "a read bound to one that is no longer the last numbered is not read");
   assert.ok(await request("readScreen", { read: 4 }), "a newer first read");
+  const captured = await request("captureTarget");
+  assert.equal(captured.window, window, "capture retains the exact original HWND");
+  await mode("second");
+  const background = await request("readScreen", { target: captured, read: 40 });
+  assert.ok(background?.renderedText.includes("Before selected after."), "a captured background window is read");
+  assert.ok((await request("readScreen", { target: captured, read: 41, wholeWindow: true, sameWindowAs: 40 }))?.renderedText.includes("Before selected after."), "the whole read stays on the captured background window");
+  // Restore the legacy binding independently of the explicitly targeted reads above.
+  await mode("editable");
+  assert.ok(await request("readScreen", { read: 4 }));
   await mode("second");
   assert.equal(await request("readScreen", { read: 5, wholeWindow: true, sameWindowAs: 4 }), null, "another window of the app in front is not read in its place");
   await mode("editable");

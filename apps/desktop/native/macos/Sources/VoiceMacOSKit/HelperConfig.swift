@@ -9,6 +9,9 @@ import Foundation
 /// Every tunable number `voice-macos` uses on its own. The rest are the app's
 /// (`src/core/config.ts`), sent with the requests that need them.
 enum HelperConfig {
+    /// Maximum wait for a captured window to return to the front, and its observation interval.
+    static let targetActivationTimeout: Duration = .seconds(1)
+    static let targetActivationPoll: Duration = .milliseconds(20)
     // MARK: Insertion
 
     /// Pause between posting a keystroke's key-down and key-up events.
