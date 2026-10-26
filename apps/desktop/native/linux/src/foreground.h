@@ -5,6 +5,7 @@
 #include "accessibility.h"
 #include <unistd.h>
 #include "identity.h"
+#include "../../shared/context/walk.h"
 #include <algorithm>
 #include <functional>
 #include <iostream>
