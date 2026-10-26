@@ -365,6 +365,26 @@ describe("OverlayWindowController", () => {
     expect(overlay.bounds()).toEqual(opened);
   });
 
+  /** A chat under its pill (the caret near the screen's top) moves whole with it, and stays under it. */
+  test("a chat window below its pill moves whole and stays below it", async () => {
+    const caret: Rect = { x: 500, y: 100, width: 1, height: 16 };
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => caret);
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    controller.update({ kind: "idle" }, true);
+    controller.fitChat(120);
+    expect(controller.chatPlacement?.below).toBe(true);
+    const before = overlay.bounds();
+    const pill = pillOnScreen(before, controller);
+    controller.startChatDrag();
+    controller.dragChat({ x: 60, y: 40 });
+    expect(controller.chatPlacement?.below).toBe(true);
+    expect(overlay.bounds()).toEqual({ ...before, x: before.x + 60, y: before.y + 40 });
+    expect(pillOnScreen(overlay.bounds(), controller)).toEqual({ x: pill.x + 60, y: pill.y + 40 });
+  });
+
   /** Opening the chat window moves and grows the overlay before its page has laid the chat out: it
    * stays transparent until the page has measured the chat, so the pill never shows a frame away from
    * where it is (red-verified); closed before that, it is not left transparent. */

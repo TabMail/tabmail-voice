@@ -1462,6 +1462,29 @@ describe("the chat window", () => {
     expect(drags()).toEqual([{ type: "chatDragStart" }, { type: "dragChat", dx: 40, dy: 10 }]);
   });
 
+  /** Another pointer let go leaves a drag running: a touch held on the chat, then a mouse drag, then
+   * the touch let go; the mouse drag goes on, and ends with its own release. */
+  test("another pointer let go leaves a drag running", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const text = document.querySelector(".chat-request");
+    expect(text).not.toBeNull();
+    const drags = () => page.commands.filter((command) => command.type === "chatDragStart" || command.type === "dragChat");
+    await pointerOn(text, "pointerdown", 50, 50, { pointerType: "touch", pointerId: 2 });
+    await pointerOn(text, "pointerdown", 100, 100, { pointerId: 1 });
+    await pointerOn(text, "pointermove", 100 + config.chatDragThreshold, 100, { pointerId: 1 });
+    await pointerOn(text, "pointerup", 50, 50, { pointerType: "touch", pointerId: 2 });
+    await pointerOn(text, "pointermove", 130, 120, { pointerId: 1 });
+    expect(drags()).toEqual([
+      { type: "chatDragStart" },
+      { type: "dragChat", dx: config.chatDragThreshold, dy: 0 },
+      { type: "dragChat", dx: 30, dy: 20 },
+    ]);
+    await pointerOn(text, "pointerup", 130, 120, { pointerId: 1 });
+    await pointerOn(text, "pointermove", 160, 150, { pointerId: 1, buttons: 1 });
+    expect(drags()).toHaveLength(3);
+  });
+
   /** A pointer entering or moving in the window, a click or a scroll keeps it open; once kept open
    * nothing more is sent. */
   test.each(["pointerover", "pointermove", "pointerdown", "wheel"])("a %s keeps it open", async (type) => {
