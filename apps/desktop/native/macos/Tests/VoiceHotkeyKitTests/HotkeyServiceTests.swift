@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AppKit
 import Carbon.HIToolbox
 import Foundation
 import os
@@ -69,5 +70,34 @@ struct HotkeyServiceTests {
 
         await channel.handle(line: Data(#"{"id":3,"method":"setChatOpen","params":{"isOpen":false}}"#.utf8))
         #expect(monitor.handle(.keyDown, keyCode: escape, flags: [], isRepeat: false, at: 0.3), "Escape kept after the chat window closed")
+    }
+
+    /// While the chat window is open, a click and another app coming to the front reach the app as
+    /// events, so it can close the chat window; before it opens and after it closes, neither does.
+    @Test func clicksAndAppSwitchesAreToldOnlyWhileTheChatWindowIsOpen() async {
+        let lines = Lines()
+        let channel = HelperChannel(output: { lines.append($0) })
+        let monitor = HotkeyService.register(on: channel)
+        let events = { lines.all.compactMap { $0["event"]?.string }.filter { $0.hasPrefix("chat") } }
+        let appSwitch = {
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in DispatchQueue.main.async { done.resume() } }
+        }
+
+        monitor.mouseWentDown()
+        await appSwitch()
+        #expect(events().isEmpty, "told with the chat window closed")
+
+        await channel.handle(line: Data(#"{"id":1,"method":"setChatOpen","params":{"isOpen":true}}"#.utf8))
+        monitor.mouseWentDown()
+        #expect(events().contains("chatMouseDown"))
+        await appSwitch()
+        #expect(events().contains("chatFocusChanged"))
+
+        await channel.handle(line: Data(#"{"id":2,"method":"setChatOpen","params":{"isOpen":false}}"#.utf8))
+        let told = events().count
+        monitor.mouseWentDown()
+        await appSwitch()
+        #expect(events().count == told, "told after the chat window closed")
     }
 }

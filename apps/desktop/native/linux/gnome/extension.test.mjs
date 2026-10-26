@@ -251,6 +251,25 @@ test('an open chat window keeps Escape alone, through a dictation, until it clos
     f.extension.disable();
 });
 
+test('while the chat window is open, the focus moving to another window, or none, is told to its helper alone', async () => {
+    const f = await fixture();
+    const other = Object.assign(new Signals(), {get_frame_rect: () => ({x: 0, y: 0, width: 10, height: 10})});
+    const told = () => f.actions.filter(([, , , , value]) => value.value[0] === 'chatFocusChanged').map(([destination]) => destination);
+    f.display.focus_window = other; f.display.emit('notify::focus-window');
+    assert.deepEqual(told(), [], 'told with no chat window open');
+    assert.equal(f.chat(true), true);
+    f.display.emit('notify::focus-window');
+    assert.deepEqual(told(), [], 'told with the focus where it was');
+    f.display.focus_window = f.window; f.display.emit('notify::focus-window');
+    assert.deepEqual(told(), [':1.42']);
+    f.display.focus_window = null; f.display.emit('notify::focus-window');
+    assert.deepEqual(told(), [':1.42', ':1.42']);
+    assert.equal(f.chat(false), true);
+    f.display.focus_window = other; f.display.emit('notify::focus-window');
+    assert.deepEqual(told(), [':1.42', ':1.42'], 'told after the chat window closed');
+    f.extension.disable();
+});
+
 test('a window-relative caret is placed in the focused window\'s content, scaled, and refused outside it', async () => {
     const f = await fixture();
     assert.deepEqual(JSON.parse(f.extension.FromWindow(30, 40, 0, 18)), {x: 140, y: 180, width: 1, height: 18, source: 'accessibility'});

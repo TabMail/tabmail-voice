@@ -3416,6 +3416,31 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(await throughout(firstDeadline - Date.now() + 500, () => controller.chat !== null)).toBe(true);
       });
 
+      /** A click elsewhere or another app in front (`dismissChat`) closes the chat window only while it
+       * is idle (owner, 2026-10-25): a follow-up listening or thinking keeps it, with its answer. */
+      test("a click elsewhere closes the chat window only while it is idle", async () => {
+        const { controller, chatChanges } = await openChat();
+        queue("and how do I fix it", "answer", "Define it before the call.");
+        let openWhileThinking = false;
+        completions.gate = async () => {
+          controller.dismissChat();
+          openWhileThinking = controller.chat !== null;
+        };
+
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.dismissChat();
+        expect(controller.chat).not.toBeNull();
+        controller.handle("finish");
+        expect(await eventually(() => settled(controller))).toBe(true);
+
+        expect(openWhileThinking).toBe(true);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Define it before the call."]);
+        controller.dismissChat();
+        expect(controller.chat).toBeNull();
+        expect(chatChanges).toEqual([true, false]);
+      });
+
       /** Escape or the close button: the conversation is gone, and a follow-up under way is dropped
        * without its reply being shown, pasted or asked about further. */
       test("closing the chat window drops the follow-up under way", async () => {
@@ -4268,6 +4293,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Added."]);
           expect(controller.chat?.confirmation).toBeNull();
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
+        });
+
+        /** A click elsewhere leaves the chat window open while its question waits for an answer. */
+        test("a question waiting for its answer keeps the chat window open on a click elsewhere", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", '{"title":"Launch review"}']), reply(answer)]);
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+          controller.dismissChat();
+          expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+
+          controller.answerConfirmation(true);
+          await done;
+          expect(tool.runs).toEqual([{ title: "Launch review" }]);
+          expect(controller.chat).not.toBeNull();
         });
 
         /** A question about a calendar event shows its card beside its words while it waits, and both

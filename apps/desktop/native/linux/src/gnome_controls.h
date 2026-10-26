@@ -43,6 +43,11 @@ public:
                     if (self->hotkey) { self->installed(false); self->output.send({{"event", "hotkeyUnavailable"}}); }
                     return;
                 }
+                // Another window took the focus while the chat window is open: the app may close it.
+                if (name == "chatFocusChanged") {
+                    if (self->chat) self->output.send({{"event", "chatFocusChanged"}});
+                    return;
+                }
                 if (name == "hotkeyDown" || name == "hotkeyAgentDown" || name == "hotkeyUp") {
                     self->hotkeyChanged(name != "hotkeyUp", name == "hotkeyAgentDown");
                     return;

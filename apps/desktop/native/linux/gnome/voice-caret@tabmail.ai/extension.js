@@ -102,12 +102,17 @@ export default class VoiceCaret extends Extension {
         this._send('ready', null);
     }
 
+    /** The focus window changed. While the chat window is open its helper is told, so the app can
+     * close it: a click on another window, or a switch to one, focuses it (the chat window itself
+     * never takes the focus). */
     _focusChanged() {
         for (const [object, id] of this._windowSignals)
             object.disconnect(id);
         this._windowSignals = [];
         this._rect = null;
+        const previous = this._window;
         this._window = global.display.focus_window;
+        if (this._owner && this._wanted.chat && this._window !== previous) this._send('chatFocusChanged');
         if (this._window) {
             for (const signal of ['position-changed', 'size-changed', 'unmanaged']) {
                 const object = this._window;

@@ -12,18 +12,40 @@ import VoiceHelperSupport
 ///
 /// The tap can only be created once the app is trusted for Accessibility, so `install()` must be
 /// called again after the grant.
+///
+/// While the chat window is open it also tells of a click anywhere and of another app coming to the
+/// front (`ChatEvent`): the app closes the chat window on a click elsewhere or an app switch, when
+/// the user wants that (ADR-DESK-022). The clicks come from a second tap, listen-only, so a click is
+/// never held back, and only while the chat window is open.
 @MainActor
 public final class HotkeyMonitor {
+    /// What the app hears of while the chat window is open.
+    public enum ChatEvent: String, Sendable {
+        /// A mouse button went down, anywhere: on the chat window or elsewhere, which the app tells.
+        case mouseDown = "chatMouseDown"
+        /// Another app came to the front.
+        case focusChanged = "chatFocusChanged"
+    }
+
     private var gesture: PushToTalkGesture
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
+    /// The clicks' tap, and the observer of the app in front, while the chat window is open.
+    private var chatTap: CFMachPort?
+    private var chatSource: CFRunLoopSource?
+    private var frontObserver: NSObjectProtocol?
     /// Keys whose key-down the gesture kept from the app: their key-up is kept from it too.
     private var swallowedKeyUps: Set<UInt16> = []
     private let onAction: (PushToTalkGesture.Action) -> Void
+    private let onChatEvent: (ChatEvent) -> Void
 
-    public init(gesture: PushToTalkGesture, onAction: @escaping (PushToTalkGesture.Action) -> Void) {
+    public init(
+        gesture: PushToTalkGesture, onAction: @escaping (PushToTalkGesture.Action) -> Void,
+        onChatEvent: @escaping (ChatEvent) -> Void = { _ in }
+    ) {
         self.gesture = gesture
         self.onAction = onAction
+        self.onChatEvent = onChatEvent
     }
 
     public var hotkey: DictationHotkey { gesture.hotkey }
@@ -40,9 +62,62 @@ public final class HotkeyMonitor {
         gesture.isChatOpen = isChatOpen
     }
 
-    /// The chat window opened or closed: Escape closes it while it is open.
+    /// The chat window opened or closed: Escape closes it while it is open, and clicks and app
+    /// switches are told meanwhile.
     public func setChatOpen(_ isOpen: Bool) {
         gesture.isChatOpen = isOpen
+        if isOpen { watchChat() } else { unwatchChat() }
+    }
+
+    /// A mouse button went down (the clicks' tap). Public for tests.
+    public func mouseWentDown() {
+        guard gesture.isChatOpen else { return }
+        onChatEvent(.mouseDown)
+    }
+
+    private func watchChat() {
+        if frontObserver == nil {
+            frontObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.gesture.isChatOpen else { return }
+                    self.onChatEvent(.focusChanged)
+                }
+            }
+        }
+        guard chatTap == nil else { return }
+        let types: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let mask = types.reduce(CGEventMask(0)) { $0 | CGEventMask(1) << $1.rawValue }
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly, eventsOfInterest: mask,
+            callback: chatTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            HelperLog.debug("HotkeyMonitor: click tap not created (Accessibility not granted)")
+            return
+        }
+        let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        chatTap = tap
+        chatSource = source
+    }
+
+    private func unwatchChat() {
+        if let frontObserver { NSWorkspace.shared.notificationCenter.removeObserver(frontObserver) }
+        frontObserver = nil
+        if let chatTap {
+            CGEvent.tapEnable(tap: chatTap, enable: false)
+            CFMachPortInvalidate(chatTap)
+        }
+        if let chatSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), chatSource, .commonModes) }
+        chatTap = nil
+        chatSource = nil
+    }
+
+    /// The clicks' tap was switched off by macOS: switched back on.
+    fileprivate func chatTapDisabled() {
+        if let chatTap { CGEvent.tapEnable(tap: chatTap, enable: true) }
     }
 
     /// Nothing listens hands-free (the dictation ended without the hotkey, or a double tap's release
@@ -133,4 +208,19 @@ private func hotkeyTapCallback(
     let time = ProcessInfo.processInfo.systemUptime
     let passes = MainActor.assumeIsolated { monitor.handle(type, keyCode: keyCode, flags: flags, isRepeat: isRepeat, at: time) }
     return passes ? Unmanaged.passUnretained(event) : nil
+}
+
+/// The clicks' tap's callback, on the main run loop: listen-only, so what it returns is ignored.
+private func chatTapCallback(
+    proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, userInfo: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard let userInfo else { return Unmanaged.passUnretained(event) }
+    let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+    MainActor.assumeIsolated {
+        switch type {
+        case .tapDisabledByTimeout, .tapDisabledByUserInput: monitor.chatTapDisabled()
+        default: monitor.mouseWentDown()
+        }
+    }
+    return Unmanaged.passUnretained(event)
 }

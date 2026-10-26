@@ -83,6 +83,12 @@ export class OverlayWindowController {
     private readonly chatHitTest: ChatHitTest = "pointer",
   ) {}
 
+  /** Whether a click now goes to the overlay (the chat window, its bubbles or the note), not to the
+   * app under it (`ChatHitTest`). */
+  get isTakingClicks(): boolean {
+    return this.takesClicks;
+  }
+
   get opensUpward(): boolean {
     return this.placedUpward;
   }

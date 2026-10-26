@@ -11,13 +11,16 @@ import VoiceHelperSupport
 /// - `dictationEnded` → `{}`: nothing listens hands-free (the dictation ended without the hotkey, or a
 ///   double tap's release found no dictation listening).
 /// - `setChatOpen {isOpen}` → `{}`: the chat window opened or closed (Escape closes it while open).
-/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "startAgent" | "startAgentHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat" | "showHistory"}`.
+/// and its events `{"event": "action", "action": "start" | "startHandsFree" | "startAgent" | "startAgentHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat" | "showHistory"}`,
+/// and, while the chat window is open, `{"event": "chatMouseDown"}` (a click anywhere) and
+/// `{"event": "chatFocusChanged"}` (another app came to the front).
 public enum HotkeyService {
     @MainActor
     public static func register(on channel: HelperChannel) -> HotkeyMonitor {
         let monitor = HotkeyMonitor(
             gesture: PushToTalkGesture(hotkey: .rightOption, tapMaxDuration: 0, doubleTapWindow: 0),
-            onAction: { action in channel.emit("action", ["action": .string(action.rawValue)]) }
+            onAction: { action in channel.emit("action", ["action": .string(action.rawValue)]) },
+            onChatEvent: { event in channel.emit(event.rawValue, [:]) }
         )
         channel.on("configure") { params in
             guard let raw = params["hotkey"]?.string, let hotkey = DictationHotkey(rawValue: raw),

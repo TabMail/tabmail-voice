@@ -418,6 +418,11 @@ function AgentPane({ state }: { state: SettingsState }) {
           ),
         )}
       </Group>
+      <Group>
+        <Toggle label="Close the chat when I click elsewhere" checked={state.closesChatElsewhere} onChange={(value) => send({ type: "setClosesChatElsewhere", value })}>
+          It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.
+        </Toggle>
+      </Group>
       {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
       {offeredAgentToolIDs.includes("thunderbird") && <EmailClientPicker state={state} />}
     </>
