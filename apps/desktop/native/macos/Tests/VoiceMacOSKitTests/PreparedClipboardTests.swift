@@ -103,4 +103,38 @@ import VoiceHelperSupport
         try await fixture.finish(2)
         #expect(fixture.board.string(forType: .string) == "Synthetic newer copy")
     }
+    @Test func anOlderPreparationCannotReplaceTheNewerOperationsText() async throws {
+        let fixture = Fixture(); defer { fixture.close() }
+        await fixture.save()
+        let deadline = fixture.deadline
+        try await fixture.send("preparePaste", ["operation": 2, "deadline": .number(deadline), "text": "Synthetic newer dictated text"])
+        #expect(fixture.board.string(forType: .string) == "Synthetic newer dictated text")
+        try await fixture.send("preparePaste", ["operation": 1, "deadline": .number(deadline), "text": "Synthetic older dictated text"])
+        #expect(fixture.board.string(forType: .string) == "Synthetic newer dictated text")
+        try await fixture.finish(1)
+        #expect(fixture.board.string(forType: .string) == "Synthetic newer dictated text")
+        try await fixture.finish(2)
+        #expect(fixture.board.string(forType: .string) == "Synthetic prior copy")
+    }
+
+    @Test func cancelWhileTheActorIsBusyPreservesANewerCopy() async throws {
+        let fixture = Fixture(); defer { fixture.close() }
+        await fixture.save()
+        #expect(fixture.board.string(forType: .string) == "Synthetic prior copy")
+        let channel = fixture.channel
+        let prepare: JSON = ["id": 20, "method": "preparePaste", "params": ["operation": 1, "deadline": .number(fixture.deadline), "text": "Synthetic canceled dictation"]]
+        let finish: JSON = ["id": 21, "method": "finishPaste", "params": ["operation": 1]]
+        let prepData = try JSONEncoder().encode(prepare)
+        let finishData = try JSONEncoder().encode(finish)
+        func occupyActor() { Thread.sleep(forTimeInterval: 0.08) }
+        let preparing = Task.detached { await channel.handle(line: prepData) }
+        occupyActor()
+        let canceling = Task.detached { await channel.handle(line: finishData) }
+        occupyActor()
+        fixture.board.clearContents(); fixture.board.setString("Synthetic newer user copy", forType: .string)
+        await preparing.value
+        await canceling.value
+        await fixture.keeper.restoreTask?.value
+        #expect(fixture.board.string(forType: .string) == "Synthetic newer user copy")
+    }
 }
