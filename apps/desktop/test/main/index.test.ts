@@ -77,7 +77,9 @@ const app = vi.hoisted(() => ({
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; checkForUpdates: () => void; installUpdate: () => void } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void } | null } | null,
+  /** The windows the app asked to bring forward, in order. */
+  presented: [] as string[],
   trayState: null as (() => { update: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
@@ -449,7 +451,7 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
 }));
 vi.mock("../../src/main/tray.js", () => ({
   TrayMenu: class {
-    constructor(_resources: string, state: () => { update: unknown }, actions: { showWelcome: () => void; checkForUpdates: () => void; installUpdate: () => void }) {
+    constructor(_resources: string, state: () => { update: unknown }, actions: NonNullable<typeof app.trayActions>) {
       app.trayActions = actions;
       app.trayState = state;
     }
@@ -473,8 +475,15 @@ vi.mock("../../src/main/windows.js", () => ({
     isOpen(name: string) {
       return app.openWindows.includes(name);
     }
-    showWelcome() {}
-    showSettings() {}
+    showWelcome() {
+      app.presented.push("welcome");
+    }
+    showSettings() {
+      app.presented.push("settings");
+    }
+    showContextDebug() {
+      app.presented.push("contextDebug");
+    }
     showHistory(bounds: { x: number; y: number; width: number; height: number }, onBlur: () => void) {
       app.historyBlur = onBlur;
       app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
@@ -540,6 +549,7 @@ afterEach(() => {
   app.memory = null;
   app.fullName = null;
   app.trayActions = null;
+  app.presented = [];
   app.trayState = null;
   app.packaged = false;
   app.version = "0.0.0";
@@ -1746,6 +1756,21 @@ describe("main process wiring", () => {
     await launch("darwin");
     expect(app.dialogs).toEqual([]);
     expect(app.stored.get("tip.agentMemory.learned") === true).toBe(!tipShows);
+  });
+
+  /** Each way a user opens a window opens the one it names: the tray's Settings and Welcome Guide,
+   * the debug build's last screen context, a second launch (Settings), and a first run (the welcome
+   * guide). */
+  test("each way to open a window opens the window it names", async () => {
+    app.stored.set("hasFinishedWelcome", false);
+    await launch("darwin");
+    expect(app.presented).toEqual(["welcome"]);
+    app.presented = [];
+    app.trayActions?.showSettings();
+    app.trayActions?.showWelcome();
+    app.trayActions?.debug?.showLastScreenContext();
+    app.appEvents.get("second-instance")?.();
+    expect(app.presented).toEqual(["settings", "welcome", "contextDebug", "settings"]);
   });
 
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {

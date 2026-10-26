@@ -37,10 +37,9 @@ vi.mock("electron", () => ({
 
 const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
 
-function menu(update: UpdateState | null, state: () => MenuState = () => ({ ...ready, update })) {
-  const clicked: string[] = [];
+function actionsFrom(clicked: string[]): TrayActions {
   const action = (name: string) => () => void clicked.push(name);
-  const actions: TrayActions = {
+  return {
     showWelcome: action("showWelcome"),
     showSettings: action("showSettings"),
     requestMicrophone: action("requestMicrophone"),
@@ -51,10 +50,30 @@ function menu(update: UpdateState | null, state: () => MenuState = () => ({ ...r
     installUpdate: action("installUpdate"),
     debug: null,
   };
+}
+
+function menu(update: UpdateState | null, state: () => MenuState = () => ({ ...ready, update })) {
+  const clicked: string[] = [];
+  const actions = actionsFrom(clicked);
   const trayMenu = new TrayMenu("/nonexistent", state, actions);
   const labels = tray.items.map((item) => item.label ?? item.type);
   return { trayMenu, labels, item: (label: string) => tray.items.find((item) => item.label === label), clicked };
 }
+
+/** Each menu item that opens one of the app's windows opens the one it names: Settings for Settings
+ * and Sign In, the welcome wizard for the guide and the unfinished setup, and the last screen context
+ * from the debug items (ADR-DESK-065: each puts the app in the Dock on macOS). */
+test("the menu's window items open the window each names", () => {
+  const opened: string[] = [];
+  const debug = { hasLastRecording: () => false, playLastRecording: () => {}, showLastScreenContext: () => void opened.push("contextDebug"), showLogFile: () => {} };
+  const { item, clicked } = menu(null, () => ({ ...ready, hasConsented: false, isSignedIn: false, debugMode: true }));
+  for (const label of ["Settings…", "Sign In to TabMail…", "Welcome Guide…", "Finish Setting Up TabMail Voice…"]) item(label)?.click?.();
+  expect(clicked).toEqual(["showSettings", "showSettings", "showWelcome", "showWelcome"]);
+
+  new TrayMenu("/nonexistent", () => ({ ...ready, debugMode: true }), { ...actionsFrom(clicked), debug });
+  tray.items.find((entry) => entry.label === "Show Last Screen Context")?.click?.();
+  expect(opened).toEqual(["contextDebug"]);
+});
 
 /** The menu's update item (ADR-DESK-041): packaged builds only, just above Quit, and it does what it
  * says. */

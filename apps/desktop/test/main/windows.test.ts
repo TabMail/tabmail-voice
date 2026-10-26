@@ -338,6 +338,35 @@ describe("Windows", () => {
     expect(electron.app.dock.visible).toBe(true);
   });
 
+  /** Asked for again while the icon still shows, then closed, an open window doesn't come forward
+   * either. */
+  test("an open window asked for again, then closed while the Dock icon shows, never comes forward", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    const windows = new Windows(() => null as never);
+    windows.showSettings();
+    const settings = electron.BrowserWindow.instances[0];
+    settings?.emit("ready-to-show");
+    windows.showSettings();
+    expect(electron.BrowserWindow.instances).toHaveLength(1);
+    windows.close("settings");
+    expect(settings?.isDestroyed()).toBe(true);
+    electron.app.dock.shown[0]?.();
+    await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay * 2);
+    expect(settings?.calls).toEqual([]);
+    expect(electron.app.focuses).toEqual([]);
+    expect(windows.isOpen("settings")).toBe(false);
+    expect(electron.app.dock.visible).toBe(false);
+
+    windows.showWelcome();
+    const welcome = electron.BrowserWindow.instances[1];
+    welcome?.emit("ready-to-show");
+    electron.app.dock.shown[1]?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(welcome?.isVisible()).toBe(true);
+    expect(electron.app.dock.visible).toBe(true);
+  });
+
   const presented = {
     settings: (windows: Windows) => windows.showSettings(),
     welcome: (windows: Windows) => windows.showWelcome(),
