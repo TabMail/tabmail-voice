@@ -82,10 +82,15 @@ try {
   await command({ kind: "second" });
   const captured = (await request("readScreen", { ...policy, target: capturedTarget, read: 40 })).result;
   assert.ok(captured?.renderedText.includes("Synthetic visible heading"), "the captured background frame is read");
+  assert.ok(captured.renderedText.includes("Synthetic field content"), "the background editor text is retained");
   assert.ok(!captured.renderedText.includes("Synthetic other window"), "another window with the same title is never substituted");
   const entire = (await request("readScreen", { ...policy, target: capturedTarget, read: 41, wholeWindow: true, sameWindowAs: 40 })).result;
   assert.ok(entire?.renderedText.includes("Synthetic visible heading"), "the whole read uses that same background frame");
+  assert.ok(entire.renderedText.includes("Synthetic field content"), "the whole background read retains editor text");
   await command({ kind: "first" });
+  // GTK can select the entry when it regains focus. Compare cancellation reads with
+  // that current selection, independently of the background-window checks above.
+  read = await context();
   // The app numbers its reads and can stop one (ADR-DESK-053): a stop answers null, a read numbered
   // after it is not cut short, and a read number the shared core refuses refuses the request.
   const stop = await send(reader, "readScreenStop", { read: 5 });
