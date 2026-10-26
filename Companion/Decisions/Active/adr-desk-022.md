@@ -100,10 +100,16 @@ listening, or thinking". This replaces "a click elsewhere does not close it" abo
   `NSWorkspace.didActivateApplicationNotification`. Windows: `WH_MOUSE_LL` and a
   `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` hook, out of context, on the hook thread, which only
   post to the writer thread. Linux: the GNOME extension sends `chatFocusChanged` over its `Action`
-  signal when the focus window changes while the chat is wanted, which `GnomeControls` forwards;
-  the Shell does not see clicks on app windows, so a click inside the window that already has the
-  focus does not close it there. The signal is additive: the extension's `Version` stays 3, and a
-  Shell still running the older extension until the next login just never sends it.
+  signal when the focus window changes while the chat is wanted, and `chatMouseDown` for a click
+  elsewhere, which `GnomeControls` forwards. Mutter hands a click on an app window to the app
+  before any Shell event filter runs (measured on GNOME 50, Wayland: a `Clutter.Event.add_filter`
+  filter and the stage's `captured-event` see presses on the top bar, none on an app window), but
+  a click raises the window it lands on, even the one already in front: the focus window's
+  `raised` signal is that click (measured: each click on the focused window raised it once). A
+  press on the Shell's own UI comes through a `Clutter.Event.add_filter` filter, added only while
+  the chat is wanted, that always lets the press go on. The actions are additive: the extension's
+  `Version` stays 3, and a Shell still running the older extension until the next login just never
+  sends them (an older helper ignores an action it does not know).
 - The main process drops a `chatMouseDown` while the overlay takes clicks
   (`OverlayWindowController.isTakingClicks`): the pointer is over the chat window or its bubbles, so
   the click is theirs. Otherwise either event calls `DictationController.dismissChat()` when the

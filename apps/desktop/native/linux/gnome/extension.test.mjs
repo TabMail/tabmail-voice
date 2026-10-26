@@ -27,6 +27,9 @@ async function fixture(failExport = false) {
     let exported = false;
     let exportXML, exportPath;
     const grabs = new Map(), allowed = new Map(), actions = [];
+    // The Shell's event filters, by id; each sees what the Shell itself handles.
+    const filters = new Map();
+    let nextFilter = 0;
     let lostOwner = null, failKey = null, nextGrab = 100;
     // The key event an accelerator fires on: Right Alt, named Alt_R, unless a test says otherwise.
     let pressed = {get_key_symbol: () => KEY.Alt_R, get_key_code: () => CODE.rightAlt};
@@ -46,7 +49,10 @@ async function fixture(failExport = false) {
     const context = vm.createContext({global: {display, stage: {}}});
     const dependencies = {
         'gi://GLib': {default: {Variant: class {constructor(type, value) {this.type = type; this.value = value;}}}},
-        'gi://Clutter': {default: {Actor, EventFlags: {FLAG_REPEATED}, EVENT_STOP: true,
+        'gi://Clutter': {default: {Actor, EventFlags: {FLAG_REPEATED}, EVENT_STOP: true, EVENT_PROPAGATE: false,
+            EventType: {MOTION: 3, BUTTON_PRESS: 6, BUTTON_RELEASE: 7, TOUCH_BEGIN: 9},
+            Event: {add_filter: (stage, filter) => { assert.equal(stage, context.global.stage); filters.set(++nextFilter, filter); return nextFilter; },
+                remove_filter: id => assert.ok(filters.delete(id))},
             KEY_space: KEY.space, KEY_Escape: KEY.Escape, KEY_Alt_R: KEY.Alt_R, KEY_Meta_R: KEY.Meta_R,
             get_current_event: () => pressed}},
         'gi://Meta': {default: {KeyBindingFlags: {IGNORE_AUTOREPEAT: 1}, external_binding_name_for_action: id => String(id)}},
@@ -111,7 +117,7 @@ async function fixture(failExport = false) {
         return result;
     };
     const shellModal = open => { shellModals += open ? 1 : -1; modalCount(); };
-    return {theme, recording, chat, hotkey, key, pressing, modals, shellModal, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    return {filters, theme, recording, chat, hotkey, key, pressing, modals, shellModal, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -268,6 +274,53 @@ test('while the chat window is open, the focus moving to another window, or none
     f.display.focus_window = other; f.display.emit('notify::focus-window');
     assert.deepEqual(told(), [':1.42', ':1.42'], 'told after the chat window closed');
     f.extension.disable();
+});
+
+test('while the chat window is open, a click in the window in front or on the Shell is told to its helper alone, and every press goes on', async () => {
+    const f = await fixture();
+    const other = Object.assign(new Signals(), {get_frame_rect: () => ({x: 0, y: 0, width: 10, height: 10})});
+    const told = () => f.actions.filter(([, , , , value]) => value.value[0] === 'chatMouseDown').map(([destination]) => destination);
+    const press = type => [...f.filters.values()].map(filter => filter({type: () => type}));
+    f.window.emit('raised');
+    assert.deepEqual(told(), [], 'told with no helper');
+    // The helper holds the dictation key, with no chat window open: still nothing.
+    assert.equal(f.hotkey(true), true);
+    f.window.emit('raised');
+    assert.deepEqual(told(), [], 'told with no chat window open');
+    assert.equal(f.filters.size, 0, 'nothing filtered with no chat window open');
+    assert.equal(f.chat(true), true);
+    assert.equal(f.filters.size, 1);
+    // A click inside the window in front raises it again.
+    f.window.emit('raised');
+    assert.deepEqual(told(), [':1.42']);
+    // A press on the Shell's own UI, or a touch, goes on where it was going; a move or a release is no click.
+    assert.deepEqual(press(6), [false]);
+    assert.deepEqual(press(9), [false]);
+    assert.deepEqual(press(3), [false]);
+    assert.deepEqual(press(7), [false]);
+    assert.deepEqual(told(), [':1.42', ':1.42', ':1.42']);
+    // Opening the chat window again adds no second filter.
+    assert.equal(f.chat(true), true);
+    assert.equal(f.filters.size, 1);
+    // The window that was in front is followed no more; the new one is.
+    f.display.focus_window = other; f.display.emit('notify::focus-window');
+    f.window.emit('raised');
+    assert.deepEqual(told(), [':1.42', ':1.42', ':1.42']);
+    other.emit('raised');
+    assert.deepEqual(told(), [':1.42', ':1.42', ':1.42', ':1.42']);
+    assert.equal(f.chat(false), true);
+    assert.equal(f.filters.size, 0);
+    other.emit('raised');
+    assert.deepEqual(told(), [':1.42', ':1.42', ':1.42', ':1.42'], 'told after the chat window closed');
+    // A helper that goes away while its chat window is open leaves no filter.
+    assert.equal(f.chat(true), true);
+    f.disconnectOwner();
+    assert.equal(f.filters.size, 0);
+    other.emit('raised');
+    assert.deepEqual(told(), [':1.42', ':1.42', ':1.42', ':1.42']);
+    assert.equal(f.chat(true), true);
+    f.extension.disable();
+    assert.equal(f.filters.size, 0, 'disabling leaves no filter');
 });
 
 test('a window-relative caret is placed in the focused window\'s content, scaled, and refused outside it', async () => {

@@ -19,9 +19,9 @@ assert [line['action'] for line in lines if line['event'] == 'action'] == [
 assert [line['installed'] for line in lines if line['event'] == 'hotkeyInstallationChanged'] == [True, False, True, False, True], result.stdout
 # Only while Right Alt is wanted does its refusal reach the app.
 assert len([line for line in lines if line['event'] == 'hotkeyUnavailable']) == 1, result.stdout
-# Another window taking the focus reaches the app once, while the chat window is open: before its
-# Escape closes it, and never before it opened or after it closed.
+# Another window taking the focus, and a click elsewhere, reach the app once each, while the chat
+# window is open: before its Escape closes it, and never before it opened or after it closed.
 assert [line['event'] if line['event'] != 'action' else line['action'] for line in lines
-        if line['event'] == 'chatFocusChanged' or line.get('action') == 'closeChat'] == ['chatFocusChanged', 'closeChat'], result.stdout
-assert all(line == {'event': 'chatFocusChanged'} for line in lines if line['event'] == 'chatFocusChanged'), result.stdout
-print('GNOME recording ownership, ordered actions, chat Escape and focus changes, Right Alt, idle rejection and teardown passed')
+        if line['event'] in ('chatFocusChanged', 'chatMouseDown') or line.get('action') == 'closeChat'] == ['chatFocusChanged', 'chatMouseDown', 'closeChat'], result.stdout
+assert all(line == {'event': line['event']} for line in lines if line['event'] in ('chatFocusChanged', 'chatMouseDown')), result.stdout
+print('GNOME recording ownership, ordered actions, chat Escape, focus changes and clicks, Right Alt, idle rejection and teardown passed')

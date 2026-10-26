@@ -48,6 +48,12 @@ public:
                     if (self->chat) self->output.send({{"event", "chatFocusChanged"}});
                     return;
                 }
+                // A click elsewhere while the chat window is open: in the window in front, or on
+                // the Shell's own UI. The app checks it isn't on the chat.
+                if (name == "chatMouseDown") {
+                    if (self->chat) self->output.send({{"event", "chatMouseDown"}});
+                    return;
+                }
                 if (name == "hotkeyDown" || name == "hotkeyAgentDown" || name == "hotkeyUp") {
                     self->hotkeyChanged(name != "hotkeyUp", name == "hotkeyAgentDown");
                     return;
