@@ -89,6 +89,8 @@ const app = vi.hoisted(() => ({
   squirrel: null as import("node:events").EventEmitter | null,
   /** How often the app refreshed its tray menu. */
   trayUpdates: 0,
+  /** The application menu the app set, as its template; null for none set. */
+  applicationMenu: null as unknown[] | null,
   /** The message boxes shown, and the button each is answered with. */
   dialogs: [] as Record<string, unknown>[],
   dialogResponse: 1,
@@ -133,6 +135,12 @@ vi.mock("electron", async () => {
       },
     },
     BrowserWindow: { getFocusedWindow: () => null },
+    Menu: {
+      buildFromTemplate: (template: unknown[]) => template,
+      setApplicationMenu: (menu: unknown[] | null) => {
+        app.applicationMenu = menu;
+      },
+    },
     clipboard: {
       writeText: async (text: string) => {
         if (app.clipboardFails) throw new Error("the clipboard is busy");
@@ -582,6 +590,15 @@ describe("main process wiring", () => {
   test.each(["darwin", "win32", "linux"] as const)("launching on %s prepares the microphone once", async (platform) => {
     await launch(platform);
     expect(app.prewarms).toBe(1);
+  });
+
+  /** In the Dock while Settings is open (ADR-DESK-065), the Mac app has the menu bar: its own menu,
+   * Edit (copy and paste in the fields) and Window, never Electron's default with its View (reload,
+   * developer tools) and Help (Electron's website). Windows and Linux are left as they were. */
+  test.each(["darwin", "win32", "linux"] as const)("the application menu on %s", async (platform) => {
+    app.applicationMenu = null;
+    await launch(platform);
+    expect(app.applicationMenu).toEqual(platform === "darwin" ? [{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }] : null);
   });
 
   /** A `voice-microphone` that (re)starts, as it does after each dictation, gets the

@@ -64,7 +64,20 @@ const electron = vi.hoisted(() => {
     setVisibleOnAllWorkspaces(): void {}
   }
   const focuses: unknown[] = [];
-  return { BrowserWindow: FakeBrowserWindow, app: { isPackaged: false, getAppPath: () => "/voice", focus: (options: unknown) => focuses.push(options), focuses }, nativeTheme: { shouldUseDarkColors: false } };
+  /** The Dock's calls, in order, with the windows' shows and focuses ("show", "hide"); `show()`
+   * resolves when the test says the icon is shown. */
+  const dock = {
+    calls: [] as string[],
+    shown: [] as (() => void)[],
+    show(): Promise<void> {
+      dock.calls.push("show");
+      return new Promise((resolve) => dock.shown.push(resolve));
+    },
+    hide(): void {
+      dock.calls.push("hide");
+    },
+  };
+  return { BrowserWindow: FakeBrowserWindow, app: { isPackaged: false, getAppPath: () => "/voice", focus: (options: unknown) => focuses.push(options), focuses, dock }, nativeTheme: { shouldUseDarkColors: false } };
 });
 
 // Hoisted above the imports by Vitest, so `Windows` gets the fake.
@@ -74,6 +87,9 @@ const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 const resourcesDescriptor = Object.getOwnPropertyDescriptor(process, "resourcesPath");
 
 afterEach(() => {
+  vi.useRealTimers();
+  electron.app.dock.calls = [];
+  electron.app.dock.shown = [];
   if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
   electron.BrowserWindow.made = [];
   electron.BrowserWindow.instances = [];
@@ -179,5 +195,100 @@ describe("Windows", () => {
     expect(crashed.isDestroyed()).toBe(true);
     expect(windows.isAudioWindow(crashed.webContents)).toBe(false);
     expect(windows.isAudioWindow(fresh.webContents)).toBe(true);
+  });
+  /** On macOS the app is in the Dock while one of its own windows is open (ADR-DESK-065): the icon
+   * shows as the window opens, and the window comes forward only once it has, since showing the icon
+   * moves the focus. With the last such window closed it leaves the Dock, no sooner than
+   * `dockHideAfterShowDelay` after it showed (Electron ignores an earlier hide). */
+  test("on macOS the app is in the Dock while Settings is open", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    const windows = new Windows(() => null as never);
+    windows.showSettings();
+    expect(electron.app.dock.calls).toEqual(["show"]);
+    const settings = electron.BrowserWindow.instances[0];
+    if (!settings) throw new Error("no window");
+    settings.emit("ready-to-show");
+    await Promise.resolve();
+    expect(settings.calls).toEqual([]);
+    expect(electron.app.focuses).toEqual([]);
+    electron.app.dock.shown[0]?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settings.calls).toEqual(["show"]);
+    expect(electron.app.focuses).toEqual([{ steal: true }]);
+
+    // Opened again while open: brought forward, the icon not shown twice.
+    windows.showSettings();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(electron.app.dock.calls).toEqual(["show"]);
+    expect(settings.calls).toEqual(["show", "show", "focus"]);
+
+    // Closed at once: the hide waits out the time since the icon showed, then the icon goes.
+    windows.close("settings");
+    await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay - 1);
+    expect(electron.app.dock.calls).toEqual(["show"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(electron.app.dock.calls).toEqual(["show", "hide"]);
+
+    // Long after, a close hides it at once; a fresh opening shows it again.
+    windows.showWelcome();
+    electron.app.dock.shown[1]?.();
+    await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay * 2);
+    windows.close("welcome");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(electron.app.dock.calls).toEqual(["show", "hide", "show", "hide"]);
+  });
+
+  /** The icon stays while any of the app's windows is open, and a window opened while a hide waits
+   * keeps it, with no second show (which would leave two icons). */
+  test("the Dock icon stays while another of the app's windows is open, or opens before the hide", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    const windows = new Windows(() => null as never);
+    windows.showSettings();
+    windows.showWelcome();
+    windows.showContextDebug();
+    electron.app.dock.shown[0]?.();
+    expect(electron.app.dock.calls).toEqual(["show"]);
+    windows.close("settings");
+    windows.close("welcome");
+    await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay * 2);
+    expect(electron.app.dock.calls).toEqual(["show"]);
+
+    windows.close("contextDebug");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(electron.app.dock.calls).toEqual(["show", "hide"]);
+
+    windows.showSettings();
+    electron.app.dock.shown[1]?.();
+    windows.close("settings");
+    await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay / 2);
+    windows.showSettings();
+    await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay * 2);
+    expect(electron.app.dock.calls).toEqual(["show", "hide", "show"]);
+  });
+
+  /** The overlay and the paste history float over other apps: they never put the app in the Dock,
+   * and the Dock is never touched off macOS, where Settings already shows in the taskbar. */
+  test("only the Mac app's own windows put it in the Dock", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    const mac = new Windows(() => null as never);
+    mac.overlay();
+    mac.showHistory({ x: 0, y: 0, width: config.pasteHistoryWindowWidth, height: 100 }, () => {});
+    expect(electron.app.dock.calls).toEqual([]);
+
+    for (const platform of ["win32", "linux"] as const) {
+      Object.defineProperty(process, "platform", { value: platform, configurable: true });
+      const windows = new Windows(() => null as never);
+      windows.showSettings();
+      const settings = electron.BrowserWindow.instances.at(-1);
+      settings?.emit("ready-to-show");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settings?.calls).toEqual(["show"]);
+      windows.close("settings");
+      await vi.advanceTimersByTimeAsync(config.dockHideAfterShowDelay);
+    }
+    expect(electron.app.dock.calls).toEqual([]);
   });
 });
