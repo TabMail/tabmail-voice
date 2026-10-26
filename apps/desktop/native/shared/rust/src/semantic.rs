@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use unicode_normalization::UnicodeNormalization;
-use unicode_segmentation::UnicodeSegmentation;
 
-pub const MAX_GRAPHEMES: usize = 20_000;
+/// The most a window of source holds: either side of a caret or of a field's part shown, a
+/// terminal's viewport.
 pub const MAX_BYTES: usize = 256 * 1024;
 pub const MAX_RUNS: usize = 30_001;
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,15 +18,14 @@ pub enum Decision {
 }
 /// Keeps approved source text intact until the final combined-screen redaction.
 /// A budget stop prevents further provider reads; it is not a pre-redaction cut.
-/// At most one final fragment can exceed the presentation budget, so retained
-/// joined text is bounded by twice MAX_BYTES plus one separator.
+/// A heading, link or row reads until it holds the screen's budget, like the rest of the
+/// window; the last piece is kept whole, so retained joined text is bounded by the screen's
+/// budget, one separator and one piece (`context::SEMANTIC_SOURCE_BYTES`).
 pub struct SemanticText {
     kind: u32,
     decision: Decision,
     text: String,
     previous: String,
-    graphemes: usize,
-    last_grapheme: usize,
     failed: bool,
     runs: Vec<(String, bool)>,
     source_bytes: usize,
@@ -51,8 +50,6 @@ impl SemanticText {
             },
             text: String::new(),
             previous: String::new(),
-            graphemes: 0,
-            last_grapheme: 0,
             failed: false,
             runs: Vec::new(),
             source_bytes: 0,
@@ -73,7 +70,7 @@ impl SemanticText {
     }
     pub fn offer(&mut self, event: u32, text: &str) -> Result<Decision, u32> {
         if self.failed
-            || text.len() > MAX_BYTES
+            || text.len() > crate::context::PIECE_SOURCE_BYTES
             || !matches!(
                 (self.decision, event),
                 (Decision::Root, 1) | (Decision::Descendants, 2..=4)
@@ -92,9 +89,7 @@ impl SemanticText {
             };
         } else {
             self.append(text);
-            if self.graphemes >= MAX_GRAPHEMES
-                || self.source_bytes >= MAX_BYTES
-                || self.runs.len() >= MAX_RUNS - 6
+            if self.source_bytes >= crate::context::SCREEN_BYTES || self.runs.len() >= MAX_RUNS - 6
             {
                 self.decision = Decision::BudgetFull;
             } else if event == 1 {
@@ -116,7 +111,6 @@ impl SemanticText {
             self.spaced[0] = source.starts_with(crate::context::whitespace);
         }
         self.spaced[1] = source.ends_with(crate::context::whitespace);
-        let boundary = self.last_grapheme;
         if !self.text.is_empty() {
             let separator = if self.kind == 1 { " | " } else { " " };
             self.text.push_str(separator);
@@ -126,20 +120,11 @@ impl SemanticText {
         self.text.push_str(text);
         self.runs.push((text.to_owned(), true));
         self.source_bytes += text.len();
-        // Re-segment only the previous final cluster and the newly joined suffix.
-        // This handles combining/prepend characters across fragment boundaries.
-        let mut count = 0;
-        for (offset, _) in self.text[boundary..].grapheme_indices(true) {
-            count += 1;
-            self.last_grapheme = boundary + offset;
-        }
-        self.graphemes = self.graphemes.saturating_sub(1) + count;
         self.previous.clear();
         self.previous.push_str(text);
     }
     pub fn offer_projected(&mut self, event: u32, parts: Vec<String>) -> Result<Decision, u32> {
-        if parts.len() != 3 || parts.iter().any(|p| p.len() > MAX_BYTES) || !matches!(event, 1 | 2)
-        {
+        if !crate::context::field_parts_fit(&parts) || !matches!(event, 1 | 2) {
             self.refuse();
             return Err(1);
         }
@@ -170,7 +155,8 @@ impl SemanticText {
             }
             self.source_bytes += parts.iter().map(String::len).sum::<usize>() - visible.len();
             self.projected = true;
-            if self.source_bytes >= MAX_BYTES || self.runs.len() >= MAX_RUNS - 6 {
+            if self.source_bytes >= crate::context::SCREEN_BYTES || self.runs.len() >= MAX_RUNS - 6
+            {
                 self.decision = Decision::BudgetFull;
             }
         }
@@ -307,13 +293,23 @@ mod tests {
         let result: serde_json::Value =
             serde_json::from_slice(&row.finish_projected().unwrap()).unwrap();
         assert_eq!(result["text"], "same | same");
+        // Hidden source counts toward the budget: two windows of it around a short part shown,
+        // twice, fill the screen's.
         let mut large = SemanticText::new(1).unwrap();
-        assert_eq!(
-            large
-                .offer_projected(2, vec!["x".repeat(MAX_BYTES), "visible".into(), "".into()])
-                .unwrap(),
-            Decision::BudgetFull
-        );
+        for (visible, decision) in [
+            ("visible", Decision::Descendants),
+            ("shown", Decision::BudgetFull),
+        ] {
+            assert_eq!(
+                large
+                    .offer_projected(
+                        2,
+                        vec!["x".repeat(MAX_BYTES), visible.into(), "y".repeat(MAX_BYTES)]
+                    )
+                    .unwrap(),
+                decision
+            );
+        }
         assert!(large.offer(2, "must not be read").is_err());
         assert!(large.finish_projected().is_err());
     }
@@ -369,29 +365,47 @@ mod tests {
     }
     #[test]
     fn budget_stops_reads_but_preserves_final_fragment_for_combined_redaction() {
-        for count in [MAX_GRAPHEMES, MAX_GRAPHEMES + 1] {
-            let mut row = SemanticText::new(1).unwrap();
-            let input = "👨‍👩‍👧‍👦".repeat(count);
-            // Multibyte text hits the common byte bound before the grapheme bound;
-            // an individual provider fragment above the acquisition bound refuses.
-            assert_eq!(row.offer(2, &input), Err(1));
-        }
+        const SCREEN: usize = crate::context::SCREEN_BYTES;
+        // A row reads like the rest of the window, up to the screen's budget, however many
+        // characters that is.
         let mut row = SemanticText::new(1).unwrap();
-        let input = format!("{} token=syntheticSecret123", "a".repeat(MAX_GRAPHEMES - 8));
-        assert_eq!(row.offer(2, &input).unwrap(), Decision::BudgetFull);
-        assert_eq!(row.finish().unwrap(), input);
+        assert_eq!(
+            row.offer(2, &"é".repeat(SCREEN / 2 - 1)).unwrap(),
+            Decision::Descendants
+        );
+        let last = "token=syntheticSecret123 and more";
+        assert_eq!(row.offer(2, last).unwrap(), Decision::BudgetFull);
+        assert_eq!(
+            row.finish().unwrap(),
+            format!("{} | {last}", "é".repeat(SCREEN / 2 - 1))
+        );
         assert_eq!(row.offer(2, "later"), Err(1));
         let mut exact = SemanticText::new(2).unwrap();
         assert_eq!(
-            exact.offer(1, &"é".repeat(MAX_GRAPHEMES)).unwrap(),
+            exact.offer(1, &"é".repeat(SCREEN / 2)).unwrap(),
             Decision::BudgetFull
         );
+        for count in [20_000, 20_001] {
+            let mut row = SemanticText::new(1).unwrap();
+            let input =
+                "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}\u{200d}\u{1f466}".repeat(count);
+            // A piece past a window is one a helper reads whole: it is kept whole.
+            assert!(input.len() > MAX_BYTES);
+            assert_eq!(row.offer(2, &input).unwrap(), Decision::Descendants);
+            row.offer(3, "").unwrap();
+            assert_eq!(row.finish().unwrap(), input);
+        }
+        // A piece larger than any a helper reads refuses.
+        let mut row = SemanticText::new(1).unwrap();
+        let input = "x".repeat(crate::context::PIECE_SOURCE_BYTES + 1);
+        assert_eq!(row.offer(2, &input), Err(1));
     }
     #[test]
     fn complete_last_fragment_protects_a_secret_crossing_the_presentation_cut() {
+        const SCREEN: usize = crate::context::SCREEN_BYTES;
         let input = format!(
             "{} {}{}",
-            "x".repeat(MAX_GRAPHEMES - 6),
+            "x ".repeat((SCREEN - 8) / 2),
             "AKIA",
             "A".repeat(16)
         );
@@ -406,34 +420,11 @@ mod tests {
             .unwrap();
             reply["blocks"][0]["text"].as_str().unwrap().to_owned()
         };
-        let cut = input.grapheme_indices(true).nth(MAX_GRAPHEMES).unwrap().0;
         // This is the concrete regression a pre-redaction prefix would cause.
-        assert!(call(&input[..cut]).contains("AKIA"));
+        assert!(call(&input[..SCREEN]).contains("AKIA"));
         let redacted = call(row.finish().unwrap());
-        let presented: String = redacted.graphemes(true).take(MAX_GRAPHEMES).collect();
-        assert!(!presented.contains("AKIA"));
-        assert!(redacted.graphemes(true).count() <= MAX_GRAPHEMES);
-    }
-    #[test]
-    fn joined_cluster_accounting_includes_separators_and_boundary_combining_marks() {
-        let mut heading = SemanticText::new(2).unwrap();
-        heading.offer(1, "").unwrap();
-        heading.offer(2, &"x".repeat(MAX_GRAPHEMES - 2)).unwrap();
-        // The combining mark joins the space into one cluster, then y reaches
-        // the exact shared limit. Counting fragments independently gets this wrong.
-        assert_eq!(heading.offer(2, "\u{301}y").unwrap(), Decision::BudgetFull);
-        assert_eq!(
-            heading.graphemes,
-            heading.finish().unwrap().graphemes(true).count()
-        );
-        let mut prepend = SemanticText::new(1).unwrap();
-        prepend.offer(2, "a\u{600}").unwrap();
-        prepend.offer(2, "b").unwrap();
-        prepend.offer(3, "").unwrap();
-        assert_eq!(
-            prepend.graphemes,
-            prepend.finish().unwrap().graphemes(true).count()
-        );
+        assert!(!redacted.contains("AKIA"));
+        assert!(redacted.len() <= SCREEN);
     }
     #[test]
     fn malformed_protocol_cannot_become_an_empty_success() {

@@ -56,12 +56,21 @@ async function request(method, params = {}) {
 }
 const exclusions = { excludedAppIDs: [], excludedHosts: ["blocked.example"] };
 let fixture;
-const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill(); process.exitCode = 1; }, 80_000);
+// The cases too large to look through whole each walk the look's whole node budget over UI
+// Automation, minutes each, so they run as a test of their own (`--budgets`).
+const budgets = process.argv.includes("--budgets");
+const budgetModes = ["large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "terminal-wide"];
+const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill(); process.exitCode = 1; },
+  budgets ? 2_700_000 : 80_000);
 let checks = 0;
 try {
-  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row", "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
-    "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
-    "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document", "terminal-wide"]) {
+  const modes = budgets ? budgetModes : [
+    "row-hidden", "hidden-box", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row",
+    "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw",
+    "password-web-control", "password-focus", "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row",
+    "page-link", "page-unknown", "page-no-address", "page-address-bar", "page-gecko", "page-ie", "page-no-framework", "page-framework-fails",
+    "open-page", "open-page-focus", "text-document"];
+  for (const mode of modes) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever
     // app runs it. A terminal is told by its program's name, so that mode runs a copy named as one.
     fixture = client(mode === "terminal-wide" ? await terminalCopy() : process.argv[3], [mode]);
@@ -70,6 +79,21 @@ try {
     fixture.child.stdin.write("reset\n"); await fixture.next();
     const context = await request("readScreen", exclusions);
     const refused = mode.startsWith("page-") && mode !== "page-no-address";
+    // Asked for the whole window (ADR-DESK-016, 2026-10-25), a read takes what lies outside the window
+    // or in a box too thin to show as well, so an excluded page there refuses it.
+    if (["row-hidden", "hidden-box", "outside-window", "outside-page"].includes(mode)) {
+      const whole = await request("readScreen", { ...exclusions, wholeWindow: true });
+      if (mode === "outside-page") assert.deepEqual(whole, { hidden: true }, "with the whole window, an excluded page outside the window refuses it");
+      else assert.ok(whole && !JSON.stringify(whole).includes("DO_NOT_READ") && whole.renderedText.includes("Synthetic safe label"), `${mode}: the whole window keeps safe siblings`);
+      if (mode === "row-hidden") assert.ok(whole.renderedText.includes("| Synthetic cell text") && whole.renderedText.includes("Synthetic hidden text"), "with the whole window, a row's cell in a box too thin to show is read");
+      if (mode === "hidden-box") {
+        assert.ok(whole.renderedText.includes("Synthetic hidden-box text"), "with the whole window, a container too thin to show is walked into");
+        assert.ok(/(^|\n)Synthetic thin box text(\n|$)/u.test(whole.renderedText), "with the whole window, a text box too thin to show is read, on a line of its own");
+      }
+      if (mode === "outside-window") assert.ok(whole.renderedText.includes("Synthetic visible text") && whole.renderedText.includes("Synthetic outside text"),
+        "with the whole window, a box outside the window is read with what it holds");
+      ++checks;
+    }
     if (refused && (context === null || context.hidden !== true)) {
       fixture.child.stdin.write("stats\n");
       process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}${reader.errors()}${fieldReader.errors()}`);
@@ -106,10 +130,14 @@ try {
         "what a page's control with no caption holds is in the page: its text read, a control's Name not");
       if (mode === "outside-page") assert.ok(context.hidden !== true, "an excluded page wholly outside the window is skipped with what it holds");
       if (mode === "text-full") {
-        const nodes = Number(/(\d+) nodes/.exec(context.summary ?? "")?.[1] ?? -1);
-        assert.ok(context.summary.includes("stopped: text budget") && nodes >= 0 && nodes < 100, "a read stops when its text budget is full");
+        // Sized past the core's text budget, most of the text lies past the window's edge, so only
+        // the whole window reaches the budget; what the window shows ends at its edge.
+        assert.ok(!context.summary.includes("stopped"), "what the window shows ends at the window's edge");
+        const whole = await request("readScreen", { ...exclusions, wholeWindow: true });
+        const nodes = Number(/(\d+) nodes/.exec(whole.summary ?? "")?.[1] ?? -1);
+        assert.ok(whole.summary.includes("stopped: text budget") && nodes >= 0 && nodes < 100, "a read stops when its text budget is full");
       }
-      if (mode === "outside-window") assert.ok(context.renderedText.includes("Synthetic visible text") && !(context.summary ?? "").includes("node budget"),
+      if (mode === "outside-window") assert.ok(context.renderedText.includes("Synthetic visible text") && !context.renderedText.includes("Synthetic outside text"),
         "a box outside the window is skipped with what it holds");
       if (mode === "password-row") assert.ok(context.renderedText.includes("| Synthetic cell text"), "a row is one block of its cells, without its password field");
       if (mode.startsWith("password-link")) assert.ok(context.renderedText.includes("[Synthetic cell text]"), "a link that can't give its name is the text under it, without its password field");

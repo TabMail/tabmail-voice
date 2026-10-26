@@ -16,8 +16,10 @@
 
 use serde_json::{Value, json};
 
-/// The most elements one walk, or one look inside an element, visits.
-const NODE_BUDGET: u64 = 5_000;
+/// The most elements one walk, or one look inside an element, visits: a count that only ends a
+/// walk through an endless or looping tree, since a desktop reads the whole window, in memory, in
+/// a process of its own (owner, 2026-10-25).
+const NODE_BUDGET: u64 = 100_000;
 /// The most parents followed from the focused element up to its window (deep pages are ≈ 40).
 const FOCUS_DEPTH: u64 = 200;
 
@@ -52,8 +54,9 @@ fn frame(value: &Value, key: &str) -> Result<Option<[f64; 4]>, u32> {
 const HIDDEN_MAX_POINTS: f64 = 1.0;
 
 /// Whether a box can show its own text: one at most `thin` across either way shows nothing
-/// (screen-reader-only labels, list items scrolled out of view, hover-only actions); one that
-/// reports no size (0×0) says nothing and counts as shown (owner, 2026-10-05).
+/// (screen-reader-only labels, elements scrolled out of view, hover-only actions); one that
+/// reports no size (0×0) says nothing and counts as shown (owner, 2026-10-05). A terminal's
+/// surface is read only when shown; elsewhere such a box's text is read, unplaced.
 fn shown_box(frame: Option<[f64; 4]>, thin: f64) -> bool {
     frame.is_none_or(|[_, _, width, height]| {
         (width <= 0.0 && height <= 0.0) || width.min(height) > thin
@@ -100,20 +103,30 @@ fn shown(facts: &Value) -> Result<Value, u32> {
 /// `"self"` (the focused element), `"path"` (one of its ancestors) or absent; `part` is true
 /// inside a heading, link or row being read in one piece. The flags `inPage`, `password`,
 /// `pageExcluded` (a page whose site is excluded), `focusedField` (the focus is a field, read by
-/// the caret), `selection` (the focus has a selection) and `hidden` (the OS says the element is
-/// not drawn) default to false; `frame` and `window` are `[x, y, width, height]` or null; `scale`
-/// is how many of the frames' units make a point (the display's DPI scale on Windows, else 1).
+/// the caret), `selection` (the focus has a selection), `hidden` (the OS says the element is
+/// not drawn), `offscreen` (the OS says it is drawn but out of view) and `wholeWindow` (the read
+/// takes the whole window) default to false; `frame` and `window` are `[x, y, width, height]` or
+/// null; `scale` is how many of the frames' units make a point (the display's DPI scale on
+/// Windows, else 1).
+///
+/// Two reads, by `wholeWindow` (owner, 2026-10-25): without it, what the window shows (an element
+/// wholly outside the window, `offscreen`, or in a box at most a point thin is not read: what
+/// dictation and the agent's screen text take); with it, everything the accessibility tree holds,
+/// on screen or not, as a screen reader reads it (the agent's `screen_read`, and dictation's terms
+/// when there is room): only what is not drawn at all (`hidden`) is not.
 ///
 /// The reply's `action`: `refuse` (the window shows an excluded page: nothing of it is used),
 /// `skip` (with `look`, a hidden element: look inside it first, as for that read, and refuse the
-/// window on `refuse`), `caret` (the focused field: the caret block goes here), `descend` (walk into it, its
+/// window on `refuse`), `caret` (the focused field, as what the window shows takes it: the caret block goes here), `descend` (walk into it, its
 /// children inside a page when `childrenInPage`), `text`, `field`, `semantic` (a heading, link or
 /// row of `kind`, from its label and what it holds) or `caption` (a page's control: its drawn
 /// caption, or, having none, walk into it; when not `shown` a control with a caption is looked
 /// inside, then skipped).
-/// `caretFirst`: the focus's selection goes before it. `host`: the walk's page host is this
-/// page's, unless it has one already. Every read in one piece looks inside the element for an
-/// excluded page first (`look`).
+/// `caretFirst`: the caret block goes before it: the focus's selection, or, reading the whole
+/// window, the mark of the focused field. `host`: the walk's page host is this
+/// page's, unless it has one already. `unplaced`: the element's frame, a box at most a point
+/// thin, says nothing of where its text is, so the helper gives the read no frame for it. Every
+/// read in one piece looks inside the element for an excluded page first (`look`).
 fn node(facts: &Value) -> Result<Value, u32> {
     if !facts.is_object() {
         return Err(1);
@@ -139,8 +152,12 @@ fn node(facts: &Value) -> Result<Value, u32> {
     let selection = flag(facts, "selection")?;
     let password = flag(facts, "password")?;
     let hidden = flag(facts, "hidden")?;
+    let offscreen = flag(facts, "offscreen")?;
+    let whole_window = flag(facts, "wholeWindow")?;
     let at = frame(facts, "frame")?;
-    let window = frame(facts, "window")?;
+    // Where the element is decides whether it is read only when the read takes what the window
+    // shows.
+    let outside = !whole_window && outside(at, frame(facts, "window")?);
     let thin = thin(facts)?;
     if part && !focus.is_empty() {
         return Err(1);
@@ -153,10 +170,15 @@ fn node(facts: &Value) -> Result<Value, u32> {
             if excluded {
                 return Ok(json!({"action": "refuse"}));
             }
-            if focused_field {
+            // What the window shows takes the focused field by the text around its caret. The
+            // whole window reads it whole, like any field or page, after the caret block, which
+            // only marks it: none of the caret's text is kept as well (`around`). A password
+            // field is never read: in either read it is only the caret block, which the helper
+            // places as for one (no frame).
+            if focused_field && (!whole_window || password) {
                 return Ok(json!({"action": "caret"}));
             }
-            caret_first = selection;
+            caret_first = selection || focused_field;
         }
         // The focus's ancestors are walked into whatever they are, so its caret lands in place.
         "path" => {
@@ -169,15 +191,19 @@ fn node(facts: &Value) -> Result<Value, u32> {
         _ => {}
     }
     // An excluded page wholly outside the window is skipped with what it holds, like any other
-    // element there; one the window may show refuses it (ADR-DESK-047, 2026-10-01).
-    if excluded && !outside(at, window) {
+    // element there, when the read takes what the window shows; one the window may show refuses
+    // it (ADR-DESK-047, 2026-10-01). Reading the whole window, it refuses the window wherever it
+    // is: scrolled out of view, it would be read like the rest (amended 2026-10-25).
+    if excluded && !outside {
         return Ok(json!({"action": "refuse"}));
     }
     let skipped = password
         || role == "chrome"
         || (!in_page && (role == "control" || role == "toolbar"))
-        || outside(at, window);
-    let shown = !hidden && shown_box(at, thin);
+        || outside;
+    // What the window shows: not hidden, not out of view, in a box more than a point thick. The
+    // whole window: everything but what the OS says is not drawn at all.
+    let shown = !hidden && (whole_window || (!offscreen && shown_box(at, thin)));
     // An element that shows nothing is skipped, but only once a look inside it has found no
     // excluded page (`look`: the read its look stands for): a page under a hidden row or panel
     // may still be on screen, and refuses the window (ADR-DESK-047).
@@ -186,8 +212,8 @@ fn node(facts: &Value) -> Result<Value, u32> {
     let mut step = if skipped {
         json!({"action": "skip"})
     } else if part {
-        // Inside a heading, link or row: its text, fields and a page's control captions; a box
-        // that shows nothing is not gone into.
+        // Inside a heading, link or row: its text, fields and a page's control captions; an
+        // element that shows nothing is not gone into.
         match role {
             _ if !shown => hidden_skip(),
             "text" | "field" => json!({"action": role}),
@@ -195,7 +221,7 @@ fn node(facts: &Value) -> Result<Value, u32> {
             _ => descend,
         }
     } else {
-        // A box that shows nothing has no text of its own read, but is walked into (owner,
+        // An element that shows nothing has no text of its own read, but is walked into (owner,
         // 2026-10-05): Slack keeps its message list in one.
         match role {
             "page" => json!({"action": "descend", "childrenInPage": true, "host": true}),
@@ -212,6 +238,20 @@ fn node(facts: &Value) -> Result<Value, u32> {
     // piece of text with no name, a field not shown safe) keeps the page it is in.
     if matches!(step["action"].as_str(), Some("text" | "field" | "caption")) {
         step["childrenInPage"] = json!(children_in_page);
+    }
+    // Reading the whole window, a box at most a point thin says nothing of where its text is:
+    // Chromium squashes every element scrolled out of view to such a sliver at the edge of what
+    // holds it, all at one place, and screen-reader-only labels are drawn so. Its text is read
+    // where the walk meets it, but its frame is not laid out from (`unplaced`: the helper gives it
+    // no frame), so it starts a line of its own rather than joining a neighbour as if beside it.
+    if whole_window
+        && matches!(
+            step["action"].as_str(),
+            Some("text" | "field" | "caption" | "semantic")
+        )
+        && !shown_box(at, thin)
+    {
+        step["unplaced"] = json!(true);
     }
     if caret_first {
         step["caretFirst"] = json!(true);
@@ -285,11 +325,34 @@ fn census(request: &Value) -> Result<Value, u32> {
     })
 }
 
-/// `{"stop": {"nodes": n, "textFull": bool}}`: why the walk stops before the next element, or null
-/// to go on: `text budget` (the screen's text is full) or `node budget`. A walk has no time limit:
-/// it runs while the user speaks, and the app takes a read only if it is done in time.
+/// `{"around": {"focusedField": bool, "wholeWindow": bool}}`: what the read keeps of the caret's
+/// text: the text around the caret (`around`) and what is selected (`selection`). Only a field in
+/// focus has text around a caret of its own (a page clicked on, a list or a row is read by the walk
+/// as it is laid out, and keeps only its selection), and only what the window shows takes the field
+/// by it. The whole window keeps neither: it reads the field whole (`node`), where its text is
+/// redacted with what surrounds it, and the caret block only marks it. A selection kept apart from
+/// the text around it would lose what a redactor needs to know it (a `token=` before a selected
+/// value), so the whole read carries no copy of it (round-5 review, 2026-10-26).
+fn around(request: &Value) -> Result<Value, u32> {
+    if !request.is_object() {
+        return Err(1);
+    }
+    let whole_window = flag(request, "wholeWindow")?;
+    Ok(json!({
+        "around": flag(request, "focusedField")? && !whole_window,
+        "selection": !whole_window,
+    }))
+}
+
+/// `{"stop": {"nodes": n, "textFull": bool, "asked": bool}}`: why the walk stops before the next
+/// element, or null to go on: `asked` (the app asked for what is read so far), `text budget` (the
+/// screen's text is full) or `node budget`. A walk has no time limit: it runs while the user
+/// speaks, and when the app stops waiting it asks the reader to stop, and takes what the walk has
+/// gathered, laid out and redacted as any read is (owner, 2026-10-25).
 fn stop(request: &Value) -> Result<Value, u32> {
-    let reason = if flag(request, "textFull")? {
+    let reason = if flag(request, "asked")? {
+        Some("asked")
+    } else if flag(request, "textFull")? {
         Some("text budget")
     } else if number(request, "nodes")? >= NODE_BUDGET {
         Some("node budget")
@@ -315,6 +378,7 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         (name, value) if name == "census" => census(value)?,
         (name, value) if name == "stop" => stop(value)?,
         (name, value) if name == "shown" => shown(value)?,
+        (name, value) if name == "around" => around(value)?,
         _ => return Err(1),
     };
     serde_json::to_vec(&reply).map_err(|_| 3)

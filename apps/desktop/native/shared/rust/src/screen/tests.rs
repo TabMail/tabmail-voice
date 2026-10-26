@@ -39,7 +39,7 @@ fn shared_screen_cases() {
 /// More text than a read sends is cut, and the summary says the read stopped at its text budget.
 #[test]
 fn a_read_cut_at_its_text_budget_says_so() {
-    let block = "word ".repeat(40_000);
+    let block = "word ".repeat(120_000);
     let request = json!({"appName": "A", "exclusions": {"excludedAppIDs": [], "excludedHosts": []}, "nodes": 2, "milliseconds": 1,
         "blocks": [{"kind": "text", "text": block}, {"kind": "text", "text": block}], "caret": ["", "", ""], "selectionUnavailable": false});
     let result = reply(&request).unwrap();

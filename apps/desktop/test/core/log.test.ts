@@ -195,16 +195,23 @@ describe("content log", () => {
     expect(entries.at(-1)?.text.endsWith(`{"error":"transcription_failed"}`)).toBe(true);
   });
 
-  /** The screen read at key-down is logged whole as it is captured. */
+  /** The screen read at key-down is logged whole as it is captured, and the whole window read after
+   * it under its own label. */
   test("a screen read is logged as it is captured", async () => {
     const captured = screen();
-    const probe = new ScreenContextProbe(() => true, () => Promise.resolve(captured));
+    const whole = screen({ logDescription: "app Example Notes (com.example.notes)\n--- visible text ---\nEarlier.\n» Dear Alex,‸" });
+    const probe = new ScreenContextProbe(() => true, (_exclusions, wholeWindowOf) => Promise.resolve(wholeWindowOf ? whole : captured));
 
     const entries = await loggedContent(async () => {
-      await probe.capture({ apps: [], sites: [] });
+      const capture = probe.capture({ apps: [], sites: [] });
+      await capture;
+      await (capture && probe.window(capture));
     });
 
-    expect(entries).toEqual([{ label: "ScreenContext", text: captured.logDescription }]);
+    expect(entries).toEqual([
+      { label: "ScreenContext", text: captured.logDescription },
+      { label: "ScreenContext (whole window)", text: whole.logDescription },
+    ]);
   });
 
   test("the Authorization header is masked whatever its case", () => {

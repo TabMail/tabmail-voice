@@ -110,6 +110,9 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             # Sent the moment the reader starts, as the app does after restarting it for a read that
             # supersedes another: the read waits for the reader to find what has focus.
             assert 'First synthetic app' in screen()['renderedText'], 'a read sent as the reader starts finds the app in front'
+            # A reader that has read nothing numbered yet (a restarted one) reads no window bound to a read.
+            assert request('readScreen', {**policy, 'read': 1, 'wholeWindow': True, 'sameWindowAs': 1}) is None, \
+                'a read bound to one this reader never read is not read'
             for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText'):
                 request(method, refused=True)
         elif fields:
@@ -481,6 +484,43 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
                 "the paste goes to a sandboxed app's window"
         command('R')
         command('N')
+        if reader:
+            # A whole-window read bound to an earlier read (`sameWindowAs`) reads that read's window only
+            # while that read is the last one numbered and its window is still the one in front; else null.
+            def bound(read, to):
+                return request('readScreen', {**policy, 'read': read, 'wholeWindow': True, 'sameWindowAs': to})
+            command('a')
+            # Reading the whole window, the focused field is read whole like any field, after the caret
+            # block that marks it; none of the caret's text is sent apart from it.
+            shown_read, whole = screen(), screen({**policy, 'wholeWindow': True})
+            assert shown_read['textBeforeCaret'] == 'Synthetic field content', 'what the window shows keeps the text around the caret'
+            assert [whole['textBeforeCaret'], whole['selectedText'], whole['textAfterCaret']] == ['', '', ''], \
+                "the whole window keeps none of the caret's text"
+            text = whole['renderedText']
+            assert '» ‸' in text and '> Synthetic field content' in text[text.index('» ‸'):], \
+                'the whole window reads the focused field whole, just after its caret block'
+            assert 'First synthetic app' in screen({**policy, 'read': 2})['renderedText']
+            assert 'First synthetic app' in bound(3, 2)['renderedText'], 'the same window, still in front, is read'
+            assert bound(4, 2) is None, 'a read bound to one that is no longer the last numbered is not read'
+            assert screen({**policy, 'read': 5})
+            command('w')
+            read = bound(6, 5)
+            assert read and 'Synthetic compose content' in read['renderedText'], 'the focus moving within the window keeps it the same window'
+            command('W')
+            assert screen({**policy, 'read': 7})
+            command('b')
+            assert bound(8, 7) is None, 'another app in front is not read in its place'
+            command('a')
+            assert bound(9, 7) is None, 'nor the window come to the front anew: accessibility gives it a new token'
+            # Where the Shell names the window, by its own id: another window of the same app named in
+            # front is not read in its place, and the read's window named again is.
+            command('F')
+            assert 'First synthetic app' in screen({**policy, 'read': 10})['renderedText']
+            command('k')
+            assert bound(11, 10) is None, "another window of the app is not read in the read's place"
+            command('K')
+            assert 'First synthetic app' in bound(12, 10)['renderedText'], "the read's window named in front again is read"
+            command('N')
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
         child.stdin.close()

@@ -9,6 +9,8 @@
 
 using namespace voice;
 static void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+// One of the shared core's context limits, so a test sizes its text from the core, not a copy of it.
+static size_t contextLimit(const char* name) { return core::request({{"limits", true}}, voice_core_context_json).at(name).get<size_t>(); }
 // In-process COM ranges exercise the production adapter's calls and endpoint
 // rules. Actual application/foreground acceptance is a separate integration gate.
 #define UNKNOWN_INTERFACE(Type) \
@@ -242,7 +244,8 @@ static void editContracts() {
     EditFixture distant(std::wstring(70000, L'a') + L". chosen after", 70002, 70008);
     result = distant.read();
     expect(result && !result->selectionUnavailable && result->parts[1] == "chosen", "Edit full DWORD selection offsets beyond 65535");
-    EditFixture oversized(std::wstring(262139, L's'), 0, 262139);
+    const auto selectionBytes = static_cast<int>(contextLimit("selectionSourceBytes"));
+    EditFixture oversized(std::wstring(selectionBytes + 1, L's'), 0, selectionBytes + 1);
     result = oversized.read();
     expect(result && result->selectionUnavailable, "Edit shared UTF8 selection overflow refused intact");
     const auto limit = core::request({{"limits", true}}, voice_core_context_json).at("caretSourceBytes").get<size_t>();
@@ -436,7 +439,7 @@ static void viewportContracts() {
     refused=false;try{capture(bounded,true,1);}catch(const std::exception&){refused=true;}
     expect(refused && visibleOnly(bounded), "budget refusal never falls back to whole document");
 }
-int main() {
+static int run() {
     {
         const auto caption = std::wstring(990, L'x') + L" AKIA" + std::wstring(16, L'A') + L". Long caption. ";
         Provider p(caption, 0, 0);
@@ -456,7 +459,7 @@ int main() {
             "approved child caption never reads surrounding document source");
     }
     {
-        Provider p(L"Visible. password: " + std::wstring(600000, L'x'), 0, 0); p.unitSize = 7;
+        Provider p(L"Visible. password: " + std::wstring(contextLimit("blockSourceBytes") + 1, L'x'), 0, 0); p.unitSize = 7;
         expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)) == "Visible. ",
             "oversize caption keeps closed prefix but withholds incomplete credential");
     }
@@ -472,13 +475,32 @@ int main() {
         Provider p(L"Short field", 0, 0);
         expect(p.field() == "> Short field" && p.visibilityReads == 0, "small whole field keeps all text");
     }
+    for (const auto filler : {static_cast<size_t>(20001), contextLimit("sourceWindowBytes") + 1}) {
+        // Reading the whole window, a field past a short one but within the screen's budget is
+        // read whole: what is scrolled out of view after its visible start is kept, and its
+        // visible ranges are never asked. Reading what the window shows, it is read by the part
+        // it shows, and nothing scrolled out of view enters it.
+        walk::readingWholeWindow() = true;
+        Provider whole(L"Visible start. " + std::wstring(filler, L'x') + L" Off-screen end", 0, 0);
+        whole.visibleSpans = {{whole.docStart, whole.docStart + 14}};
+        const auto all = whole.field();
+        walk::readingWholeWindow() = false;
+        expect(all.find("Visible start.") != std::string::npos && all.find("Off-screen end") != std::string::npos && whole.visibilityReads == 0,
+            "reading the whole window, a field within the screen budget is read whole");
+        Provider shown(L"Visible start. " + std::wstring(filler, L'x') + L" Off-screen end", 0, 0);
+        shown.visibleSpans = {{shown.docStart, shown.docStart + 14}};
+        const auto part = shown.field();
+        expect(part.find("Visible start.") != std::string::npos && part.find("Off-screen end") == std::string::npos &&
+            part.find("xxxx") == std::string::npos && shown.visibilityReads > 0,
+            "reading what the window shows, a long field gives only the part it shows");
+    }
     {
         std::wstring value; for (int i = 0; i < 15000; ++i) value += L"😀";
         Provider p(value, 0, 0);
         expect(!p.field().empty() && p.visibilityReads == 0, "whole-field policy uses graphemes rather than UIA units");
     }
     {
-        Provider p(std::wstring(300000, L'x') + L". password: syntheticSecret123. End. ", 0, 0);
+        Provider p(std::wstring(contextLimit("screenBytes") + 1, L'x') + L". password: syntheticSecret123. End. ", 0, 0);
         const int start = static_cast<int>(p.text.find(L"syntheticSecret123"));
         p.visibleSpans = {{start, start + 18}}; p.unitSize = 7;
         const auto result = p.field();
@@ -488,19 +510,20 @@ int main() {
             "private context never renders and provider endpoints stay within document");
     }
     {
-        Provider p(std::wstring(300000, L'x') + L". Visible. End. ", 0, 0);
-        p.visibleSpans = {{300012, 300020}}; p.changeVisibility = true;
+        const auto longer = static_cast<int>(contextLimit("screenBytes")) + 1;
+        Provider p(std::wstring(longer, L'x') + L". Visible. End. ", 0, 0);
+        p.visibleSpans = {{longer + 12, longer + 20}}; p.changeVisibility = true;
         bool refused = false; try { (void)p.field(); } catch (const std::exception&) { refused = true; }
         expect(refused, "changed visible ranges cannot commit partial field");
     }
     {
-        Provider p(L"Visible sentence. " + std::wstring(300000, L'x'), 0, 0);
+        Provider p(L"Visible sentence. " + std::wstring(contextLimit("screenBytes") + 1, L'x'), 0, 0);
         p.visibleSpans = {{p.docStart, p.docEnd}}; p.unitSize = 9;
         expect(p.field().find("Visible sentence.") != std::string::npos && p.outsideReads == 0,
             "oversize visible range retains bounded prefix with opaque movement");
     }
     {
-        Provider p(std::wstring(300000, L'x'), 0, 0);
+        Provider p(std::wstring(contextLimit("screenBytes") + 1, L'x'), 0, 0);
         p.visibleSpans = {{p.docStart - 1, p.docStart + 5}};
         bool refused = false; try { (void)p.field(); } catch (const std::exception&) { refused = true; }
         expect(refused && p.outsideReads == 0, "out-of-document visible span refused before acquisition");
@@ -513,20 +536,22 @@ int main() {
         expect(!result.selectionUnavailable && result.parts[1] == std::string(20001, 's'), "complete selection beyond historical 2000 limit");
         expect(ordinary.outsideReads == 0, "field boundary clamps precede text reads");
         std::wstring exact = L"a";
-        for (size_t i = 0; i < 65534; ++i) exact += L"\U0001F600";
+        const auto selectionBytes = contextLimit("selectionSourceBytes");
+        for (size_t i = 0; i < (selectionBytes - 2) / 4; ++i) exact += L"\U0001F600";
         exact += L"x";
         Provider unicode(exact, 0, static_cast<int>(exact.size()));
         result = unicode.read();
-        expect(!result.selectionUnavailable && result.parts[1].size() == 262138, "exact UTF8 selection limit");
-        Provider oversized(std::wstring(262139, L's'), 0, 262139);
+        expect(!result.selectionUnavailable && result.parts[1].size() == selectionBytes, "exact UTF8 selection limit");
+        const auto oversize = static_cast<int>(selectionBytes) + 1;
+        Provider oversized(std::wstring(oversize, L's'), 0, oversize);
         result = oversized.read();
         expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "oversized selection refused intact");
-        const auto left = std::wstring(300000, L'a') + L". Before ";
-        Provider largerUnits(left + selection + L" after! " + std::wstring(300000, L'b'), static_cast<int>(left.size()), static_cast<int>(left.size() + selection.size()));
+        const auto left = std::wstring(contextLimit("screenBytes"), L'a') + L". Before ";
+        Provider largerUnits(left + selection + L" after! " + std::wstring(contextLimit("screenBytes"), L'b'), static_cast<int>(left.size()), static_cast<int>(left.size() + selection.size()));
         largerUnits.unitSize = 64;
         result = largerUnits.read();
         expect(!result.selectionUnavailable && result.parts[1] == std::string(20001, 's'), "larger text-unit fallback uses actual bounded text");
-        expect(largerUnits.outsideReads == 0 && std::all_of(largerUnits.caps.begin(), largerUnits.caps.end(), [](int cap) { return cap > 0 && cap <= 262145; }), "every read bounded inside field");
+        expect(largerUnits.outsideReads == 0 && std::all_of(largerUnits.caps.begin(), largerUnits.caps.end(), [](int cap) { return cap > 0 && static_cast<size_t>(cap) <= contextLimit("screenBytes") + 1; }), "every read bounded inside field");
         Provider outside(L"before chosen after", 0, 7); outside.selectedStart = 0;
         expect(outside.read().selectionUnavailable && outside.reads == 0, "out-of-field nonempty selection never clipped");
         Provider collapsed(L"plain", 5, 5); collapsed.selectedStart = collapsed.docEnd + 1; collapsed.selectedEnd = collapsed.selectedStart;
@@ -556,7 +581,7 @@ int main() {
             return (range->start == page.selectedStart && range->end == page.selectedEnd) ||
                 (range->start == page.docStart && range->end == page.docEnd);
         }), "page selection does not acquire adjacent source");
-        Provider pageLarge(std::wstring(262139, L's'), 0, 262139);
+        Provider pageLarge(std::wstring(oversize, L's'), 0, oversize);
         expect(!pageLarge.readPage(), "page selection overflow refuses whole selection");
         Provider pageMoved(L"before chosen after", 7, 13); pageMoved.changeSelection = true;
         expect(!pageMoved.readPage(), "changed page selection refused");
@@ -673,4 +698,8 @@ int main() {
         std::cout << "UIA and Edit caret acquisition contracts passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+}
+// A failed check names itself, wherever in the run it fails.
+int main() {
+    try { return run(); } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

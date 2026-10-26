@@ -20,6 +20,8 @@ enum SharedWalk {
         var selection = false
         var frame: [Double]?
         var window: [Double]?
+        /// The read takes the whole window, not only what it shows.
+        var wholeWindow = false
         /// Accessibility frames are in points.
         var scale = 1.0
         init(role: String, focus: String? = nil, part: Bool = false, inPage: Bool, frame: CGRect?, window: CGRect?) {
@@ -35,6 +37,9 @@ enum SharedWalk {
         var childrenInPage: Bool?
         var host: Bool?
         var shown: Bool?
+        /// The element's frame says nothing of where its text is (a box at most a point thin, as
+        /// Chromium squashes an element scrolled out of view): the read gets no frame for it.
+        var unplaced: Bool?
         /// With `skip`: an element that shows nothing, looked inside first as for this read; an
         /// excluded page under it refuses the window.
         var look: Action?
@@ -97,10 +102,19 @@ enum SharedWalk {
         }
     }
 
-    /// Why the walk stops before its next element, or nil to go on.
-    static func stop(nodes: Int, textFull: Bool) throws -> String? {
-        struct Request: Encodable { var nodes: Int; var textFull: Bool }
+    /// What the read keeps of the caret's text: the text around the caret, and what is selected.
+    /// Only a field in focus has text around a caret of its own, and only what the window shows
+    /// keeps any of it: the whole window reads the field whole, and its caret block only marks it.
+    struct Around: Decodable { var around: Bool; var selection: Bool }
+    static func around(focusedField: Bool, wholeWindow: Bool) throws -> Around {
+        try call(["around": ["focusedField": focusedField, "wholeWindow": wholeWindow]], Around.self)
+    }
+
+    /// Why the walk stops before its next element, or nil to go on. `asked`: the app asked for what
+    /// is read so far (`ScreenReadStop`).
+    static func stop(nodes: Int, textFull: Bool, asked: Bool) throws -> String? {
+        struct Request: Encodable { var nodes: Int; var textFull: Bool; var asked: Bool }
         struct Reply: Decodable { var stopped: String? }
-        return try call(["stop": Request(nodes: nodes, textFull: textFull)], Reply.self).stopped
+        return try call(["stop": Request(nodes: nodes, textFull: textFull, asked: asked)], Reply.self).stopped
     }
 }

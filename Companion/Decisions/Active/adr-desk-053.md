@@ -130,3 +130,45 @@ a per-platform one — a separate program, a screen reader and a focused-field r
 - **Consequences:** one more helper process on each platform. Where the amendment above says a
   terminal's field read runs in the helper, it now runs in `voice-field-reader`; its time limits stand.
 
+
+**Amendment 2026-10-25: a read the app stops waiting for answers with what it has read so far.**
+Owner: "because it's a separate process ... we should be able to just provide the app with whatever
+is read so far." With the whole window read (ADR-DESK-016, 2026-10-25) a large page takes longer,
+and a read that missed the caller's wait used to give nothing.
+- **Wire.** The app numbers its reads (`readScreen {..., read}`, from 1). When the caller's wait
+  (`contextWait`, agent mode `agentScreenWait`) runs out, `ScreenReader.stop` sends
+  `readScreenStop {read}`, a request of its own whose reply is null, and the caller waits as long
+  again for the answer. The read ends at its next element and answers with what it has, laid out,
+  checked and redacted by the same path as a whole read. Its summary says `stopped: asked`.
+- **The rule, once, in Rust.** `read` is validated by the core (`voice_core_request_json`,
+  `request-cases.json`), and which read a stop reaches is the core's too (`read_stops.rs`,
+  `voice_core_screen_read_stop` / `voice_core_screen_read_asked`): a stop asks that read and every
+  read numbered before it; a read numbered after the highest stop, or with no number, is never asked,
+  so a stop that arrives late never cuts the next read short. The state is atomic: stops arrive on
+  the reader's input thread while the walk asks on its own.
+- **What a stop cuts short.** The walk, at its next element, and the walk's own looks inside a part
+  it would read whole (not seen whole, so the part is withheld behind the marker), and the census
+  for passwords before a range is read (fails closed). Never the checks before the walk for an
+  excluded page: a stop there would let a page go unlooked-for.
+- **Each reader keeps reading requests while it reads.** macOS already served each request on its
+  own task. Windows reads on a worker thread with its own COM, one read at a time, while the main
+  thread reads stdin and answers stops. Linux must read on the GLib main loop (AT-SPI), so a thread
+  of its own reads stdin, answers `readScreenStop` there and forwards every other line through a pipe
+  that takes stdin's place for the loop's `Channel`.
+- **The whole window's read (ADR-DESK-016's two reads).** `readScreen {..., wholeWindow: true}` is
+  a read like any, numbered after the read of what the window shows, which it starts after: a stop
+  the dictation sends for the first never reaches it. Agent mode's `screen_read` waits
+  `agentScreenWait` for it, then stops it and waits as long again, as for the screen. Stopped before
+  it has started (the first read still going), it is not started: the first read is stopped, and its
+  answer is the whole window's. `readScreenStop` carries no scope (the helpers pass `read` alone to
+  the core). The whole window's request names the first read (`sameWindowAs`): the helper reads it
+  only of that read's window while it is still in front, and answers null otherwise (ADR-DESK-016,
+  "The same window, or none").
+- `screenReaderTimeout` stays as the process's end for a provider that never answers at all (a stop
+  cannot interrupt a call the provider holds); it is no budget on the read.
+- **Measured cost (Windows 11 ARM64 VM, 2026-10-25).** Over 25 reads of the Electron test page
+  (119 elements read, 89 before the change) the median read was 370-580 ms against main's 290 ms;
+  the VM's own load moved both by 3x between runs. A UIA look over the whole 100,000-element budget
+  took one to six minutes (about 0.65-3.7 ms an element, cross-process), so on a very large window
+  the stop, not the budget, is what ends a dictation's read. The CTest cases that walk the whole
+  budget run as `voice-privacy-budgets`, apart from `voice-privacy-provider`.

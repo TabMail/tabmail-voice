@@ -31,6 +31,9 @@ struct ScreenContext: Sendable, Equatable {
     var terminalSource: JSON?
     var appName: String
     var bundleID: String?
+    /// The read takes everything the window holds, on screen or not, not only what it shows (the
+    /// walk's `wholeWindow`, `readScreen`'s).
+    var wholeWindow = false
     var windowTitle: String?
     /// Host of the web page (browsers and web-based apps).
     var host: String?

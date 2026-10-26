@@ -25,7 +25,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-013](Companion/Decisions/Active/adr-desk-013.md)**: One repository for TabMail Voice on every platform, one folder per platform
 - **[ADR-DESK-014](Companion/Decisions/Active/adr-desk-014.md)**: Thunderbird connector spike: drive TabMail's chat from outside
 - **[ADR-DESK-015](Companion/Decisions/Active/adr-desk-015.md)**: Debug builds log user content in full, to the local log file only
-- **[ADR-DESK-016](Companion/Decisions/Active/adr-desk-016.md)**: Lay the screen read out as the screen shows it
+- **[ADR-DESK-016](Companion/Decisions/Active/adr-desk-016.md)**: Lay the screen read out as the screen shows it; 2026-10-25: two reads, what the window shows and then the whole window (`wholeWindow`, `offscreen` fact; off-screen, point-thin `unplaced` text on its own line; node budget 100k, 1 MiB); the whole window bound to the first read's window or null (`sameWindowAs`, `LastReadWindow`); long fields whole only in the whole window (`fieldPlan` scope); agent reads the whole window only via `screen_read`
 - **[ADR-DESK-017](Companion/Decisions/Active/adr-desk-017.md)**: Settings are read once, as a dictation starts
 - **[ADR-DESK-018](Companion/Decisions/Active/adr-desk-018.md)**: Debug mode, only for allowed accounts
 - **[ADR-DESK-019](Companion/Decisions/Active/adr-desk-019.md)**: Dictate in the keyboard's language, shown beside the waveform
@@ -47,7 +47,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-035](Companion/Decisions/Active/adr-desk-035.md)**: Agent mode sends the user's name, set in the wizard or Settings
 - **[ADR-DESK-036](Companion/Decisions/Active/adr-desk-036.md)**: The chat window opens over the pill; the bubbles are a history of what ran; the chat window drags with its pill (chatDragStart, dragChat, draggedChat; amendment 2026-10-25)
 - **[ADR-DESK-037](Companion/Decisions/Active/adr-desk-037.md)**: The Thunderbird tool is off until its native connector
-- **[ADR-DESK-038](Companion/Decisions/Active/adr-desk-038.md)**: A dictionary of the user's words, typed or learned from their corrections
+- **[ADR-DESK-038](Companion/Decisions/Active/adr-desk-038.md)**: A dictionary of the user's words, typed or learned from their corrections; 2026-10-25: whole-window terms fill the vocabulary room left, never waited for
 - **[ADR-DESK-039](Companion/Decisions/Active/adr-desk-039.md)**: A shorter wait between the release and the text
 - **[ADR-DESK-040](Companion/Decisions/Active/adr-desk-040.md)**: The recording is peak-normalized before it is uploaded
 - **[ADR-DESK-041](Companion/Decisions/Active/adr-desk-041.md)**: The app updates itself from cdn.tabmail.ai
@@ -56,15 +56,15 @@ one line here carrying its number and title.
 - **[ADR-DESK-044](Companion/Decisions/Active/adr-desk-044.md)**: The code in folders by concern, each with a place for what comes next
 - **[ADR-DESK-045](Companion/Decisions/Active/adr-desk-045.md)**: Apps the screen is never read in, with the password managers built in
 - **[ADR-DESK-046](Companion/Decisions/Active/adr-desk-046.md)**: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
-- **[ADR-DESK-047](Companion/Decisions/Active/adr-desk-047.md)**: Websites the screen is never read on, with the password managers' web vaults built in
+- **[ADR-DESK-047](Companion/Decisions/Active/adr-desk-047.md)**: Websites the screen is never read on, with the password managers' web vaults built in; 2026-10-25: reading the whole window, an excluded page refuses it wherever it is, outside it too
 - **[ADR-DESK-048](Companion/Decisions/Active/adr-desk-048.md)**: Every color in one palette file; one time for every color change
 - **[ADR-DESK-049](Companion/Decisions/Active/adr-desk-049.md)**: Long dictations, cut into chunks at pauses and sent while the user speaks
 - **[ADR-DESK-050](Companion/Decisions/Active/adr-desk-050.md)**: Windows and Linux update themselves too, from signed packages proven by the app *(Linux half superseded by ADR-DESK-058)*
 - **[ADR-DESK-051](Companion/Decisions/Active/adr-desk-051.md)**: Agent mode reads a PDF the user approves, parsed in a disposable sandbox, redacted in the helper
 - **[ADR-DESK-052](Companion/Decisions/Active/adr-desk-052.md)**: Right Alt as an Ubuntu dictation key, held by the GNOME extension
-- **[ADR-DESK-053](Companion/Decisions/Active/adr-desk-053.md)**: The screen is read by a program of its own
+- **[ADR-DESK-053](Companion/Decisions/Active/adr-desk-053.md)**: The screen is read by a program of its own; 2026-10-25: numbered reads, `readScreenStop` answers with what was read so far (stop rule in Rust `read_stops.rs`); the whole window is read after, numbered after
 - **[ADR-DESK-054](Companion/Decisions/Active/adr-desk-054.md)**: Shared logic lives in Rust only; native code is thin OS adapters
-- **[ADR-DESK-055](Companion/Decisions/Active/adr-desk-055.md)**: Agent mode is one tool loop; Compose and Edit end it by pasting
+- **[ADR-DESK-055](Companion/Decisions/Active/adr-desk-055.md)**: Agent mode is one tool loop; Compose and Edit end it by pasting; 2026-10-25: `screen_read` local tool reads the whole window (no protocol bump; listed only when the window was read)
 - **[ADR-DESK-056](Companion/Decisions/Active/adr-desk-056.md)**: On GNOME, the extension says which window is in front
 - **[ADR-DESK-057](Companion/Decisions/Active/adr-desk-057.md)**: On Windows, the Visual C++ runtime is installed system-wide by the installer
 - **[ADR-DESK-058](Companion/Decisions/Active/adr-desk-058.md)**: Linux updates through an apt repository

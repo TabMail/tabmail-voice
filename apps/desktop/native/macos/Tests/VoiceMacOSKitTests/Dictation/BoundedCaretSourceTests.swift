@@ -21,9 +21,9 @@ struct BoundedCaretSourceTests {
     }
 
     @Test func exactUTF8BudgetCountsSurrogatePairsAcrossChunksOnce() throws {
-        let selected = "a" + String(repeating: "😀", count: 65534) + "x"
-        let source = selected as NSString
         let limits = try SharedContext.sourceLimits()
+        let selected = "a" + String(repeating: "😀", count: (limits.selectionSourceBytes - 2) / 4) + "x"
+        let source = selected as NSString
         #expect(selected.utf8.count == limits.selectionSourceBytes)
         let result = try BoundedCaretSource.read(count: source.length, selection: NSRange(location: 0, length: source.length)) {
             source.substring(with: $0) as NSString
@@ -33,7 +33,7 @@ struct BoundedCaretSourceTests {
     }
 
     @Test func oversizedSelectionIsUnavailableRatherThanAPrefix() throws {
-        let source = String(repeating: "😀", count: 65535) as NSString
+        let source = String(repeating: "😀", count: try SharedContext.sourceLimits().selectionSourceBytes / 4 + 1) as NSString
         let result = try BoundedCaretSource.read(count: source.length, selection: NSRange(location: 0, length: source.length)) {
             source.substring(with: $0) as NSString
         }
@@ -76,7 +76,7 @@ struct BoundedCaretSourceTests {
         #expect(full.complete && full.text == text as String)
     }
     @Test func oversizedFieldSignalsVisibleRangeFallbackWithoutOpenTail() throws {
-        let text = ("Visible! " + String(repeating: "😀", count: 80000)) as NSString
+        let text = ("Visible! " + String(repeating: "😀", count: try SharedContext.limit("screenBytes") / 4)) as NSString
         let result = try BoundedCaretSource.field(count: text.length, interval: NSRange(location: 0, length: text.length)) {
             text.substring(with: $0) as NSString
         }

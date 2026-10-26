@@ -284,13 +284,33 @@ pub(crate) fn whitespace(ch: char) -> bool {
     ch.is_whitespace() || ch == '\u{200b}'
 }
 
-const SCREEN_BYTES: usize = crate::semantic::MAX_BYTES;
+/// The most text one screen read gives, in UTF-8 bytes: the whole window, read in memory on a
+/// desktop, for a model that takes far more (owner, 2026-10-25: the budget relaxed).
+pub(crate) const SCREEN_BYTES: usize = 1024 * 1024;
 /// What stands in the screen read for a part withheld for privacy, on every platform.
 const HIDDEN_MARKER: &str = "[hidden for privacy]";
 pub(crate) const BLOCK_SOURCE_BYTES: usize = 2 * SCREEN_BYTES + 3;
-const FIELD_SOURCE_BYTES: usize = 3 * SOURCE_WINDOW_BYTES;
-pub(crate) const SEMANTIC_SOURCE_BYTES: usize = SCREEN_BYTES + FIELD_SOURCE_BYTES + 3;
+/// The most a field's parts hold: the text shown, a whole field up to the screen's budget, and
+/// the window read on either side of it.
+const FIELD_SOURCE_BYTES: usize = SCREEN_BYTES + 2 * SOURCE_WINDOW_BYTES;
+/// The most one piece of a heading, link or row holds: a block's text or a field's parts.
+pub(crate) const PIECE_SOURCE_BYTES: usize = if BLOCK_SOURCE_BYTES > FIELD_SOURCE_BYTES {
+    BLOCK_SOURCE_BYTES
+} else {
+    FIELD_SOURCE_BYTES
+};
+/// The most source a heading, link or row keeps: what it holds before the screen's budget
+/// fills, one separator (" | "), one last piece kept whole, and a space at either edge.
+pub(crate) const SEMANTIC_SOURCE_BYTES: usize = SCREEN_BYTES + 3 + PIECE_SOURCE_BYTES + 2;
 const ALL_BLOCK_SOURCE_BYTES: usize = SCREEN_BYTES + SEMANTIC_SOURCE_BYTES;
+/// Whether a field's parts fit what a helper reads: the text shown (a field read whole up to the
+/// screen's budget) and the window on either side of it.
+pub(crate) fn field_parts_fit(parts: &[String]) -> bool {
+    parts.len() == 3
+        && parts[0].len() <= SOURCE_WINDOW_BYTES
+        && parts[1].len() <= SCREEN_BYTES
+        && parts[2].len() <= SOURCE_WINDOW_BYTES
+}
 /// A hidden run of spaces only: it hides nothing (`SemanticText` gives a space the screen shows at
 /// a block's edge as one).
 fn edge_space((text, shown): &(String, bool)) -> bool {
@@ -306,10 +326,7 @@ fn read_runs(value: &Value) -> Result<Vec<(String, bool)>, u32> {
         .iter()
         .map(|run| {
             let pair = run.as_array().filter(|v| v.len() == 2).ok_or(1u32)?;
-            let text = pair[0]
-                .as_str()
-                .filter(|s| s.len() <= SOURCE_WINDOW_BYTES)
-                .ok_or(1u32)?;
+            let text = pair[0].as_str().ok_or(1u32)?;
             let visible = pair[1].as_bool().ok_or(1u32)?;
             bytes += text.len();
             if bytes > SEMANTIC_SOURCE_BYTES {
@@ -320,18 +337,22 @@ fn read_runs(value: &Value) -> Result<Vec<(String, bool)>, u32> {
         .collect()
 }
 fn read_field(value: &Value) -> Result<Vec<String>, u32> {
-    let parts = value.as_array().filter(|a| a.len() == 3).ok_or(1u32)?;
-    parts
+    let parts: Vec<String> = value
+        .as_array()
+        .ok_or(1u32)?
         .iter()
-        .map(|part| {
-            part.as_str()
-                .filter(|s| s.len() <= SOURCE_WINDOW_BYTES)
-                .map(str::to_owned)
-                .ok_or(1)
-        })
-        .collect()
+        .map(|part| part.as_str().map(str::to_owned).ok_or(1u32))
+        .collect::<Result<_, _>>()?;
+    if field_parts_fit(&parts) {
+        Ok(parts)
+    } else {
+        Err(1)
+    }
 }
 pub(crate) const SOURCE_WINDOW_BYTES: usize = crate::semantic::MAX_BYTES;
+/// The most characters a field holds that what the window shows reads whole; a longer one is read
+/// by the part it shows (the whole window's read takes any field the screen's budget holds).
+const SHOWN_FIELD_GRAPHEMES: usize = 20_000;
 pub(crate) const SELECTION_SOURCE_BYTES: usize = SCREEN_BYTES - 6;
 const CARET_SOURCE_BYTES: usize = SELECTION_SOURCE_BYTES + 2 * SOURCE_WINDOW_BYTES;
 // How much of the line at a caret an adapter reads to tell an empty line (a break) from words;
@@ -474,14 +495,9 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
     let mut remaining = SCREEN_BYTES - reserved;
     let mut changed = false;
     for block in blocks.iter_mut().filter(|b| b.kind != "caret") {
-        let graphemes = if matches!(block.kind.as_str(), "row" | "heading" | "link") {
-            crate::semantic::MAX_GRAPHEMES
-        } else {
-            usize::MAX
-        };
         let mut end = outside_markers(
             &block.text,
-            prefix_end(&block.text, graphemes, remaining),
+            prefix_end(&block.text, usize::MAX, remaining),
             true,
         );
         if end < block.text.len() && block.kind == "row" {
@@ -968,7 +984,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER,"redactedMarker":privacy::PLACEHOLDER})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER,"redactedMarker":privacy::PLACEHOLDER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.
@@ -987,19 +1003,35 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             None | Some(Value::Null) => None,
             Some(v) => Some(v.as_u64().ok_or(1u32)?),
         };
+        // Reading the whole window, a field is read whole when the screen's budget holds it, on
+        // screen or not (owner, 2026-10-25). Reading what the window shows, only a short one is,
+        // as before: a longer one is read by the part it shows, so nothing scrolled out of view
+        // enters it.
+        let whole_window = match value.get("wholeWindow") {
+            None | Some(Value::Null) => false,
+            Some(v) => v.as_bool().ok_or(1u32)?,
+        };
+        let whole_bytes = if whole_window {
+            SCREEN_BYTES
+        } else {
+            SOURCE_WINDOW_BYTES
+        };
         let whole = match value.get("text") {
             None | Some(Value::Null) => false,
             Some(v) => {
                 let text = v.as_str().ok_or(1u32)?;
-                text.len() <= SOURCE_WINDOW_BYTES
-                    && text
-                        .graphemes(true)
-                        .take(crate::semantic::MAX_GRAPHEMES + 1)
-                        .count()
-                        <= crate::semantic::MAX_GRAPHEMES
+                text.len() <= whole_bytes
+                    && (whole_window
+                        || text.graphemes(true).take(SHOWN_FIELD_GRAPHEMES + 1).count()
+                            <= SHOWN_FIELD_GRAPHEMES)
             }
         };
-        return serde_json::to_vec(&json!({"probeWhole":count.is_none_or(|n| n <= SOURCE_WINDOW_BYTES as u64),"useWhole":whole})).map_err(|_|3);
+        return serde_json::to_vec(&json!({
+            "probeWhole": count.is_none_or(|n| n <= whole_bytes as u64),
+            "useWhole": whole,
+            "wholeBytes": whole_bytes,
+        }))
+        .map_err(|_| 3);
     }
     if let Some(value) = request.get("fieldRanges") {
         let count = value["count"].as_u64().ok_or(1u32)?;
@@ -1143,9 +1175,12 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .iter()
         .map(Block::read)
         .collect::<Result<_, _>>()?;
-    if blocks.len() > 5_000
-        || blocks.iter().filter(|b| b.kind == "caret").count() > 1
-        || blocks.iter().any(|b| b.text.len() > BLOCK_SOURCE_BYTES)
+    // A heading, link or row and a field are bounded by their sources when read; a block of
+    // plain text by its own.
+    if blocks.iter().filter(|b| b.kind == "caret").count() > 1
+        || blocks
+            .iter()
+            .any(|b| b.runs.is_none() && b.source.is_none() && b.text.len() > BLOCK_SOURCE_BYTES)
     {
         return Err(1);
     }
@@ -1491,7 +1526,8 @@ mod layout_tests {
 #[cfg(test)]
 mod budget_tests {
     use super::*;
-    const SCREEN: usize = 256 * 1024;
+    const SCREEN: usize = SCREEN_BYTES;
+    const WINDOW: usize = SOURCE_WINDOW_BYTES;
     fn call(value: Value) -> Value {
         serde_json::from_slice(&process(&serde_json::to_vec(&value).unwrap()).unwrap()).unwrap()
     }
@@ -2026,7 +2062,7 @@ mod budget_tests {
     }
     #[test]
     fn caret_window_retains_both_large_recognition_sides_until_redaction() {
-        let parts = json!(["x".repeat(SCREEN), "selected", "y".repeat(SCREEN)]);
+        let parts = json!(["x".repeat(WINDOW), "selected", "y".repeat(WINDOW)]);
         let reply = call(json!({"caretWindow":{"parts":parts,"startKnown":true,"endKnown":true}}));
         assert_eq!(reply["parts"], parts);
         assert_eq!(reply["selectionUnavailable"], false);
@@ -2040,7 +2076,7 @@ mod budget_tests {
     }
     #[test]
     fn recognition_halo_does_not_consume_the_presentation_reservation() {
-        let parts = json!(["x".repeat(SCREEN), "selected", "y".repeat(SCREEN)]);
+        let parts = json!(["x".repeat(WINDOW), "selected", "y".repeat(WINDOW)]);
         let reserved = call(json!({"reserveCaret":parts}));
         assert_eq!(reserved["used"], 4_000 + 8 + 6);
         assert_eq!(reserved["budgetFull"], false);
@@ -2053,7 +2089,7 @@ mod budget_tests {
     }
     #[test]
     fn recognition_halo_is_redacted_before_nearest_context_is_selected() {
-        let before = format!("password={}syntheticSecret123", " ".repeat(SCREEN - 40));
+        let before = format!("password={}syntheticSecret123", " ".repeat(WINDOW - 40));
         let reply = call(json!({"blocks":[],"caret":[before,"","Visible. ".repeat(5_000)]}));
         assert!(
             !reply["caret"][0]
@@ -2071,14 +2107,14 @@ mod budget_tests {
     #[test]
     fn full_selection_and_each_source_side_have_independent_finite_bounds() {
         let selection = "s".repeat(SCREEN - 6);
-        let parts = json!(["x".repeat(SCREEN), selection, "y".repeat(SCREEN)]);
+        let parts = json!(["x".repeat(WINDOW), selection, "y".repeat(WINDOW)]);
         let reserved = call(json!({"reserveCaret":parts}));
         assert_eq!(reserved["used"], SCREEN);
         let reply = call(json!({"blocks":[],"caret":parts}));
         assert_eq!(reply["caret"], json!(["", selection, ""]));
         for parts in [
-            json!(["x".repeat(SCREEN + 1), "", ""]),
-            json!(["", "", "y".repeat(SCREEN + 1)]),
+            json!(["x".repeat(WINDOW + 1), "", ""]),
+            json!(["", "", "y".repeat(WINDOW + 1)]),
             json!(["", "s".repeat(SCREEN - 5), ""]),
         ] {
             assert!(process(&serde_json::to_vec(&json!({"reserveCaret":parts})).unwrap()).is_err());
@@ -2193,15 +2229,16 @@ mod budget_tests {
     }
     #[test]
     fn final_semantic_prefix_follows_redaction_and_keeps_graphemes_whole() {
-        let text = format!("{} {}{}", "x".repeat(19_994), "AKIA", "A".repeat(16));
+        // A row is cut where the screen's budget ends, like any block, after redaction.
+        let text = format!("{} {}{}", "x".repeat(SCREEN - 10), "AKIA", "A".repeat(16));
         let reply = call(json!({"blocks":[{"kind":"row","text":text}],"caret":["","",""]}));
         let shown = reply["blocks"][0]["text"].as_str().unwrap();
         assert!(!shown.contains("AKIA"));
-        assert!(shown.graphemes(true).count() <= 20_000);
+        assert!(shown.len() <= SCREEN);
         assert_eq!(reply["truncated"], true);
         let family = "👨‍👩‍👧‍👦";
         let reply = call(
-            json!({"blocks":[{"kind":"field","text":family.repeat(10_486)}],"caret":["","",""]}),
+            json!({"blocks":[{"kind":"field","text":family.repeat(SCREEN / family.len() + 1)}],"caret":["","",""]}),
         );
         let shown = reply["blocks"][0]["text"].as_str().unwrap();
         assert!(shown.graphemes(true).all(|g| g == family));
@@ -2209,7 +2246,7 @@ mod budget_tests {
     }
     #[test]
     fn row_limit_does_not_leave_an_incomplete_join_separator() {
-        for padding in [19_997, 19_998, 19_999] {
+        for padding in [SCREEN - 3, SCREEN - 2, SCREEN - 1] {
             let text = format!("{} | next", "x".repeat(padding));
             let reply = call(json!({"blocks":[{"kind":"row","text":text}]}));
             assert_eq!(reply["blocks"][0]["text"], "x".repeat(padding));
@@ -2469,10 +2506,13 @@ mod budget_tests {
             .unwrap()
         };
         assert_eq!(admit(0)["used"], SOURCE_WINDOW_BYTES + 7);
-        assert_eq!(admit(0)["budgetFull"], true);
+        assert_eq!(admit(0)["budgetFull"], false);
+        let late = admit(SCREEN_BYTES - SOURCE_WINDOW_BYTES);
+        assert_eq!(late["used"], SCREEN_BYTES + 7);
+        assert_eq!(late["budgetFull"], true);
         assert_eq!(admit(SCREEN_BYTES)["runs"], json!([]));
         assert_eq!(admit(SCREEN_BYTES)["used"], SCREEN_BYTES);
-        let invalid = json!({"blocks":[{"kind":"row","text":"", "runs":vec![("x".repeat(SOURCE_WINDOW_BYTES),false);5]}]});
+        let invalid = json!({"blocks":[{"kind":"row","text":"", "runs":vec![("x".repeat(SOURCE_WINDOW_BYTES),false);SEMANTIC_SOURCE_BYTES / SOURCE_WINDOW_BYTES + 1]}]});
         assert!(process(&serde_json::to_vec(&invalid).unwrap()).is_err());
     }
     #[test]
@@ -2567,33 +2607,72 @@ mod budget_tests {
         assert!(ranges(100, json!([])).is_ok());
     }
     #[test]
-    fn field_plan_separates_native_lower_bound_from_grapheme_eligibility() {
+    fn field_plan_reads_a_field_whole_within_the_screen_budget() {
         let plan = |value| -> Value {
             serde_json::from_slice(
                 &process(&serde_json::to_vec(&json!({"fieldPlan":value})).unwrap()).unwrap(),
             )
             .unwrap()
         };
+        let whole = |value: Value| {
+            let mut value = value;
+            value["wholeWindow"] = json!(true);
+            plan(value)
+        };
+        // Reading the whole window: a field is read whole however many characters it holds,
+        // within the screen's bytes, the part off screen as the part shown (owner, 2026-10-25).
+        assert_eq!(whole(json!({}))["wholeBytes"], SCREEN_BYTES);
+        assert_eq!(whole(json!({"count":SCREEN_BYTES+1}))["probeWhole"], false);
+        assert_eq!(whole(json!({"count":SCREEN_BYTES}))["probeWhole"], true);
+        assert_eq!(whole(json!({}))["probeWhole"], true);
+        assert_eq!(whole(json!({"text":"x".repeat(20001)}))["useWhole"], true);
         assert_eq!(
-            plan(json!({"count":SOURCE_WINDOW_BYTES+1}))["probeWhole"],
+            whole(json!({"text":"x".repeat(SCREEN_BYTES)}))["useWhole"],
+            true
+        );
+        assert_eq!(
+            whole(json!({"text":"x".repeat(SCREEN_BYTES + 1)}))["useWhole"],
             false
         );
-        assert_eq!(
-            plan(json!({"count":SOURCE_WINDOW_BYTES}))["probeWhole"],
-            true
-        );
-        assert_eq!(plan(json!({}))["probeWhole"], true);
-        assert_eq!(plan(json!({"text":"😀".repeat(15000)}))["useWhole"], true);
-        assert_eq!(plan(json!({"text":"x".repeat(20001)}))["useWhole"], false);
-        assert_eq!(
-            plan(json!({"text":"e\u{301}".repeat(20000)}))["useWhole"],
-            true
-        );
+        // Reading what the window shows (and with no scope given): only a field of at most
+        // 20,000 characters within a source window is read whole; a longer one by the part it
+        // shows, so no text scrolled out of view enters what the window shows.
+        for shown in [
+            json!({}),
+            json!({"wholeWindow":false}),
+            json!({"wholeWindow":null}),
+        ] {
+            let with = |key: &str, v: Value| {
+                let mut value = shown.clone();
+                value[key] = v;
+                plan(value)
+            };
+            assert_eq!(plan(shown.clone())["wholeBytes"], SOURCE_WINDOW_BYTES);
+            assert_eq!(
+                with("count", json!(SOURCE_WINDOW_BYTES + 1))["probeWhole"],
+                false
+            );
+            assert_eq!(
+                with("count", json!(SOURCE_WINDOW_BYTES))["probeWhole"],
+                true
+            );
+            assert_eq!(plan(shown.clone())["probeWhole"], true);
+            assert_eq!(with("text", json!("😀".repeat(15000)))["useWhole"], true);
+            assert_eq!(with("text", json!("x".repeat(20000)))["useWhole"], true);
+            assert_eq!(with("text", json!("x".repeat(20001)))["useWhole"], false);
+            assert_eq!(
+                with("text", json!("e\u{301}".repeat(20000)))["useWhole"],
+                true
+            );
+            assert_eq!(with("text", json!("😀".repeat(20001)))["useWhole"], false);
+        }
         for value in [
             json!(false),
             json!({"count":-1}),
             json!({"count":1.5}),
             json!({"text":3}),
+            json!({"wholeWindow":"yes"}),
+            json!({"wholeWindow":1}),
         ] {
             assert!(process(&serde_json::to_vec(&json!({"fieldPlan":value})).unwrap()).is_err());
         }
@@ -2852,5 +2931,117 @@ mod hypertext_tests {
             CARET_SOURCE_BYTES - OBJECT.len() * children
         );
         assert_eq!(join(&elements(CARET_SOURCE_BYTES + 1)), Err(1));
+    }
+}
+#[cfg(test)]
+mod piece_tests {
+    use super::*;
+    use crate::semantic::{Decision, SemanticText};
+
+    fn call(value: Value) -> Result<Value, u32> {
+        process(&serde_json::to_vec(&value).unwrap()).map(|r| serde_json::from_slice(&r).unwrap())
+    }
+    /// Plain words, `bytes` long, ending with `last`.
+    fn words(bytes: usize, last: &str) -> String {
+        let mut text = "Some words here. ".repeat(bytes / 17 + 1);
+        text.truncate(bytes - last.len());
+        text + last
+    }
+    fn rendered(reply: &Value) -> &str {
+        reply["rendered"].as_str().unwrap()
+    }
+    #[test]
+    fn a_field_read_whole_up_to_the_screen_budget_is_admitted() {
+        for size in [SOURCE_WINDOW_BYTES + 1, 300_000, SCREEN_BYTES] {
+            let parts = json!(["", words(size, " Field ends."), ""]);
+            let admitted = call(json!({"admitField":parts,"used":0})).unwrap();
+            assert_eq!(admitted["parts"], parts);
+            assert_eq!(admitted["used"], size);
+        }
+        let parts = json!(["", "x".repeat(SCREEN_BYTES + 1), ""]);
+        assert!(call(json!({"admitField":parts,"used":0})).is_err());
+    }
+    #[test]
+    fn a_field_read_whole_past_a_window_is_shown_to_its_end() {
+        let text = words(300_000, " Field ends.");
+        let source = json!(["", text, ""]);
+        for caret in [None, Some(json!(["", "", ""]))] {
+            let mut request = json!({"blocks":[{"kind":"field","text":text,"source":source}]});
+            if let Some(caret) = caret {
+                request["caret"] = caret;
+            }
+            assert!(rendered(&call(request).unwrap()).ends_with("Field ends."));
+        }
+    }
+    #[test]
+    fn a_field_read_whole_in_a_row_is_kept_whole() {
+        let text = words(300_000, " Field ends.");
+        let mut row = SemanticText::new(1).unwrap();
+        row.offer(2, "Label").unwrap();
+        assert_eq!(
+            row.offer_projected(2, vec![String::new(), text, String::new()])
+                .unwrap(),
+            Decision::Descendants
+        );
+        row.offer(3, "").unwrap();
+        let mut block: Value = serde_json::from_slice(&row.finish_projected().unwrap()).unwrap();
+        block["kind"] = json!("row");
+        let reply = call(json!({"blocks":[block]})).unwrap();
+        assert!(rendered(&reply).starts_with("| Label | Some words"));
+        assert!(rendered(&reply).ends_with("Field ends."));
+    }
+    #[test]
+    fn a_text_larger_than_a_window_is_kept_whole_in_the_row() {
+        let text = words(SOURCE_WINDOW_BYTES + 1, " Text ends.");
+        let mut row = SemanticText::new(1).unwrap();
+        assert_eq!(row.offer(2, &text).unwrap(), Decision::Descendants);
+        row.offer(3, "").unwrap();
+        let mut block: Value = serde_json::from_slice(&row.finish_projected().unwrap()).unwrap();
+        block["kind"] = json!("row");
+        assert!(rendered(&call(json!({"blocks":[block]})).unwrap()).ends_with("Text ends."));
+    }
+    #[test]
+    fn the_largest_row_a_helper_can_build_is_accepted() {
+        // Just under the screen's budget, then the largest piece, spaced at both edges: the most
+        // source one row keeps.
+        let first = " ".to_owned() + &"a".repeat(SCREEN_BYTES - 1);
+        let last = "b".repeat(PIECE_SOURCE_BYTES - 1) + " ";
+        let mut row = SemanticText::new(1).unwrap();
+        assert_eq!(row.offer(2, &first).unwrap(), Decision::Descendants);
+        assert_eq!(row.offer(2, &last).unwrap(), Decision::BudgetFull);
+        let block: Value = serde_json::from_slice(&row.finish_projected().unwrap()).unwrap();
+        let bytes: usize = block["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|run| run[0].as_str().unwrap().len())
+            .sum();
+        assert_eq!(bytes, SCREEN_BYTES - 1 + 3 + PIECE_SOURCE_BYTES - 1 + 2);
+        assert!(bytes <= SEMANTIC_SOURCE_BYTES);
+        let runs = block["runs"].clone();
+        assert!(read_runs(&runs).is_ok());
+        // And the read takes it: the row is shown, cut at the screen's budget.
+        let reply =
+            call(json!({"blocks":[{"kind":"row","text":block["text"],"runs":block["runs"]}]}))
+                .unwrap();
+        let shown = rendered(&reply);
+        assert!(shown.starts_with("| aaa"));
+        assert!(shown.len() <= SCREEN_BYTES);
+        assert!(shown.len() > SCREEN_BYTES - 16);
+    }
+    #[test]
+    fn a_page_of_more_than_5000_blocks_is_read_whole() {
+        let blocks: Vec<Value> = (0..5_001)
+            .map(|i| json!({"kind":"text","text":format!("Piece {i}")}))
+            .collect();
+        for caret in [None, Some(json!(["", "", ""]))] {
+            let mut request = json!({ "blocks": blocks });
+            if let Some(caret) = caret {
+                request["caret"] = caret;
+            }
+            let reply = call(request).unwrap();
+            assert!(rendered(&reply).contains("Piece 0"));
+            assert!(rendered(&reply).ends_with("Piece 5000"));
+        }
     }
 }

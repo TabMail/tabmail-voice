@@ -285,8 +285,13 @@ struct ScreenAccess: Sendable {
     var frontmost: @MainActor @Sendable () -> (pid_t, String, String?)?
     /// The bundle identifier of the app `pid`.
     var bundleIdentifier: @Sendable (pid_t) -> String?
-    /// The screen context of the app, as read; none when an excluded website is showing.
-    var read: @Sendable (pid_t, String, String?, ScreenExclusions) -> ScreenContext?
+    /// The focused window of the app `pid`, the one a screen read of it reads.
+    var window: @Sendable (pid_t) -> AXUIElement?
+    /// The screen context of the app's window (as `window` gave it), as read; none when an excluded
+    /// website is showing. The Bool: the whole window, not only what it shows (the walk's
+    /// `wholeWindow`). The last argument says whether the app has asked the read to stop: it then
+    /// ends with what it has.
+    var read: @Sendable (pid_t, String, String?, AXUIElement?, ScreenExclusions, Bool, () -> Bool) -> ScreenContext?
     /// The app's focused field (`FocusedField`): its text, or a terminal's viewport; none in an
     /// excluded website.
     var focusedField: @Sendable (pid_t, ScreenExclusions) -> FocusedField.Read?
@@ -294,7 +299,8 @@ struct ScreenAccess: Sendable {
     static let accessibility = ScreenAccess(
         frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
         bundleIdentifier: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
-        read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2, excluding: $3) },
+        window: { ScreenContextReader.focusedWindow(pid: $0) },
+        read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2, window: $3, excluding: $4, wholeWindow: $5, asked: $6) },
         focusedField: { FocusedField.read(inApp: $0, bundleID: NSRunningApplication(processIdentifier: $0)?.bundleIdentifier, excluding: $1) }
     )
 }

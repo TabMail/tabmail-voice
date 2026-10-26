@@ -7,6 +7,7 @@ import CoreGraphics
 import Foundation
 import os
 import Testing
+import VoiceHelperSupport
 @testable import VoiceMacOSKit
 
 struct ScreenContextTests {
@@ -135,19 +136,30 @@ struct ScreenContextTests {
     // MARK: What is read
 
     /// Web apps keep hidden text in boxes at most a point thin (frames measured in Slack and
-    /// Chrome 2026-09-26); a 0×0 frame says nothing and counts as shown. The shared core decides,
-    /// with this helper's thinness.
-    @Test func textInAPointThinBoxIsHidden() throws {
-        func action(_ frame: CGRect) throws -> SharedWalk.Step.Action {
-            try SharedWalk.node(.init(role: "text", inPage: true, frame: frame, window: nil)).action
+    /// Chrome 2026-09-26), and Chrome squashes everything scrolled out of view to such a strip at the
+    /// window's edge: reading what the window shows, it is skipped. Reading the whole window
+    /// (ADR-DESK-016 amendment, 2026-10-25) it is read, marked unplaced by the shared core so it
+    /// starts a line of its own. A 0×0 frame says nothing either way: shown, and laid out as given.
+    @Test func textInAPointThinBoxIsReadOnlyWithTheWholeWindow() throws {
+        func step(_ frame: CGRect, whole: Bool) throws -> SharedWalk.Step {
+            var node = SharedWalk.Node(role: "text", inPage: true, frame: frame, window: nil)
+            node.wholeWindow = whole
+            return try SharedWalk.node(node)
         }
-        #expect(try action(CGRect(x: 945, y: 234, width: 147, height: 1)) == .skip)   // scrolled out of Slack's list
-        #expect(try action(CGRect(x: 2099, y: 278, width: 0, height: 1)) == .skip)    // scrolled out in Chrome
-        #expect(try action(CGRect(x: 1477, y: 774, width: 1, height: 36)) == .skip)   // hover-only action
-        #expect(try action(CGRect(x: 797, y: 146, width: 1, height: 1)) == .skip)     // screen-reader-only
-        #expect(try action(CGRect(x: 868, y: 874, width: 52, height: 25)) == .text)
-        #expect(try action(CGRect(x: 0, y: 0, width: 2, height: 2)) == .text)
-        #expect(try action(.zero) == .text)
+        for thin in [CGRect(x: 945, y: 234, width: 147, height: 1),   // scrolled out of Slack's list
+                     CGRect(x: 2099, y: 278, width: 0, height: 1),    // scrolled out in Chrome
+                     CGRect(x: 1477, y: 774, width: 1, height: 36),   // hover-only action
+                     CGRect(x: 797, y: 146, width: 1, height: 1)] {   // screen-reader-only
+            #expect(try step(thin, whole: false).action == .skip)
+            #expect(try step(thin, whole: true).action == .text)
+            #expect(try step(thin, whole: true).unplaced == true)
+        }
+        for placed in [CGRect(x: 868, y: 874, width: 52, height: 25), CGRect(x: 0, y: 0, width: 2, height: 2), .zero] {
+            for whole in [false, true] {
+                #expect(try step(placed, whole: whole).action == .text)
+                #expect(try step(placed, whole: whole).unplaced == nil)
+            }
+        }
     }
 
     /// In web content controls and toolbars are read; in native apps they stay skipped, and
@@ -219,8 +231,9 @@ struct ScreenContextTests {
         return (window, composer, [composerGroup, web, window])
     }
 
-    private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = []) -> ScreenContext {
+    private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = [], whole: Bool = false) -> ScreenContext {
         var context = ScreenContext(appName: "Example")
+        context.wholeWindow = whole
         let read = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: window.frame, focused: focused,
                                             focusPath: focusPath, excluding: ScreenExclusions(), into: &context)
         #expect(read)
@@ -228,12 +241,18 @@ struct ScreenContextTests {
     }
 
     /// Who wrote a message reaches the prompt: the author and time on one line, the message below,
-    /// with neither scrolled-out text nor icon labels, and the caret block after.
+    /// with neither scrolled-out text nor icon labels, and the caret block after. Reading the whole
+    /// window (ADR-DESK-016 amendment), the message scrolled out of view is read too, each of its
+    /// point-thin pieces on a line of its own.
     @Test func walkReadsAWebChatAsItsScreenShowsIt() throws {
         let slack = slackWindow()
         let context = walk(slack.window, focused: slack.focused, focusPath: slack.focusPath)
         #expect(try context.renderedText() == "Alex Lee [Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
         #expect(context.blocks.last?.frame == slack.focused.frame)
+        let whole = walk(slack.window, focused: slack.focused, focusPath: slack.focusPath, whole: true)
+        let text = try whole.renderedText()
+        #expect(text == "Alex\n[Yesterday at 4:15 PM]\nAn old message\nAlex Lee [Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
+        #expect(whole.blocks.last?.frame == slack.focused.frame)
     }
 
     /// A key split by styling where one piece wraps (a Slack message) is read whole: the pieces meet
@@ -261,21 +280,114 @@ struct ScreenContextTests {
         let native = slackWindow(webArea: "AXGroup")
         let context = walk(native.window, focused: native.focused, focusPath: native.focusPath)
         #expect(try context.renderedText() == "[Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
+        let text = try walk(native.window, focused: native.focused, focusPath: native.focusPath, whole: true).renderedText()
+        #expect(text == "[Yesterday at 4:15 PM]\nAn old message\n[Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
     }
 
     /// A heading, link, row or field in a point-thin box shows nothing, like text; the one shown
-    /// piece beside them proves the walk reached them.
-    @Test func walkLeavesOutEveryKindOfHiddenBlock() throws {
+    /// piece beside them proves the walk reached them. Reading the whole window (ADR-DESK-016
+    /// amendment) each is read, starting a line of its own, since its box says nothing of where it is.
+    @Test func walkReadsEveryKindOfBlockInAPointThinBox() throws {
         let thin = CGRect(x: 10, y: 50, width: 300, height: 1)
         let area = FakeElement("AXWebArea", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [
-            FakeElement("AXHeading", [kAXTitleAttribute: "Hidden heading"], frame: thin),
-            FakeElement("AXLink", [kAXDescriptionAttribute: "Hidden link"], frame: thin),
-            FakeElement("AXRow", [kAXDescriptionAttribute: "Hidden row"], frame: thin),
-            FakeElement("AXTextField", [kAXValueAttribute: "Hidden field"], frame: thin),
+            FakeElement("AXHeading", [kAXTitleAttribute: "Thin heading"], frame: thin),
+            FakeElement("AXLink", [kAXDescriptionAttribute: "Thin link"], frame: thin),
+            FakeElement("AXRow", [kAXDescriptionAttribute: "Thin row"], frame: thin),
+            FakeElement("AXTextField", [kAXValueAttribute: "Thin field"], frame: thin),
             FakeElement("AXStaticText", [kAXValueAttribute: "Shown"], frame: CGRect(x: 10, y: 100, width: 60, height: 20)),
         ])
-        let context = walk(FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area]))
-        #expect(try context.renderedText() == "Shown")
+        let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area])
+        #expect(try walk(window).renderedText() == "Shown")
+        #expect(try walk(window, whole: true).renderedText() == "## Thin heading\n[Thin link]\n| Thin row\n> Thin field\nShown")
+    }
+
+    /// Reading what the window shows, the page scrolled out of view is left out. Reading the whole
+    /// window it is read, as Chrome reports it (every element squashed to a
+    /// point-thin strip at the window's bottom edge, measured 2026-10-25) and as Safari and Firefox
+    /// do (true frames below the window): Chrome's pieces each start a line, never joined side by
+    /// side as one strip; Safari's are laid out by their frames as on screen.
+    @Test func walkReadsThePageScrolledOutOfView() throws {
+        let window = CGRect(x: 0, y: 0, width: 800, height: 600)
+        func page(_ frames: [CGRect]) -> FakeElement {
+            FakeElement("AXWindow", frame: window, children: [FakeElement("AXWebArea", frame: window, children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "On screen"], frame: CGRect(x: 10, y: 100, width: 80, height: 20)),
+                FakeElement("AXHeading", [kAXTitleAttribute: "Section two"], frame: frames[0]),
+                FakeElement("AXStaticText", [kAXValueAttribute: "First part"], frame: frames[1]),
+                FakeElement("AXStaticText", [kAXValueAttribute: "second part"], frame: frames[2]),
+            ])])
+        }
+        let strip = CGRect(x: 10, y: 599, width: 300, height: 1)
+        let safari = [CGRect(x: 10, y: 1500, width: 200, height: 30), CGRect(x: 10, y: 1540, width: 80, height: 20),
+                      CGRect(x: 95, y: 1540, width: 90, height: 20)]
+        #expect(try walk(page([strip, strip, strip])).renderedText() == "On screen")
+        #expect(try walk(page(safari)).renderedText() == "On screen")
+        #expect(try walk(page([strip, strip, strip]), whole: true).renderedText() == "On screen\n## Section two\nFirst part\nsecond part")
+        #expect(try walk(page(safari), whole: true).renderedText() == "On screen\n## Section two\nFirst part second part")
+    }
+
+    /// The app stopped waiting (`readScreenStop`): the walk ends at its next element, and what it read
+    /// so far is the read, said to have stopped. Nothing of the elements after the stop is read.
+    @Test func aStoppedWalkKeepsWhatItReadSoFar() throws {
+        let pieces = (1...5).map { FakeElement("AXStaticText", [kAXValueAttribute: "Piece \($0)"]) }
+        let window = FakeElement("AXWindow", children: [FakeElement("AXWebArea", children: pieces)])
+        var context = ScreenContext(appName: "Example")
+        // Asked once the second piece is read.
+        let walked = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: nil, focusPath: [], excluding: ScreenExclusions(),
+                                              into: &context, asked: { pieces[1].textReads > 0 })
+        #expect(walked)
+        #expect(context.stoppedEarly == "asked")
+        #expect(try context.renderedText() == "Piece 1\nPiece 2")
+        #expect(pieces[2...].allSatisfy { $0.textReads == 0 })
+    }
+
+    /// A stop that comes while a row is being read ends the row at its next piece: what was read of
+    /// it is kept, and nothing of the pieces after the stop is asked for.
+    @Test func aStopInsideARowKeepsWhatItReadOfTheRow() throws {
+        func read(stopping: Bool) throws -> (rendered: String, cells: [FakeElement], lateRoles: Int) {
+            let cells = (1...5).map { FakeElement("AXStaticText", [kAXValueAttribute: "Cell \($0)"]) }
+            let tree = StopTree(stopsAt: nil)
+            var lateRoles = 0
+            tree.onString = { element, name in
+                if name == kAXRoleAttribute, cells[2...].contains(where: { $0 === element }) { lateRoles += 1 }
+            }
+            var context = ScreenContext(appName: "Example")
+            let walked = ScreenContextReader.walk(FakeElement("AXWindow", children: [FakeElement("AXRow", children: cells)]), in: tree,
+                                                  frame: nil, focused: nil, focusPath: [], excluding: ScreenExclusions(), into: &context,
+                                                  asked: { stopping && cells[1].textReads > 0 })
+            #expect(walked)
+            return (try context.renderedText(), cells, lateRoles)
+        }
+        let stopped = try read(stopping: true)
+        #expect(stopped.rendered == "| Cell 1 | Cell 2")
+        #expect(stopped.cells[2...].allSatisfy { $0.textReads == 0 })
+        #expect(stopped.lateRoles == 0)
+        #expect(try read(stopping: false).rendered == "| Cell 1 | Cell 2 | Cell 3 | Cell 4 | Cell 5")
+    }
+
+    /// A stop that comes while a field is looked through for a framed page leaves the field
+    /// unread, said hidden, and ends the read there, alone or in a row.
+    @Test func aStopDuringAFieldsLookWithholdsTheField() throws {
+        for inRow in [false, true] {
+            func read(stopping: Bool) throws -> (rendered: String, field: FakeElement, looks: Int) {
+                let field = FakeElement("AXTextArea", [kAXValueAttribute: "Whole field"], children: [FakeElement("AXGroup")])
+                let tree = StopTree(stopsAt: stopping ? field : nil)
+                let nodes = [FakeElement("AXStaticText", [kAXValueAttribute: "Prefix"]), field,
+                             FakeElement("AXStaticText", [kAXValueAttribute: "Later piece"])]
+                let window = FakeElement("AXWindow", children: inRow ? [FakeElement("AXRow", children: nodes)] : nodes)
+                var context = ScreenContext(appName: "Example")
+                let walked = ScreenContextReader.walk(window, in: tree, frame: nil, focused: nil, focusPath: [], excluding: ScreenExclusions(),
+                                                      into: &context, asked: { tree.asked })
+                #expect(walked)
+                return (try context.renderedText(), field, tree.looks)
+            }
+            let stopped = try read(stopping: true)
+            #expect(stopped.looks > 0)
+            #expect(stopped.rendered.contains("Prefix") && stopped.rendered.contains("[hidden for privacy]"))
+            #expect(!stopped.rendered.contains("Whole field") && !stopped.rendered.contains("Later piece"))
+            #expect(stopped.field.textReads == 0)
+            let whole = try read(stopping: false)
+            #expect(whole.rendered.contains("Whole field") && whole.rendered.contains("Later piece"))
+        }
     }
 
     /// A password field is never read, whether or not the app hides its value: not in the window, not
@@ -336,7 +448,8 @@ struct ScreenContextTests {
     }
 
     @Test func staticAndLabelSnapshotsWithholdIncompleteCredentialSuffixes() throws {
-        let text = "Visible. password: " + String(repeating: "x", count: 600000)
+        // Longer than a piece of text is read: it is cut, and the credential the cut leaves open is withheld.
+        let text = "Visible. password: " + String(repeating: "x", count: try SharedContext.limit("blockSourceBytes"))
         let plain = FakeElement("AXStaticText", [kAXValueAttribute: text])
         let heading = FakeElement("AXHeading", [kAXTitleAttribute: text])
         #expect(try walk(FakeElement("AXWindow", children: [plain])).renderedText() == "Visible.")
@@ -365,14 +478,15 @@ struct ScreenContextTests {
     @Test func webToolbarsAndLabeledControlsKeepTheirShownText() throws {
         let shown = CGRect(x: 20, y: 40, width: 100, height: 20)
         let thin = CGRect(x: 20, y: 40, width: 100, height: 1)
-        func read(_ element: FakeElement, inside role: String) -> String {
-            try! walk(FakeElement("AXWindow", children: [FakeElement(role, children: [element])])).renderedText()
+        func read(_ element: FakeElement, inside role: String, whole: Bool = false) -> String {
+            try! walk(FakeElement("AXWindow", children: [FakeElement(role, children: [element])]), whole: whole).renderedText()
         }
         let toolbar = FakeElement("AXToolbar", children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Project chat"], frame: shown),
-            FakeElement("AXStaticText", [kAXValueAttribute: "Hidden label"], frame: thin),
+            FakeElement("AXStaticText", [kAXValueAttribute: "Thin label"], frame: thin),
         ])
         #expect(read(toolbar, inside: "AXWebArea") == "Project chat")
+        #expect(read(toolbar, inside: "AXWebArea", whole: true) == "Project chat\nThin label")
         #expect(read(toolbar, inside: "AXGroup") == "")
         for role in ["AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton"] {
             let control = FakeElement(role, [kAXTitleAttribute: "Open profile", kAXDescriptionAttribute: "Open profile"], frame: shown,
@@ -382,12 +496,152 @@ struct ScreenContextTests {
         }
     }
 
+    /// A long field that shows only its start gives what the window shows only that start, in the
+    /// walk and in a row: its text scrolled out of view enters only the whole window's read.
+    @Test func aLongFieldGivesWhatTheWindowShowsOnlyItsShownPart() throws {
+        let shown = CGRect(x: 20, y: 40, width: 300, height: 20)
+        let start = "Visible start."
+        let value = start + String(repeating: "x", count: 20_001) + "OFFSCREEN_END"
+        func field() -> FakeElement {
+            FakeElement("AXTextArea", [kAXValueAttribute: value, "fieldShown": "\((start as NSString).length)"], frame: shown)
+        }
+        func read(_ element: FakeElement, whole: Bool) throws -> String {
+            try walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", children: [element])]), whole: whole).renderedText()
+        }
+        #expect(try read(field(), whole: false) == "> " + start)
+        #expect(try read(FakeElement("AXRow", children: [field()]), whole: false) == "| " + start)
+        #expect(try read(field(), whole: true) == "> " + value)
+        #expect(try read(FakeElement("AXRow", children: [field()]), whole: true).hasSuffix("OFFSCREEN_END"))
+    }
+
+    /// The editor in focus, as a field and as an editable page: what the window shows takes it by
+    /// the text around its caret (bounded), as before; the whole window reads it whole, like the
+    /// same editor out of focus, with its selection first and the text around its caret not read
+    /// a second time. A focused editor on an excluded website, or holding one, refuses the window
+    /// in both scopes, and a focused password field is never read.
+    @Test(arguments: ["AXTextArea", "AXWebArea"])
+    func aFocusedEditorIsReadWholeOnlyWithTheWholeWindow(role: String) throws {
+        let opening = "Opening of the draft."
+        let ending = "Words at the caret."
+        let text = opening + String(repeating: " Ordinary body words.", count: 1500) + ending
+        let native = text as NSString
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 100)
+        func editor(selecting selected: Bool, host: String = "example.com", holding page: FakeElement? = nil) throws -> FakeElement {
+            // The caret at the end, or the ending selected, read as the live tree reads it.
+            let selection = selected ? native.range(of: ending) : NSRange(location: native.length, length: 0)
+            let caret = try BoundedCaretSource.read(count: native.length, selection: selection) { native.substring(with: $0) as NSString }
+            var attributes = [kAXValueAttribute: text, "editable": "yes", "host": host,
+                              "caretBefore": caret.parts[0], "caretSelected": caret.parts[1], "caretAfter": caret.parts[2]]
+            // The field shows its opening only.
+            if role == "AXTextArea" { attributes["fieldShown"] = "\((opening as NSString).length)" }
+            let children = role == "AXWebArea" ? [FakeElement("AXStaticText", [kAXValueAttribute: text], frame: frame)] : []
+            return FakeElement(role, attributes, frame: frame, children: children + (page.map { [$0] } ?? []))
+        }
+        // The reply's text: what it shows, then the text around the caret it carries on its own.
+        func reply(_ field: FakeElement, focused: Bool, whole: Bool, excluding exclusions: ScreenExclusions = ScreenExclusions()) -> JSON? {
+            let window = FakeElement("AXWindow", frame: frame, children: [field])
+            var start = ScreenContext(appName: "Synthetic editor")
+            start.wholeWindow = whole
+            return ScreenContextReader.gather(window: window, focused: focused ? field : nil, focusPath: focused ? [window] : [],
+                                              in: FakeScreenTree(), excluding: exclusions, from: start)?.json(exclusions)
+        }
+        func read(_ field: FakeElement, focused: Bool, whole: Bool, excluding exclusions: ScreenExclusions = ScreenExclusions()) -> String? {
+            reply(field, focused: focused, whole: whole, excluding: exclusions)?["renderedText"]?.string
+        }
+        func around(_ field: FakeElement, focused: Bool, whole: Bool) -> [String] {
+            let json = reply(field, focused: focused, whole: whole)
+            return ["textBeforeCaret", "selectedText", "textAfterCaret"].map { json?[$0]?.string ?? "<none>" }
+        }
+        func count(_ part: String, in read: String?) -> Int { (read ?? "").components(separatedBy: part).count - 1 }
+
+        // What the window shows: the focused editor by the text around its caret, not its opening;
+        // the same field out of focus by the part it shows.
+        let shownFocused = read(try editor(selecting: false), focused: true, whole: false)
+        #expect(count(ending, in: shownFocused) == 1)
+        #expect(count(opening, in: shownFocused) == 0)
+        let shownUnfocused = read(try editor(selecting: false), focused: false, whole: false)
+        #expect(count(opening, in: shownUnfocused) == 1)
+        #expect(count(ending, in: shownUnfocused) == (role == "AXWebArea" ? 1 : 0))
+        // The whole window: the editor whole, in focus or not, each part once; in focus, the caret
+        // block marks it, just before it.
+        for focused in [true, false] {
+            let whole = read(try editor(selecting: false), focused: focused, whole: true)
+            #expect(count(opening, in: whole) == 1, "focused: \(focused)")
+            #expect(count(ending, in: whole) == 1, "focused: \(focused)")
+            #expect(count("» ‸", in: whole) == (focused ? 1 : 0), "focused: \(focused)")
+        }
+        let marked = try #require(read(try editor(selecting: false), focused: true, whole: true))
+        let mark = try #require(marked.range(of: "» ‸")), opened = try #require(marked.range(of: opening))
+        #expect(mark.lowerBound < opened.lowerBound)
+        // A selection: in the caret block for what the window shows; for the whole window only in
+        // the editor, read whole after the block that marks it.
+        let shownSelected = read(try editor(selecting: true), focused: true, whole: false)
+        #expect(count(ending, in: shownSelected) == 1)
+        #expect(count(opening, in: shownSelected) == 0)
+        let wholeSelected = read(try editor(selecting: true), focused: true, whole: true)
+        #expect(count(opening, in: wholeSelected) == 1)
+        #expect(count(ending, in: wholeSelected) == 1)
+        #expect(count("» ‸", in: wholeSelected) == 1)
+        // The caret's text rides on its own only with what the window shows; the whole window keeps
+        // none of it, the selection included.
+        let shownAround = around(try editor(selecting: false), focused: true, whole: false)
+        #expect(count(ending, in: shownAround[0]) == 1 && shownAround[1].isEmpty && shownAround[2].isEmpty)
+        #expect(around(try editor(selecting: true), focused: true, whole: false)[1] == ending)
+        #expect(around(try editor(selecting: false), focused: true, whole: true) == ["", "", ""])
+        #expect(around(try editor(selecting: true), focused: true, whole: true) == ["", "", ""])
+        // An excluded website: the editor's own page, or one it holds, refuses the window in focus.
+        let excluded = ScreenExclusions(hosts: ["blocked.example.com"])
+        for whole in [true, false] {
+            if role == "AXWebArea" {
+                #expect(read(try editor(selecting: false, host: "blocked.example.com"), focused: true, whole: whole, excluding: excluded) == nil)
+            }
+            let holding = try editor(selecting: false, holding: FakeElement("AXWebArea", ["host": "blocked.example.com"], frame: frame))
+            #expect(read(holding, focused: true, whole: whole, excluding: excluded) == nil, "whole: \(whole)")
+        }
+        // A password field in focus: nothing of it, in either scope.
+        let password = FakeElement("AXTextField", [kAXValueAttribute: "Secret words", kAXSubroleAttribute: kAXSecureTextFieldSubrole,
+                                                   "caretBefore": "Secret words", "caretSelected": "", "caretAfter": ""], frame: frame)
+        for whole in [true, false] {
+            let read = read(password, focused: true, whole: whole)
+            #expect(count("Secret words", in: read) == 0 && count("» ‸", in: read) == 1, "whole: \(whole)")
+        }
+    }
+
+    /// A secret selected inside the focused editor, whose label (`token=`) lies outside the
+    /// selection, is never sent, in either read: what the window shows redacts the selection with
+    /// the text around it; the whole window carries no copy of the selection at all and reads the
+    /// editor whole, where the secret is redacted with its label. Public text is still read.
+    @Test(arguments: ["AXTextArea", "AXWebArea"], [false, true])
+    func aSecretSelectedInTheFocusedEditorIsNeverSent(role: String, whole: Bool) throws {
+        let secret = "synthetic" + "Private123"
+        let text = "Draft. token=" + secret + ". More."
+        let native = text as NSString
+        let caret = try BoundedCaretSource.read(count: native.length, selection: native.range(of: secret)) { native.substring(with: $0) as NSString }
+        let frame = CGRect(x: 0, y: 0, width: 300, height: 100)
+        let field = FakeElement(role, [kAXValueAttribute: text, "editable": "yes", "host": "example.com",
+                                       "caretBefore": caret.parts[0], "caretSelected": caret.parts[1], "caretAfter": caret.parts[2]],
+                                frame: frame, children: role == "AXWebArea" ? [FakeElement("AXStaticText", [kAXValueAttribute: text], frame: frame)] : [])
+        let window = FakeElement("AXWindow", frame: frame, children: [field])
+        var start = ScreenContext(appName: "Synthetic editor")
+        start.wholeWindow = whole
+        let context = try #require(ScreenContextReader.gather(window: window, focused: field, focusPath: [window], in: FakeScreenTree(),
+                                                              excluding: ScreenExclusions(), from: start))
+        let reply = context.json(ScreenExclusions())
+        let rendered = try #require(reply["renderedText"]?.string)
+        #expect(rendered.contains("Draft.") && rendered.contains("More."), "public text is still read")
+        #expect(!String(decoding: try JSONEncoder().encode(reply), as: UTF8.self).contains(secret), "no part of the reply holds the secret")
+        // What the window shows still says the selection held a secret (Edit refuses it); the whole
+        // window has no selection.
+        #expect(reply["selectedText"]?.string == (whole ? "" : "[redacted]"))
+        #expect(reply["selectionRedacted"] == .bool(!whole))
+    }
+
     /// In a row a titled control is read once, not again from its child text, and a thin field is
-    /// left out beside a shown one.
+    /// left out beside a shown one; read beside it when the whole window is.
     @Test func rowTextReadsATitledControlOnceAndOnlyShownFields() throws {
         let shown = CGRect(x: 20, y: 40, width: 100, height: 20)
-        func read(_ row: FakeElement) -> String {
-            try! walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", children: [row])])).renderedText()
+        func read(_ row: FakeElement, whole: Bool = false) -> String {
+            try! walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", children: [row])]), whole: whole).renderedText()
         }
         let control = FakeElement("AXButton", [kAXTitleAttribute: "Alex Lee"], frame: shown, children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Alex"], frame: shown),
@@ -395,16 +649,18 @@ struct ScreenContextTests {
         ])
         #expect(read(FakeElement("AXRow", children: [control, FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: shown)]))
                 == "| Alex Lee | Draft")
-        #expect(read(FakeElement("AXRow", children: [
-            FakeElement("AXTextField", [kAXValueAttribute: "Hidden draft"], frame: CGRect(x: 20, y: 40, width: 100, height: 1)),
+        let fields = FakeElement("AXRow", children: [
+            FakeElement("AXTextField", [kAXValueAttribute: "Thin draft"], frame: CGRect(x: 20, y: 40, width: 100, height: 1)),
             FakeElement("AXTextField", [kAXValueAttribute: "Visible draft"], frame: shown),
-        ])) == "| Visible draft")
+        ])
+        #expect(read(fields) == "| Visible draft")
+        #expect(read(fields, whole: true) == "| Thin draft | Visible draft")
     }
 
-    /// A row's text is gathered the way the walk reads: a web control's drawn title, never a
-    /// hidden piece or an icon's label; outside web content no control.
+    /// A row's text is gathered the way the walk reads: a web control's drawn title, never an icon's
+    /// label; a thin piece only when the whole window is read; outside web content no control.
     @Test func rowTextReadsWebControlsAndLeavesHiddenTextOut() throws {
-        func read(inside role: String) -> String {
+        func read(inside role: String, whole: Bool = false) -> String {
             let row = FakeElement("AXRow", frame: CGRect(x: 0, y: 100, width: 400, height: 30), children: [
                 FakeElement("AXButton", [kAXTitleAttribute: "Sam Lee"], frame: CGRect(x: 0, y: 100, width: 80, height: 30)),
                 FakeElement("AXStaticText", [kAXValueAttribute: "hidden"], frame: CGRect(x: 90, y: 100, width: 1, height: 1)),
@@ -412,14 +668,17 @@ struct ScreenContextTests {
                 FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: CGRect(x: 100, y: 100, width: 60, height: 30)),
             ])
             let area = FakeElement(role, frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [row])
-            return try! walk(FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area])).renderedText()
+            return try! walk(FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area]), whole: whole).renderedText()
         }
         #expect(read(inside: "AXWebArea") == "| Sam Lee | Draft")
         #expect(read(inside: "AXGroup") == "| Draft")
+        #expect(read(inside: "AXWebArea", whole: true) == "| Sam Lee | hidden | Draft")
+        #expect(read(inside: "AXGroup", whole: true) == "| hidden | Draft")
     }
 
     /// A row's text view is part of its text: a native chat app's message is a text area in its
-    /// table row, beside the time and the sender's name. One with nothing shown is left out.
+    /// table row, beside the time and the sender's name. One with nothing shown is left out, and read
+    /// when the whole window is.
     @Test func rowTextReadsATextArea() throws {
         let shown = CGRect(x: 20, y: 40, width: 300, height: 32)
         let row = FakeElement("AXRow", frame: CGRect(x: 0, y: 30, width: 400, height: 60), children: [
@@ -428,19 +687,20 @@ struct ScreenContextTests {
                 FakeElement("AXStaticText", [kAXValueAttribute: "Alex Lee"], frame: CGRect(x: 20, y: 30, width: 100, height: 18)),
                 FakeElement("AXImage", frame: shown),
                 FakeElement("AXTextArea", [kAXValueAttribute: "Lunch tomorrow at noon?"], frame: shown),
-                FakeElement("AXTextArea", [kAXValueAttribute: "Hidden draft"], frame: CGRect(x: 20, y: 40, width: 300, height: 1)),
+                FakeElement("AXTextArea", [kAXValueAttribute: "Thin draft"], frame: CGRect(x: 20, y: 40, width: 300, height: 1)),
             ]),
         ])
         let table = FakeElement("AXTable", frame: CGRect(x: 0, y: 0, width: 400, height: 600), children: [row])
         let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 600), children: [table])
         #expect(try walk(window).renderedText() == "| 10:15 | Alex Lee | Lunch tomorrow at noon?")
+        let text = try walk(window, whole: true).renderedText()
+        #expect(text == "| 10:15 | Alex Lee | Lunch tomorrow at noon? | Thin draft")
     }
 
-    /// A row's text is one block, cut at the block's size however long a text view in it is: what
-    /// follows the cut is left out.
-    @Test func rowTextIsCutAtTheBlockSize() throws {
-        let cap = 20_000 // Common semantic contract, also exercised by the cross-platform corpus.
-        let long = String(repeating: "word ", count: cap)
+    /// A row's text is one block, read to its end however long a text view in it is, like the rest
+    /// of the window (the screen's budget, not a row's own, ends it).
+    @Test func aRowIsReadToItsEnd() throws {
+        let long = String(repeating: "word ", count: 20_000) + "last"
         let row = FakeElement("AXRow", frame: CGRect(x: 0, y: 30, width: 400, height: 60), children: [
             FakeElement("AXCell", children: [
                 FakeElement("AXStaticText", [kAXValueAttribute: "10:15"], frame: CGRect(x: 340, y: 40, width: 30, height: 16)),
@@ -449,12 +709,34 @@ struct ScreenContextTests {
             ]),
         ])
         let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 600), children: [row])
-        let rendered = try walk(window).renderedText()
-        #expect(rendered == "| " + String(("10:15 | " + long).prefix(cap)))
-        #expect(rendered.count == cap + 2)
+        #expect(try walk(window).renderedText() == "| 10:15 | " + long + " | Read")
     }
 
-    @Test func descendantRowsKeepCanonicalDuplicatesAndGraphemeBudgets() throws {
+    /// A field read whole (up to the screen's budget) is kept whole, alone or in a row.
+    @Test func aFieldReadWholePastAWindowIsShown() throws {
+        let window = try SharedContext.limit("sourceWindowBytes")
+        let long = String(repeating: "word ", count: window / 5 + 1) + "last"
+        for inRow in [false, true] {
+            let field = FakeElement("AXTextArea", [kAXValueAttribute: long])
+            let element = inRow ? FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Label"]), field]) : field
+            let context = walk(FakeElement("AXWindow", children: [element]))
+            #expect(!context.coreFailed)
+            #expect(try context.renderedText() == (inRow ? "| Label | " : "> ") + long)
+        }
+    }
+
+    /// A page of many short pieces is read whole: the screen's budget and the walk's node budget,
+    /// not a count of blocks, end a read.
+    @Test func aPageOfMoreThan5000PiecesIsReadWhole() throws {
+        let pieces = (0...5_000).map { FakeElement("AXStaticText", [kAXValueAttribute: "Piece \($0)"]) }
+        let context = walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", children: pieces)]))
+        #expect(context.blocks.count == 5_001)
+        let rendered = try context.renderedText()
+        #expect(rendered.hasPrefix("Piece 0\n"))
+        #expect(rendered.hasSuffix("\nPiece 5000"))
+    }
+
+    @Test func descendantRowsKeepCanonicalDuplicatesAndLargePieces() throws {
         func row(_ pieces: [String]) throws -> String {
             let children = pieces.map { FakeElement("AXStaticText", [kAXValueAttribute: $0]) }
             return try walk(FakeElement("AXWindow", children: [FakeElement("AXRow", children: children)])).renderedText()
@@ -462,8 +744,9 @@ struct ScreenContextTests {
         #expect(try row([" é ", "e\u{301}", "\u{a0}next\u{a0}"]) == "| é | next")
         let family = "👨‍👩‍👧‍👦"
         #expect(try row([String(repeating: family, count: 1_001)]) == "| " + String(repeating: family, count: 1_001))
-        #expect(try row([String(repeating: "e\u{301}", count: 20_001)]) == "| " + String(repeating: "e\u{301}", count: 20_000))
-        #expect(throws: Redactor.Failure.self) { try row([String(repeating: family, count: 10_486)]) }
+        #expect(try row([String(repeating: "e\u{301}", count: 20_001)]) == "| " + String(repeating: "e\u{301}", count: 20_001))
+        // A piece past a window is read whole too.
+        #expect(try row([String(repeating: family, count: 10_486)]) == "| " + String(repeating: family, count: 10_486))
     }
 
     @Test func sharedAcquisitionDecisionsPreventUnusedNativeValueReads() throws {
@@ -476,13 +759,17 @@ struct ScreenContextTests {
         #expect(try walk(FakeElement("AXWindow", children: [heading])).renderedText() == "## Title")
         #expect(unused.textReads == 0)
         let late = FakeElement("AXStaticText", [kAXValueAttribute: "must not be read"])
-        let full = FakeElement("AXStaticText", [kAXValueAttribute: String(repeating: "x", count: 20_000)])
-        #expect(try walk(FakeElement("AXWindow", children: [FakeElement("AXRow", children: [full, late])])).renderedText() == "| " + String(repeating: "x", count: 20_000))
+        let screenBytes = try SharedContext.limit("screenBytes")
+        let full = FakeElement("AXStaticText", [kAXValueAttribute: String(repeating: "x", count: screenBytes)])
+        // A row that fills the screen's budget reads no more of itself; the read is cut there.
+        let rendered = try walk(FakeElement("AXWindow", children: [FakeElement("AXRow", children: [full, late])])).renderedText()
+        #expect(rendered.hasPrefix("| xxx") && rendered.allSatisfy { $0 == "x" || $0 == "|" || $0 == " " })
         #expect(late.textReads == 0)
     }
 
     @Test func sharedScreenBudgetStopsBeforeAnotherNativeValueAndPreservesCaret() throws {
-        let large = FakeElement("AXStaticText", [kAXValueAttribute: String(repeating: "x", count: 300_000)])
+        let screenBytes = try SharedContext.limit("screenBytes")
+        let large = FakeElement("AXStaticText", [kAXValueAttribute: String(repeating: "x", count: screenBytes + 1)])
         let late = FakeElement("AXStaticText", [kAXValueAttribute: "must not be read"])
         let window = FakeElement("AXWindow", children: [large, late])
         var context = ScreenContext(appName: "Synthetic")
@@ -491,7 +778,7 @@ struct ScreenContextTests {
         #expect(context.textBudgetFull && late.textReads == 0)
         let shown = context.json
         #expect(shown["selectedText"]?.string == "chosen")
-        #expect(try context.renderedText().filter { $0 == "x" }.count <= 262_144 - "left‸chosen‸right".utf8.count)
+        #expect(try context.renderedText().filter { $0 == "x" }.count <= screenBytes - "left‸chosen‸right".utf8.count)
     }
 
     @Test func summaryCarriesSizesNotText() throws {
@@ -612,8 +899,14 @@ struct FakeScreenTree: ScreenTree {
     func page(of webArea: FakeElement) -> PageHost {
         webArea.attributes["hostUnknown"] != nil ? .unknown : webArea.attributes["host"].map(PageHost.host) ?? .noHost
     }
-    func fieldSource(of element: FakeElement, windowFrame: CGRect?) -> [String]? {
+    /// "fieldShown" (a number of characters) stands for a field that shows only its start: it is
+    /// read as the live tree reads one (`BoundedFieldReader`), for the read's scope.
+    func fieldSource(of element: FakeElement, windowFrame: CGRect?, wholeWindow: Bool) -> [String]? {
         element.textReads += 1
+        if let shown = element.attributes["fieldShown"].flatMap(Int.init), let value = element.attributes[kAXValueAttribute].map({ $0 as NSString }) {
+            return try? BoundedFieldReader.read(count: value.length, wholeWindow: wholeWindow, whole: { value },
+                range: { value.substring(with: $0) as NSString }, visible: { _ in NSRange(location: 0, length: shown) }, valid: { true })?.parts
+        }
         return element.attributes[kAXValueAttribute].map { [element.attributes["fieldBefore"] ?? "", $0, element.attributes["fieldAfter"] ?? ""] }
     }
     func caretWindow(of element: FakeElement) -> SharedContext.CaretWindow? {
@@ -624,6 +917,34 @@ struct FakeScreenTree: ScreenTree {
     func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
     /// "editable" stands for an element whose text the app lets be changed.
     func isEditable(_ element: FakeElement) -> Bool { element.attributes["editable"] != nil }
+}
+
+/// A fake tree that is asked to stop once a given element's children are looked through (a
+/// field's look for a framed page), and reports each attribute read.
+final class StopTree: ScreenTree {
+    private let base = FakeScreenTree()
+    private let stopsAt: FakeElement?
+    var onString: ((FakeElement, String) -> Void)?
+    private(set) var asked = false
+    private(set) var looks = 0
+
+    init(stopsAt: FakeElement?) { self.stopsAt = stopsAt }
+
+    func children(of element: FakeElement) -> [FakeElement] {
+        if let stopsAt, element === stopsAt { looks += 1; asked = true }
+        return base.children(of: element)
+    }
+    func frame(of element: FakeElement) -> CGRect? { base.frame(of: element) }
+    func ends(of element: FakeElement) -> [CGRect]? { base.ends(of: element) }
+    func string(_ element: FakeElement, _ name: String) -> String? {
+        onString?(element, name)
+        return base.string(element, name)
+    }
+    func page(of webArea: FakeElement) -> PageHost { base.page(of: webArea) }
+    func fieldSource(of element: FakeElement, windowFrame: CGRect?, wholeWindow: Bool) -> [String]? { base.fieldSource(of: element, windowFrame: windowFrame, wholeWindow: wholeWindow) }
+    func caretWindow(of element: FakeElement) -> SharedContext.CaretWindow? { base.caretWindow(of: element) }
+    func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
+    func isEditable(_ element: FakeElement) -> Bool { base.isEditable(element) }
 }
 
 // Verify separators through the real renderer without retaining native geometry policy.

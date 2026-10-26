@@ -10,7 +10,7 @@ import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
 import { isJSONObject, parsedJSON, type ConnectorTool, type ToolQuestion, type ToolSettings } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
-import { AgentError, type AgentToolID, agentTools } from "../agent/tools.js";
+import { AgentError, type AgentToolID, agentTools, screenHiddenNote } from "../agent/tools.js";
 import { type AudioCapture, AudioRecorder, type RecordedChunk, recordingDuration } from "../audio/recorder.js";
 import { LevelSampler } from "../audio/levelSampler.js";
 import { BackendError } from "../backend/errors.js";
@@ -200,9 +200,18 @@ export class DictationController extends Observable {
    * with the target app still frontmost. Null: no context (the cleanup runs without it). A screen
    * hidden for privacy is no context either; agent mode's tools are told it is hidden. */
   captureContext: ((exclusions: ScreenExclusions) => Promise<ScreenRead | null> | null) | undefined;
+  /** Asks a read `captureContext` gave, still going, to answer with what it has read so far: the read
+   * then yields that (ADR-DESK-053). */
+  stopContext: ((read: Promise<ScreenRead | null>) => void) | undefined;
+  /** The whole window of the app a read `captureContext` gave, read once that read has answered
+   * (ADR-DESK-016, 2026-10-25): its terms fill the room the shown screen's leave if it is done by the
+   * upload, and agent mode reads it only when the model asks (`screen_read`). `stopContext` stops it
+   * too. Null: none. */
+  captureWindow: ((capture: Promise<ScreenRead | null>) => Promise<ScreenRead | null> | null) | undefined;
   /** How long a dictation's upload waits for that read, which its cleanup variables travel with
-   * (agent mode waits `agentScreenWait` for all of it, once its transcript is ready). Settable for
-   * tests. */
+   * (agent mode waits `agentScreenWait` for all of it, once its transcript is ready). A read not done
+   * by then is asked for what it has read so far, which is waited for as long again
+   * (`waitForScreen`). Settable for tests. */
   contextWait = config.contextWait;
   agentScreenWait = config.agentScreenWait;
   /** How long a hold goes on before the double-tap tip is due, and how long a tip shows. Settable
@@ -241,6 +250,9 @@ export class DictationController extends Observable {
   /** That read's result, once done (null without a read); `tools` waits for it. */
   private screenRead: ScreenContext | null = null;
   private isScreenReadDone = false;
+  /** This dictation's whole window (`captureWindow`), and its result once done (null till then). */
+  private windowRead: Promise<ScreenRead | null> | null = null;
+  private windowScreen: ScreenContext | null = null;
   private revealTimer: Timer | null = null;
   private maxDurationTimer: Timer | null = null;
   /** Running from the microphone's first audio until it gives more than digital silence. */
@@ -467,6 +479,7 @@ export class DictationController extends Observable {
     this.emailAppRead = null;
     this.screenRead = null;
     this.isScreenReadDone = false;
+    this.windowScreen = null;
     this.currentTools = [];
     this.currentLevel = 0;
     this.peakMeterLevel = 0;
@@ -528,6 +541,10 @@ export class DictationController extends Observable {
     } else {
       this.isScreenReadDone = true;
     }
+    this.windowRead = read ? (this.captureWindow?.(read) ?? null) : null;
+    void this.windowRead?.then((context) => {
+      if (this.generation === current) this.windowScreen = screenShown(context);
+    });
 
     if (handsFree) {
       // A double tap is deliberate: no hold to wait for.
@@ -626,15 +643,35 @@ export class DictationController extends Observable {
     this.discard();
   }
 
+  /** Waits `wait` for the screen read. One not done by then is asked to stop and answer with what
+   * it has read so far, a valid read of part of the window (ADR-DESK-053), which is waited for as
+   * long again; `late` when even that does not come. */
+  private async waitForScreen(read: Promise<ScreenRead | null>, wait: number): Promise<{ screen: ScreenRead | null; stopped: boolean; late: boolean }> {
+    try {
+      return { screen: await withTimeout(wait, () => read), stopped: false, late: false };
+    } catch {
+      this.stopContext?.(read);
+    }
+    try {
+      return { screen: await withTimeout(wait, () => read), stopped: true, late: false };
+    } catch {
+      return { screen: null, stopped: true, late: true };
+    }
+  }
+
   /** The names and terms on the screen read at key-down (`contextTerms`), sent with the recording
-   * after the dictionary's words, as many as the vocabulary has room for (ADR-DESK-038): only if the
-   * read is done by the upload (a dictation waits `contextWait` for it, agent mode not at all); none
-   * when the screen is not read. */
+   * after the dictionary's words, as many as the vocabulary has room for (ADR-DESK-038): those of what
+   * the window shows first, only if that read is done by the upload (a dictation waits `contextWait`
+   * for it, agent mode not at all), then those of the whole window in the room left, only if it is
+   * done by then too (never waited for: ADR-DESK-016, 2026-10-25); none when the screen is not read. */
   private screenTerms(dictionary: readonly string[]): string[] {
-    const screen = this.screenRead;
-    const terms = screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, dictionary, config.vocabularyMaxTerms - dictionary.length) : [];
-    log.debug(() => `DictationController: sending ${dictionary.length} dictionary word(s) and ${terms.length} screen term(s)`);
-    return terms;
+    const termsOf = (screen: ScreenContext | null, excluding: readonly string[], max: number) =>
+      screen && max > 0 ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, excluding, max) : [];
+    const room = config.vocabularyMaxTerms - dictionary.length;
+    const shown = termsOf(this.screenRead, dictionary, room);
+    const window = termsOf(this.screenRead && this.windowScreen, [...dictionary, ...shown], room - shown.length);
+    log.debug(() => `DictationController: sending ${dictionary.length} dictionary word(s), ${shown.length} screen term(s) and ${window.length} from the whole window`);
+    return [...shown, ...window];
   }
 
   /** Transcribes one recording, cleaned up in the same request, and inserts it (dictation), or
@@ -687,22 +724,19 @@ export class DictationController extends Observable {
     const settings = this.dictationSettings;
     // Smart Dictation off (Settings, the default): no cleanup, so no screen to wait for.
     const cleans = settings.smartDictation && (forChunks || this.currentMode === "dictation");
+    // This dictation's screen read, taken before the first wait: once that wait ends, a newer hold
+    // may have started its own, which this one must never stop.
+    const read = this.contextRead;
     const preparing = performance.now();
     const language = await this.languageRead;
     log.debug(() => `DictationController: keyboard language read after ${elapsed(preparing)}`);
     let context: ScreenContext | null = null;
     if (cleans) {
-      const read = this.contextRead;
       const waiting = performance.now();
-      let late = false;
-      context = read
-        ? await withTimeout(this.contextWait, () => read.then(screenShown)).catch(() => {
-            late = true;
-            return null;
-          })
-        : null;
-      if (late) log.debug(`DictationController: screen read not done in time (waited ${elapsed(waiting)}); continuing without it`);
-      else if (read) log.debug(() => `DictationController: waited ${elapsed(waiting)} for the screen read`);
+      const waited = read ? await this.waitForScreen(read, this.contextWait) : null;
+      context = screenShown(waited?.screen ?? null);
+      if (waited?.late) log.debug(`DictationController: screen read not done in time (waited ${elapsed(waiting)}); continuing without it`);
+      else if (waited) log.debug(() => `DictationController: waited ${elapsed(waiting)} for the screen read${waited.stopped ? ", stopped with what it had read" : ""}`);
     }
     const cleanup = cleans ? DictationCleanup.variables(context, settings.dictionary) : undefined;
     const client = this.deps.makeTranscriptionClient(settings.backendURL);
@@ -735,6 +769,7 @@ export class DictationController extends Observable {
     let lost: unknown = null;
     try {
       const read = this.contextRead;
+      const windowRead = this.windowRead;
       let context: ScreenContext | null = null;
       const started = performance.now();
       const result = await obtain();
@@ -773,8 +808,9 @@ export class DictationController extends Observable {
         this.setChat({ ...(chat ?? this.newChat()), pendingRequest: transcript });
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
         const waiting = performance.now();
-        const screen = read ? await withTimeout(this.agentScreenWait, () => read).catch(() => null) : null;
-        if (read) log.debug(() => `DictationController: agent waited ${elapsed(waiting)} for the screen read`);
+        const waited = read ? await this.waitForScreen(read, this.agentScreenWait) : null;
+        const screen = waited?.screen ?? null;
+        if (waited) log.debug(() => `DictationController: agent waited ${elapsed(waiting)} for the screen read${waited.stopped ? ", stopped with what it had read" : ""}${waited.late ? ", not done" : ""}`);
         context = screenShown(screen);
         const screenHidden = isScreenHidden(screen);
         if (!isCurrent()) return;
@@ -803,11 +839,13 @@ export class DictationController extends Observable {
           screenHidden,
           conversation,
           settings.userName,
-          DesktopAgent.loopTools(offered, connectorTools),
+          DesktopAgent.loopTools(offered, connectorTools, windowRead !== null && context !== null),
           client,
           account,
           userID,
-          (call, round) => this.runConnectorTool(call, round, connectorTools, memoryTools, toolSettings, isCurrent, signal),
+          (call, round) => (call.function.name === config.screenReadTool && windowRead !== null && context !== null
+            ? this.runScreenRead(windowRead, isCurrent)
+            : this.runConnectorTool(call, round, connectorTools, memoryTools, toolSettings, isCurrent, signal)),
           (event) => this.serverToolRan(event, isCurrent),
           signal,
         );
@@ -1177,6 +1215,27 @@ export class DictationController extends Observable {
         this.appEnded(memoryBubble);
         this.updateChat({ activity: null });
       }
+    }
+  }
+
+  /** Runs `screen_read`: waits for the whole window as agent mode waits for the screen
+   * (`waitForScreen`), and tells the model its text, that it is hidden, or that it gave nothing. It
+   * only reads, so it asks nothing; the chat window says what it does. */
+  private async runScreenRead(window: Promise<ScreenRead | null>, isCurrent: () => boolean): Promise<string> {
+    this.dropAnsweredAloud();
+    log.debug(`DictationController: running ${config.screenReadTool}`);
+    this.updateChat({ activity: config.screenReadProgressLabel });
+    const waiting = performance.now();
+    try {
+      const waited = await this.waitForScreen(window, this.agentScreenWait);
+      log.debug(() => `DictationController: waited ${elapsed(waiting)} for the whole window${waited.stopped ? ", stopped with what it had read" : ""}${waited.late ? ", not done" : ""}`);
+      if (isScreenHidden(waited.screen)) return screenHiddenNote;
+      const screen = screenShown(waited.screen);
+      if (screen === null) return config.screenReadUnavailable;
+      log.debug(() => `DictationController: ${config.screenReadTool} gave ${charCount(screen.renderedText)} chars`);
+      return screen.renderedText;
+    } finally {
+      if (isCurrent()) this.updateChat({ activity: null });
     }
   }
 
@@ -1787,6 +1846,7 @@ export class DictationController extends Observable {
     this.stopSavingClipboard();
     this.recorder = null;
     this.contextRead = null;
+    this.windowRead = null;
     cancelTimer(this.revealTimer);
     this.revealTimer = null;
     this.hearing = false;

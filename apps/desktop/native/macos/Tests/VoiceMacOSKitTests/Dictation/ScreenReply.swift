@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import Foundation
 import VoiceHelperSupport
 @testable import VoiceMacOSKit
 
@@ -22,5 +23,16 @@ extension ScreenContext {
             guard let text = json["logDescription"]?.string else { throw Redactor.Failure.refused }
             return text
         }
+    }
+}
+
+extension SharedContext {
+    /// One of the shared core's limits (`{"limits": true}`), by name, so a test sizes its text from
+    /// the core's numbers, not a copy of them.
+    static func limit(_ name: String) throws -> Int {
+        let input = try JSONSerialization.data(withJSONObject: ["limits": true])
+        let limits = try JSONDecoder().decode(JSON.self, from: Redactor.request(input, operation: .context))
+        guard let value = limits[name]?.integer else { throw Redactor.Failure.refused }
+        return value
     }
 }

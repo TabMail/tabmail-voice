@@ -248,15 +248,20 @@ public:
             if (safeTextSubtree(element.Get())) parts = textParts(element.Get(), selectionUnavailable);
         } else if (pageInFocus) pageSelection = selectedInPage(element.Get(), exclusions, selectionUnavailable);
         else if (element && !protectedFocus && terminal) parts = readOnlyParts(element.Get(), selectionUnavailable);
-        const std::string left = parts ? (*parts)[0] : "";
-        const std::string selection = parts ? (*parts)[1] : pageSelection;
-        const std::string right = parts ? (*parts)[2] : "";
+        // A page in focus gives nothing but its selection, and the whole window nothing of the
+        // caret's text: it reads the field whole (the core's `around`).
+        const auto keep = walk::around(parts.has_value());
+        const bool around = parts && keep.around;
+        if (!keep.selection) selectionUnavailable = false;
+        const std::string left = around ? (*parts)[0] : "";
+        const std::string selection = !keep.selection ? "" : parts ? (*parts)[1] : pageSelection;
+        const std::string right = around ? (*parts)[2] : "";
         VisibleContext context({left, selection, right});
         // Only a page that is excluded, or whose address is unknown, is reported as hidden;
         // a read that stopped because the window lost the foreground is no context.
         bool hiddenPage = false;
         std::optional<std::wstring> walkedHost;
-        const FocusRead focus{element.Get(), !terminal && (protectedFocus || parts.has_value()), !pageSelection.empty()};
+        const FocusRead focus{element.Get(), !terminal && (protectedFocus || parts.has_value()), !selection.empty()};
         if (!readVisible(window, focus, context, exclusions, hiddenPage, walkedHost)) {
             return hiddenPage ? hiddenScreen() : JSON(nullptr);
         }
@@ -451,9 +456,19 @@ private:
                                    std::optional<ContextFrame> frame) {
         ComPtr<IUIAutomationTextPattern> text;
         const auto status = element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text));
-        if (status == UIA_E_NOTSUPPORTED || (SUCCEEDED(status) && !text)) return;
+        if (status == UIA_E_NOTSUPPORTED || (SUCCEEDED(status) && !text)) return appendValueField(element, context, frame);
         require(status);
         UiaCaretSource::appendField(text.Get(), context, frame);
+    }
+    // A classic edit control has no text pattern: it is read by its value, as the caret read reads
+    // it, and whole only as `fieldPlan` allows (with no visible ranges, nothing of a longer one).
+    static void appendValueField(IUIAutomationElement* element, VisibleContext& context, std::optional<ContextFrame> frame) {
+        const auto limit = UiaCaretSource::fieldPlan(nlohmann::json::object()).at("wholeBytes").get<size_t>();
+        // UTF-16 units never outnumber UTF-8 bytes, so a value longer than this in units is too long.
+        const auto value = editValue(element, static_cast<unsigned>(limit));
+        if (!value) return;
+        const auto whole = utf8(*value);
+        if (UiaCaretSource::fieldPlan({{"text", whole}}).at("useWhole").get<bool>()) context.appendField({"", whole, ""}, frame);
     }
     static std::string controlText(IUIAutomationTextPattern* document, IUIAutomationElement* element, const RECT& frame) {
         if (!document) return {};
@@ -648,7 +663,9 @@ private:
         }
         place = placement(node);
         if (!place) return facts.pageExcluded ? std::optional<walk::Facts>(facts) : std::nullopt;
-        facts.hidden = place->offscreen;
+        // `IsOffscreen` is true of what is only scrolled out of view: out of what the window
+        // shows, but read with the whole window (ADR-DESK-016 amendment).
+        facts.offscreen = place->offscreen;
         facts.frame = frameOf(place->frame);
         return facts;
     }
@@ -656,7 +673,7 @@ private:
     walk::PageLook lookInside(const ComPtr<IUIAutomationElement>& element, IUIAutomationTreeWalker* walker,
                         const ScreenExclusions& exclusions) {
         PageTree tree{this, ComPtr<IUIAutomationTreeWalker>(walker), GetTickCount64(), std::nullopt};
-        return walk::lookForExcludedPage(tree, element, exclusions, true);
+        return walk::lookForExcludedPage(tree, element, exclusions, true, true);
     }
     // Text of a heading, link or row gathered from what is under it, as the walk reads it: its
     // text, its fields' and in a page its controls' captions, each part as the shared walk says
@@ -879,13 +896,14 @@ private:
     struct FocusRead {
         IUIAutomationElement* element;
         bool field;         // The caret's field: its caret text was read, or it is a protected field.
-        bool pageSelected;  // A page that has the focus itself, with something selected in it.
+        bool selected;      // Something is selected in it (a field's selection, or a page's that has the focus itself).
     };
     // Depth-first in the provider's child order, as the Mac walk; what to do with each element
     // is the shared core's (`walk::node`, ADR-DESK-054), and this walk says what UI Automation
-    // tells it about the element. Chrome and anything outside the window are skipped, each piece
-    // of text keeps its frame, and the focused field becomes the caret block at its place (a
-    // page in focus is walked into, after its selection). The focused element's ancestors are
+    // tells it about the element. Chrome is skipped; what is outside the window or scrolled out of
+    // view is read (ADR-DESK-016 amendment). Each piece of text keeps its frame, and the focused
+    // field becomes the caret block at its place (a page in focus, and reading the whole window a
+    // field in focus, is read like any element, after its selection). The focused element's ancestors are
     // always walked into and never read.
     // A box that shows nothing is walked into, as on every platform (owner, 2026-10-05; Slack
     // keeps its message list in one), though Chromium reports its children's frames unclipped
@@ -943,16 +961,19 @@ private:
             if (!facts) continue;
             facts->focus = isFocus ? "self" : onPath ? "path" : "";
             facts->focusedField = isFocus && target.field;
-            facts->selection = isFocus && target.pageSelected;
+            facts->selection = isFocus && target.selected;
             const auto step = walk::node(*facts);
             if (step.action == "refuse") return refuse();
-            const std::optional<ContextFrame> geometry = place ? place->geometry : std::nullopt;
+            // Text whose box says nothing of where it is (Chrome squashes what is scrolled out of
+            // view to a point-thin strip) is laid out with no frame: it starts a line of its own.
+            const std::optional<ContextFrame> placed = place ? place->geometry : std::nullopt;
+            const std::optional<ContextFrame> geometry = step.unplaced ? std::nullopt : placed;
             // A page in focus with a selection: the selection, then the page like any page.
             // The caret's block is where the core puts the text around the caret: it sends none.
-            if (step.caretFirst) context.append(ContextKind::caret, "", geometry);
+            if (step.caretFirst) context.append(ContextKind::caret, "", placed);
             if (step.action == "caret") {
                 // A protected field gives only the caret, and nothing of where it is.
-                context.append(ContextKind::caret, "", facts->password ? std::optional<ContextFrame>{} : geometry);
+                context.append(ContextKind::caret, "", facts->password ? std::optional<ContextFrame>{} : placed);
                 continue;
             }
             if (step.action == "skip") {
@@ -1023,7 +1044,7 @@ private:
         }
         // A provider may omit the focus node from its tree. Retain the independently
         // bounded caret context rather than dropping it from a partial screen read.
-        if ((target.field || target.pageSelected) && !context.hasCaret) context.append(ContextKind::caret, "");
+        if ((target.field || target.selected) && !context.hasCaret) context.append(ContextKind::caret, "");
         return true;
     }
     static JSON rectangle(double x, double y, double width, double height) {

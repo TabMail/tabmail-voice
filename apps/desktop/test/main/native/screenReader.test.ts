@@ -31,8 +31,29 @@ test("a read asks the reader for the screen with the exclusions, waiting as long
   settle[0]!.resolve({ hidden: true });
 
   expect(await read).toEqual({ hidden: true });
-  expect(calls).toEqual([["request", "readScreen", { excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }, config.screenReaderTimeout]]);
+  expect(calls).toEqual([["request", "readScreen", { excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"], read: 1, wholeWindow: false }, config.screenReaderTimeout]]);
   expect(config.screenReaderTimeout).toBe(config.maxRecordingDuration);
+});
+
+/** A read takes what the window shows unless asked for the whole window (ADR-DESK-016, 2026-10-25),
+ * which the agent reads only when it asks (`screen_read`): the whole window of the window an earlier
+ * read read, bound to that read by its number (`sameWindowAs`), so the helper reads nothing if
+ * another window came to the front since. The whole window of a read this reader did not make is
+ * not read at all. */
+test("a read asks for the whole window only when told to, of the window an earlier read read", async () => {
+  const { screen, calls, settle } = reader();
+  const shown = screen.read(exclusions);
+  settle[0]!.resolve(null);
+  await shown;
+  const whole = screen.read(exclusions, shown);
+  settle[1]!.resolve(null);
+  await whole;
+  expect(await screen.read(exclusions, Promise.resolve(null))).toBeNull();
+
+  expect(calls.map((call) => call[2])).toEqual([
+    { excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"], read: 1, wholeWindow: false },
+    { excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"], read: 2, wholeWindow: true, sameWindowAs: 1 },
+  ]);
 });
 
 test("a read still going when the next starts is ended: the reader starts afresh before the new one", async () => {
@@ -91,7 +112,49 @@ test("every saved exclusion reaches the reader, past the old cap", async () => {
   settle[0]!.resolve(null);
 
   expect(await read).toBeNull();
-  expect(calls[0]?.[2]).toStrictEqual({ excludedAppIDs: apps, excludedHosts: sites });
+  expect(calls[0]?.[2]).toStrictEqual({ excludedAppIDs: apps, excludedHosts: sites, read: 1, wholeWindow: false });
+});
+
+test("a stop asks the read still going, by its number, to answer with what it has read so far", async () => {
+  const { screen, calls, settle } = reader();
+  void screen.read(exclusions);
+  settle[0]!.resolve(null);
+  await flush();
+  const read = screen.read(exclusions);
+  screen.stop(read);
+  settle[1]!.resolve({ renderedText: "so far" });
+
+  expect(await read).toEqual({ renderedText: "so far" });
+  expect(calls.slice(1)).toEqual([
+    ["request", "readScreen", { excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"], read: 2, wholeWindow: false }, config.screenReaderTimeout],
+    ["request", "readScreenStop", { read: 2 }],
+  ]);
+});
+
+test("a stop for a read that has answered, or that a newer read replaced, asks nothing", async () => {
+  const { screen, calls, settle } = reader();
+  const answered = screen.read(exclusions);
+  settle[0]!.resolve(null);
+  await answered;
+  screen.stop(answered);
+  const replaced = screen.read(exclusions);
+  replaced.catch(() => undefined);
+  void screen.read(exclusions);
+  screen.stop(replaced);
+
+  expect(calls.map(([kind, method]) => (kind === "request" ? method : kind))).toEqual(["readScreen", "readScreen", "restart", "readScreen"]);
+});
+
+test("a stop the reader refuses only logs: the read goes on", async () => {
+  const { screen, calls, settle } = reader();
+  const read = screen.read(exclusions);
+  screen.stop(read);
+  settle[1]!.reject(new HelperError("failed", "readScreenStop"));
+  await flush();
+  settle[0]!.resolve(null);
+
+  expect(await read).toBeNull();
+  expect(calls).toHaveLength(2);
 });
 
 test("the debug log times each read and says when a read restarts the reader", async () => {

@@ -52,12 +52,12 @@ fn a_census_sees_the_node_budget_whole() {
         "none"
     };
     assert_eq!(look(1, None), "none");
-    assert_eq!(look(5_000, None), "none");
-    assert_eq!(look(5_001, None), "notSeenWhole");
+    assert_eq!(look(NODE_BUDGET, None), "none");
+    assert_eq!(look(NODE_BUDGET + 1, None), "notSeenWhole");
     // What waits beyond the budget does not hide an excluded page the look reaches.
-    assert_eq!(look(5_001, Some(5_000)), "excluded");
-    assert_eq!(look(5_001, Some(1)), "excluded");
-    assert_eq!(look(5_001, Some(0)), "notSeenWhole");
+    assert_eq!(look(NODE_BUDGET + 1, Some(NODE_BUDGET)), "excluded");
+    assert_eq!(look(NODE_BUDGET + 1, Some(1)), "excluded");
+    assert_eq!(look(NODE_BUDGET + 1, Some(0)), "notSeenWhole");
 }
 
 /// An element read outside the walk shows something by the walk's rule: drawn, not wholly

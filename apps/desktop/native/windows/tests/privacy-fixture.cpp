@@ -16,6 +16,7 @@
 #include <memory>
 #include <cstring>
 #include "saved-clipboard.h"
+#include "../../shared/rust/VoiceCore.h"
 #include <algorithm>
 
 namespace {
@@ -28,6 +29,10 @@ std::unique_ptr<voice::SavedClipboard> savedClipboard;
 std::atomic<unsigned> forbiddenReads{0}, textReads{0};
 // The UI framework every element reports: a browser engine's, unless the mode says otherwise.
 std::wstring framework = L"Chrome";
+// One of the shared core's budgets, so a mode sized past one follows the core, not a copy of it.
+size_t coreLimit(voice::core::Operation operation, const char* name) {
+    return voice::core::request({{"limits", true}}, operation).at(name).get<size_t>();
+}
 bool frameworkFails = false;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
@@ -152,6 +157,7 @@ int add(int parent, CONTROLTYPEID type, bool password = false) {
 void configure(const std::string& mode) {
     add(-1, UIA_WindowControlTypeId); nodes.front()->text = L"Synthetic provider root";
     add(0, UIA_TextControlTypeId); // A non-editable focus keeps unrelated text paths out of the test.
+    const int budget = static_cast<int>(coreLimit(voice_core_walk_json, "nodeBudget"));
     if (mode == "paste-focus") {
         pasteMode = true; add(0, UIA_TextControlTypeId);
     } else if (mode == "password-focus") {
@@ -159,15 +165,17 @@ void configure(const std::string& mode) {
         nodes.at(1)->text = L"DO_NOT_READ_SYNTHETIC_PASSWORD";
         add(1, UIA_TextControlTypeId); nodes.back()->forbidden = true;
     } else if (mode == "row-hidden") {
-        // A row with one cell on screen and one in a box that shows nothing.
+        // A row with one cell on screen and one in a box too thin to show (Chrome's strip for what
+        // is scrolled out of view): the window as shown leaves that cell out; the whole window reads it.
         const int row = add(0, UIA_DataItemControlTypeId);
         nodes.at(add(row, UIA_TextControlTypeId))->text = L"Synthetic cell text";
         const int box = add(row, UIA_GroupControlTypeId);
         nodes.at(box)->thin = true;
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
     } else if (mode == "hidden-box") {
-        // A container that shows nothing, with a child reporting a full size, is walked into; a
-        // text box that shows nothing is skipped with what it holds (ADR-DESK-054).
+        // A container too thin to show, with a child reporting a full size, is walked into; a text
+        // box too thin to show is skipped with what it holds as the window shows it, and read when
+        // the whole window is (ADR-DESK-054, ADR-DESK-016 2026-10-25).
         const int box = add(0, UIA_GroupControlTypeId);
         nodes.at(box)->thin = true;
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden-box text";
@@ -177,20 +185,20 @@ void configure(const std::string& mode) {
         nodes.at(add(thinText, UIA_TextControlTypeId))->text = L"Synthetic under thin text";
     } else if (mode == "terminal-wide") {
         // Run under a terminal's name: a window wider than the look's node budget.
-        for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
+        for (int i = 0; i < budget; ++i) add(0, UIA_GroupControlTypeId);
     } else if (mode == "large-text") {
         // Text read in one piece that holds more than the look takes in (one element past its
         // budget): withheld behind the marker.
         const int large = add(0, UIA_TextControlTypeId);
         nodes.at(large)->text = L"Synthetic large text";
-        for (int i = 0; i < 5001; ++i) add(large, UIA_GroupControlTypeId);
+        for (int i = 0; i < budget + 1; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-row" || mode == "large-link") {
         // A row or link that holds more than the look takes in: a row's cells are each looked
         // through and read; a link's name, read whole, is withheld behind the marker.
         const int large = add(0, mode == "large-row" ? UIA_DataItemControlTypeId : UIA_HyperlinkControlTypeId);
         nodes.at(large)->text = L"Synthetic large name";
         nodes.at(add(large, UIA_TextControlTypeId))->text = L"Synthetic cell text";
-        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+        for (int i = 0; i < budget; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-field" || mode == "large-web-control") {
         // A field, and a page's control, that hold more than the look takes in (one element past
         // its budget): withheld behind the marker, the field's as a field.
@@ -201,16 +209,16 @@ void configure(const std::string& mode) {
         }
         const int large = add(parent, mode == "large-field" ? UIA_EditControlTypeId : UIA_ButtonControlTypeId);
         nodes.at(large)->text = L"Synthetic large name";
-        for (int i = 0; i < 5001; ++i) add(large, UIA_GroupControlTypeId);
+        for (int i = 0; i < budget + 1; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-focus") {
         // A focus that holds more than the look takes in: the window is still read, not hidden,
         // and the focus itself is not.
         nodes.at(1)->text = L"Synthetic large text";
-        for (int i = 0; i < 5000; ++i) add(1, UIA_GroupControlTypeId);
+        for (int i = 0; i < budget; ++i) add(1, UIA_GroupControlTypeId);
     } else if (mode == "large-window-field") {
         // A field in a window that holds more than the look takes in: not refused for corrections.
         nodes.at(1)->type = UIA_EditControlTypeId;
-        for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
+        for (int i = 0; i < budget; ++i) add(0, UIA_GroupControlTypeId);
     } else if (mode == "bare-page-control") {
         // A page's control with no caption is walked into, and what it holds is in the page: a
         // control under it gives its drawn caption, never its Name, and with none is walked into
@@ -222,7 +230,8 @@ void configure(const std::string& mode) {
         nodes.at(nested)->text = L"Synthetic undrawn label";
         nodes.at(add(nested, UIA_TextControlTypeId))->text = L"Synthetic nested option";
     } else if (mode == "outside-page") {
-        // An excluded page wholly outside the window: skipped with what it holds.
+        // An excluded page wholly outside the window: skipped with what it holds as the window shows
+        // it; reading the whole window, it would be read, so it refuses the window.
         const int page = add(0, UIA_DocumentControlTypeId);
         nodes.at(page)->address = L"https://blocked.example/synthetic";
         nodes.at(page)->outside = nodes.at(page)->forbidden = true;
@@ -265,16 +274,17 @@ void configure(const std::string& mode) {
         // Text past the read's byte budget: the walk stops there, not after every element.
         std::wstring filler;
         while (filler.size() < 20000) filler += L"Synthetic filler words ";
-        for (int i = 0; i < 14; ++i) nodes.at(add(0, UIA_TextControlTypeId))->text = L"Block " + std::to_wstring(i) + L" " + filler;
+        const auto blocks = static_cast<int>(coreLimit(voice_core_context_json, "screenBytes") / filler.size()) + 2;
+        for (int i = 0; i < blocks; ++i) nodes.at(add(0, UIA_TextControlTypeId))->text = L"Block " + std::to_wstring(i) + L" " + filler;
         for (int i = 0; i < 300; ++i) add(0, UIA_GroupControlTypeId);
     } else if (mode == "outside-window") {
-        // A container wholly outside the window, holding more than the walk's node budget,
-        // before text in view: skipped with what it holds, so the text is read.
+        // A container wholly outside the window, before text in view: skipped with what it holds as
+        // the window shows it, read with it when the whole window is.
         const int text = add(0, UIA_TextControlTypeId);
         nodes.at(text)->text = L"Synthetic visible text";
         const int outside = add(0, UIA_GroupControlTypeId);
         nodes.at(outside)->outside = true;
-        for (int i = 0; i < 5000; ++i) add(outside, UIA_GroupControlTypeId);
+        nodes.at(add(outside, UIA_TextControlTypeId))->text = L"Synthetic outside text";
         auto& order = nodes.front()->children;
         std::swap(order[1], order[2]);
     } else if (mode.starts_with("password-")) {

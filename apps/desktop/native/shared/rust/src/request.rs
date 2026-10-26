@@ -152,6 +152,46 @@ fn microphone(request: &Value, start: bool) -> Result<Value, u32> {
     Ok(json!({"session": session, "sampleRate": rate}))
 }
 
+/// `{"readScreen": {"read": n, "wholeWindow": bool, "sameWindowAs": m}}` → `{"read": n,
+/// "wholeWindow": bool, "sameWindowAs": m}`, `read` null for a read with no number (which can't be
+/// stopped), `wholeWindow` false when absent (the read takes what the window shows; with it, the
+/// whole window: the walk's `wholeWindow`) and `sameWindowAs` null when absent. `sameWindowAs`, a
+/// whole number from 1 and only with `wholeWindow` true, binds the read to the window read `m`
+/// read: the helper reads it only when `m` was its last read and that window is still the one in
+/// front, and answers null otherwise, so another window that came to the front meanwhile is never
+/// read in its place;
+/// `{"readScreenStop": {"read": n}}` → `{"read": n}`. `n` is a whole number from 1: the app numbers
+/// its screen reads, and a stop asks the read it names, and any before it, to answer with what it
+/// has read so far (ADR-DESK-053).
+fn screen_read(request: &Value, stop: bool) -> Result<Value, u32> {
+    let object = request.as_object().ok_or(1u32)?;
+    if object
+        .keys()
+        .any(|key| key != "read" && (stop || (key != "wholeWindow" && key != "sameWindowAs")))
+    {
+        return Err(1);
+    }
+    let read = match object.get("read") {
+        None if !stop => None,
+        Some(read) => Some(read.as_i64().filter(|read| *read > 0).ok_or(1u32)?),
+        None => return Err(1),
+    };
+    if stop {
+        return Ok(json!({"read": read}));
+    }
+    let whole_window = match object.get("wholeWindow") {
+        None => false,
+        Some(Value::Bool(whole)) => *whole,
+        Some(_) => return Err(1),
+    };
+    let same_window_as = match object.get("sameWindowAs") {
+        None => None,
+        Some(read) if whole_window => Some(read.as_i64().filter(|read| *read > 0).ok_or(1u32)?),
+        Some(_) => return Err(1),
+    };
+    Ok(json!({"read": read, "wholeWindow": whole_window, "sameWindowAs": same_window_as}))
+}
+
 pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
     let input: Value = serde_json::from_slice(bytes).map_err(|_| 1u32)?;
     let object = input
@@ -164,6 +204,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         Some((key, request)) if key == "clipboard" => clipboard(request)?,
         Some((key, request)) if key == "microphoneStart" => microphone(request, true)?,
         Some((key, request)) if key == "microphoneStop" => microphone(request, false)?,
+        Some((key, request)) if key == "readScreen" => screen_read(request, false)?,
+        Some((key, request)) if key == "readScreenStop" => screen_read(request, true)?,
         _ => return Err(1),
     };
     serde_json::to_vec(&reply).map_err(|_| 3)

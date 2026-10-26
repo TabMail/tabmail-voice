@@ -70,3 +70,17 @@ still closes the window before the text is pasted, a failed or canceled request 
 with nothing else in it, the loop thinks under no bubble, and Answer's bubble runs only once the
 agent replies. The window opens inactive (`showInactive`), so the app the text goes to keeps focus.
 
+**Amendment 2026-10-25 (owner): the whole window is a tool, `screen_read`.** The owner: *"for off
+screen reading, for the agent, this should then be a tool, so that it's used only when agent thinks
+it needs more context about what the user is talking about, eg, can you summarize, or can you write
+a comment about this considering others. Otherwise we'd waste a lot of tokens?"* The request carries
+what the window shows (`screen_text`); `screen_read` (no arguments) gives the model the whole window,
+read after it (ADR-DESK-016, 2026-10-25). It runs on this computer, asks nothing (it only reads), and
+says "Reading the whole window" in the chat window while it waits; it has no bubble. It is listed in
+`available_tools` with the memory tools (`DesktopAgent.loopTools`), Answer on or off, whenever the
+window was read and is not hidden, and only then: the backend offers Voice only the tools it lists.
+It answers the window's text, the hidden note when the whole window is hidden for privacy (an
+excluded page outside the view), or that the window could not be read. When to call it is in the
+tool's description alone (backend `src/tools/voice/screen_read-v1.10.0.json`); no prompt names it,
+so the protocol stays 1.10.0 and Voice 0.4.0, which never lists it, is never offered it. The backend
+keeps its result out of `web_read`'s provenance (`NO_PROVENANCE_TOOLS`), as the screen text.

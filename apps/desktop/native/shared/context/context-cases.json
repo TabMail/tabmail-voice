@@ -1762,11 +1762,11 @@
       "name": "complete source admission crosses presentation budget",
       "request": {
         "admit": "a🙂tail",
-        "used": 262140
+        "used": 1048572
       },
       "expected": {
         "text": "a🙂tail",
-        "used": 262149,
+        "used": 1048581,
         "budgetFull": true
       }
     },
@@ -1814,10 +1814,9 @@
         "limits": true
       },
       "expected": {
-        "screenBytes": 262144,
-        "semanticGraphemes": 20000,
+        "screenBytes": 1048576,
         "caretSideGraphemes": 2000,
-        "blockSourceBytes": 524291,
+        "blockSourceBytes": 2097155,
         "hiddenMarker": "[hidden for privacy]"
       }
     },
@@ -1910,8 +1909,8 @@
       },
       "expected": {
         "sourceWindowBytes": 262144,
-        "selectionSourceBytes": 262138,
-        "caretSourceBytes": 786426,
+        "selectionSourceBytes": 1048570,
+        "caretSourceBytes": 1572858,
         "caretLineBytes": 3,
         "caretSourceElements": 300,
         "paragraphStartUnits": 4000

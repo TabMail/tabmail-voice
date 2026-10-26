@@ -15,11 +15,15 @@ bool noBoundedRanges = false; int pointTop = 0, pointBottom = 0;
 // The offsets at the rows above the bottom point (window y, rows 16 high), -1 where none is given.
 std::map<int, int> pointRows;
 bool selectionOnly = false, mutate = false, shortRead = false, focused = true;
+// AT-SPI's SHOWING: false for what is scrolled out of view, which is VISIBLE still.
+bool showing = true;
 void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+// One of the shared core's context limits, so a test sizes its text from the core, not a copy of it.
+size_t contextLimit(const char* name) { return voice::core::request({{"limits", true}}, voice_core_context_json).at(name).get<size_t>(); }
 void reset(std::string value) {
     content = std::move(value); visible.clear(); selectedStart = selectedEnd = reads = visibilityReads = 0;
     caretScalar = 0; viewportOnly = noBoundedRanges = false; pointTop = pointBottom = 0; pointRows.clear();
-    selectionOnly = mutate = shortRead = false; focused = true;
+    selectionOnly = mutate = shortRead = false; focused = showing = true;
 }
 }
 extern "C" void __wrap_atspi_accessible_clear_cache(AtspiAccessible*) {}
@@ -35,7 +39,7 @@ extern "C" AtspiRect* __wrap_atspi_text_get_character_extents(AtspiText*,gint,At
     auto value=g_new0(AtspiRect,1);value->x=20;value->y=30;value->width=8;value->height=16;return value;
 }
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*) {
-    auto result = atspi_state_set_new(nullptr); atspi_state_set_add(result, ATSPI_STATE_SHOWING);
+    auto result = atspi_state_set_new(nullptr); if (showing) atspi_state_set_add(result, ATSPI_STATE_SHOWING); atspi_state_set_add(result, ATSPI_STATE_VISIBLE);
     if (focused) atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
     return result;
 }
@@ -95,7 +99,7 @@ int main() {
         expect(tree.screenText(node) == content, "static screen text crosses historical 20000-unit limit intact");
     }
     {
-        reset("Visible. password: " + std::string(600000, 'x'));
+        reset("Visible. password: " + std::string(contextLimit("blockSourceBytes") + 1, 'x'));
         voice::LiveScreenTree tree(node);
         expect(tree.screenText(node) == "Visible. ", "static source withholds incomplete credential suffix");
         expect(tree.label(node) == "Visible. ", "native name snapshot follows the same source bound");
@@ -107,22 +111,38 @@ int main() {
         expect(refused, "static range count change refuses");
     }
     reset("Short field"); expect(field() == "> Short field" && visibilityReads == 0, "short fields retain whole-value capability");
+    // Scrolled out of view (VISIBLE, not SHOWING), a field the walk reads is read whole, not refused.
+    reset("Scrolled away field"); showing = false;
+    expect(field() == "> Scrolled away field" && visibilityReads == 0, "a field scrolled out of view is read whole");
+    // A field longer than a short one but within the screen's budget: reading what the window
+    // shows, only the part it shows; reading the whole window, all of it.
+    for (const auto filler : {static_cast<size_t>(20001), contextLimit("sourceWindowBytes") + 1}) {
+        reset("Visible start. " + std::string(filler, 'x') + " Off-screen end"); visible = {{0, 14}};
+        const auto part = field();
+        expect(part.find("Visible start.") != std::string::npos && part.find("Off-screen end") == std::string::npos &&
+            part.find("xxxx") == std::string::npos && visibilityReads > 0, "reading what the window shows, a long field gives only the part it shows");
+        reset("Visible start. " + std::string(filler, 'x') + " Off-screen end"); visible = {{0, 14}};
+        voice::walk::readingWholeWindow() = true;
+        const auto all = field();
+        voice::walk::readingWholeWindow() = false;
+        expect(all.find("Off-screen end") != std::string::npos && visibilityReads == 0, "reading the whole window, a field within the screen budget is read whole");
+    }
     std::string emoji; for (int i = 0; i < 15000; ++i) emoji += "😀";
     reset(emoji); expect(!field().empty() && visibilityReads == 0, "whole eligibility uses graphemes, not UTF8 length");
-    reset(std::string(300000, 'x') + ". password: syntheticSecret123. End. ");
+    reset(std::string(contextLimit("screenBytes") + 1, 'x') + ". password: syntheticSecret123. End. ");
     const auto start = static_cast<int>(content.find("syntheticSecret123"));
     visible = {{start, start + 18}};
     const auto redacted = field();
     expect(redacted.find("syntheticSecret") == std::string::npos && redacted.find("[redacted]") != std::string::npos,
         "offscreen credential label participates in visible redaction");
     expect(redacted.find("password:") == std::string::npos && visibilityReads == 2, "private source never renders and visibility rechecks");
-    reset(std::string(300000, 'x') + ". First. HIDDEN GAP. Second. End. ");
+    reset(std::string(contextLimit("screenBytes") + 1, 'x') + ". First. HIDDEN GAP. Second. End. ");
     const auto first = static_cast<int>(content.find("First")), second = static_cast<int>(content.find("Second"));
     visible = {{second, second + 7}, {first, first + 6}};
     const auto separate = field();
     expect(separate.find("First.") != std::string::npos && separate.find("HIDDEN GAP") == std::string::npos,
         "visible targets cannot include hidden gaps");
-    reset(std::string(300000, 'x')); visible = {{-1, 5}};
+    reset(std::string(contextLimit("screenBytes") + 1, 'x')); visible = {{-1, 5}};
     bool refused = false; try { (void)field(); } catch (const std::exception&) { refused = true; }
     expect(refused && reads == 0, "invalid visible offsets refuse before GetText");
     reset("short"); shortRead = true; refused = false;
@@ -131,12 +151,12 @@ int main() {
     reset("short"); mutate = true; refused = false;
     try { (void)field(); } catch (const std::exception&) { refused = true; }
     expect(refused, "changed count cannot commit a field");
-    for (const auto& selected : {std::string(20001, 's'), emoji, std::string(262139, 's')}) {
+    for (const auto& selected : {std::string(20001, 's'), emoji, std::string(contextLimit("selectionSourceBytes") + 1, 's')}) {
         reset("private prefix " + selected + " private suffix"); selectionOnly = true;
         selectedStart = 15; selectedEnd = selectedStart + g_utf8_strlen(selected.c_str(), -1);
         voice::LiveScreenTree tree(node); const auto result = tree.selection(node);
         expect(result.has_value(), "selection result exists");
-        if (selected.size() > 262138) expect(result->selectionUnavailable, "oversize selection refuses");
+        if (selected.size() > contextLimit("selectionSourceBytes")) expect(result->selectionUnavailable, "oversize selection refuses");
         else expect(!result->selectionUnavailable && result->parts[1] == selected && result->parts[0].empty() && result->parts[2].empty(),
             "entire selected interval preserved without adjacent content");
     }

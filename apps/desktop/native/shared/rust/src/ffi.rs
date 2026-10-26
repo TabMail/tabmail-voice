@@ -260,7 +260,7 @@ pub unsafe extern "C" fn voice_core_semantic_offer(
     }
     let state = unsafe { &mut *state };
     let result = guarded(|| {
-        if length > crate::semantic::MAX_BYTES || (length > 0 && data.is_null()) {
+        if length > crate::context::PIECE_SOURCE_BYTES || (length > 0 && data.is_null()) {
             return Err(1);
         }
         let bytes = if length == 0 {
@@ -851,7 +851,7 @@ mod tests {
         let invalid_utf8 = [0xff];
         for (data, length) in [
             (std::ptr::null(), 1),
-            (b"x".as_ptr(), crate::semantic::MAX_BYTES + 1),
+            (b"x".as_ptr(), crate::context::PIECE_SOURCE_BYTES + 1),
             (invalid_utf8.as_ptr(), 1),
         ] {
             assert_eq!(

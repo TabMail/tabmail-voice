@@ -43,7 +43,7 @@ function request(method, params = {}) {
   const requestID = id;
   return new Promise((resolve) => {
     pending.set(requestID, resolve);
-    (method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper).child.stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
+    (method === "readScreen" || method === "readScreenStop" ? reader : method === "focusedFieldValue" ? fieldReader : helper).child.stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
   });
 }
 const timeout = setTimeout(() => {
@@ -78,6 +78,21 @@ try {
     assert.ok((await request("readScreen", policy)).error, "screen policy must be explicit and entirely valid");
     assert.ok((await request("focusedFieldValue", { window: 0, maxLength: 20_000, ...policy })).error, "field policy must be explicit and entirely valid");
   }
+  // The app numbers its reads and can stop one (ADR-DESK-053): a stop answers null, a read numbered
+  // after it is not cut short, and a read number the shared core refuses refuses the request.
+  assert.deepEqual(await request("readScreenStop", { read: 5 }), { id, result: null });
+  assert.equal((await request("readScreen", { excludedAppIDs: [], excludedHosts: [], read: 6 })).error, undefined);
+  assert.equal((await request("readScreen", { excludedAppIDs: [], excludedHosts: [], read: 4 })).error, undefined, "a stopped read answers with what it read");
+  for (const read of [0, -1, 1.5, "2", null]) {
+    assert.ok((await request("readScreen", { excludedAppIDs: [], excludedHosts: [], read })).error, `read ${JSON.stringify(read)} is refused`);
+    assert.ok((await request("readScreenStop", { read })).error, `a stop of read ${JSON.stringify(read)} is refused`);
+  }
+  assert.ok((await request("readScreenStop", {})).error, "a stop names its read");
+  // A read takes the whole window only when asked with true (ADR-DESK-016, 2026-10-25).
+  assert.equal((await request("readScreen", { excludedAppIDs: [], excludedHosts: [], wholeWindow: true })).error, undefined, "a read of the whole window is answered");
+  for (const wholeWindow of ["yes", 1, null]) {
+    assert.ok((await request("readScreen", { excludedAppIDs: [], excludedHosts: [], wholeWindow })).error, `whole window ${JSON.stringify(wholeWindow)} is refused`);
+  }
   for (const window of [undefined, "not a window", -1, 1.5]) {
     assert.ok((await request("focusedFieldValue", { window, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] })).error, "a field read names its window");
   }
@@ -95,8 +110,10 @@ try {
   child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null], "EOF ends the helper");
   assert.equal(pending.size, 0);
-  assert.equal(reader.stderr.replaceAll("\r\n", "\n").replace(/^debug readScreen failed after \d+ms: (invalid screen policy|shared core refused)\n/gmu, ""), "",
-    "refused screen policies log only their fixed debug reason");
+  // A read asked to stop withholds what it had not looked at whole, and says so by its category.
+  assert.equal(reader.stderr.replaceAll("\r\n", "\n").replace(/^debug readScreen failed after \d+ms: (invalid screen policy|shared core refused)\n/gmu, "")
+    .replace(/^debug aggregate text refused: incomplete census\n/gmu, ""), "",
+    "refused screen policies and a stopped read log only their fixed debug reasons");
   assert.equal(fieldReader.stderr.replaceAll("\r\n", "\n").replace(/^debug focusedFieldValue failed after \d+ms: (invalid screen policy|shared core refused|invalid target)\n/gmu, ""), "",
     "refused field policies log only their fixed debug reason");
   assert.equal(helper.stderr.replaceAll("\r\n", "\n").replace(/^debug accessibility request (caretAnchor|insert) failed after \d+ms: invalid target\n/gmu, ""),

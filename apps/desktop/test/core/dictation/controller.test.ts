@@ -564,6 +564,96 @@ describe("DictationController", { timeout: 20_000 }, () => {
     read.resolve(null);
   });
 
+  /** Terms come from what the window shows first; the whole window, read after it (ADR-DESK-016,
+   * 2026-10-25), adds its own in the room left, only if it is done by the upload: it is never waited
+   * for. Neither repeats a word of the dictionary or of the other. */
+  describe("terms from the whole window", () => {
+    const shown = blankScreen({ appName: "Example Mail", renderedText: "Ask Kaelthorne Drake" });
+    const whole = blankScreen({ appName: "Example Mail", renderedText: "Earlier from Brevalle Labs\nAsk Kaelthorne Drake about Xyvora and Quillon" });
+
+    test("fill the room the window's shown terms leave", async () => {
+      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const captured: Promise<ScreenRead | null>[] = [];
+      controller.captureContext = () => {
+        const read = Promise.resolve(shown);
+        captured.push(read);
+        return read;
+      };
+      const windows: Promise<ScreenRead | null>[] = [];
+      controller.captureWindow = (capture) => {
+        windows.push(capture);
+        return Promise.resolve(whole);
+      };
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(windows).toEqual(captured);
+      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Drake", "Brevalle Labs", "Quillon"]);
+    });
+
+    test("only as many as there is room for", async () => {
+      const dictionary = Array.from({ length: config.vocabularyMaxTerms - 2 }, (_, index) => `Zephrin${index}`);
+      prefs.value = { ...defaultSettings(), dictionary };
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => shown;
+      controller.captureWindow = async () => whole;
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(transcription.body(0).vocabulary).toEqual([...dictionary, "Kaelthorne Drake", "Brevalle Labs"]);
+    });
+
+    test.each<[string, Promise<ScreenRead | null>]>([
+      ["not done", new Promise<ScreenRead | null>(() => {})],
+      ["hidden", Promise.resolve({ hidden: true })],
+      ["not read", Promise.resolve(null)],
+    ])("none from a whole window %s", async (_, window) => {
+      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => shown;
+      controller.captureWindow = () => window;
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Drake"]);
+    });
+
+    /** An earlier dictation's whole window answering once a newer one has started and read its own
+     * gives the newer one none of its terms: only the newer whole window's are sent. */
+    test("an earlier dictation's whole window answering late gives a newer one none of its terms", async () => {
+      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      transcription.enqueue(200, cleanedReply);
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const earlier = deferred<ScreenRead | null>();
+      controller.captureContext = async () => shown;
+      controller.captureWindow = () => earlier.promise;
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+
+      const newer = deferred<ScreenRead | null>();
+      controller.captureContext = async () => blankScreen({ appName: "Example Notes", renderedText: "Meet Ondrava Quist" });
+      controller.captureWindow = () => newer.promise;
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      newer.resolve(blankScreen({ appName: "Example Notes", renderedText: "Meet Ondrava Quist\nThanks from Talvenor Group" }));
+      await sleep(10);
+      earlier.resolve(whole);
+      await sleep(10);
+      controller.handle("finish");
+
+      expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
+      expect(transcription.body(1).vocabulary).toEqual(["Xyvora", "Ondrava Quist", "Talvenor Group"]);
+    });
+  });
+
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
   test("with screen reading off no terms are sent", async () => {
     prefs.value = { ...defaultSettings(), readsScreen: false };
@@ -2240,6 +2330,86 @@ describe("DictationController", { timeout: 20_000 }, () => {
       read.resolve(null);
     });
 
+    /** A screen read not done within `contextWait` is asked to stop (ADR-DESK-053): what it read so
+     * far, answered within as long again, goes with the recording like a whole read. */
+    test("a screen read not done in time is stopped, and what it read so far is sent", async () => {
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const read = deferred<ScreenContext | null>();
+      const stops: Promise<ScreenRead | null>[] = [];
+      controller.captureContext = () => read.promise;
+      controller.stopContext = (stopped) => {
+        stops.push(stopped);
+        read.resolve(blankScreen({ appName: "Example Notes A", windowTitle: "Launch with Brevalle Labs", renderedText: "» Ask Kaelthorne Drake ‸" }));
+      };
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
+      expect(stops).toEqual([read.promise]);
+      expect(pastes).toEqual([cleaned]);
+      expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
+      expect(transcription.body(0).vocabulary).toEqual(["Brevalle Labs", "Kaelthorne Drake"]);
+    });
+
+    /** A dictation cancelled while its upload waits for the keyboard's language, then a new hold:
+     * when the old wait ends, the old upload never stops the new hold's screen read (it holds its
+     * own), so the new hold's screen is read whole. Either way round: language read before or
+     * after the cancel. */
+    test.each([false, true])("an abandoned upload never stops a newer hold's screen read (language pending at cancel: %s)", async (pending) => {
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const language = deferred<string | null>();
+      let languages = 0;
+      const deps = (controller as unknown as { deps: DictationDependencies }).deps;
+      deps.keyboardLanguage = () => (++languages === 1 ? language.promise : Promise.resolve(null));
+      const older = deferred<ScreenContext | null>();
+      const newer = deferred<ScreenContext | null>();
+      let captures = 0;
+      controller.captureContext = () => (++captures === 1 ? older.promise : newer.promise);
+      controller.contextWait = 5;
+      const stops: Promise<ScreenRead | null>[] = [];
+      controller.stopContext = (stopped) => {
+        stops.push(stopped);
+        if (stopped === newer.promise) newer.resolve(screen("newer, stopped"));
+      };
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => (controller as unknown as { upload: unknown }).upload !== null)).toBe(true);
+      if (!pending) {
+        language.resolve(null);
+        await sleep(0);
+      }
+      controller.cancel();
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      expect(captures).toBe(2);
+      language.resolve(null);
+      await sleep(40);
+
+      expect(stops).not.toContain(newer.promise);
+      expect(controller.phase.kind).toBe("listening");
+      expect(pastes).toEqual([]);
+      expect(transcription.requests).toEqual([]);
+      controller.cancel();
+      older.resolve(null);
+      newer.resolve(null);
+    });
+
+    /** A read done in time is never asked to stop. */
+    test("a screen read done in time is not stopped", async () => {
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const stops: unknown[] = [];
+      controller.captureContext = async () => screen("A");
+      controller.stopContext = (stopped) => void stops.push(stopped);
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
+      expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
+      expect(stops).toEqual([]);
+    });
+
     /** A screen read done after the release, within the app's own `contextWait`, still goes with the
      * recording: to the cleanup, and its names and terms to the vocabulary. */
     test("a screen read done just after the release is sent", async () => {
@@ -2397,6 +2567,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "edit"]);
       expect(completionsVars(0)?.user_request).toBe(request);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
+    });
+
+    /** With Answer off the writing tool may read the whole window too (`screen_read`): an Edit or a
+     * Compose may need more of the window than it shows. */
+    test("agent mode offers the whole window with Answer off too", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
+
+      await carryOut(selectionScreen("Ship it Friday or else."), undefined, (controller) => {
+        controller.captureWindow = async () => selectionScreen("Ship it Friday or else.");
+      });
+
+      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "screen_read", "edit"]);
     });
 
     /** Agent mode logs the request, the text its tool wrote (fitted to the selection) and the paste. */
@@ -2688,6 +2871,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(completions.requests).toHaveLength(1);
       expect(completionsVars(0)?.selected_text).toBe("");
       expect(pastes).toEqual(["We ship on Friday."]);
+    });
+
+    /** A screen read not done `agentScreenWait` after the transcript is asked to stop: what it read
+     * so far, its selection included, is the request's screen (ADR-DESK-053). */
+    test("agent mode stops a long screen read and uses what it read so far", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const read = deferred<ScreenContext | null>();
+      const stops: Promise<ScreenRead | null>[] = [];
+      controller.captureContext = () => read.promise;
+      controller.stopContext = (stopped) => {
+        stops.push(stopped);
+        read.resolve(selectionScreen("Ship it Friday or else."));
+      };
+      controller.contextWait = 0;
+      controller.agentScreenWait = 300;
+
+      await holdAndRelease(controller, "agent");
+
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
+      expect(stops).toEqual([read.promise]);
+      expect(controller.tools).toEqual(["edit"]);
+      expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.");
     });
 
     /** Space switches the mode only while the key is held: back and forth, with the tools following. */
@@ -3874,6 +4081,114 @@ describe("DictationController", { timeout: 20_000 }, () => {
           opened.push(made);
           return { controller: made, done, chatChanges };
         }
+
+        /** `screen_read` (ADR-DESK-016, 2026-10-25): the agent is given what the window shows, and
+         * reads the whole window, read since, only when it asks. It is offered with a window read and
+         * not hidden, Answer on or off, and runs here. */
+        describe("screen_read", () => {
+          const whole = blankScreen({ appName: "Example Mail", renderedText: "Earlier in the thread\n» ‸" });
+
+          test("reads the whole window, read after what it shows", async () => {
+            const seen: (string | null | undefined)[] = [];
+            const { done } = await ask([], [calling(["screen_read", "{}"]), reply("A summary.")], (controller) => {
+              controller.captureWindow = async () => whole;
+              controller.observe(() => seen.push(controller.chat?.activity));
+            });
+            await done;
+            expect(completions.body(0).available_tools).toContain("screen_read");
+            expect(completionsVars(0)?.screen_text).toBe(selectionScreen("").renderedText);
+            expect(told(1)[0]).toBe("Earlier in the thread\n» ‸");
+            expect(seen).toContain(config.screenReadProgressLabel);
+          });
+
+          test.each<[string, Promise<ScreenRead | null>, string]>([
+            ["hidden", Promise.resolve({ hidden: true }), screenHiddenNote],
+            ["not read", Promise.resolve(null), config.screenReadUnavailable],
+          ])("a whole window %s says so", async (_, window, result) => {
+            const { done } = await ask([], [calling(["screen_read", "{}"]), reply("Sorry.")], (controller) => {
+              controller.captureWindow = () => window;
+            });
+            await done;
+            expect(told(1)[0]).toBe(result);
+          });
+
+          /** One still being read is waited for `agentScreenWait`, then asked for what it has read so
+           * far, waited for as long again, as the screen read is. */
+          test("a whole window still being read is stopped, and what it read is the result", async () => {
+            const window = deferred<ScreenRead | null>();
+            const stops: Promise<ScreenRead | null>[] = [];
+            const { done } = await ask([], [calling(["screen_read", "{}"]), reply("A summary.")], (controller) => {
+              controller.agentScreenWait = 50;
+              controller.captureWindow = () => window.promise;
+              controller.stopContext = (stopped) => {
+                stops.push(stopped);
+                window.resolve(whole);
+              };
+            });
+            await done;
+            expect(stops).toEqual([window.promise]);
+            expect(told(1)[0]).toBe("Earlier in the thread\n» ‸");
+          });
+
+          /** A canceled request's whole window answering late clears nothing of the next request's
+           * chat window, whose own tool is still running. */
+          test("a canceled request's screen_read leaves the next request's tool showing", async () => {
+            const window = deferred<ScreenRead | null>();
+            const next = new FakeLoopTool("example_read", "Checking your calendar");
+            const nextDone = deferred<void>();
+            next.during = () => nextDone.promise;
+            let reading = false;
+            const { controller, done } = await ask([next], [calling(["screen_read", "{}"])], (controller) => {
+              controller.captureWindow = () => window.promise;
+              controller.observe(() => {
+                if (controller.chat?.activity === config.screenReadProgressLabel) reading = true;
+              });
+            });
+            expect(await eventually(() => reading)).toBe(true);
+            controller.handle("cancel");
+            await done;
+            transcription.enqueue(200, { text: "what is on today" });
+            completions.enqueue(200, calling(["example_read", "{}"]));
+            completions.enqueue(200, reply("Nothing today."));
+            controller.captureWindow = async () => null;
+
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => next.runs.length === 1)).toBe(true);
+            expect(controller.chat?.activity).toBe("Checking your calendar");
+            window.resolve(whole);
+            await sleep(100);
+
+            expect(controller.chat?.activity).toBe("Checking your calendar");
+            nextDone.resolve();
+            expect(await eventually(() => controller.chat?.turns.length === 1)).toBe(true);
+          });
+
+          test("one that gives nothing even when stopped is unavailable", async () => {
+            const { done } = await ask([], [calling(["screen_read", "{}"]), reply("Sorry.")], (controller) => {
+              controller.agentScreenWait = 10;
+              controller.captureWindow = () => new Promise<ScreenRead | null>(() => {});
+              controller.stopContext = () => {};
+            });
+            await done;
+            expect(told(1)[0]).toBe(config.screenReadUnavailable);
+          });
+
+          test.each<[string, (controller: DictationController) => void]>([
+            ["without a whole window", () => {}],
+            ["with the screen hidden", (controller) => {
+              controller.captureContext = async () => ({ hidden: true });
+              controller.captureWindow = async () => ({ hidden: true });
+            }],
+            ["with no screen read", (controller) => {
+              controller.captureContext = async () => null;
+              controller.captureWindow = async () => null;
+            }],
+          ])("is not offered %s", async (_, prepare) => {
+            const { done } = await ask([], [reply("Hello.")], prepare);
+            await done;
+            expect(completions.body(0).available_tools).not.toContain("screen_read");
+          });
+        });
 
         /** The memory tools run on this computer, in the answer's loop and the writing tools' alike:
          * the model reads what Thunderbird's tools of the same names answer. */

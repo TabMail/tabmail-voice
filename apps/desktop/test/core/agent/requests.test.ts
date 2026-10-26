@@ -191,6 +191,17 @@ describe("the agent's tool loop", () => {
     expect(DesktopAgent.loopTools([], [tool("example_read")])).toEqual([]);
   });
 
+  /** With the window read (and not hidden), the loop may read the whole of it (`screen_read`,
+   * ADR-DESK-016 2026-10-25), Answer on or off, beside the memory tools; with no tool, nothing. */
+  test("the loop is offered the whole window when the window was read", () => {
+    const tool = (name: string): ConnectorTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
+    expect(DesktopAgent.loopTools(["answer"], [], true)).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read", "screen_read"]);
+    expect(DesktopAgent.loopTools(["compose", "answer"], [tool("example_read")], true)).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read", "screen_read", "compose"]);
+    expect(DesktopAgent.loopTools(["edit"], [], true)).toEqual(["memory_search", "memory_read", "screen_read", "edit"]);
+    expect(DesktopAgent.loopTools(["edit"], [], false)).toEqual(["memory_search", "memory_read", "edit"]);
+    expect(DesktopAgent.loopTools([], [], true)).toEqual([]);
+  });
+
   /** An app whose tools are offered brings the backend's own tools it has (the web, its search), after
    * the date tools, once however many of its tools there are; one with none of its tools offered
    * (switched off, or none on this computer), or an app with no backend tools, brings nothing. */

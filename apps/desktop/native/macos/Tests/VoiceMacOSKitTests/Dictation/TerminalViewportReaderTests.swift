@@ -402,7 +402,7 @@ private final class TerminalCollectorFixture: TerminalTree {
     func frame(of element: FakeElement) -> CGRect? { base.frame(of: element) }
     func string(_ element: FakeElement, _ name: String) -> String? { base.string(element, name) }
     func page(of element: FakeElement) -> PageHost { base.page(of: element) }
-    func fieldSource(of element: FakeElement, windowFrame: CGRect?) -> [String]? { genericReads += 1; return nil }
+    func fieldSource(of element: FakeElement, windowFrame: CGRect?, wholeWindow: Bool) -> [String]? { genericReads += 1; return nil }
     func caretWindow(of element: FakeElement) -> SharedContext.CaretWindow? { genericReads += 1; return nil }
     func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
     func isEditable(_ element: FakeElement) -> Bool { base.isEditable(element) }

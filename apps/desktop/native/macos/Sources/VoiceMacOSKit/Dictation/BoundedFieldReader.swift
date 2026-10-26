@@ -6,7 +6,10 @@ import Foundation
 /// Native capability dispatch. Rust owns whole/visible eligibility, requested
 /// spans, budgets and recognition boundaries; callers retain the three parts.
 enum BoundedFieldReader {
-    static func read(count initialCount: Int?, whole: () -> NSString?,
+    /// `wholeWindow`: the read's scope (`fieldPlan`): reading the whole window, a field the screen's
+    /// budget holds is read whole; reading what the window shows, only a short one, and a longer
+    /// one by the part it shows.
+    static func read(count initialCount: Int?, wholeWindow: Bool, whole: () -> NSString?,
                      range: ((NSRange) -> NSString?)?, visible: (Int) -> NSRange?,
                      valid: () -> Bool) throws -> BoundedCaretSource.Projection? {
         guard initialCount == nil || initialCount! >= 0, valid() else { throw Redactor.Failure.refused }
@@ -30,9 +33,9 @@ enum BoundedFieldReader {
             guard valid(), let value = read(requested), valid() else { return nil }
             return value
         }
-        if try SharedContext.fieldPlan(count: count).probeWhole {
+        if try SharedContext.fieldPlan(count: count, wholeWindow: wholeWindow).probeWhole {
             let result = try BoundedCaretSource.field(count: count, interval: NSRange(location: 0, length: count), range: checkedRead)
-            if result.complete, try SharedContext.fieldPlan(count: count, text: result.text).useWhole {
+            if result.complete, try SharedContext.fieldPlan(count: count, text: result.text, wholeWindow: wholeWindow).useWhole {
                 guard valid() else { throw Redactor.Failure.refused }
                 return BoundedCaretSource.Projection(parts: ["", result.text, ""], complete: true)
             }

@@ -56,6 +56,9 @@ public:
     std::vector<Node> children(const Node& node, size_t limit) { check(); return voice::children(node, limit); }
     bool editable(const Node& node) { check(); return state(node, ATSPI_STATE_EDITABLE); }
     bool shown(const Node& node) { check(); return state(node, ATSPI_STATE_SHOWING); }
+    // Meant to be seen, on screen or scrolled out of view (SHOWING is only what is on screen):
+    // the screen read reads what is scrolled away too (ADR-DESK-016 amendment).
+    bool visible(const Node& node) { check(); return state(node, ATSPI_STATE_VISIBLE); }
     std::optional<PageHost> page(const Node& node) {
         if (role(node) != ATSPI_ROLE_DOCUMENT_WEB && role(node) != ATSPI_ROLE_DOCUMENT_FRAME) return {};
         check();
@@ -199,7 +202,7 @@ public:
         if (const auto rich = hypertext(node)) {
             if (!rich->complete) return;
             const auto whole = readScalarField(rich->length, 0, rich->length, [&](size_t from, size_t to) { return scalarSlice(rich->text, from, to); });
-            if (whole.complete && core::request({{"fieldPlan", {{"text", whole.text}}}}, voice_core_context_json).at("useWhole").get<bool>())
+            if (whole.complete && core::request({{"fieldPlan", {{"text", whole.text}, {"wholeWindow", walk::readingWholeWindow()}}}}, voice_core_context_json).at("useWhole").get<bool>())
                 context.appendField({"", whole.text, ""}, geometry);
             return;
         }
@@ -208,10 +211,13 @@ public:
             if (characterCount() != count) throw std::runtime_error("field changed");
             return range(text, static_cast<int>(from), static_cast<int>(to));
         };
-        if (core::request({{"fieldPlan", {{"count", count}}}}, voice_core_context_json).at("probeWhole").get<bool>()) {
+        if (core::request({{"fieldPlan", {{"count", count}, {"wholeWindow", walk::readingWholeWindow()}}}}, voice_core_context_json).at("probeWhole").get<bool>()) {
             const auto whole = readScalarField(count, 0, count, read);
-            if (whole.complete && core::request({{"fieldPlan", {{"text", whole.text}}}}, voice_core_context_json).at("useWhole").get<bool>()) {
-                if (characterCount() != count || !shown(node)) throw std::runtime_error("field changed");
+            if (whole.complete && core::request({{"fieldPlan", {{"text", whole.text}, {"wholeWindow", walk::readingWholeWindow()}}}}, voice_core_context_json).at("useWhole").get<bool>()) {
+                // Not whether it shows: a field scrolled out of view is read whole too (the whole
+                // window's read; what the window shows has no such field to read, and reads only a
+                // short field whole: `fieldPlan`).
+                if (characterCount() != count) throw std::runtime_error("field changed");
                 context.appendField({"", whole.text, ""}, geometry);
                 return;
             }
@@ -593,24 +599,26 @@ private:
 
 // This metadata-only preflight precedes titles, values, counts and selections.
 // Aggregated ranges may include descendants, so they need a password census too.
+// `stoppable`: the walk's own look before it reads a part whole, which a stop (`walk::readStops`)
+// cuts short, so the part is not read; the checks before the walk are never cut short.
 template<class Tree>
-bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& exclusions, bool prohibitPasswords) {
+bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& exclusions, bool prohibitPasswords, bool stoppable = false) {
     if constexpr (requires { tree.privacyNodes(root); }) {
         if (auto nodes = tree.privacyNodes(root)) {
             if (nodes->size() > walk::limits().nodeBudget) return false;
             for (const auto& node : *nodes) {
-                if (!tree.withinBudget()) return false;
+                if (!tree.withinBudget() || (stoppable && walk::readStops().asked())) return false;
                 if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
                 if (const auto page = tree.page(node); page && exclusions.excludes(*page)) throw PrivacyHidden{};
             }
-            return tree.withinBudget();
+            return tree.withinBudget() && !(stoppable && walk::readStops().asked());
         }
     }
     // Elsewhere the core's census (`walk::detail::censusLook`): with `prohibitPasswords` it is
     // the protected census, which counts the element itself and refuses a password element
     // anywhere in it; without, a password element's children are not asked for. An excluded
     // website's page anywhere in it hides the window.
-    const auto found = walk::detail::censusLook(tree, root, true, prohibitPasswords, [&](const typename Tree::Node& node) -> std::optional<std::string> {
+    const auto found = walk::detail::censusLook(tree, root, true, prohibitPasswords, stoppable, [&](const typename Tree::Node& node) -> std::optional<std::string> {
         const auto page = tree.page(node);
         if (!page) return std::nullopt;
         return exclusions.excludes(*page) ? "excluded" : "allowed";
@@ -665,7 +673,10 @@ walk::Facts factsOf(Tree& tree, typename Tree::Node node, bool inPage, const std
         facts.pageExcluded = exclusions.excludes(*page);
     }
     frame = tree.frame(node);
-    facts.hidden = !tree.shown(node);
+    // Not VISIBLE: not drawn. Not SHOWING: scrolled out of view, out of what the window shows but
+    // read with the whole window (ADR-DESK-016 amendment).
+    facts.hidden = !tree.visible(node);
+    facts.offscreen = !tree.shown(node);
     facts.frame = walkFrame(frame);
     facts.window = walkFrame(window);
     return facts;
@@ -675,7 +686,7 @@ walk::Facts factsOf(Tree& tree, typename Tree::Node node, bool inPage, const std
 // census that ran out of budget, has not shown the element safe to read whole.
 template<class Tree>
 walk::PageLook lookInside(Tree& tree, typename Tree::Node node, const ScreenExclusions& exclusions) {
-    try { return safeSubtree(tree, node, exclusions, true) ? walk::PageLook::none : walk::PageLook::notSeenWhole; }
+    try { return safeSubtree(tree, node, exclusions, true, true) ? walk::PageLook::none : walk::PageLook::notSeenWhole; }
     catch (const PrivacyHidden&) { return walk::PageLook::excluded; }
 }
 // Text of a heading, link or row gathered from what is under it, as the walk reads it: its text
@@ -872,7 +883,11 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             selectionUnavailable = caret->selectionUnavailable;
         }
     }
-    if (!fieldInFocus) { around[0].clear(); around[2].clear(); }
+    // Only what is selected is kept of a focus that is no field, and nothing of the caret's text
+    // when the whole window is read: it reads the field whole (the core's `around`).
+    const auto keep = walk::around(fieldInFocus);
+    if (!keep.around) { around[0].clear(); around[2].clear(); }
+    if (!keep.selection) { around[1].clear(); selectionUnavailable = false; }
     // The focused page checks precede the title, as on macOS.
     const auto title = tree.label(window);
     const auto windowFrame = tree.frame(window);
@@ -894,6 +909,9 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
         const auto step = walk::node(facts);
         if (step.action == "refuse") throw PrivacyHidden{};
         if (step.caretFirst || step.action == "caret") context.append(ContextKind::caret, "", frame);
+        // Text whose box says nothing of where it is (a point-thin strip) is laid out with no frame:
+        // it starts a line of its own.
+        if (step.unplaced) frame.reset();
         if (step.action == "skip" && !step.look.empty() && walk::look(step.look, lookInside(tree, node, exclusions)) == "refuse")
             throw PrivacyHidden{};
         if (step.action == "caret" || step.action == "skip") continue;
