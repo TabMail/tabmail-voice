@@ -5,28 +5,24 @@
 import * as config from "../config.js";
 
 /**
- * Adapts the waveform to the range of sound coming in, so it follows the voice on any microphone:
- * two exponential-moving-average envelopes of the loudness (dB). The floor follows quieter readings
- * fast and louder ones slowly; the peak follows louder readings fast and quieter ones slowly. Each
- * reading shows where it sits between them.
+ * Moves the waveform with speech, not the room: the bars follow the voice band (`LevelSampler`'s
+ * second reading), from a gate `waveformGateDecibels` over the room's noise there, where room noise
+ * reads as nothing, up to a peak envelope of the readings (up fast, down slowly), at least
+ * `waveformMinimumRange` over the gate, so a quiet room never swings the bars full height.
  *
- * Warm-up: a moving average starts out anchored to its first readings (a start-up blip could hold
- * the floor down for seconds). Each weight is therefore at least 1/n for the n-th reading, making
- * the envelopes plain running averages while few readings exist; the window grows until the EMA's
- * own weight takes over (n = 1/alpha, ≈ 4 s for the slow side).
+ * The room's noise is a floor of its own (down fast, up slowly), from `room` (the noise the last
+ * dictation left) or else the first reading it takes, left without the first
+ * `waveformVoiceWarmupReadings` readings and any of digital silence, where a start-up blip or a
+ * reading part digital silence would hold it below the room. Until it has one (the first dictation
+ * after launch, for its first third of a second) the bars rest.
  *
- * A voice is told in the voice band (`LevelSampler`'s second reading), against the room's noise
- * there, which starts from the noise the last dictation left (`room`): a voice from the first
- * reading on is heard at once instead of being taken for the room.
+ * A voice is told against the same room: a voice from the first reading on is heard at once
+ * instead of being taken for the room.
  */
 export class LevelEnvelope {
-  private floor: number | undefined;
   private peak: number | undefined;
   private count = 0;
-  /** The room's noise in the voice band, for telling a voice: a floor of its own (down fast, up
-   * slowly), from `room` or else the first reading it takes, left without the first
-   * `waveformVoiceWarmupReadings` readings and any of digital silence, where a start-up blip or a
-   * reading part digital silence would hold it below the room. */
+  private peakCount = 0;
   private noise: number | undefined;
   private voiced = false;
 
@@ -47,27 +43,25 @@ export class LevelEnvelope {
     return this.noise;
   }
 
-  /** `decibels` moves the waveform; `voiceDecibels`, the same interval's voice band, tells a voice. */
-  level(decibels: number, voiceDecibels: number): number {
+  /** The waveform's level (0…1) for an interval's voice-band loudness (dB), which also tells a voice. */
+  level(voiceDecibels: number): number {
     this.count += 1;
-    if (this.count > config.waveformVoiceWarmupReadings && voiceDecibels > config.silenceDecibels) {
-      if (this.noise === undefined) this.noise = voiceDecibels;
+    if (voiceDecibels <= config.silenceDecibels) return 0;
+    const room = this.noise;
+    if (this.count > config.waveformVoiceWarmupReadings) {
+      if (room === undefined) this.noise = voiceDecibels;
       else {
-        if (voiceDecibels - this.noise >= config.waveformVoiceAboveNoiseDecibels) this.voiced = true;
-        this.noise += (voiceDecibels - this.noise) * (voiceDecibels < this.noise ? config.envelopeFastAlpha : config.envelopeSlowAlpha);
+        if (voiceDecibels - room >= config.waveformVoiceAboveNoiseDecibels) this.voiced = true;
+        this.noise = room + (voiceDecibels - room) * (voiceDecibels < room ? config.envelopeFastAlpha : config.envelopeSlowAlpha);
       }
     }
-    const floor = LevelEnvelope.follow(this.floor ?? decibels, decibels, true, this.count);
-    const peak = LevelEnvelope.follow(this.peak ?? decibels, decibels, false, this.count);
-    this.floor = floor;
-    this.peak = peak;
-    const top = Math.max(peak, floor + config.envelopeMinimumRange);
-    return Math.max(0, Math.min(1, (decibels - floor) / (top - floor)));
-  }
-
-  private static follow(value: number, reading: number, fastWhenBelow: boolean, count: number): number {
-    const fast = reading < value === fastWhenBelow;
-    const alpha = Math.max(fast ? config.envelopeFastAlpha : config.envelopeSlowAlpha, 1 / count);
-    return value + (reading - value) * alpha;
+    this.peakCount += 1;
+    const peak = this.peak ?? voiceDecibels;
+    const alpha = Math.max(voiceDecibels > peak ? config.envelopeFastAlpha : config.envelopeSlowAlpha, 1 / this.peakCount);
+    this.peak = peak + (voiceDecibels - peak) * alpha;
+    if (room === undefined) return 0;
+    const gate = room + config.waveformGateDecibels;
+    const top = Math.max(this.peak, gate + config.waveformMinimumRange);
+    return Math.max(0, Math.min(1, (voiceDecibels - gate) / (top - gate)));
   }
 }

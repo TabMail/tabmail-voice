@@ -1037,15 +1037,18 @@ function LanguageBadge({ code }: { code: string }) {
 }
 
 /** Voice waveform: bars follow the incoming sound level with a traveling ripple, blue until a voice is
- * heard, then its recording colour (`hasVoice`). */
+ * heard, then its recording colour (`hasVoice`). A level arrives about 12 times a second; the bars
+ * ease toward it every frame (`easedLevel`), so they glide rather than step. */
 function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
   const bars = useRef<(HTMLDivElement | null)[]>([]);
   const latestLevel = useRef(level);
   latestLevel.current = level;
-  useAnimationFrame(() => {
+  const shown = useRef({ level: 0, at: 0 });
+  useAnimationFrame((seconds) => {
+    shown.current = { level: easedLevel(shown.current.level, latestLevel.current, seconds - shown.current.at), at: seconds };
     const time = performance.now() / 1000;
     bars.current.forEach((bar, index) => {
-      if (bar) bar.style.height = `${barHeight(index, time, latestLevel.current)}px`;
+      if (bar) bar.style.height = `${barHeight(index, time, shown.current.level)}px`;
     });
   });
   return (
@@ -1068,6 +1071,13 @@ function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
       ))}
     </div>
   );
+}
+
+/** The level the bars show `elapsed` seconds on from `shown`, eased toward `target`: up over
+ * `waveformRiseSeconds`, down over `waveformFallSeconds` (time constants, whatever the frame rate). */
+function easedLevel(shown: number, target: number, elapsed: number): number {
+  const seconds = target > shown ? config.waveformRiseSeconds : config.waveformFallSeconds;
+  return target + (shown - target) * Math.exp(-Math.max(0, elapsed) / seconds);
 }
 
 function barHeight(index: number, time: number, level: number): number {

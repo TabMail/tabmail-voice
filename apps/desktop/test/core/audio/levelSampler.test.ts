@@ -12,13 +12,10 @@ function waveform(samples: Float32Array, packetFrames: number): { readings: numb
   const envelope = new LevelEnvelope();
   const readings: number[] = [];
   const levels: number[] = [];
-  let level = 0;
   for (let offset = 0; offset < samples.length; offset += packetFrames) {
     meter.append(samples.subarray(offset, offset + packetFrames), (reading, voiceReading) => {
       readings.push(reading);
-      const next = envelope.level(reading, voiceReading);
-      level += (next - level) * (next > level ? config.levelAttack : config.levelRelease);
-      levels.push(level);
+      levels.push(envelope.level(voiceReading));
     });
   }
   return { readings, levels };

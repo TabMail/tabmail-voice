@@ -233,10 +233,9 @@ describe("loudness", () => {
 /** Levels measured on a quiet display microphone: room noise ≈ −45 dB, short utterances peak
  * ≈ −42.5 dB, longer speech −35 to −40 dB. */
 describe("LevelEnvelope", () => {
-  /** A reading whose sound is all in the voice band: the same loudness for the waveform and for
-   * telling a voice. */
+  /** A voice-band reading (dB): what moves the waveform and tells a voice. */
   function hear(envelope: LevelEnvelope, dB: number): number {
-    return envelope.level(dB, dB);
+    return envelope.level(dB);
   }
 
   function run(envelope: LevelEnvelope, dB: number, times: number): number {
@@ -245,14 +244,40 @@ describe("LevelEnvelope", () => {
     return result;
   }
 
-  /** Speech only 2.5 dB over the room (a short, quiet dictation) must still move the waveform. */
-  test("quiet mic speech barely above the room moves", () => {
+  /** A nearly silent room leaves the bars still: its noise wobbling a couple of dB either way reads
+   * as nothing, however long it goes on (owner, 2026-10-22: the waveform wiggled on room noise). */
+  test("room noise leaves the waveform still", () => {
     const envelope = new LevelEnvelope();
-    run(envelope, -45, 30);
-    expect(hear(envelope, -42.5)).toBeGreaterThan(0.4);
+    const levels: number[] = [];
+    for (let index = 0; index < 120; index += 1) levels.push(hear(envelope, -45 + [0, -2, 1.5, -1, 2][index % 5]!));
+    expect(levels.every((level) => level === 0)).toBe(true);
   });
 
-  /** Adapts to the range coming in: after speech, the loud end sits near the speech, so louder
+  /** The gate: a reading less than `waveformGateDecibels` over the room reads nothing, and full height
+   * is at least `waveformMinimumRange` over the gate. */
+  test("readings under the gate over the room read nothing, and the range starts there", () => {
+    const room = -45;
+    const gate = room + config.waveformGateDecibels;
+    const at = (dB: number) => {
+      const envelope = new LevelEnvelope(room);
+      run(envelope, room, config.waveformVoiceWarmupReadings + 1);
+      return hear(envelope, dB);
+    };
+    expect(at(gate - 0.5)).toBe(0);
+    expect(at(gate + config.waveformMinimumRange / 2)).toBeCloseTo(0.5, 1);
+    expect(at(gate + config.waveformMinimumRange + 3)).toBe(1);
+  });
+
+  /** Speech over the room moves the waveform, from the first readings of a dictation that starts from
+   * the room the last one left. */
+  test("speech over the room moves the waveform", () => {
+    const last = new LevelEnvelope();
+    run(last, -45, 30);
+    const speaking = new LevelEnvelope(last.room);
+    expect(hear(speaking, -33)).toBeGreaterThan(0.5);
+  });
+
+  /** Adapts to the range coming in: after loud speech, the loud end sits near the speech, so louder
    * syllables read higher than softer ones instead of all pinning at full. */
   test("adapts to the incoming range", () => {
     const envelope = new LevelEnvelope();
@@ -267,22 +292,25 @@ describe("LevelEnvelope", () => {
     expect(medium).toBeLessThan(loud - 0.2);
   });
 
-  /** Warm-up: a start-up blip (−70 dB) must not anchor the floor, so within the first second of
-   * room noise (−45) and speech (−38) the two already read clearly apart. */
+  /** Warm-up: a start-up blip (−70 dB) must not anchor the room, so within the first second of room
+   * noise (−45) and speech (−33) the room reads nothing and the speech clearly moves. */
   test("settles within the first second", () => {
     const envelope = new LevelEnvelope();
     run(envelope, -70, 3);
     for (let index = 0; index < 6; index += 1) {
       hear(envelope, -45);
-      hear(envelope, -38);
+      hear(envelope, -33);
     }
-    expect(hear(envelope, -45)).toBeLessThan(0.4);
-    expect(hear(envelope, -38)).toBeGreaterThan(0.6);
+    expect(hear(envelope, -45)).toBe(0);
+    expect(hear(envelope, -33)).toBeGreaterThan(0.5);
   });
 
-  /** A steady hum settles low rather than holding the bars up. */
-  test("steady sound settles low", () => {
-    expect(run(new LevelEnvelope(), -45, 60)).toBeLessThan(0.1);
+  /** Until the room is known (the first dictation after launch, its warm-up readings) and on digital
+   * silence, the bars rest. */
+  test("the waveform rests until the room is known, and on digital silence", () => {
+    const envelope = new LevelEnvelope();
+    for (let index = 0; index < config.waveformVoiceWarmupReadings + 1; index += 1) expect(hear(envelope, -20)).toBe(0);
+    expect(hear(envelope, config.silenceDecibels)).toBe(0);
   });
 
   /** A voice is a reading `waveformVoiceAboveNoiseDecibels` over the room's noise, and stays heard;
@@ -347,16 +375,6 @@ describe("LevelEnvelope", () => {
     run(envelope, -45, 5);
     expect(envelope.hasVoice).toBe(false);
     expect(envelope.room).toBeCloseTo(-45, 5);
-  });
-
-  /** A voice is told in the voice band: a quiet voice over a room's louder hum lifts the voice band
-   * well past the room there while the full band barely moves. */
-  test("tells a voice in the voice band, under a room's louder hum", () => {
-    const humming = new LevelEnvelope();
-    for (let index = 0; index < 20; index += 1) humming.level(-30, -60);
-    expect(humming.hasVoice).toBe(false);
-    humming.level(-29.8, -50);
-    expect(humming.hasVoice).toBe(true);
   });
 });
 

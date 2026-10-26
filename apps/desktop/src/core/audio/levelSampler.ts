@@ -7,7 +7,7 @@ import { decibels } from "./recorder.js";
 import { VoiceBand } from "./voiceBand.js";
 
 /** Measures equal intervals of audio regardless of the native device's packet size. The shared
- * envelope and attack/release weights are tuned for this cadence. Recording still receives every
+ * envelope's weights are tuned for this cadence. Recording still receives every
  * original sample, including a final partial interval; only the live meter is buffered here. Each
  * interval reports its loudness and its voice band's (`VoiceBand`), which tells a voice. */
 export class LevelSampler {

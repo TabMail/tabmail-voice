@@ -1185,6 +1185,43 @@ describe("the chat window", () => {
     expect(document.querySelector(".chat-timeout")).toBeNull();
   });
 
+  /** A level arrives about 12 times a second: the bars glide toward it every frame instead of stepping
+   * to it, up over `waveformRiseSeconds` and down over the longer `waveformFallSeconds` (owner,
+   * 2026-10-22: the waveform should move much more smoothly). */
+  test("the waveform glides to each new level", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const page = await overlayPage();
+      const center = () => parseFloat(document.querySelectorAll<HTMLElement>(".pill .bar")[(config.overlayMeterBarCount - 1) / 2]?.style.height ?? "");
+      const span = config.overlayMeterMaxBarHeight - config.overlayMeterMinBarHeight;
+      // The center bar at a level, its ripple anywhere in its range.
+      const lowest = (level: number) => config.overlayMeterMinBarHeight + level * (1 - config.waveformRippleDepth) * span;
+      const highest = (level: number) => config.overlayMeterMinBarHeight + Math.min(1, config.waveformIdleLevel + level) * span;
+      const frame = 1_000 / 60;
+
+      await page.show({ ...listening, level: 0 });
+      vi.advanceTimersByTime(frame * 10);
+      expect(center()).toBeLessThanOrEqual(highest(0));
+
+      await page.show({ ...listening, level: 1 });
+      vi.advanceTimersByTime(frame);
+      expect(center()).toBeLessThan(highest(1 - Math.exp(-(2 * frame) / 1_000 / config.waveformRiseSeconds)));
+      vi.advanceTimersByTime(config.waveformRiseSeconds * 1_000 * 5);
+      expect(center()).toBeGreaterThan(lowest(0.95));
+
+      await page.show({ ...listening, level: 0 });
+      vi.advanceTimersByTime(frame);
+      expect(center()).toBeGreaterThan(lowest(Math.exp(-(2 * frame) / 1_000 / config.waveformFallSeconds)));
+      vi.advanceTimersByTime(config.waveformRiseSeconds * 1_000 * 5);
+      // Still falling where a rise that long would be done: it settles more gently than it rises.
+      expect(center()).toBeGreaterThan(lowest(Math.exp(-(config.waveformRiseSeconds * 5 + 2 * frame / 1_000) / config.waveformFallSeconds)));
+      vi.advanceTimersByTime(config.waveformFallSeconds * 1_000 * 8);
+      expect(center()).toBeLessThanOrEqual(highest(0.001));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   /** The timeout bar runs down by itself, with no state pushed: full, half gone, then empty; gone once
    * touched, it asks for no more frames. */
   test("the timeout bar runs down with no state pushed", async () => {

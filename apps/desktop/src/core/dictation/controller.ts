@@ -1584,9 +1584,8 @@ export class DictationController extends Observable {
       this.showDueTip();
     }
     if (!this.hearing) return;
-    const next = this.envelope.level(level, voiceLevel);
-    const rate = next > this.currentLevel ? config.levelAttack : config.levelRelease;
-    this.currentLevel += (next - this.currentLevel) * rate;
+    // The overlay eases the bars toward each level, every frame.
+    this.currentLevel = this.envelope.level(voiceLevel);
     this.peakMeterLevel = Math.max(this.peakMeterLevel, this.currentLevel);
     this.changed();
   }
