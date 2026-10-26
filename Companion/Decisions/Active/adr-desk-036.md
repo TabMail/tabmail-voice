@@ -214,7 +214,10 @@ Answer, which also circled, went on behind it.
 > a click. Only the primary mouse button drags: not from a button or a link, which keep their clicks,
 > nor the scroll bar, nor a touch, which scrolls. The press ends with its pointer's release, a cancel,
 > or the capture lost, and a move with the primary button no longer held (let go outside the chat
-> before it dragged, which the page is never told) drops it, so a hover never drags. The page sends `chatDragStart`, then `dragChat {dx, dy}`, the pointer's distance on
+> before it dragged, which the page is never told) drops it, so a hover never drags. Leaving the
+> chat before it drags ends the press too: off the chat the window lets clicks through, so a press
+> made there is the window under it's, and coming back over the chat with it held drags nothing. A
+> new press always replaces the one before, even one that cannot drag. The page sends `chatDragStart`, then `dragChat {dx, dy}`, the pointer's distance on
 > the screen since the press (the window moves under it), with pointer capture so the moves keep
 > coming past the window's edge.
 >
@@ -239,8 +242,10 @@ Answer, which also circled, went on behind it.
 > chat fits), `overlayWindow.test.ts` (the overlay moves by the drag with its pill; it stays through a
 > follow-up and a shell change; no drag without a start or once closing; the next chat opens at the
 > caret; each move is told to the page with its growth limit, the measured height reaching the top;
-> it moves as one as the shell's surfaces change the room; it hides with no room and comes back),
+> it moves as one as the shell's surfaces change the room, from the first drag in a narrow area on,
+> and onto another display, kept in that display's area; it hides with no room and comes back),
 > `overlay/index.test.ts` (the threshold; the distance sent; pointer capture; a button, a link, the
 > scroll bar, another button, a chord or a touch drags nothing; another pointer, a cancel, a lost
-> capture or a release outside ends the press), and `index.test.ts` (the commands reach the overlay;
+> capture, a release outside or leaving the chat before it drags ends the press, a drag under way goes
+> on past the chat's edge, and a new press replaces the one before), and `index.test.ts` (the commands reach the overlay;
 > malformed and non-finite distances are refused). Each was red-verified by a mutation.

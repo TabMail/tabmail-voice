@@ -1399,6 +1399,69 @@ describe("the chat window", () => {
     }
   });
 
+  /** A press that leaves the chat before it drags is over: off the chat the window lets clicks
+   * through, so its release and a press after it go to the window under it, unseen here, and coming
+   * back over the chat with that later press held drags nothing. A drag under way has the pointer,
+   * and goes on past the chat's edge. */
+  test("a press that leaves the chat before it drags is over", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const drags = () => page.commands.filter((command) => command.type === "chatDragStart" || command.type === "dragChat");
+    const captured: number[] = [];
+    vi.spyOn(HTMLElement.prototype, "setPointerCapture").mockImplementation(function (this: HTMLElement, id: number) {
+      if (this.classList.contains("chat")) captured.push(id);
+    });
+    const text = document.querySelector(".chat-request");
+
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 102, 100);
+    await pointerOn(text, "pointerout", 103, 100);
+    await pointerOn(document.body, "pointermove", 103, 100);
+    expect(page.commands.filter((command) => command.type === "pointerOver").at(-1)).toEqual({ type: "pointerOver", over: false });
+    // The window lets clicks through now: neither the release nor the next press reaches the chat.
+    await pointerOn(text, "pointerover", 104, 100);
+    await pointerOn(text, "pointermove", 110, 100);
+    await pointerOn(text, "pointermove", 160, 100);
+    expect({ captured, drags: drags() }).toEqual({ captured: [], drags: [] });
+
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 100 + config.chatDragThreshold, 100);
+    await pointerOn(text, "pointerout", 100 + config.chatDragThreshold, 100);
+    await pointerOn(text, "pointermove", 160, 130);
+    expect({ captured, drags: drags() }).toEqual({
+      captured: [1],
+      drags: [
+        { type: "chatDragStart" },
+        { type: "dragChat", dx: config.chatDragThreshold, dy: 0 },
+        { type: "dragChat", dx: 60, dy: 30 },
+      ],
+    });
+  });
+
+  /** A new press replaces the one before, even one that doesn't drag: after a press let go outside
+   * (unseen here), a press on a link drags nothing from the old press's place, and the next press on
+   * the chat drags from its own. */
+  test("a new press replaces the one before it", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const drags = () => page.commands.filter((command) => command.type === "chatDragStart" || command.type === "dragChat");
+    const text = document.querySelector(".chat-request");
+    const link = document.querySelector(".chat a");
+    expect(link).not.toBeNull();
+
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 102, 100);
+    await pointerOn(link, "pointerdown", 200, 200);
+    await pointerOn(link, "pointermove", 260, 260);
+    await pointerOn(text, "pointermove", 260, 260);
+    expect(drags()).toEqual([]);
+    await pointerOn(link, "pointerup", 260, 260);
+
+    await pointerOn(text, "pointerdown", 300, 300);
+    await pointerOn(text, "pointermove", 340, 310);
+    expect(drags()).toEqual([{ type: "chatDragStart" }, { type: "dragChat", dx: 40, dy: 10 }]);
+  });
+
   /** A pointer entering or moving in the window, a click or a scroll keeps it open; once kept open
    * nothing more is sent. */
   test.each(["pointerover", "pointermove", "pointerdown", "wheel"])("a %s keeps it open", async (type) => {

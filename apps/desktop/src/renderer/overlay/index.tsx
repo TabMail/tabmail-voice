@@ -341,7 +341,12 @@ function PillLayout({
  * overlay; less is a click. Not from a button, a link or the scroll bar, which keep their own, nor a
  * touch, which scrolls. The distance is the pointer's on the screen since the press: the window moves
  * under it. */
-function useChatDrag(): { onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void; onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void } {
+function useChatDrag(): {
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerLeave: () => void;
+} {
   // `onPointerUp` also ends it on a cancel and on the pointer's capture lost.
   const press = useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -375,7 +380,13 @@ function useChatDrag(): { onPointerDown: (event: ReactPointerEvent<HTMLDivElemen
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (press.current?.id === event.pointerId) press.current = null;
   };
-  return { onPointerDown, onPointerMove, onPointerUp };
+  // A press that leaves the chat before it drags is over: off the chat, the window lets clicks
+  // through, so its release and any press after it go to the window under it, unseen here. A drag
+  // under way has the pointer, and goes on.
+  const onPointerLeave = () => {
+    if (press.current?.dragging === false) press.current = null;
+  };
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerLeave };
 }
 
 /** The chat window over the pill once agent mode answers (owner, 2026-09-28: it "appears smoothly
@@ -477,6 +488,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
       onPointerUp={drag.onPointerUp}
       onPointerCancel={drag.onPointerUp}
       onLostPointerCapture={drag.onPointerUp}
+      onPointerLeave={drag.onPointerLeave}
       onWheel={touch}
       style={{
         left: margin,

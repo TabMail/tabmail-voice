@@ -227,6 +227,41 @@ describe("OverlayWindowController", () => {
 
   /** Dragged once the shell's surfaces have changed the room around it (the area widened, or grown
    * short), the window and the pill still move together, by the drag, and the chat fits the room. */
+  /** Dragged onto another display, the chat window is kept in that display's work area, not the one
+   * it came from, and its pill moves with it. */
+  test("a chat window dragged onto another display moves there whole", async () => {
+    const screen = (await import("electron")).screen;
+    const other = { x: workArea.width, y: -200, width: 1280, height: 800 };
+    const nearest = vi.spyOn(screen, "getDisplayNearestPoint").mockImplementation((point) => ({ workArea: point.x >= other.x ? other : workArea }) as Electron.Display);
+    try {
+      const { overlay, controller } = await draggableChat({ current: [] });
+      const before = overlay.bounds();
+      const pill = pillOnScreen(before, controller);
+      controller.startChatDrag();
+      controller.dragChat({ x: 1500, y: -100 });
+      const after = overlay.bounds();
+      expect(after).toEqual({ ...before, x: before.x + 1500, y: before.y - 100 });
+      expect(pillOnScreen(after, controller)).toEqual({ x: pill.x + 1500, y: pill.y - 100 });
+      expect(after.x + config.chatShadowMargin).toBeGreaterThanOrEqual(other.x);
+      expect(after.x + after.width - config.chatShadowMargin).toBeLessThanOrEqual(other.x + other.width);
+    } finally {
+      nearest.mockRestore();
+    }
+  });
+
+  /** Opened in a narrow strip beside the shell's surfaces, the chat window and its pill move by the
+   * drag from the first move on: no jump to where a full-width window would put the pill. */
+  test("the first drag from a narrow area moves the window and its pill by the drag", async () => {
+    const { overlay, controller } = await draggableChat({ current: [{ x: 300, y: 0, width: 1140, height: 900 }] });
+    const before = overlay.bounds();
+    const pill = pillOnScreen(before, controller);
+    expect(controller.chatPlacement?.width).toBeLessThan(config.chatWidth);
+    controller.startChatDrag();
+    controller.dragChat({ x: 0, y: -10 });
+    expect(overlay.bounds()).toEqual({ ...before, y: before.y - 10 });
+    expect(pillOnScreen(overlay.bounds(), controller)).toEqual({ ...pill, y: pill.y - 10 });
+  });
+
   test("a dragged chat window moves as one as the room around it changes", async () => {
     const exclusions = { current: [{ x: 300, y: 0, width: 1140, height: 900 }] };
     const { overlay, controller } = await draggableChat(exclusions, config.chatMaxHeight);
