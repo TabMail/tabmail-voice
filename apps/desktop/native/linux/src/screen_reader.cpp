@@ -96,13 +96,15 @@ int main() {
         // window only if it is still the one in front; otherwise there is no screen to give.
         // `focusedRead` gives null too if another window comes to the front while it reads.
         const auto target = foreground.target();
-        if ((read.sameWindowAs != 0 && !target) || !lastRead.admits(read, target ? target->token : 0)) {
+        const auto token = read.target.is_null() ? (target ? target->token : 0) :
+            (read.target["window"].is_number_unsigned() ? read.target["window"].get<uint64_t>() : 0);
+        if (!token || !lastRead.admits(read, token)) {
             reply(nullptr, true);
             return;
         }
         voice::walk::readStops().reading = read.number;
         voice::walk::readingWholeWindow() = read.wholeWindow;
-        reply(voice::focusedRead(method, params, foreground), true);
+        reply(read.target.is_null() ? voice::focusedRead(method, params, foreground) : voice::capturedRead(params, foreground), true);
     };
     // Requests are served only after Foreground's start-up idle has looked for what has focus (if
     // it found nothing, a read answers null; the caller bounds its own wait). The app

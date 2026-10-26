@@ -322,6 +322,8 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     readonly events = new Map<string, (message: Record<string, unknown>) => void>();
     constructor(readonly options: { name: string; executable: string; args?: string[]; restartExitCode?: number; stopEndsAtOnce?: boolean }) {
       app.helpers.set(options.name, this);
+      this.replies.set("captureTarget", { window: options.name === "voice-screen-reader" ? "00000000-0000-0000-0000-000000000001" : 42, pid: 42 });
+      this.replies.set("preparePaste", { transaction: 7 });
     }
     /** "start", "stop" and "restart", as the app called them. */
     readonly lifecycle: string[] = [];
@@ -348,6 +350,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
+      if (typeof this.replies.get(method) === "function") return (this.replies.get(method) as (params: unknown) => unknown)(params);
       return this.replies.has(method) ? this.replies.get(method) : { value: null, events: [], calendars: [], contacts: [], items: [] };
     }
   },
@@ -583,6 +586,33 @@ function send(command: unknown): Promise<unknown> {
 }
 
 describe("main process wiring", () => {
+test("the real capture pipeline reads the delayed captured identity in both scopes after focus changes", async () => {
+  await launch("darwin");
+  const reader = app.helpers.get("voice-screen-reader")!;
+  const captured = { window: "00000000-0000-0000-0000-000000000001", pid: 42 };
+  const identity = Promise.withResolvers<typeof captured>();
+  reader.replies.set("captureTarget", identity.promise);
+  let front = "Captured";
+  reader.replies.set("readScreen", (params: { target?: typeof captured; wholeWindow?: boolean }) => blankScreen({
+    appName: params.target?.window === captured.window ? "Captured" : front,
+    renderedText: `${params.target?.window === captured.window ? "Captured" : front} ${params.wholeWindow ? "whole" : "shown"}`,
+  }));
+  const controller = app.controller as unknown as {
+    captureContext: (policy: { apps: string[]; sites: string[] }, target: Promise<number | null>) => Promise<unknown>;
+    captureWindow: (shown: Promise<unknown>) => Promise<unknown>;
+  };
+  const target = app.frontmostApp!();
+  const shown = controller.captureContext({ apps: [], sites: [] }, target);
+  expect(reader.requests.some(request => request.method === "readScreen")).toBe(false);
+  front = "Competing";
+  identity.resolve(captured);
+  expect(await shown).toMatchObject({ renderedText: "Captured shown" });
+  const whole = await controller.captureWindow(shown);
+  expect(whole).toMatchObject({ renderedText: "Captured whole" });
+  expect(JSON.stringify([await shown, whole])).not.toContain("Competing");
+});
+
+
   test("shell geometry events move, hide and restore active overlay placement", async () => {
     await launch("win32");
     const helper = app.helpers.get("voice-windows")!;
@@ -708,9 +738,10 @@ describe("main process wiring", () => {
     const helper = app.helpers.get("voice-macos");
     const { signal } = new AbortController();
 
-    await app.paste?.("Hello.", signal, 101);
+    const target = await app.frontmostApp!();
+    await app.paste?.("Hello.", signal, target!);
 
-    const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
+    const inserts = helper?.requests.filter((request) => request.method === "preparePaste") ?? [];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
     expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
@@ -757,9 +788,10 @@ describe("main process wiring", () => {
   test("Windows paste keeps its original window and uses the cancellable Windows helper", async () => {
     await launch("win32");
     const helper = app.helpers.get("voice-windows");
-    await app.paste?.("Synthetic text", signal, 101);
+    const target = await app.frontmostApp!();
+    await app.paste?.("Synthetic text", signal, target!);
     expect(helper?.requests.find((request) => request.method === "insert")).toMatchObject({
-      params: { text: "Synthetic text", window: 101, deadline: expect.any(Number) }, signal,
+      params: { text: "Synthetic text", target: { window: 42, pid: 42 }, deadline: expect.any(Number) }, signal,
     });
     expect(helper?.requests.map((request) => request.method)).not.toContain("startActivator");
     expect(app.helpers.get("voice-macos")?.requests).toEqual([]);
@@ -1300,9 +1332,9 @@ describe("main process wiring", () => {
     // process on macOS and Linux, where the main helper's window token is its own; the window's handle
     // on Windows).
     const watch = app.corrections as unknown as { field: { value: (target: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null> }; learn: (words: string[]) => void };
-    main.replies.set("frontmostApp", { darwin: { pid: 42, name: "Notes" }, win32: { window: 42 }, linux: { window: 42, pid: 4242 } }[platform]);
+    app.helpers.get(platform === "darwin" ? "voice-screen-reader" : mainName)!.replies.set("captureTarget", { window: platform === "darwin" ? "00000000-0000-0000-0000-000000000001" : 42, pid: platform === "linux" ? 4242 : 42 });
     const target = await app.frontmostApp!();
-    expect(target).toBe(42);
+    expect(target).toBe(1);
     await watch.field.value(target!, { apps: ["org.example.vault"], sites: ["example.com"] });
     expect(reader.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
       { ...{ darwin: { pid: 42 }, win32: { window: 42 }, linux: { pid: 4242 } }[platform], maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },

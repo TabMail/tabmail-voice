@@ -73,6 +73,12 @@ int main() {
  }
  check("core-refused pastes never reach the clipboard",coreRefused && voice::inserts==0);
  check("an accepted paste is pasted once",request("insert",{{"window",uint64_t{42}},{"text","synthetic"},{"deadline",uint64_t{6000}}}).contains("result") && voice::inserts==1);
+ const JSON captured={{"window",uint64_t{42}},{"pid",uint64_t{101}}};
+ check("captured target reaches the paste once",request("insert",{{"target",captured},{"text","synthetic"},{"deadline",uint64_t{6000}}}).contains("result") && voice::inserts==2);
+ const JSON wrongProcess={{"window",uint64_t{42}},{"pid",uint64_t{202}}};
+ check("another process cannot inherit a captured target",request("insert",{{"target",wrongProcess},{"text","synthetic"},{"deadline",uint64_t{6000}}}).contains("error") && voice::inserts==2);
+ const JSON gone={{"window",uint64_t{999}},{"pid",uint64_t{101}}};
+ check("a gone captured target never reaches the clipboard",request("insert",{{"target",gone},{"text","synthetic"},{"deadline",uint64_t{6000}}}).contains("error") && voice::inserts==2);
  worker->finish();
  int failed=0;for(const auto& c:cases)if(!c["pass"].get<bool>())++failed;
  std::cout<<JSON{{"cases",cases},{"passed",cases.size()-failed},{"failed",failed}}.dump(2)<<std::endl;

@@ -77,7 +77,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "text": "build ok.  \u2502 $ echo one\nDone.      \u2502 one\nlog:       \u2502 Note:\n           \u2502",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -101,7 +101,7 @@
         }
       },
       "expected": {
-        "value": " $ echo one  one  Note: "
+        "value": " $ echo one\u2029 one\u2029 Note:\u2029"
       }
     },
     {
@@ -122,7 +122,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "日\u0000本\u0000 ok   │ $ echo one\nDone.     │ 你\u0000好\u0000\nlog:      │ Note:",
+                    "text": "\u65e5\u0000\u672c\u0000 ok   \u2502 $ echo one\nDone.     \u2502 \u4f60\u0000\u597d\u0000\nlog:      \u2502 Note:",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -146,7 +146,7 @@
         }
       },
       "expected": {
-        "value": " $ echo one  你好  Note:"
+        "value": " $ echo one\u2029 \u4f60\u597d\u2029 Note:"
       }
     },
     {
@@ -167,7 +167,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "✻ Working… (3s)\n──────────\n> fix the Zivora\n  build\n──────────\n  ? for shortcuts",
+                    "text": "\u273b Working\u2026 (3s)\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n> fix the Zivora\n  build\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  ? for shortcuts",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -191,7 +191,7 @@
         }
       },
       "expected": {
-        "value": "> fix the Zivora   build"
+        "value": "> fix the Zivora\u2029  build"
       }
     },
     {
@@ -199,7 +199,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "Dear team thanks"
+          "text": "Dear team\u2029thanks"
         }
       },
       "expected": {
@@ -211,7 +211,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "Notes: a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 end"
+          "text": "Notes:\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029end"
         }
       },
       "expected": {
@@ -236,7 +236,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "log one    │key sk-a1B2c3D4e5F6g7H8i9J0k1L2\nlog two    │$ ",
+                    "text": "log one    \u2502key sk-a1B2c3D4e5F6g7H8i9J0k1L2\nlog two    \u2502$ ",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -260,7 +260,7 @@
         }
       },
       "expected": {
-        "value": "key [redacted] $ "
+        "value": "key [redacted]\u2029$ "
       }
     },
     {
@@ -268,7 +268,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "sk-ReviewField1234567890abcd sk-ReviewLink1234567890abcd"
+          "text": "sk-ReviewField1234567890abcd\u2029sk-ReviewLink1234567890abcd"
         }
       },
       "expected": {
@@ -293,7 +293,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "log one    │QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog two    │QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog three  │$ ",
+                    "text": "log one    \u2502QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog two    \u2502QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog three  \u2502$ ",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -317,7 +317,7 @@
         }
       },
       "expected": {
-        "value": "[redacted] [redacted] $ "
+        "value": "[redacted]\u2029[redacted]\u2029$ "
       }
     },
     {
@@ -338,7 +338,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "text": "build ok.  \u2502 $ echo one\nDone.      \u2502 one\nlog:       \u2502 Note:\n           \u2502",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -380,7 +380,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "text": "build ok.  \u2502 $ echo one\nDone.      \u2502 one\nlog:       \u2502 Note:\n           \u2502",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -412,11 +412,11 @@
       "request": {
         "field": {
           "maxLength": 4,
-          "text": "😀😀"
+          "text": "\ud83d\ude00\ud83d\ude00"
         }
       },
       "expected": {
-        "value": "😀😀"
+        "value": "\ud83d\ude00\ud83d\ude00"
       }
     },
     {
@@ -424,7 +424,7 @@
       "request": {
         "field": {
           "maxLength": 3,
-          "text": "😀😀"
+          "text": "\ud83d\ude00\ud83d\ude00"
         }
       },
       "expected": {
@@ -549,7 +549,7 @@
                 "runs": [
                   {
                     "id": 1,
-                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "text": "build ok.  \u2502 $ echo one\nDone.      \u2502 one\nlog:       \u2502 Note:\n           \u2502",
                     "connected": false,
                     "startKnown": false,
                     "endKnown": false
@@ -904,7 +904,7 @@
       "request": {
         "field": {
           "maxLength": 20000,
-          "text": "-----BEGIN RSA PRIVATE KEY----- a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 Bearer a1B2c3.D4e5F6g7H8"
+          "text": "-----BEGIN RSA PRIVATE KEY-----\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029Bearer a1B2c3.D4e5F6g7H8"
         }
       },
       "expected": {
@@ -1155,6 +1155,668 @@
       "request": {
         "readScreenStop": {
           "read": -2
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "numeric target identity",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 202
+        }
+      },
+      "expected": {
+        "window": 101,
+        "pid": 202
+      }
+    },
+    {
+      "name": "screen reads the numeric target",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 202
+          }
+        }
+      },
+      "expected": {
+        "read": null,
+        "wholeWindow": false,
+        "sameWindowAs": null,
+        "target": {
+          "window": 101,
+          "pid": 202
+        }
+      }
+    },
+    {
+      "name": "reader scoped target identity",
+      "request": {
+        "targetWindow": {
+          "window": "00000000-0000-0000-0000-000000000001",
+          "pid": 202
+        }
+      },
+      "expected": {
+        "window": "00000000-0000-0000-0000-000000000001",
+        "pid": 202
+      }
+    },
+    {
+      "name": "screen reads the reader scoped target",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 202
+          }
+        }
+      },
+      "expected": {
+        "read": null,
+        "wholeWindow": false,
+        "sameWindowAs": null,
+        "target": {
+          "window": "00000000-0000-0000-0000-000000000001",
+          "pid": 202
+        }
+      }
+    },
+    {
+      "name": "accessible frame target identity",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 202,
+          "bus": ":1.23",
+          "path": "/org/a11y/atspi/accessible/12"
+        }
+      },
+      "expected": {
+        "window": 101,
+        "pid": 202,
+        "bus": ":1.23",
+        "path": "/org/a11y/atspi/accessible/12"
+      }
+    },
+    {
+      "name": "screen reads the accessible frame target",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 202,
+            "bus": ":1.23",
+            "path": "/org/a11y/atspi/accessible/12"
+          }
+        }
+      },
+      "expected": {
+        "read": null,
+        "wholeWindow": false,
+        "sameWindowAs": null,
+        "target": {
+          "window": 101,
+          "pid": 202,
+          "bus": ":1.23",
+          "path": "/org/a11y/atspi/accessible/12"
+        }
+      }
+    },
+    {
+      "name": "refuse target 90",
+      "request": {
+        "targetWindow": null
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 91",
+      "request": {
+        "readScreen": {
+          "target": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 92",
+      "request": {
+        "targetWindow": {}
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 93",
+      "request": {
+        "readScreen": {
+          "target": {}
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 94",
+      "request": {
+        "targetWindow": {
+          "window": 0,
+          "pid": 202
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 95",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 0,
+            "pid": 202
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 96",
+      "request": {
+        "targetWindow": {
+          "window": -1,
+          "pid": 202
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 97",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": -1,
+            "pid": 202
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 98",
+      "request": {
+        "targetWindow": {
+          "window": 1.5,
+          "pid": 202
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 99",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 1.5,
+            "pid": 202
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 100",
+      "request": {
+        "targetWindow": {
+          "window": 9007199254740992,
+          "pid": 202
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 101",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 9007199254740992,
+            "pid": 202
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 102",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 103",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 0
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 104",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 4294967296
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 105",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 4294967296
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 106",
+      "request": {
+        "targetWindow": {
+          "window": "unknown",
+          "pid": 202
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 107",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": "unknown",
+            "pid": 202
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 108",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 202,
+          "bus": ":1.23"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 109",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 202,
+            "bus": ":1.23"
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 110",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 202,
+          "bus": ":1.23",
+          "path": "relative"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 111",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 202,
+            "bus": ":1.23",
+            "path": "relative"
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 112",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 202,
+          "bus": ":1.23",
+          "path": "/org/a11y/atspi/accessible/12",
+          "title": "Synthetic title"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 113",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": 101,
+            "pid": 202,
+            "bus": ":1.23",
+            "path": "/org/a11y/atspi/accessible/12",
+            "title": "Synthetic title"
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse target 114",
+      "request": {
+        "targetWindow": {
+          "window": "00000000-0000-0000-0000-000000000001",
+          "pid": 202,
+          "bus": ":1.23",
+          "path": "/frame"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refuse screen target 115",
+      "request": {
+        "readScreen": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 202,
+            "bus": ":1.23",
+            "path": "/frame"
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a target paste validates its identity clipboard generation and live deadline",
+      "request": {
+        "pasteTarget": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 123
+          },
+          "transaction": 7,
+          "now": 0,
+          "deadline": 1000
+        }
+      },
+      "expected": {
+        "target": {
+          "window": "00000000-0000-0000-0000-000000000001",
+          "pid": 123
+        },
+        "transaction": 7,
+        "wait": 1000
+      }
+    },
+    {
+      "name": "refused target paste target None",
+      "request": {
+        "pasteTarget": {
+          "target": null,
+          "transaction": 7,
+          "now": 0,
+          "deadline": 1000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused target paste transaction -1",
+      "request": {
+        "pasteTarget": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 123
+          },
+          "transaction": -1,
+          "now": 0,
+          "deadline": 1000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused target paste transaction 1.5",
+      "request": {
+        "pasteTarget": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 123
+          },
+          "transaction": 1.5,
+          "now": 0,
+          "deadline": 1000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused target paste deadline 0",
+      "request": {
+        "pasteTarget": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 123
+          },
+          "transaction": 7,
+          "now": 0,
+          "deadline": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused target paste deadline 5001",
+      "request": {
+        "pasteTarget": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 123
+          },
+          "transaction": 7,
+          "now": 0,
+          "deadline": 5001
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused target paste now unknown",
+      "request": {
+        "pasteTarget": {
+          "target": {
+            "window": "00000000-0000-0000-0000-000000000001",
+            "pid": 123
+          },
+          "transaction": 7,
+          "now": "unknown",
+          "deadline": 1000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "Windows process ids use the full DWORD range",
+      "request": {
+        "targetWindow": {
+          "window": 101,
+          "pid": 4294967295
+        }
+      },
+      "expected": {
+        "window": 101,
+        "pid": 4294967295
+      }
+    },
+    {
+      "name": "native preparation is bounded by its operation and deadline",
+      "request": {
+        "preparePaste": {
+          "text": "Synthetic paste",
+          "operation": 1,
+          "deadline": 1000,
+          "now": 0
+        }
+      },
+      "expected": {
+        "operation": 1,
+        "wait": 1000
+      }
+    },
+    {
+      "name": "finish knows the operation before preparation replies",
+      "request": {
+        "finishPaste": {
+          "operation": 1
+        }
+      },
+      "expected": {
+        "operation": 1
+      }
+    },
+    {
+      "name": "refused preparation operation 0",
+      "request": {
+        "preparePaste": {
+          "text": "Synthetic paste",
+          "operation": 0,
+          "deadline": 1000,
+          "now": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused preparation operation -1",
+      "request": {
+        "preparePaste": {
+          "text": "Synthetic paste",
+          "operation": -1,
+          "deadline": 1000,
+          "now": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused preparation operation 1.5",
+      "request": {
+        "preparePaste": {
+          "text": "Synthetic paste",
+          "operation": 1.5,
+          "deadline": 1000,
+          "now": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused preparation deadline 0",
+      "request": {
+        "preparePaste": {
+          "text": "Synthetic paste",
+          "operation": 1,
+          "deadline": 0,
+          "now": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused preparation deadline 5001",
+      "request": {
+        "preparePaste": {
+          "text": "Synthetic paste",
+          "operation": 1,
+          "deadline": 5001,
+          "now": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused preparation text ",
+      "request": {
+        "preparePaste": {
+          "text": "",
+          "operation": 1,
+          "deadline": 1000,
+          "now": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused finish 0",
+      "request": {
+        "finishPaste": {
+          "operation": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused finish -1",
+      "request": {
+        "finishPaste": {
+          "operation": -1
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused finish 1.5",
+      "request": {
+        "finishPaste": {
+          "operation": 1.5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused finish 1",
+      "request": {
+        "finishPaste": {
+          "operation": "1"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "refused finish None",
+      "request": {
+        "finishPaste": {
+          "operation": null
         }
       },
       "refused": true

@@ -33,7 +33,8 @@ function client(executable, args = []) {
     Promise.reject(new Error(`Native fixture already exited: ${errorText}`)) :
     new Promise((resolve, reject) => pending.push({ resolve, reject })), errors: () => errorText };
 }
-const fixture = client(process.argv[3], ["--read-only"]);
+const document = process.argv.includes("--document");
+const fixture = client(process.argv[3], [document ? "--document" : "--read-only"]);
 const helper = client(process.argv[2]);
 // The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
 // programs of their own beside the helper.
@@ -81,6 +82,20 @@ try {
   const initial = await fixture.next();
   assert.equal(initial.mode, "editable");
   const window = await mode("editable");
+  if (document) {
+    const captured = await request("captureTarget");
+    assert.equal(captured.window, window);
+    const frontRead = await request("readScreen", { target: captured });
+    assert.equal([frontRead?.textBeforeCaret, frontRead?.selectedText, frontRead?.textAfterCaret].join(""), "Before selected after.", "the native document has text before focus leaves");
+    const other = await mode("second");
+    assert.notEqual(other, window);
+    const background = await request("readScreen", { target: captured, read: 40 });
+    assert.ok(background?.renderedText.includes("Before selected after."), "the native document text is read with another window in front");
+    const whole = await request("readScreen", { target: captured, read: 41, wholeWindow: true, sameWindowAs: 40 });
+    assert.ok(whole?.renderedText.includes("Before selected after."), "the whole background document retains its text");
+    assert.deepEqual(await request("frontmostApp"), { window: other }, "document reads leave foreground unchanged");
+    process.stdout.write("Windows native document background checks passed\n");
+  } else {
   const caret = await request("caretAnchor", { window });
   assert.ok(caret && caret.height > 0 && caret.width >= 0, "editable field exposes its native caret");
   const context = await request("readScreen");
@@ -147,6 +162,15 @@ try {
   assert.ok((await request("readScreen", { read: 2, wholeWindow: true, sameWindowAs: 1 })).renderedText.includes("> Before selected after."), "the same window, still in front, is read");
   assert.equal(await request("readScreen", { read: 3, wholeWindow: true, sameWindowAs: 1 }), null, "a read bound to one that is no longer the last numbered is not read");
   assert.ok(await request("readScreen", { read: 4 }), "a newer first read");
+  const captured = await request("captureTarget");
+  assert.equal(captured.window, window, "capture retains the exact original HWND");
+  await mode("second");
+  const background = await request("readScreen", { target: captured, read: 40 });
+  assert.ok(background?.renderedText.includes("Before selected after."), "a captured background window is read");
+  assert.ok((await request("readScreen", { target: captured, read: 41, wholeWindow: true, sameWindowAs: 40 }))?.renderedText.includes("Before selected after."), "the whole read stays on the captured background window");
+  // Restore the legacy binding independently of the explicitly targeted reads above.
+  await mode("editable");
+  assert.ok(await request("readScreen", { read: 4 }));
   await mode("second");
   assert.equal(await request("readScreen", { read: 5, wholeWindow: true, sameWindowAs: 4 }), null, "another window of the app in front is not read in its place");
   await mode("editable");
@@ -171,17 +195,19 @@ try {
     assert.equal((await rawRequest(reader, method, {})).error?.message, "Windows native request failed", `the screen reader does no ${method}`);
   for (const method of ["caretAnchor", "insert", "readScreen", "frontmostApp", "microphoneStart"])
     assert.equal((await rawRequest(fieldReader, method, {})).error?.message, "Windows native request failed", `the field reader does no ${method}`);
+  }
   const exits = [once(fixture.child, "exit"), once(helper.child, "exit"), once(reader.child, "exit"), once(fieldReader.child, "exit")];
   fixture.child.stdin.end(); helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   assert.equal(fixture.errors(), "");
   // Debug-only failure reasons are fixed phrases; anything else in the log fails these checks.
   const logged = (client) => client.errors().replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "")
-    .replace(/^debug focusedFieldValue failed after \d+ms: shared core refused\n/gmu, "");
-  assert.equal(logged(helper), "debug caret lookup: protected-field\n", "privacy refusals log only fixed categories");
-  assert.equal(logged(reader), "debug screen access: excluded app not read\n", "the reader's privacy refusals log only fixed categories");
-  assert.equal(logged(fieldReader), "debug screen access: excluded app not read\n", "the field reader's privacy refusals log only fixed categories");
-  process.stdout.write("Windows editable context, password, read-only, non-text and recovery checks passed\n");
+    .replace(/^debug focusedFieldValue failed after \d+ms: shared core refused\n/gmu, "")
+    .replace(/^debug caret start: (?:no|\d+) block starts near the caret; the caret (?:ends a line|starts its text)\n/gmu, "");
+  assert.equal(logged(helper), document ? "" : "debug caret lookup: protected-field\n", "privacy refusals log only fixed categories");
+  assert.equal(logged(reader), document ? "" : "debug screen access: excluded app not read\n", "the reader's privacy refusals log only fixed categories");
+  assert.equal(logged(fieldReader), document ? "" : "debug screen access: excluded app not read\n", "the field reader's privacy refusals log only fixed categories");
+  process.stdout.write(document ? "Windows document checks passed\n" : "Windows editable context, password, read-only, non-text and recovery checks passed\n");
 } finally {
   clearTimeout(timeout);
   fixture.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill();

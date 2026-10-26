@@ -18,14 +18,19 @@ int main() {
     Error error;
     auto bus = own(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.value)); require(bus && !error.value);
     auto named = g_dbus_connection_call_sync(bus.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", g_variant_new("(su)", "org.gnome.Shell", 0u), nullptr, G_DBUS_CALL_FLAGS_NONE, 1000, nullptr, &error.value); require(named && !error.value); g_variant_unref(named);
-    auto info = g_dbus_node_info_new_for_xml(R"xml(<node><interface name="ai.tabmail.Voice.Caret"><method name="Read"><arg type="s" direction="out"/></method><method name="FromWindow"><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="s" direction="out"/></method><method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method></interface></node>)xml", &error.value); require(info && !error.value);
+    auto info = g_dbus_node_info_new_for_xml(R"xml(<node><interface name="ai.tabmail.Voice.Caret"><method name="Read"><arg type="s" direction="out"/></method><method name="FromWindow"><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="s" direction="out"/></method><method name="Target"><arg type="u" direction="in"/><arg type="t" direction="out"/><arg type="u" direction="out"/></method><method name="Activate"><arg type="t" direction="in"/><arg type="b" direction="out"/></method><method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method></interface></node>)xml", &error.value); require(info && !error.value);
     struct Fixture { std::string value = R"({"x":-50,"y":200,"width":1,"height":20,"source":"wayland"})"; bool fail = false, delay = false, malformed = false; unsigned calls = 0; guint64 window = 0; guint32 pid = 0; Object<GDBusMethodInvocation> pending; std::string method; std::array<double, 4> args{}; } fixture;
     const GDBusInterfaceVTable table{[](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* method, GVariant* args, GDBusMethodInvocation* call, gpointer data) {
         auto f = static_cast<Fixture*>(data); ++f->calls; f->method = method;
         if (f->method == "FromWindow") g_variant_get(args, "(dddd)", &f->args[0], &f->args[1], &f->args[2], &f->args[3]);
         if (f->delay) { f->pending = own(static_cast<GDBusMethodInvocation*>(g_object_ref(call))); return; }
         if (f->fail) { g_dbus_method_invocation_return_dbus_error(call, "ai.tabmail.Voice.Caret.Unavailable", "Unavailable"); return; }
-        if (f->method == "Focus") {
+        if (f->method == "Activate") {
+            guint64 window = 0; g_variant_get(args, "(t)", &window);
+            g_dbus_method_invocation_return_value(call, g_variant_new("(b)", window == f->window));
+            return;
+        }
+        if (f->method == "Focus" || f->method == "Target") {
             g_dbus_method_invocation_return_value(call, f->malformed ? g_variant_new("(uu)", 1u, f->pid) : g_variant_new("(tu)", f->window, f->pid));
             return;
         }
@@ -79,6 +84,21 @@ int main() {
     using Focus = std::optional<std::pair<uint64_t, unsigned>>;
     fixture.window = 7100; fixture.pid = 4242;
     require(focus() == Focus(std::pair<uint64_t, unsigned>{7100, 4242}) && fixture.method == "Focus");
+    const auto target = [&] {
+        std::atomic<bool> done = false; Focus value;
+        std::thread asker([&] { value = caret->target(); done = true; });
+        while (!done) g_main_context_iteration(nullptr, false);
+        asker.join(); return value;
+    };
+    require(target() == Focus(std::pair<uint64_t, unsigned>{7100, 4242}) && fixture.method == "Target");
+    bool activated = false, activationDone = false;
+    caret->activate(7100, [&](bool success) { activated = success; activationDone = true; });
+    while (!activationDone) g_main_context_iteration(nullptr, true);
+    require(activated && fixture.method == "Activate");
+    activationDone = false;
+    caret->activate(7101, [&](bool success) { activated = success; activationDone = true; });
+    while (!activationDone) g_main_context_iteration(nullptr, true);
+    require(!activated);
     fixture.window = 0; require(focus() == Focus(std::pair<uint64_t, unsigned>{0, 0}));
     fixture.window = 7100; fixture.malformed = true; require(!focus()); fixture.malformed = false;
     fixture.fail = true; require(!focus()); fixture.fail = false;

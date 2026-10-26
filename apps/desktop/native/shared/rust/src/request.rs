@@ -102,6 +102,10 @@ fn insert(request: &Value) -> Result<Value, u32> {
     if text.is_empty() || text.len() > INSERT_TEXT_BYTES || text.contains('\0') {
         return Err(1);
     }
+    insertion_deadline(request)
+}
+
+fn insertion_deadline(request: &Value) -> Result<Value, u32> {
     match (request.get("deadline"), request.get("now")) {
         (None, None) => Ok(json!({})),
         (Some(deadline), Some(now)) => {
@@ -152,6 +156,58 @@ fn microphone(request: &Value, start: bool) -> Result<Value, u32> {
     Ok(json!({"session": session, "sampleRate": rate}))
 }
 
+/// Native target identity. Numeric handles name Windows/GNOME windows; UUIDs name a retained
+/// macOS AX window in one reader instance. Linux also names the exact accessibility frame.
+fn target_window(request: &Value) -> Result<Value, u32> {
+    const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+    const MAX_ACCESSIBILITY_NAME_BYTES: usize = 1024;
+    let object = request.as_object().ok_or(1u32)?;
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "window" | "pid" | "bus" | "path"))
+    {
+        return Err(1);
+    }
+    let window = object.get("window").ok_or(1u32)?;
+    let valid_window = window
+        .as_u64()
+        .is_some_and(|id| id > 0 && id <= MAX_SAFE_INTEGER)
+        || window.as_str().is_some_and(|id| {
+            id.len() == 36
+                && id.bytes().enumerate().all(|(i, c)| {
+                    if matches!(i, 8 | 13 | 18 | 23) {
+                        c == b'-'
+                    } else {
+                        c.is_ascii_hexdigit()
+                    }
+                })
+        });
+    let valid_pid = object
+        .get("pid")
+        .and_then(Value::as_u64)
+        .is_some_and(|pid| pid > 0 && pid <= u32::MAX as u64);
+    if !valid_window || !valid_pid {
+        return Err(1);
+    }
+    match (object.get("bus"), object.get("path")) {
+        (None, None) => {}
+        (Some(Value::String(bus)), Some(Value::String(path)))
+            if window.is_number()
+                && bus.starts_with(':')
+                && bus.len() <= MAX_ACCESSIBILITY_NAME_BYTES
+                && bus.bytes().all(|c| {
+                    c.is_ascii_alphanumeric() || matches!(c, b':' | b'.' | b'_' | b'-')
+                })
+                && path.starts_with('/')
+                && path.len() <= MAX_ACCESSIBILITY_NAME_BYTES
+                && path
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'/' | b'_')) => {}
+        _ => return Err(1),
+    }
+    Ok(request.clone())
+}
+
 /// `{"readScreen": {"read": n, "wholeWindow": bool, "sameWindowAs": m}}` → `{"read": n,
 /// "wholeWindow": bool, "sameWindowAs": m}`, `read` null for a read with no number (which can't be
 /// stopped), `wholeWindow` false when absent (the read takes what the window shows; with it, the
@@ -165,10 +221,10 @@ fn microphone(request: &Value, start: bool) -> Result<Value, u32> {
 /// has read so far (ADR-DESK-053).
 fn screen_read(request: &Value, stop: bool) -> Result<Value, u32> {
     let object = request.as_object().ok_or(1u32)?;
-    if object
-        .keys()
-        .any(|key| key != "read" && (stop || (key != "wholeWindow" && key != "sameWindowAs")))
-    {
+    if object.keys().any(|key| {
+        key != "read"
+            && (stop || (key != "wholeWindow" && key != "sameWindowAs" && key != "target"))
+    }) {
         return Err(1);
     }
     let read = match object.get("read") {
@@ -189,7 +245,54 @@ fn screen_read(request: &Value, stop: bool) -> Result<Value, u32> {
         Some(read) if whole_window => Some(read.as_i64().filter(|read| *read > 0).ok_or(1u32)?),
         Some(_) => return Err(1),
     };
-    Ok(json!({"read": read, "wholeWindow": whole_window, "sameWindowAs": same_window_as}))
+    let mut reply =
+        json!({"read": read, "wholeWindow": whole_window, "sameWindowAs": same_window_as});
+    if let Some(target) = object.get("target") {
+        reply["target"] = target_window(target)?;
+    }
+    Ok(reply)
+}
+
+fn preparation(request: &Value, finish: bool) -> Result<Value, u32> {
+    let object = request.as_object().ok_or(1u32)?;
+    let operation = object
+        .get("operation")
+        .and_then(Value::as_u64)
+        .filter(|n| *n > 0 && *n <= 9_007_199_254_740_991)
+        .ok_or(1u32)?;
+    if object.keys().any(|key| {
+        key != "operation" && (finish || !matches!(key.as_str(), "text" | "deadline" | "now"))
+    }) {
+        return Err(1);
+    }
+    if finish {
+        return Ok(json!({"operation": operation}));
+    }
+    if !object.contains_key("deadline") || !object.contains_key("now") {
+        return Err(1);
+    }
+    let deadline = insert(request)?;
+    Ok(json!({"operation": operation, "wait": deadline["wait"]}))
+}
+
+fn paste_target(request: &Value) -> Result<Value, u32> {
+    let object = request.as_object().ok_or(1u32)?;
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "target" | "transaction" | "deadline" | "now"))
+        || !object.contains_key("deadline")
+        || !object.contains_key("now")
+    {
+        return Err(1);
+    }
+    let target = target_window(object.get("target").ok_or(1u32)?)?;
+    let transaction = object
+        .get("transaction")
+        .and_then(Value::as_u64)
+        .filter(|n| *n <= 9_007_199_254_740_991)
+        .ok_or(1u32)?;
+    let wait = insertion_deadline(request)?;
+    Ok(json!({"target": target, "transaction": transaction, "wait": wait["wait"]}))
 }
 
 pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
@@ -199,6 +302,10 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         .filter(|object| object.len() == 1)
         .ok_or(1u32)?;
     let reply = match object.iter().next() {
+        Some((key, request)) if key == "preparePaste" => preparation(request, false)?,
+        Some((key, request)) if key == "finishPaste" => preparation(request, true)?,
+        Some((key, request)) if key == "pasteTarget" => paste_target(request)?,
+        Some((key, request)) if key == "targetWindow" => target_window(request)?,
         Some((key, request)) if key == "field" => field(request)?,
         Some((key, request)) if key == "insert" => insert(request)?,
         Some((key, request)) if key == "clipboard" => clipboard(request)?,

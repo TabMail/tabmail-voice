@@ -181,3 +181,22 @@ going off after each dictation (the engine's release has no automated test, by t
 - Packaged build: dictate a name that is on screen with an unusual spelling (e.g. a colleague in a
   mail thread); it is pasted spelled as on screen. This is the only check that the app wires the
   screen read into every dictation (tests replace it).
+
+## Captured target windows
+
+- `test/core/dictation/controller.test.ts`: dictation/agent paste after a focus switch, captured
+  target forwarded to the read, invalid/unavailable targets, cancellation before target resolution.
+- `test/main/native/targetWindow.test.ts`, `screenReader.test.ts`, `helperContract.test.ts`: native
+  identity and correction mapping, prepare/guard/finish ordering, identity loss, supersession,
+  cancellation and each request's producer/consumer contract.
+- `TargetWindowsTests` / `MacServiceRequestTests` / `PreparedClipboardTests`: Voice-in-front resolution, another external
+  key-down, exact-window restore within the same app, closed windows, changed clipboard, deadlines,
+  canceled/stale tokens (including during activation), reader restart, shown and whole background reads,
+  actual named-pasteboard preparation/restore, native expiry and lost acknowledgement cleanup.
+- `native/shared/context/request-cases.json`: target and guarded-paste validation across all helpers.
+- Windows `accessibility.mjs` / `paste.mjs`: background HWND reads and restoring the original window
+  before a paste; `voice-document-background` uses a native rich-text document with no text children
+  to require its editor text in both background read scopes. Linux `accessibility.mjs` / `fixture.py`: background reads with duplicate titles;
+  `screen.cpp`: background terminals stay on the viewport reader in both scopes;
+  `input-session.cpp`: activation success/refusal before clipboard publication; `gnome-caret.cpp`:
+  compositor target/activation wire contracts.

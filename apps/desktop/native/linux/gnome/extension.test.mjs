@@ -17,7 +17,8 @@ const CODE = {rightAlt: 108, space: 65, a: 38};
 const FLAG_REPEATED = 8;
 async function fixture(failExport = false) {
     const window = Object.assign(new Signals(), {get_frame_rect: () => ({x: 100, y: 100, width: 500, height: 400}),
-        get_client_content_rect: () => ({x: 110, y: 140, width: 480, height: 350})});
+        get_client_content_rect: () => ({x: 110, y: 140, width: 480, height: 350}),
+        get_id: () => 7000, get_pid: () => 4242});
     const theme = {scale_factor: 1};
     const display = Object.assign(new Signals(), {focus_window: window});
     const inputMethod = Object.assign(new Signals(), {currentFocus: {}});
@@ -259,7 +260,7 @@ test('an open chat window keeps Escape alone, through a dictation, until it clos
 
 test('while the chat window is open, the focus moving to another window, or none, is told to its helper alone', async () => {
     const f = await fixture();
-    const other = Object.assign(new Signals(), {get_frame_rect: () => ({x: 0, y: 0, width: 10, height: 10})});
+    const other = Object.assign(new Signals(), {get_id: () => 7001, get_pid: () => 4243, get_frame_rect: () => ({x: 0, y: 0, width: 10, height: 10})});
     const told = () => f.actions.filter(([, , , , value]) => value.value[0] === 'chatFocusChanged').map(([destination]) => destination);
     f.display.focus_window = other; f.display.emit('notify::focus-window');
     assert.deepEqual(told(), [], 'told with no chat window open');
@@ -278,7 +279,7 @@ test('while the chat window is open, the focus moving to another window, or none
 
 test('while the chat window is open, a click in the window in front or on the Shell is told to its helper alone, and every press goes on', async () => {
     const f = await fixture();
-    const other = Object.assign(new Signals(), {get_frame_rect: () => ({x: 0, y: 0, width: 10, height: 10})});
+    const other = Object.assign(new Signals(), {get_id: () => 7001, get_pid: () => 4243, get_frame_rect: () => ({x: 0, y: 0, width: 10, height: 10})});
     const told = () => f.actions.filter(([, , , , value]) => value.value[0] === 'chatMouseDown').map(([destination]) => destination);
     const press = type => [...f.filters.values()].map(filter => filter({type: () => type}));
     f.window.emit('raised');
@@ -370,7 +371,7 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<method name="SetHotkey"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Holding"><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Focus"><arg type="t" direction="out"\/><arg type="u" direction="out"\/><\/method>/);
-    assert.equal(f.extension.Version(), 3);
+    assert.equal(f.extension.Version(), 4);
     assert.equal(f.recording(true), true);
     f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
     assert.deepEqual(f.actions[0].slice(0, 4), [':1.42', path, 'ai.tabmail.Voice.Caret', 'Action']);

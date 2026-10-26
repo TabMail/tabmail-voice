@@ -15,6 +15,7 @@ class Fixture(Gtk.Application):
 
     def do_activate(self):
         window = Gtk.ApplicationWindow(application=self, title="Synthetic screen fixture")
+        self.window = window
         window.set_default_size(600, 350)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=24)
         box.set_margin_start(32)
@@ -43,7 +44,15 @@ class Fixture(Gtk.Application):
             self.quit()
             return False
         command = json.loads(stream.readline())
-        if command["kind"] == "password":
+        if command["kind"] == "second":
+            if not hasattr(self, "second"):
+                self.second = Gtk.ApplicationWindow(application=self, title="Synthetic screen fixture")
+                self.second.set_child(Gtk.Label(label="Synthetic other window"))
+            self.second.present()
+        elif command["kind"] == "first":
+            self.window.present()
+            self.entry.grab_focus()
+        elif command["kind"] == "password":
             self.password.grab_focus()
         elif command["kind"] == "entry":
             self.entry.grab_focus()

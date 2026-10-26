@@ -49,7 +49,7 @@ public:
                 // 3: the extension says which window has the focus (Focus); 2 added holding Right Alt
                 // (SetHotkey, Holding). A Shell still running an older extension until the next login is
                 // not ready, so Settings asks for one.
-                (*reply)(version == 3, true);
+                (*reply)(version == 4, true);
             }, new Channel::Reply(std::move(reply)));
     }
 
@@ -116,6 +116,33 @@ public:
         g_variant_get(value, "(tu)", &window, &pid);
         g_variant_unref(value);
         return std::make_pair(static_cast<uint64_t>(window), window ? static_cast<unsigned>(pid) : 0u);
+    }
+    std::optional<std::pair<uint64_t, unsigned>> target() {
+        if (!state->bus) return std::nullopt;
+        Error error;
+        auto value = g_dbus_connection_call_sync(state->bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
+            "ai.tabmail.Voice.Caret", "Target", g_variant_new("(u)", static_cast<guint32>(getppid())), G_VARIANT_TYPE("(tu)"),
+            G_DBUS_CALL_FLAGS_NO_AUTO_START, focusTimeoutMilliseconds, state->cancel.get(), &error.value);
+        if (!value) return std::nullopt;
+        guint64 window = 0; guint32 pid = 0;
+        g_variant_get(value, "(tu)", &window, &pid); g_variant_unref(value);
+        return std::make_pair(static_cast<uint64_t>(window), static_cast<unsigned>(pid));
+    }
+    /** Ask the compositor to restore this exact living window. The caller confirms the focus
+     * through Foreground after AT-SPI has delivered its activation events. */
+    void activate(uint64_t window, std::function<void(bool)> done) {
+        if (!state->bus) { done(false); return; }
+        g_dbus_connection_call(state->bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
+            "ai.tabmail.Voice.Caret", "Activate", g_variant_new("(t)", window), G_VARIANT_TYPE("(b)"),
+            G_DBUS_CALL_FLAGS_NO_AUTO_START, focusTimeoutMilliseconds, state->cancel.get(),
+            [](GObject* source, GAsyncResult* result, gpointer data) {
+                std::unique_ptr<std::function<void(bool)>> done(static_cast<std::function<void(bool)>*>(data));
+                Error error;
+                auto value = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error.value);
+                gboolean activated = FALSE;
+                if (value) { g_variant_get(value, "(b)", &activated); g_variant_unref(value); }
+                (*done)(activated);
+            }, new std::function<void(bool)>(std::move(done)));
     }
 private:
     void rectangle(const char* method, GVariant* args, Channel::Reply reply) {

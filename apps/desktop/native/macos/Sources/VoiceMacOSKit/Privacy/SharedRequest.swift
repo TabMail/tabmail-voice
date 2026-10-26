@@ -9,7 +9,7 @@ import VoiceHelperSupport
 /// ADR-DESK-054): a focused field read's bound and reply, a paste's text, and the clipboard a paste
 /// saves and puts back.
 enum SharedRequest {
-    private static func call(_ request: JSON) throws -> JSON {
+    static func call(_ request: JSON) throws -> JSON {
         try JSONDecoder().decode(JSON.self, from: Redactor.request(JSONEncoder().encode(request), operation: .request))
     }
 

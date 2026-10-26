@@ -28,6 +28,13 @@
 namespace voice {
 using JSON = nlohmann::json;
 class Automation {
+    HWND screenTarget = nullptr;
+    DWORD screenPid = 0;
+    bool screenCurrent(HWND window) const {
+        if (!screenTarget) return GetForegroundWindow() == window;
+        DWORD pid = 0; GetWindowThreadProcessId(window, &pid);
+        return window == screenTarget && IsWindow(window) && pid == screenPid;
+    }
 public:
     Automation() { require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation))); }
     ComPtr<IUIAutomationElement> ownedFocus(HWND expected, const char** refusal = nullptr) {
@@ -196,12 +203,13 @@ public:
         return core::request({{"field", {{"maxLength", maxLength}, {"text", utf8(*value)}}}}, voice_core_request_json);
     }
 
-    JSON readScreen(HWND window, const ScreenExclusions& exclusions) {
-        if (!window || GetForegroundWindow() != window) return nullptr;
+    JSON readScreen(HWND window, const ScreenExclusions& exclusions, bool targeted = false) {
+        if (targeted) { screenTarget = window; GetWindowThreadProcessId(window, &screenPid); }
+        if (!window || !screenCurrent(window)) return nullptr;
         // Without a focused element in this window (none at all, or the focus is in another
         // of the app's windows) the window is still read, without a caret, as on the Mac.
         auto element = ownedFocus(window);
-        if (GetForegroundWindow() != window) return nullptr;
+        if (!screenCurrent(window)) return nullptr;
         BOOL protectedFocus = FALSE;
         if (element) {
             protectedFocus = TRUE;
@@ -268,7 +276,7 @@ public:
         wchar_t title[513]{};
         GetWindowTextW(window, title, 513);
         auto current = ownedFocus(window);
-        if (GetForegroundWindow() != window || !element != !current) return nullptr;
+        if (!screenCurrent(window) || !element != !current) return nullptr;
         if (element) {
             BOOL password = TRUE, unchanged = FALSE;
             require(element->get_CurrentIsPassword(&password));
@@ -660,6 +668,14 @@ private:
         if (facts.role == "page") {
             page = pageHost(node);
             facts.pageExcluded = page && exclusions.excludes(*page);
+            // Native editors such as Notepad expose their document's text through
+            // TextPattern, with no text children. Read it by the bounded field path
+            // even without focus; web documents keep the page walk and host checks.
+            if (!page) {
+                ComPtr<IUIAutomationTextPattern> text;
+                if (SUCCEEDED(node->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text))) && text)
+                    facts.role = "field";
+            }
         }
         place = placement(node);
         if (!place) return facts.pageExcluded ? std::optional<walk::Facts>(facts) : std::nullopt;
@@ -787,7 +803,7 @@ private:
         wchar_t title[513]{};GetWindowTextW(window,title,513);
         // The same window and focus as the viewport was read with, as before its title was asked.
         const auto current=ownedFocus(window);
-        if (GetForegroundWindow()!=window || !((focus && current && same(focus,current.Get())) || (!focus && !current))) return nullptr;
+        if (!screenCurrent(window) || !((focus && current && same(focus,current.Get())) || (!focus && !current))) return nullptr;
         return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
             {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
     }
@@ -814,7 +830,7 @@ private:
         // output arrives or the window moves meanwhile (owner, 2026-10-05: the screen as at key-down).
         const auto valid = [&] {
             auto current = ownedFocus(window);
-            return GetForegroundWindow()==window &&
+            return screenCurrent(window) &&
                 ((focus && current && same(focus,current.Get())) || (!focus && !current));
         };
         PageTree privacyTree{this,walker,started,budget};
@@ -946,7 +962,7 @@ private:
                 break;
             }
             if (!context.stopped.empty()) break;
-            if (GetForegroundWindow() != window) return false;
+            if (!screenCurrent(window)) return false;
             auto entry = std::move(stack.back());
             stack.pop_back();
             ++context.nodes;

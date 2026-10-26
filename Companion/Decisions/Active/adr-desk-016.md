@@ -154,3 +154,18 @@ there is room".
   prompt stays the size of what is shown; `screen_read` adds a round when the model wants the rest.
   Tests that sized a tree one element past the budget size it from the core's limits, so they follow
   the rule rather than a copy of the number.
+
+
+**Amendment 2026-10-26: reads follow the captured target, including in the background.** The
+`readScreen` request may carry `target`, the exact window captured at key-down (ADR-DESK-042).
+Both scopes read that window even after another window takes focus; `sameWindowAs` still binds the
+whole read to the preceding numbered read. A missing or invalid target is not replaced with the
+window now in front. Exclusions and redaction are applied to the target before text is returned.
+A caret/selection is included only when it belongs to that exact window: another window of the
+same process cannot contribute it. Windows and Linux may return no caret for a background target.
+Legacy unaddressed diagnostic reads retain their foreground behavior.
+
+Windows native documents with a TextPattern (including Notepad) use the bounded field reader
+when the walk reaches them, including without focus. Web documents retain the page walk and
+host checks; documents without a TextPattern retain their children walk. The existing aggregate
+privacy preflight and shown/whole field limits apply before reading native document text.

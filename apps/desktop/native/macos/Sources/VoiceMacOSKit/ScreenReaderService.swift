@@ -30,14 +30,30 @@ import VoiceHelperSupport
 public enum ScreenReaderService {
     @MainActor
     public static func register(on channel: HelperChannel) {
-        register(on: channel, screen: .accessibility)
+        register(on: channel, screen: .accessibility, targets: TargetWindows())
     }
 
     /// `screen` reads through Accessibility, or is a test's stand-in.
     @MainActor
-    static func register(on channel: HelperChannel, screen: ScreenAccess) {
+    static func register(on channel: HelperChannel, screen: ScreenAccess, targets: TargetWindows? = nil) {
         let stops = ScreenReadStops()
         let windows = ScreenReadWindows()
+        channel.on("captureTarget") { _ in
+            await MainActor.run { targets?.capture() ?? .null }
+        }
+        channel.on("cancelPaste") { params in
+            guard let target = params["target"], let targets else { throw HelperError("target window unavailable") }
+            try targets.cancel(target)
+            return [:]
+        }
+        channel.on("pasteTarget") { params in
+            guard let target = params["target"], let transaction = params["transaction"]?.integer,
+                  let deadline = params["deadline"]?.number, deadline.isFinite else { throw HelperError("invalid target paste") }
+            _ = try SharedRequest.call(["pasteTarget": ["target": target, "transaction": .number(Double(transaction)), "deadline": .number(deadline), "now": .number(floor(Date().timeIntervalSince1970 * 1000))]])
+            guard let targets else { throw HelperError("target window unavailable") }
+            try await targets.paste(target, transaction: transaction, deadline: deadline)
+            return [:]
+        }
         channel.on("readScreenStop") { params in
             guard let read = try readNumber(params, "readScreenStop") else { throw HelperError("readScreenStop needs read") }
             stops.ask(read)
@@ -46,7 +62,15 @@ public enum ScreenReaderService {
         channel.on("readScreen") { params in
             let exclusions = try ScreenExclusions(params: params, method: "readScreen")
             let request = try screenRead(params)
-            guard let (pid, name, bundleID) = await MainActor.run(body: screen.frontmost) else { return .null }
+            let bound: TargetWindows.Target?
+            if let identity = request.target {
+                bound = try await MainActor.run { try targets?.resolve(identity) }
+                guard bound != nil else { return .null }
+            } else { bound = nil }
+            let app: (pid_t, String, String?)?
+            if let bound { app = (bound.pid, bound.name, bound.bundleID) }
+            else { app = await MainActor.run(body: screen.frontmost) }
+            guard let (pid, name, bundleID) = app else { return .null }
             // Another app in front than the read it is bound to: nothing of it is looked at.
             guard windows.follows(request, pid: pid) else {
                 HelperLog.debug("ScreenContext: another app is in front than the read this one follows; not read")
@@ -58,7 +82,7 @@ public enum ScreenReaderService {
             }
             // Blocking Accessibility calls: off the main thread, which answers the requests.
             return await Task.detached { () -> JSON in
-                let window = screen.window(pid)
+                let window = bound?.window ?? screen.window(pid)
                 guard windows.admits(request, pid: pid, window: window) else {
                     HelperLog.debug("ScreenContext: another window is in front than the read this one follows; not read")
                     return .null
@@ -84,9 +108,9 @@ public enum ScreenReaderService {
     /// A `readScreen` request's `read` (as `readNumber`), `wholeWindow` (false when absent) and
     /// `sameWindowAs`, as the shared core accepts them.
     private static func screenRead(_ params: JSON) throws -> ScreenRead {
-        let reply = try coreRequest(params, "readScreen", fields: ["read", "wholeWindow", "sameWindowAs"])
+        let reply = try coreRequest(params, "readScreen", fields: ["read", "wholeWindow", "sameWindowAs", "target"])
         guard case .bool(let wholeWindow) = reply["wholeWindow"] else { throw HelperError("readScreen: the shared core gave no wholeWindow") }
-        return ScreenRead(read: reply["read"]?.integer, wholeWindow: wholeWindow, sameWindowAs: reply["sameWindowAs"]?.integer)
+        return ScreenRead(read: reply["read"]?.integer, wholeWindow: wholeWindow, sameWindowAs: reply["sameWindowAs"]?.integer, target: reply["target"])
     }
 
     private static func coreRequest(_ params: JSON, _ method: String, fields names: [String]) throws -> JSON {
@@ -106,6 +130,7 @@ struct ScreenRead: Sendable {
     var wholeWindow: Bool
     /// The read whose window this one must be, if any.
     var sameWindowAs: Int?
+    var target: JSON? = nil
 }
 
 /// The window the last numbered read read (its app's process and the app's focused window then),

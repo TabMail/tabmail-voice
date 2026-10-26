@@ -16,6 +16,7 @@
 #include "paste.h"
 #include "accessibility_activator.h"
 #include "update_signature.h"
+#include "target_windows.h"
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -94,10 +95,17 @@ public:
                     // callers need no preliminary IPC that another request could overtake.
                     const bool foregroundCaret = method == "caretAnchor" && params.is_object() && !params.contains("window");
                     if (!foregroundCaret) {
+                        if (params.is_object() && params.contains("target")) {
+                            const auto target = voice::core::request({{"targetWindow", params["target"]}}, voice_core_request_json);
+                            if (!target["window"].is_number_unsigned()) throw std::runtime_error("invalid window target");
+                            window = reinterpret_cast<HWND>(target["window"].get<uintptr_t>());
+                            if (!IsWindow(window) || voice::windowProcess(window) != target["pid"].get<DWORD>()) throw std::runtime_error("target window gone");
+                        } else {
                         if (!params.is_object() || !params.contains("window") || !params["window"].is_number_unsigned()) {
                             throw std::runtime_error("invalid target");
                         }
                         window = reinterpret_cast<HWND>(params["window"].get<uintptr_t>());
+                        }
                     }
                     JSON result;
                     if (method == "insert") {
@@ -207,6 +215,7 @@ int main(int argc, char** argv) {
     // Native geometry is in physical pixels; Electron converts it to display-independent points.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     voice::Output output;
+    voice::TargetWindows targets;
     voice::ShellWatch shellWatch(output);
     voice::ClipboardKeeper clipboard(clipboardRules());
     AccessibilityWorker accessibility(output, clipboard);
@@ -233,6 +242,10 @@ int main(int argc, char** argv) {
         // The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
         // programs of their own.
         if (input["method"] == "caretAnchor" || input["method"] == "insert") { accessibility.request(std::move(input)); continue; }
+        if (input["method"] == "captureTarget") {
+            output.send({{"id", id}, {"result", targets.capture()}});
+            continue;
+        }
         // Answered at once: the clipboard is read on a thread of its own, for the next paste to put back.
         if (input["method"] == "clipboardSave") {
             try { clipboard.save(); output.send({{"id", id}, {"result", JSON::object()}}); }

@@ -30,7 +30,7 @@ info = Gio.DBusNodeInfo.new_for_xml('''<node><interface name="ai.tabmail.Voice.C
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal></interface></node>''')
-state = {'version': 3, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
+state = {'version': 4, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
          'recording': False, 'owner': None, 'language': 'ko', 'language_calls': 0, 'hotkey': []}
 
 

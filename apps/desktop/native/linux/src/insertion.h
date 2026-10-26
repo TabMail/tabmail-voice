@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
 #include "channel.h"
+#include "helper_config.h"
 #include "clipboard_keeper.h"
 #include "foreground.h"
 #include "input_session.h"
@@ -30,6 +31,8 @@ class Inserter {
         std::vector<int> chordKeys, pressedKeys;
         bool terminal = false;
         guint timer = 0;
+        guint activationTimer = 0;
+        std::chrono::steady_clock::time_point activationDeadline;
         std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
         bool canceled = false, published = false, publishComplete = false, sawOwner = false,
             foreignOwner = false, injectionStarted = false,
@@ -39,6 +42,7 @@ class Inserter {
     ClipboardKeeper& clipboard;
     std::function<bool(uint64_t)> targetMatches;
     std::function<bool()> terminalTarget;
+    std::function<void(uint64_t, std::function<void(bool)>)> activateTarget;
     std::shared_ptr<Transaction> current;
     bool active(const std::shared_ptr<Transaction>& item) const { return current == item; }
     // Debug log of the paste's progress: the stage and the milliseconds since the request.
@@ -56,6 +60,8 @@ class Inserter {
         if (!active(item)) return;
         if (item->timer && g_main_context_find_source_by_id(nullptr, item->timer)) g_source_remove(item->timer);
         item->timer = 0;
+        if (item->activationTimer) g_source_remove(item->activationTimer);
+        item->activationTimer = 0;
         g_cancellable_cancel(item->cancel.get());
         // Whether the keys went or the paste was refused once its text was offered, the clipboard
         // as it was goes back: once an app has read the text when the keys went, at once when not.
@@ -119,10 +125,30 @@ class Inserter {
             maybeInject(item);
         });
     }
+    void awaitTarget(const std::shared_ptr<Transaction>& item) {
+        if (!active(item)) return;
+        if (item->canceled || !input.ready() || std::chrono::steady_clock::now() >= item->deadline ||
+            std::chrono::steady_clock::now() >= item->activationDeadline) { complete(item); return; }
+        if (targetMatches(item->target)) {
+            item->terminal = terminalTarget();
+            item->chordKeys = item->terminal ? std::vector<int>{0xffe3, 0xffe1, 'v'} : std::vector<int>{0xffe3, 'v'};
+            publish(item);
+            return;
+        }
+        struct Waiting { Inserter* self; std::shared_ptr<Transaction> item; };
+        item->activationTimer = g_timeout_add_full(G_PRIORITY_DEFAULT, HelperConfig::targetActivationPollMs,
+            [](gpointer data) -> gboolean {
+                auto waiting = static_cast<Waiting*>(data);
+                waiting->item->activationTimer = 0;
+                waiting->self->awaitTarget(waiting->item);
+                return G_SOURCE_REMOVE;
+            }, new Waiting{this, item}, [](gpointer data) { delete static_cast<Waiting*>(data); });
+    }
 public:
     Inserter(InputSession& input, ClipboardKeeper& clipboard, std::function<bool(uint64_t)> targetMatches,
-             std::function<bool()> terminalTarget = [] { return false; })
-        : input(input), clipboard(clipboard), targetMatches(std::move(targetMatches)), terminalTarget(std::move(terminalTarget)) {
+             std::function<bool()> terminalTarget = [] { return false; },
+             std::function<void(uint64_t, std::function<void(bool)>)> activateTarget = [](uint64_t, auto done) { done(false); })
+        : input(input), clipboard(clipboard), targetMatches(std::move(targetMatches)), terminalTarget(std::move(terminalTarget)), activateTarget(std::move(activateTarget)) {
         input.state->onOwnerChange = [this] {
             if (!current || !current->published) return;
             const auto& selection = this->input.state->selection;
@@ -145,20 +171,21 @@ public:
     void insert(int64_t id, const nlohmann::json& params, Channel::Reply reply) {
         if (current || !input.ready() || !params.is_object() ||
             !params.contains("text") || !params["text"].is_string() ||
-            !params.contains("window") || !params["window"].is_number_unsigned() ||
+            (!params.contains("target") && (!params.contains("window") || !params["window"].is_number_unsigned())) ||
             !params.contains("deadline") || !params["deadline"].is_number_integer()) throw std::runtime_error("invalid insertion");
         auto item = std::make_shared<Transaction>();
-        item->id = id; item->target = params["window"].get<uint64_t>();
+        item->id = id;
+        if (params.contains("target")) {
+            const auto target = voice::core::request({{"targetWindow", params["target"]}}, voice_core_request_json);
+            if (!target["window"].is_number_unsigned() || !capturedWindow(target)) throw std::runtime_error("target window unavailable");
+            item->target = target["window"].get<uint64_t>();
+        } else item->target = params["window"].get<uint64_t>();
         item->text = params["text"].get<std::string>(); item->reply = std::move(reply);
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         const auto wallDeadline = params["deadline"].get<int64_t>();
         if (!item->target || item->target > 9007199254740991ULL || !g_utf8_validate(item->text.data(), item->text.size(), nullptr)) throw std::runtime_error("invalid insertion");
         // The shared core decides what may be pasted and how far ahead its deadline may be.
         voice::core::request({{"insert", {{"text", item->text}, {"deadline", wallDeadline}, {"now", now}}}}, voice_core_request_json);
-        item->terminal = terminalTarget();
-        // GNOME terminals reserve Ctrl+V for terminal input; their clipboard
-        // shortcut is Ctrl+Shift+V. Use the provider's semantic terminal role.
-        item->chordKeys = item->terminal ? std::vector<int>{0xffe3, 0xffe1, 'v'} : std::vector<int>{0xffe3, 'v'};
         item->deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wallDeadline - now);
         current = item;
         struct Deadline { Inserter* self; int64_t id; };
@@ -168,7 +195,12 @@ public:
                 if (deadline->self->current) deadline->self->current->timer = 0;
                 deadline->self->cancel(deadline->id); return G_SOURCE_REMOVE;
             }, new Deadline{this, id}, [](gpointer data) { delete static_cast<Deadline*>(data); });
-        publish(item);
+        item->activationDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(HelperConfig::targetActivationWaitMs);
+        if (targetMatches(item->target)) awaitTarget(item);
+        else activateTarget(item->target, [this, item](bool success) {
+            if (!active(item)) return;
+            if (success) awaitTarget(item); else complete(item);
+        });
     }
 };
 }

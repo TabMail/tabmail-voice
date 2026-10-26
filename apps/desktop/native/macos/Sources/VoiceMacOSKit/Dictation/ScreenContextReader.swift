@@ -36,12 +36,24 @@ enum ScreenContextReader {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
 
-        let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
+        // The app may focus a different one of its windows while the captured window is read.
+        // Never combine that window's caret/selection with this window's tree.
+        let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }.flatMap { element -> AXUIElement? in
+            guard let window, let containing = CaretLocator.attribute(element, kAXWindowAttribute),
+                  CFGetTypeID(containing) == AXUIElementGetTypeID(), CFEqual(containing, window) else { return nil }
+            return element
+        }
         start.focusedRole = focused.flatMap { string($0, kAXRoleAttribute) }
         let focusPath = focused.map(ancestors) ?? []
         return read(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(),
             current: { name in
+                if name == kAXFocusedWindowAttribute {
+                    guard let window, let living = CaretLocator.attribute(app, kAXWindowsAttribute) as? [AXUIElement],
+                          living.contains(where: { CFEqual($0, window) }) else { return nil }
+                    return window
+                }
                 guard let value = CaretLocator.attribute(app, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+                guard let window, let containing = CaretLocator.attribute(value as! AXUIElement, kAXWindowAttribute), CFEqual(containing, window) else { return nil }
                 return (value as! AXUIElement)
             }, excluding: exclusions, started: started, from: start, asked: asked)
     }

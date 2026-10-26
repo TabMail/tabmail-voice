@@ -344,6 +344,29 @@ struct MacServiceRequestTests {
         #expect(lookups.withLock { $0 } == [8, 8, 8, 8, 8])
     }
 
+    @Test func aCapturedWindowIsReadWhileVoiceOrAnotherWindowIsInFront() async throws {
+        let fixture = TargetWindowsTests.Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let target = targets.capture()
+        fixture.front = 303
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let reads = OSAllocatedUnfairLock<[pid_t]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let screen = ScreenAccess(frontmost: { (303, "Voice", nil) }, bundleIdentifier: { _ in nil }, window: { _ in nil },
+            read: { pid, _, _, _, _, _, _ in reads.withLock { $0.append(pid) }; return ScreenContext(appName: "Synthetic app", bundleID: nil) },
+            focusedField: { _, _ in nil })
+        ScreenReaderService.register(on: channel, screen: screen, targets: targets)
+        for (id, whole) in [(1, false), (2, true)] {
+            var params: [String: JSON] = ["target": target, "read": .number(Double(id)), "wholeWindow": .bool(whole), "excludedAppIDs": [], "excludedHosts": []]
+            if whole { params["sameWindowAs"] = .number(1) }
+            let request: JSON = ["id": .number(Double(id)), "method": .string("readScreen"), "params": .object(params)]
+            await channel.handle(line: try JSONEncoder().encode(request))
+            fixture.front = 202; fixture.focused = fixture.second
+        }
+        #expect(reads.withLock { $0 } == [101, 101])
+        #expect(lines.withLock { $0.count } == 2)
+    }
+
     /// A field read the reader can't carry out is refused, never trapped on.
     @Test func theFieldReaderRefusesAMalformedRequest() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])

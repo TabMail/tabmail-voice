@@ -201,6 +201,8 @@ if(WIN32)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/privacy-provider.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-privacy-fixture> --budgets)
     add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-ui-fixture>)
+    add_test(NAME voice-document-background COMMAND ${NODE_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-ui-fixture> --document)
     add_test(NAME voice-paste COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/paste.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-ui-fixture>)
     add_test(NAME voice-paste-focus COMMAND ${NODE_EXECUTABLE}

@@ -11,6 +11,38 @@
 #include "screen.h"
 
 namespace voice {
+// A captured window can be read in the background. Its AT-SPI bus and object path identify the
+// exact frame; another window of the same app never contributes a caret or a selection.
+inline nlohmann::json capturedRead(const nlohmann::json& params, const Foreground& foreground) {
+    using JSON = nlohmann::json;
+    const auto target = core::request({{"targetWindow", params.at("target")}}, voice_core_request_json);
+    const auto window = capturedWindow(target);
+    if (!window) return JSON(nullptr);
+    Error error;
+    const auto pid = atspi_accessible_get_process_id(window.get(), &error.value);
+    error.check();
+    if (target["pid"] != pid) return JSON(nullptr);
+    const auto app = desktopIdentity(pid);
+    return screenAccess(params, window,
+        [&](const auto&) { return app ? std::optional<std::string>(app->id) : std::nullopt; },
+        [&](const auto&, const ScreenExclusions& policy) -> JSON {
+            auto focus = window;
+            auto path = ancestors(window);
+            if (const auto now = foreground.target(); now && target["window"] == now->token && foreground.targets(now->token)) {
+                const auto focusedPath = ancestors(now->focus);
+                const auto focusedWindow = windowOf(focusedPath);
+                if (focusedWindow && same(*focusedWindow, window)) { focus = now->focus; path = focusedPath; }
+            }
+            LiveScreenTree tree(window);
+            tree.focusKept = [&](const Node& node) {
+                const auto now = foreground.target();
+                return now && target["window"] == now->token && foreground.targets(now->token) && same(now->focus, node);
+            };
+            auto result = gatherScreen(tree, window, focus, path, app.value_or(AppIdentity{"", "Unknown"}), policy);
+            return state(window, ATSPI_STATE_DEFUNCT) ? JSON(nullptr) : result;
+        });
+}
+
 // The focused window's screen (`readScreen`) or field (`focusedFieldValue`), from what has focus now.
 inline nlohmann::json focusedRead(const std::string& method, const nlohmann::json& params, const Foreground& foreground) {
     using JSON = nlohmann::json;

@@ -123,3 +123,9 @@ listening, or thinking". This replaces "a click elsewhere does not close it" abo
   question waiting for its answer (asked while the request runs) all keep it open.
 - A link clicked in the chat window opens a browser, which comes to the front and so closes the
   idle window, as any other app switch does.
+
+
+**Amendment 2026-10-26: a follow-up over Voice uses the preceding external window.** Each
+follow-up captures its own target under ADR-DESK-042's new rule. Clicking the chat is allowed to
+activate Voice; a later hold over that window reads and pastes into the external window that had
+focus before Voice. A hold over another external window instead selects that window.

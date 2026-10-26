@@ -928,6 +928,11 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
                 continue;
             }
             if (step.action == "field") {
+                // A captured background window has no focused terminal ancestor. Discovering its
+                // terminal surface must still use the viewport reader, never the aggregate field
+                // source (which includes scrollback), for both shown and whole-window scope.
+                if (tree.role(node) == ATSPI_ROLE_TERMINAL)
+                    return gatherTerminalScreen(tree,window,focus,path,app,exclusions);
                 if constexpr (requires { tree.appendFieldSource(node, windowFrame, context, frame); })
                     tree.appendFieldSource(node, windowFrame, context, frame);
                 else if (const auto value = screenText(tree, node)) context.append(ContextKind::field, *value, frame);

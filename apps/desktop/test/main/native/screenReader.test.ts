@@ -2,10 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { configureLog } from "../../../src/core/log.js";
-import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
+import { HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
 import { ScreenReader } from "../../../src/main/native/screenReader.js";
 
 /** The reader's helper: each request waits until the test settles it; `calls` records requests and
@@ -175,4 +176,53 @@ test("the debug log times each read and says when a read restarts the reader", a
     expect.stringMatching(/^ScreenReader: read failed \(HelperError\.exited\(readScreen\)\) after \d+ms$/),
     expect.stringMatching(/^ScreenReader: read answered in \d+ms$/),
   ]);
+});
+
+test("a new target survives reader restart and both scopes read it after focus moves", async () => {
+  let epoch = 0;
+  let release!: (value: null) => void;
+  const oldRead = new Promise<null>(resolve => { release = resolve; });
+  const identity = () => ({ window: `00000000-0000-0000-0000-${String(epoch).padStart(12, "0")}`, pid: 123 });
+  let first = true;
+  let foreground = "Captured";
+  const helper = {
+    request: async (method: string, params: Record<string, unknown> = {}) => {
+      if (method === "captureTarget") return identity();
+      if (method !== "readScreen") return null;
+      if (first) { first = false; return oldRead; }
+      const target = params.target as { window?: string } | undefined;
+      if (target && target.window !== identity().window) return null;
+      return { renderedText: `${target ? "Captured" : foreground} ${params.wholeWindow ? "whole" : "shown"}` };
+    },
+    restart: () => { epoch += 1; release(null); },
+  } as unknown as HelperClient;
+  const screen = new ScreenReader(helper);
+  const superseded = screen.read(exclusions);
+  const target = await screen.captureTarget();
+  await superseded;
+  foreground = "Competing";
+  const shown = screen.read(exclusions, undefined, Promise.resolve(target));
+  expect((await shown as { renderedText: string } | null)?.renderedText).toBe("Captured shown");
+  const whole = await screen.read(exclusions, shown);
+  expect((whole as { renderedText: string } | null)?.renderedText).toBe("Captured whole");
+  expect(JSON.stringify([await shown, whole])).not.toContain("Competing");
+});
+
+for (const canceling of [false, true]) test(`the activated captured target posts only for a live operation: canceled=${canceling}`, async () => {
+  const helper = new HelperClient({ name: "target-paste-fixture", executable: process.execPath,
+    args: [join(__dirname, "../../support/targetPasteHelper.mjs")] });
+  helper.start();
+  try {
+    const reader = new ScreenReader(helper);
+    const target = await reader.captureTarget();
+    const abort = new AbortController();
+    const pasting = reader.pasteTarget(target!, 7, Date.now() + 1000, abort.signal).catch(error => error);
+    const before = await helper.request<{pending: boolean; addressed: unknown}>("state");
+    expect(before).toMatchObject({ pending: true, addressed: target });
+    if (canceling) abort.abort();
+    await helper.request("advance");
+    await pasting;
+    const after = await helper.request("state");
+    expect(after).toMatchObject({ pending: false, canceled: canceling, keys: canceling ? 0 : 1, addressed: target });
+  } finally { helper.stop(); }
 });

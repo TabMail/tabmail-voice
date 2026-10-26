@@ -13,7 +13,7 @@
 #include "../src/text.h"
 
 namespace {
-HWND edit = nullptr, button = nullptr;
+HWND edit = nullptr, button = nullptr, preferredFocus = nullptr;
 voice::SavedClipboard* original = nullptr;
 // "delayed": the clipboard holds text and a private format its owner renders only when asked, after
 // a pause, as a busy app or a VM's clipboard agent does. `helperAsked` says the helper asked for it.
@@ -44,6 +44,12 @@ void ready(HWND window, const char* mode) {
     std::cout << nlohmann::json({{"window", reinterpret_cast<uintptr_t>(window)}, {"mode", mode}}).dump() << '\n' << std::flush;
 }
 LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data) {
+    // A normal app returns keyboard focus to its current control when its frame is activated.
+    // The second raw Win32 frame otherwise leaves focus on the original frame, swallowing Ctrl-V.
+    if (message == WM_SETFOCUS && preferredFocus && GetParent(preferredFocus) == window) {
+        SetFocus(preferredFocus);
+        return 0;
+    }
     if (message == WM_RENDERFORMAT && delayedClipboard && value == delayedFormat) {
         if (helperReading()) helperAsked = true;
         Sleep(2100);
@@ -136,8 +142,9 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
         SetWindowLongPtrW(edit, GWL_STYLE, style);
         SendMessageW(edit, EM_SETPASSWORDCHAR, value == 2 ? '*' : 0, 0);
         SendMessageW(edit, EM_SETREADONLY, value == 3, 0);
+        preferredFocus = value == 4 ? button : edit;
         SetForegroundWindow(window);
-        SetFocus(value == 4 ? button : edit);
+        SetFocus(preferredFocus);
         SendMessageW(edit, EM_SETSEL, 7, 15);
         ready(window, value == 2 ? "password" : value == 3 ? "readOnly" : value == 4 ? "button" : value == 6 ? "long" : value == 7 ? "limit" : value == 8 ? "unicode" : value == 9 ? "empty" : value == 10 ? "secret" : "editable");
         return 0;
@@ -146,7 +153,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
     return DefWindowProcW(window, message, value, data);
 }
 }
-int run(bool preservesClipboard) {
+int run(bool preservesClipboard, bool document) {
     WNDCLASSW type{};
     type.lpfnWndProc = procedure;
     type.hInstance = GetModuleHandleW(nullptr);
@@ -155,7 +162,9 @@ int run(bool preservesClipboard) {
     HWND window = CreateWindowExW(0, type.lpszClassName, L"Synthetic TabMail Voice fields", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 640, 240, nullptr, nullptr, type.hInstance, nullptr);
     if (!window) return 1;
-    edit = CreateWindowExW(0, L"EDIT", L"Before selected after.", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+    if (document && !LoadLibraryW(L"Msftedit.dll")) return 1;
+    edit = CreateWindowExW(0, document ? L"RICHEDIT50W" : L"EDIT", L"Before selected after.",
+        WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | (document ? ES_MULTILINE : 0),
         20, 20, 550, 40, window, nullptr, type.hInstance, nullptr);
     button = CreateWindowExW(0, L"BUTTON", L"Synthetic button", WS_CHILD | WS_VISIBLE,
         20, 80, 180, 40, window, nullptr, type.hInstance, nullptr);
@@ -185,8 +194,8 @@ int run(bool preservesClipboard) {
 }
 
 int main(int argc, char** argv) {
-    if (argc > 2 || (argc == 2 && std::string(argv[1]) != "--read-only")) return 2;
-    try { return run(argc == 1); }
+    if (argc > 2 || (argc == 2 && std::string(argv[1]) != "--read-only" && std::string(argv[1]) != "--document")) return 2;
+    try { return run(argc == 1, argc == 2 && std::string(argv[1]) == "--document"); }
     catch (const std::exception& error) {
         // Only fixed internal clipboard errors; no captured clipboard contents.
         std::cerr << "Synthetic fixture: " << error.what() << '\n';

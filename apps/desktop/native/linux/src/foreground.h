@@ -3,7 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
 #include "accessibility.h"
+#include <unistd.h>
 #include "identity.h"
+#include "../../shared/context/walk.h"
 #include <algorithm>
 #include <functional>
 #include <iostream>
@@ -97,6 +99,13 @@ public:
         if (const auto focus = shellFocus()) return focus->first && focus->first == token;
         return matches(token) || (current && current->token == token && shellHolds());
     }
+    /** Captured at key-down; Voice itself selects the last external window, without activation. */
+    std::optional<Target> capture() const {
+        const auto front = shellFocus();
+        const bool voice = front ? front->second == static_cast<unsigned>(getppid())
+                                 : current && current->pid == static_cast<unsigned>(getppid());
+        return voice ? previousExternal : target();
+    }
 private:
     std::function<bool()> shellHolds;
     ShellFocus shellFocus;
@@ -114,6 +123,7 @@ private:
     Node tokenWindow;
     uint64_t windowToken = 0;
     std::optional<Target> current;
+    std::optional<Target> previousExternal;
     uint64_t next = static_cast<uint64_t>(g_random_int()) * 1024;
     guint retry = 0;
     unsigned tried = 0;
@@ -137,6 +147,10 @@ private:
         const auto shellWindow = shellFocus();
         current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid,
             shellWindow && shellWindow->first && (shellWindow->second == pid || busProxy(pid)) ? shellWindow->first : 0};
+        if (pid != static_cast<unsigned>(getppid())) {
+            previousExternal = current;
+            if (previousExternal->shellWindow) previousExternal->token = previousExternal->shellWindow;
+        }
     }
     Node findFocus(const Node& root) {
         std::vector<Node> stack{root};
@@ -240,4 +254,34 @@ inline nlohmann::json frontmostApp(const Foreground& foreground) {
     std::cerr << "debug accessibility: frontmost target " << (front ? std::to_string(front->first) : "unavailable") << "\n";
     return front ? nlohmann::json{{"window", front->first}, {"pid", front->second}} : nlohmann::json(nullptr);
 }
+/** Exact AT-SPI frame identity crosses helpers, rather than a title or a process-only match. */
+inline nlohmann::json captureTarget(const Foreground& foreground, std::optional<std::pair<uint64_t, unsigned>> expected = std::nullopt) {
+    const auto target = foreground.capture();
+    if (!target || !target->pid) return nullptr;
+    if (expected && (expected->first != (target->shellWindow ? target->shellWindow : target->token) ||
+        (!busProxy(target->pid) && expected->second != target->pid))) return nullptr;
+    const auto path = ancestors(target->focus);
+    const auto window = windowOf(path);
+    if (!window) return nullptr;
+    const auto object = ATSPI_OBJECT(window->get());
+    if (!object->app || !object->app->bus_name || !object->path) return nullptr;
+    return {{"window", target->shellWindow ? target->shellWindow : target->token}, {"pid", target->pid},
+        {"bus", object->app->bus_name}, {"path", object->path}};
+}
+
+inline Node capturedWindow(const nlohmann::json& target) {
+    if (!target.is_object() || !target.contains("bus") || !target.contains("path")) return {};
+    auto desktop = own(atspi_get_desktop(0));
+    if (!desktop) return {};
+    for (const auto& app : children(desktop, walk::limits().nodeBudget)) {
+        const auto object = ATSPI_OBJECT(app.get());
+        if (!object->app || !object->app->bus_name || target["bus"] != object->app->bus_name) continue;
+        for (const auto& frame : children(app, walk::limits().nodeBudget)) {
+            const auto object = ATSPI_OBJECT(frame.get());
+            if (object->path && target["path"] == object->path && !state(frame, ATSPI_STATE_DEFUNCT)) return frame;
+        }
+    }
+    return {};
+}
+
 }

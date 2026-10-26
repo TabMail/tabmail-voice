@@ -71,6 +71,7 @@ public enum MacService {
         let activator = AccessibilityActivator()
         let clipboard = clipboard ?? ClipboardKeeper()
         channel.onEnd { clipboard.handOver() }
+        let preparations = PreparedClipboard(clipboard)
         let paste: @MainActor @Sendable (String) async -> Void = { await TextInserter(clipboard: clipboard, pasteKeystroke: pasteKeystroke).insert($0) }
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
         channel.on("redactText") { params in
@@ -88,6 +89,21 @@ public enum MacService {
         }
         channel.on("clipboardSave") { _ in
             await clipboard.save()
+            return [:]
+        }
+        channel.on("preparePaste") { params in
+            guard let text = params["text"]?.string else { throw HelperError("preparePaste needs text") }
+            guard let deadline = params["deadline"]?.number else { throw HelperError("preparePaste needs deadline") }
+            let accepted = try SharedRequest.call(["preparePaste": ["text": .string(text), "operation": params["operation"] ?? .null,
+                "deadline": .number(deadline), "now": .number(floor(Date().timeIntervalSince1970 * 1000))]])
+            guard let operation = accepted["operation"]?.integer else { throw HelperError("preparePaste needs operation") }
+            return try await MainActor.run { try preparations.prepare(text, operation: operation, deadline: deadline) }
+        }
+        channel.on("finishPaste") { params in
+            let accepted = try SharedRequest.call(["finishPaste": ["operation": params["operation"] ?? .null]])
+            guard let operation = accepted["operation"]?.integer else { throw HelperError("finishPaste needs operation") }
+            preparations.end(operation)
+            await preparations.finish(operation)
             return [:]
         }
         channel.on("insert") { params in

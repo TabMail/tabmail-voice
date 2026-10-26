@@ -46,7 +46,7 @@ int main() {
     voice::ClipboardKeeper clipboard(input, clipboardRules());
     voice::Inserter inserter(input, clipboard, [&](uint64_t token) { return foreground.matches(token); }, [&] {
         const auto target = foreground.target(); return target && target->terminal;
-    });
+    }, [&](uint64_t window, auto done) { gnomeCaret.activate(window, std::move(done)); });
     voice::Channel channel(output, [&](const std::string& method, const JSON& params, voice::Channel::Reply reply, int64_t id) {
         if (method == "redactText") {
             reply(voice::core::request(params, voice_core_redact_text_json), true);
@@ -96,6 +96,8 @@ int main() {
                     << " after " << elapsed() << "ms\n";
                 reply(placed, true);
             }
+        } else if (method == "captureTarget") {
+            reply(voice::captureTarget(foreground, gnomeCaret.target()), true);
         } else if (method == "frontmostApp") {
             reply(voice::frontmostApp(foreground), true);
         } else {
