@@ -46,9 +46,10 @@ export class OverlayWindowController {
   /** Where the chat window opened, while it shows: by the pill (its top edge's center), which stays
    * there for follow-ups, its bubbles under it or over it as they were, on the side of them with room
    * (`chatSide`). */
-  private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean; dragged: boolean } | null = null;
-  /** Where the chat window's pill was as the drag under way started. */
-  private chatDragFrom: Point | null = null;
+  private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean; pillOffset: number | null } | null = null;
+  /** Once dragged (`pillOffset` above), the pill is that far from the window's left edge, and they move
+   * as one. Where they were as the drag under way started. */
+  private chatDragFrom: { pill: Point; pillOffset: number } | null = null;
   /** The chat window opened and its page hasn't measured it yet: the overlay is transparent meanwhile,
    * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is).
    * Linux has no window opacity (Electron: `setOpacity` "does nothing"); the page's own redraw does it. */
@@ -175,9 +176,16 @@ export class OverlayWindowController {
     // Placed once the closing chat has shrunk.
     if (this.chatShrinkTimer !== null) return;
     if (this.requestedChat) {
-      // Dragged, it stays where the user put it, kept on screen.
-      const dragged = this.chat?.dragged === true ? this.chat.pill : null;
-      if (dragged !== null) return this.placeDraggedChat(dragged, { x: 0, y: 0 }, this.workArea({ ...dragged, width: 0, height: 0 }));
+      // Dragged, it stays where the user put it, kept on screen; hidden while no room is left there
+      // (as an undragged one is), and shown again once there is.
+      const chat = this.chat;
+      if (chat !== null && chat.pillOffset !== null) {
+        const at = { ...chat.pill, width: 0, height: 0 };
+        if (!this.hasPlacementArea(at)) { this.window.hide(); return; }
+        this.placeDraggedChat({ pill: chat.pill, pillOffset: chat.pillOffset }, { x: 0, y: 0 }, this.workArea(at));
+        if (!this.window.isVisible()) this.window.showInactive();
+        return;
+      }
       if (this.chat !== null) this.hideChat();
       this.showChat();
       // A move with unchanged content dimensions need not trigger ResizeObserver again.
@@ -204,10 +212,12 @@ export class OverlayWindowController {
     if (pointer.x >= frame.x && pointer.x < frame.x + frame.width && pointer.y >= frame.y && pointer.y < frame.y + frame.height) this.pointerOver(true);
   }
 
-  /** The user started dragging the chat window (ADR-DESK-036): it moves from where it is now. */
+  /** The user started dragging the chat window (ADR-DESK-036): it moves from where it is now, the
+   * window and the pill in it as one. */
   startChatDrag(): void {
-    if (this.chat === null || this.chatShrinkTimer !== null) return;
-    this.chatDragFrom = this.chat.pill;
+    const chat = this.chat;
+    if (chat === null || this.chatShrinkTimer !== null) return;
+    this.chatDragFrom = { pill: chat.pill, pillOffset: chat.pill.x - Math.round(this.chatFrame(chat.side.maxHeight).x) };
   }
 
   /** The chat window dragged by `delta` since the drag started: the overlay moves with it, the pill
@@ -218,15 +228,18 @@ export class OverlayWindowController {
     const from = this.chatDragFrom;
     if (chat === null || from === null || this.chatShrinkTimer !== null) return;
     const moved = { x: Math.round(delta.x), y: Math.round(delta.y) };
-    this.placeDraggedChat(from, moved, this.workArea({ x: from.x + moved.x, y: from.y + moved.y, width: 0, height: 0 }));
+    // Not onto a screen with no room left: it stays where it is.
+    const to = { x: from.pill.x + moved.x, y: from.pill.y + moved.y, width: 0, height: 0 };
+    if (!this.hasPlacementArea(to)) return;
+    this.placeDraggedChat(from, moved, this.workArea(to));
   }
 
-  /** The dragged chat window, its pill moved from `from` by `delta`, placed in `workArea`. */
-  private placeDraggedChat(from: Point, delta: Point, workArea: Rect): void {
+  /** The dragged chat window, moved from `from` by `delta`, placed in `workArea`. */
+  private placeDraggedChat(from: { pill: Point; pillOffset: number }, delta: Point, workArea: Rect): void {
     const chat = this.chat;
     if (chat === null) return;
-    const { pill, side } = draggedChat(from, delta, this.measuredChatHeight ?? chat.side.maxHeight, workArea, chat.side.below, chat.bubblesUnder);
-    this.chat = { ...chat, pill, workArea, side, dragged: true };
+    const { pill, pillOffset, side } = draggedChat(from, delta, this.measuredChatHeight ?? chat.side.maxHeight, workArea, chat.side.below, chat.bubblesUnder);
+    this.chat = { ...chat, pill, workArea, side, pillOffset };
     this.window.setBounds(rounded(this.chatFrame(side.maxHeight)));
     this.onPlace?.();
   }
@@ -265,7 +278,7 @@ export class OverlayWindowController {
     const pill = pillPosition(anchor, workArea);
     const shift = { x: Math.round(origin.x) - origin.x, y: Math.round(origin.y) - origin.y };
     const bubblesUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
-    this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder, dragged: false };
+    this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder, pillOffset: null };
     this.chatDragFrom = null;
     this.chatClosing = false;
     this.chatUnmeasured = true;
@@ -282,7 +295,7 @@ export class OverlayWindowController {
   private chatFrame(height: number): Rect {
     const chat = this.chat;
     if (chat === null) throw new Error("no chat window");
-    return chatWindowFrame(chat.pill, height, chat.workArea, chat.side, chat.bubblesUnder);
+    return chatWindowFrame(chat.pill, height, chat.workArea, chat.side, chat.bubblesUnder, chat.pillOffset ?? undefined);
   }
 
   /** The chat window closed: its page shrinks it into its pill, letting clicks through meanwhile, and

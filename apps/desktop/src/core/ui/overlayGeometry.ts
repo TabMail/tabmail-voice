@@ -168,39 +168,46 @@ export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect,
  * over the pill and its bubbles (`chatStripHeight`, the bubbles under the pill or over it,
  * `bubblesUnder`), or under them (`side.below`, `chatSide`), with the shadow's margin around them
  * all; centered on the pill, kept inside the work area. The window keeps the edge on the pill's side
- * as the chat grows, so the pill never moves. */
-export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Rect, side: { below: boolean; maxHeight: number }, bubblesUnder: boolean): Rect {
+ * as the chat grows, so the pill never moves. A dragged chat window (`draggedChat`) has the pill
+ * `pillOffset` from its left edge instead. */
+export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Rect, side: { below: boolean; maxHeight: number }, bubblesUnder: boolean, pillOffset?: number): Rect {
   const margin = config.chatShadowMargin;
-  const width = Math.min(config.chatWidth, workArea.width) + 2 * margin;
+  const width = chatFrameWidth(workArea);
   const below = side.below;
   const height = 2 * margin + Math.min(contentHeight, side.maxHeight) + config.chatPillGap + config.chatStripHeight;
   const stripTop = chatStripTop(pill.y, bubblesUnder);
   const y = below ? stripTop - margin : stripTop + config.chatStripHeight + margin - height;
+  if (pillOffset !== undefined) return { x: pill.x - pillOffset, y, width, height };
   let x = pill.x - width / 2;
   x = Math.min(Math.max(x, workArea.x - margin), maxX(workArea) + margin - width);
   return { x, y, width, height };
 }
 
+/** The overlay window's width while the chat window shows in `workArea`, its shadow's margin included. */
+function chatFrameWidth(workArea: Rect): number {
+  return Math.min(config.chatWidth, workArea.width) + 2 * config.chatShadowMargin;
+}
+
 /** Where the chat window goes as the user drags it (ADR-DESK-036 amendment; owner, 2026-10-25: the
- * pill and everything "move together"): its pill, its top edge's center, moved by `delta` from `from`
- * where the drag started, and how tall the chat may grow there. The pill, its bubbles and the chat,
- * `contentHeight` tall, stay in the work area, the chat on the same side of them (`below`) and no
- * taller than the room there (at most `tallest`). Across, the whole window stays in the work area; a
- * pill that opened by the work area's edge, its window kept in (`chatWindowFrame`), may stay there. */
-export function draggedChat(from: Point, delta: Point, contentHeight: number, workArea: Rect, below: boolean, bubblesUnder: boolean, tallest: number = config.chatMaxHeight): { pill: Point; side: { below: boolean; maxHeight: number } } {
-  const stripTop = chatStripTop(from.y, bubblesUnder);
-  const overStrip = from.y - stripTop;
-  const chat = config.chatPillGap + Math.min(contentHeight, tallest);
+ * pill and everything "move together"): its window, with the pill (its top edge's center) at
+ * `group.pill`, `group.pillOffset` from the window's left edge, moved by `delta` as one, and how tall
+ * the chat may grow there. The window stays in `workArea` across; the pill, its bubbles and the chat,
+ * `contentHeight` tall but no taller than the work area has room for, stay in it down, the chat on the
+ * same side of them (`below`), its growth limited to the room there (at most `tallest`). */
+export function draggedChat(group: { pill: Point; pillOffset: number }, delta: Point, contentHeight: number, workArea: Rect, below: boolean, bubblesUnder: boolean, tallest: number = config.chatMaxHeight): { pill: Point; pillOffset: number; side: { below: boolean; maxHeight: number } } {
+  const stripTop = chatStripTop(group.pill.y, bubblesUnder);
+  const overStrip = group.pill.y - stripTop;
+  const fits = Math.max(0, workArea.height - config.chatStripHeight - config.chatPillGap);
+  const chat = config.chatPillGap + Math.min(contentHeight, tallest, fits);
   const highest = workArea.y + (below ? 0 : chat);
   const lowest = Math.max(highest, maxY(workArea) - config.chatStripHeight - (below ? chat : 0));
   const top = Math.min(Math.max(stripTop + delta.y, highest), lowest);
-  const half = Math.min(config.chatWidth, workArea.width) / 2 + config.chatShadowMargin;
-  const inside = from.x >= workArea.x && from.x <= maxX(workArea);
-  const left = Math.min(workArea.x - config.chatShadowMargin + half, inside ? from.x : Infinity);
-  const right = Math.max(maxX(workArea) + config.chatShadowMargin - half, inside ? from.x : -Infinity);
-  const x = Math.min(Math.max(from.x + delta.x, left), Math.max(left, right));
+  const width = chatFrameWidth(workArea);
+  const pillOffset = Math.min(Math.max(group.pillOffset, 0), width);
+  const margin = config.chatShadowMargin;
+  const left = Math.min(Math.max(group.pill.x - pillOffset + delta.x, workArea.x - margin), maxX(workArea) + margin - width);
   const room = below ? maxY(workArea) - (top + config.chatStripHeight + config.chatPillGap) : top - config.chatPillGap - workArea.y;
-  return { pill: { x, y: top + overStrip }, side: { below, maxHeight: Math.min(tallest, Math.floor(room)) } };
+  return { pill: { x: left + pillOffset, y: top + overStrip }, pillOffset, side: { below, maxHeight: Math.max(0, Math.min(tallest, Math.floor(room))) } };
 }
 
 /** Where the paste history window goes (ADR-DESK-043), `size` big: where the chat window would

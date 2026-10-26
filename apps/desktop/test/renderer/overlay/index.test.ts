@@ -1287,42 +1287,116 @@ describe("the chat window", () => {
     }
   });
 
+  /** A pointer event on the chat window, as a browser sends it: `buttons` held (the primary one,
+   * unless said), its own pointer, at a point on the screen; `offsetX` where it is in its target. */
+  function pointerOn(target: Element | null, type: string, x: number, y: number, options: { pointerType?: string; button?: number; buttons?: number; pointerId?: number; offsetX?: number } = {}) {
+    const { pointerType = "mouse", button = 0, pointerId = 1 } = options;
+    // `buttons` has the primary button at 1, the secondary at 2, the middle at 4.
+    const buttons = options.buttons ?? (type === "pointerup" || type === "pointercancel" ? 0 : ([1, 4, 2][button] ?? 0));
+    return act(async () => {
+      const event = new PointerEvent(type, { bubbles: true, pointerId, pointerType, button, buttons, screenX: x, screenY: y });
+      if (options.offsetX !== undefined) Object.defineProperty(event, "offsetX", { value: options.offsetX });
+      target?.dispatchEvent(event);
+    });
+  }
+
   /** A mouse press on the chat that moves `chatDragThreshold` drags it (ADR-DESK-036 amendment): the
    * main process is told the drag started, then how far the pointer has gone on the screen since the
-   * press. A shorter move is a click; a press on a button or a link, or a touch, drags nothing. */
+   * press, the chat window taking the pointer so the moves keep coming as it moves. A shorter move is
+   * a click; once let go, moving drags nothing. */
   test("dragging the chat window tells how far it went", async () => {
     const page = await overlayPage();
     await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
     const drags = () => page.commands.filter((command) => command.type === "chatDragStart" || command.type === "dragChat");
-    const pointer = (target: Element | null, type: string, x: number, y: number, pointerType = "mouse") =>
-      act(async () => {
-        target?.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType, button: 0, screenX: x, screenY: y }));
-      });
+    const captured: number[] = [];
+    vi.spyOn(HTMLElement.prototype, "setPointerCapture").mockImplementation(function (this: HTMLElement, id: number) {
+      if (this.classList.contains("chat")) captured.push(id);
+    });
     const text = document.querySelector(".chat-request");
     expect(text).not.toBeNull();
 
-    await pointer(text, "pointerdown", 100, 100);
-    await pointer(text, "pointermove", 102, 101);
-    await pointer(text, "pointerup", 102, 101);
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 102, 101);
+    await pointerOn(text, "pointerup", 102, 101);
     expect(drags()).toEqual([]);
+    expect(captured).toEqual([]);
 
-    await pointer(text, "pointerdown", 100, 100);
-    await pointer(text, "pointermove", 100 + config.chatDragThreshold, 100);
-    await pointer(text, "pointermove", 160, 40);
-    await pointer(text, "pointerup", 160, 40);
-    await pointer(text, "pointermove", 200, 40);
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 100 + config.chatDragThreshold, 100);
+    expect(captured).toEqual([1]);
+    await pointerOn(text, "pointermove", 160, 40);
+    await pointerOn(text, "pointerup", 160, 40);
+    await pointerOn(text, "pointermove", 200, 40, { buttons: 0 });
     expect(drags()).toEqual([
       { type: "chatDragStart" },
       { type: "dragChat", dx: config.chatDragThreshold, dy: 0 },
       { type: "dragChat", dx: 60, dy: -60 },
     ]);
+  });
 
-    for (const [target, pointerType] of [[document.querySelector(".chat-close"), "mouse"], [text, "touch"]] as const) {
-      await pointer(target, "pointerdown", 100, 100, pointerType);
-      await pointer(target, "pointermove", 160, 160, pointerType);
-      await pointer(target, "pointerup", 160, 160, pointerType);
+  /** Only the primary mouse button, on the chat's own surface, drags: not a press on its close button
+   * or a link (which keep their click), on its scroll bar, with another button, or a touch (which
+   * scrolls). A press on the scrolling list itself, off its scroll bar, still does. */
+  test("only the primary button on the chat's surface drags it", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const drags = () => page.commands.filter((command) => command.type === "chatDragStart" || command.type === "dragChat");
+    const text = document.querySelector(".chat-request");
+    const scroll = document.querySelector<HTMLElement>(".chat-scroll");
+    const link = document.querySelector(".chat a");
+    expect([text, scroll, link].every((element) => element !== null)).toBe(true);
+    vi.spyOn(scroll as HTMLElement, "clientWidth", "get").mockReturnValue(300);
+    const press = async (target: Element | null, options: Parameters<typeof pointerOn>[4] = {}) => {
+      await pointerOn(target, "pointerdown", 100, 100, options);
+      await pointerOn(target, "pointermove", 160, 160, options);
+      await pointerOn(target, "pointerup", 160, 160, options);
+    };
+
+    await press(document.querySelector(".chat-close"));
+    await press(link);
+    await press(text, { pointerType: "touch" });
+    await press(text, { button: 2 });
+    await press(scroll, { offsetX: 305 });
+    // A secondary press, then the primary button pressed with it: still not a drag.
+    await pointerOn(text, "pointerdown", 100, 100, { button: 2 });
+    await pointerOn(text, "pointermove", 160, 160, { button: 2, buttons: 3 });
+    await pointerOn(text, "pointerup", 160, 160, { button: 2 });
+    expect(drags()).toEqual([]);
+
+    await press(scroll, { offsetX: 100 });
+    expect(drags()).toEqual([{ type: "chatDragStart" }, { type: "dragChat", dx: 60, dy: 60 }]);
+  });
+
+  /** The press is the pointer's that made it, and ends with it: another pointer's moves drag nothing;
+   * once cancelled, or its capture lost, moves drag nothing more; and let go outside the chat before
+   * it dragged (the page never told), moving back over the chat with no button held is a hover. */
+  test("a drag ends with its press", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const drags = () => page.commands.filter((command) => command.type === "dragChat");
+    const text = document.querySelector(".chat-request");
+    const box = document.querySelector(".chat");
+
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 160, 160, { pointerId: 2 });
+    expect(drags()).toEqual([]);
+    await pointerOn(text, "pointerup", 100, 100);
+
+    await pointerOn(text, "pointerdown", 100, 100);
+    await pointerOn(text, "pointermove", 102, 100);
+    // Let go outside: no pointerup here. Back over the chat, no button held.
+    await pointerOn(text, "pointermove", 120, 100, { buttons: 0 });
+    await pointerOn(text, "pointermove", 140, 100, { buttons: 1 });
+    expect(drags()).toEqual([]);
+
+    for (const end of ["pointercancel", "lostpointercapture"]) {
+      await pointerOn(text, "pointerdown", 100, 100);
+      await pointerOn(text, "pointermove", 120, 100);
+      const before = drags().length;
+      await pointerOn(box, end, 120, 100);
+      await pointerOn(text, "pointermove", 140, 100);
+      expect(drags().length, end).toBe(before);
     }
-    expect(drags()).toHaveLength(3);
   });
 
   /** A pointer entering or moving in the window, a click or a scroll keeps it open; once kept open

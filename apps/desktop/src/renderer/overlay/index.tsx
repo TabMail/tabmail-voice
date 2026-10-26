@@ -342,6 +342,7 @@ function PillLayout({
  * touch, which scrolls. The distance is the pointer's on the screen since the press: the window moves
  * under it. */
 function useChatDrag(): { onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void; onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void } {
+  // `onPointerUp` also ends it on a cancel and on the pointer's capture lost.
   const press = useRef<{ id: number; x: number; y: number; dragging: boolean } | null>(null);
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     press.current = null;
@@ -354,6 +355,12 @@ function useChatDrag(): { onPointerDown: (event: ReactPointerEvent<HTMLDivElemen
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const current = press.current;
     if (current === null || current.id !== event.pointerId) return;
+    // Let go somewhere this page wasn't told of (outside the chat, before the drag took the pointer):
+    // the press is over, and a hover never drags.
+    if ((event.buttons & 1) === 0) {
+      press.current = null;
+      return;
+    }
     const dx = event.screenX - current.x;
     const dy = event.screenY - current.y;
     if (!current.dragging) {
@@ -469,6 +476,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
       }}
       onPointerUp={drag.onPointerUp}
       onPointerCancel={drag.onPointerUp}
+      onLostPointerCapture={drag.onPointerUp}
       onWheel={touch}
       style={{
         left: margin,

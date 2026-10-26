@@ -1066,7 +1066,10 @@ describe("main process wiring", () => {
     expect(await send({ type: "pointerOver", over: "yes" } as never)).toEqual({ error: expect.any(String) });
     await send({ type: "chatDragStart" });
     await send({ type: "dragChat", dx: 12, dy: -30 });
-    expect(await send({ type: "dragChat", dx: Number.NaN, dy: 0 })).toEqual({ error: expect.any(String) });
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(await send({ type: "dragChat", dx: bad, dy: 0 })).toEqual({ error: expect.any(String) });
+      expect(await send({ type: "dragChat", dx: 0, dy: bad })).toEqual({ error: expect.any(String) });
+    }
     expect(await send({ type: "dragChat", dx: 1 } as never)).toEqual({ error: expect.any(String) });
     expect(app.overlay?.drags).toEqual(["start", { x: 12, y: -30 }]);
     await send({ type: "openChatLink", url: "https://example.com/closed" });
