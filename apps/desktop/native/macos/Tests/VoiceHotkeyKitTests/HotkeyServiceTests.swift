@@ -11,7 +11,10 @@ import VoiceHelperSupport
 @testable import VoiceHotkeyKit
 
 /// `HotkeyService` over its wire, with no event tap: a request the app sends reaches the monitor.
+/// One test at a time: an app switch is posted to the shared workspace notification center, which every
+/// open chat window's monitor hears.
 @MainActor
+@Suite(.serialized)
 struct HotkeyServiceTests {
     final class Lines: Sendable {
         private let lines = OSAllocatedUnfairLock<[JSON]>(initialState: [])
@@ -99,5 +102,53 @@ struct HotkeyServiceTests {
         monitor.mouseWentDown()
         await appSwitch()
         #expect(events().count == told, "told after the chat window closed")
+    }
+
+    /// The clicks' tap hears each mouse button going down and nothing else; its callback passes the
+    /// click on untouched, tells it once while the chat window is open, and tells nothing when macOS
+    /// switches the tap off.
+    @Test func theClickTapHearsButtonsGoingDownAndPassesThemOn() async throws {
+        let downs: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        for type in downs { #expect(chatTapMask & (CGEventMask(1) << type.rawValue) != 0, "\(type.rawValue) not heard") }
+        let others: [CGEventType] = [.leftMouseUp, .rightMouseUp, .otherMouseUp, .mouseMoved, .leftMouseDragged, .scrollWheel, .keyDown]
+        for type in others { #expect(chatTapMask & (CGEventMask(1) << type.rawValue) == 0, "\(type.rawValue) heard") }
+
+        let lines = Lines()
+        let channel = HelperChannel(output: { lines.append($0) })
+        let monitor = HotkeyService.register(on: channel)
+        let events = { lines.all.compactMap { $0["event"]?.string }.filter { $0.hasPrefix("chat") } }
+        await channel.handle(line: Data(#"{"id":1,"method":"setChatOpen","params":{"isOpen":true}}"#.utf8))
+        defer { monitor.setChatOpen(false) }
+        // Made, never posted: nothing reaches the desktop.
+        let click = try #require(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero, mouseButton: .left))
+        let proxy = try #require(OpaquePointer(bitPattern: 1))
+        let userInfo = Unmanaged.passUnretained(monitor).toOpaque()
+
+        let passed = chatTapCallback(proxy: proxy, type: .leftMouseDown, event: click, userInfo: userInfo)
+        #expect(passed?.takeUnretainedValue() === click, "the click not passed on")
+        #expect(events() == ["chatMouseDown"])
+        _ = chatTapCallback(proxy: proxy, type: .tapDisabledByTimeout, event: click, userInfo: userInfo)
+        _ = chatTapCallback(proxy: proxy, type: .tapDisabledByUserInput, event: click, userInfo: userInfo)
+        #expect(events() == ["chatMouseDown"], "a switched-off tap told as a click")
+    }
+
+    /// Closed and opened again, the chat window hears each app switch once: closing it stops watching.
+    @Test func reopeningTheChatWindowTellsEachAppSwitchOnce() async {
+        let lines = Lines()
+        let channel = HelperChannel(output: { lines.append($0) })
+        let monitor = HotkeyService.register(on: channel)
+        defer { monitor.setChatOpen(false) }
+        let switches = { lines.all.compactMap { $0["event"]?.string }.filter { $0 == "chatFocusChanged" }.count }
+        let appSwitch = {
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in DispatchQueue.main.async { done.resume() } }
+        }
+        for id in 1...3 {
+            await channel.handle(line: Data(#"{"id":\#(2 * id),"method":"setChatOpen","params":{"isOpen":true}}"#.utf8))
+            await channel.handle(line: Data(#"{"id":\#(2 * id + 1),"method":"setChatOpen","params":{"isOpen":false}}"#.utf8))
+        }
+        await channel.handle(line: Data(#"{"id":9,"method":"setChatOpen","params":{"isOpen":true}}"#.utf8))
+        await appSwitch()
+        #expect(switches() == 1, "\(switches()) switches told")
     }
 }

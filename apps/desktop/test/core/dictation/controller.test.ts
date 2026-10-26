@@ -3417,25 +3417,31 @@ describe("DictationController", { timeout: 20_000 }, () => {
       });
 
       /** A click elsewhere or another app in front (`dismissChat`) closes the chat window only while it
-       * is idle (owner, 2026-10-25): a follow-up listening or thinking keeps it, with its answer. */
+       * is idle (owner, 2026-10-25): a follow-up arming, listening, transcribed or thinking keeps it,
+       * and gets its answer. */
       test("a click elsewhere closes the chat window only while it is idle", async () => {
-        const { controller, chatChanges } = await openChat();
+        const { controller, chatChanges, pastes } = await openChat();
         queue("and how do I fix it", "answer", "Define it before the call.");
-        let openWhileThinking = false;
-        completions.gate = async () => {
+        // Each busy phase a click came in, and whether the chat window was still open after it.
+        const clicked: [Phase["kind"], boolean][] = [];
+        const clickElsewhere = () => {
+          const kind = controller.phase.kind;
           controller.dismissChat();
-          openWhileThinking = controller.chat !== null;
+          clicked.push([kind, controller.chat !== null]);
         };
+        transcription.gate = async () => clickElsewhere();
+        completions.gate = async () => clickElsewhere();
 
         controller.handle("start");
+        clickElsewhere();
         expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
-        controller.dismissChat();
-        expect(controller.chat).not.toBeNull();
+        clickElsewhere();
         controller.handle("finish");
         expect(await eventually(() => settled(controller))).toBe(true);
 
-        expect(openWhileThinking).toBe(true);
+        expect(clicked).toEqual([["arming", true], ["listening", true], ["transcribing", true], ["running", true]]);
         expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Define it before the call."]);
+        expect(pastes).toEqual([]);
         controller.dismissChat();
         expect(controller.chat).toBeNull();
         expect(chatChanges).toEqual([true, false]);

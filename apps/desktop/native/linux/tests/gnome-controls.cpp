@@ -83,16 +83,18 @@ int main() {
         require(states.size() == before + 2 && !states.back());
     }
     {
-        // The chat window, open between dictations, takes Escape alone; nothing records.
+        // The chat window, open between dictations, takes Escape alone; nothing records. Another
+        // window taking the focus is told only while it is open.
         Output output; Gesture gesture; GnomeControls controls(output, gesture);
         const auto before = states.size();
-        action("cancel");
+        action("cancel"); action("chatFocusChanged");
         gesture.chatOpen = true; controls.setChatOpen(true); drain();
         require(calls.chat == std::vector<bool>{true});
+        action("chatFocusChanged");
         action("toggleMode"); action("cancel");
         require(states.size() == before);
         gesture.chatOpen = false; controls.setChatOpen(false); drain();
-        action("cancel");
+        action("cancel"); action("chatFocusChanged");
         require(calls.chat == std::vector<bool>({true, false}));
     }
     {

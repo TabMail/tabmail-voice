@@ -87,10 +87,8 @@ public final class HotkeyMonitor {
             }
         }
         guard chatTap == nil else { return }
-        let types: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        let mask = types.reduce(CGEventMask(0)) { $0 | CGEventMask(1) << $1.rawValue }
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly, eventsOfInterest: mask,
+            tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly, eventsOfInterest: chatTapMask,
             callback: chatTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
             HelperLog.debug("HotkeyMonitor: click tap not created (Accessibility not granted)")
@@ -210,8 +208,12 @@ private func hotkeyTapCallback(
     return passes ? Unmanaged.passUnretained(event) : nil
 }
 
+/// What the clicks' tap hears: every mouse button going down, and nothing else.
+let chatTapMask: CGEventMask = [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    .reduce(CGEventMask(0)) { $0 | CGEventMask(1) << $1.rawValue }
+
 /// The clicks' tap's callback, on the main run loop: listen-only, so what it returns is ignored.
-private func chatTapCallback(
+func chatTapCallback(
     proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, userInfo: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
     guard let userInfo else { return Unmanaged.passUnretained(event) }
