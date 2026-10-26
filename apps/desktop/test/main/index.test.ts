@@ -990,6 +990,13 @@ describe("main process wiring", () => {
     click();
     appSwitch();
     expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat"]);
+    // Switched on again: both close it again.
+    expect(await send({ type: "setClosesChatElsewhere", value: true })).toEqual({ error: null });
+    expect(state().closesChatElsewhere).toBe(true);
+    expect(app.stored.get("closesChatElsewhere")).toBe(true);
+    click();
+    appSwitch();
+    expect(controller.calls).toEqual([...told, "dismissChat", "dismissChat", "dismissChat", "dismissChat"]);
     expect(await send({ type: "setClosesChatElsewhere", value: "no" } as never)).toEqual({ error: expect.any(String) });
   });
 

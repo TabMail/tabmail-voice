@@ -132,6 +132,35 @@ struct HotkeyServiceTests {
         #expect(events() == ["chatMouseDown"], "a switched-off tap told as a click")
     }
 
+    /// The click tap this process registers with the window server: one, listening only, for the
+    /// buttons going down, while the chat window is open, and none once it closes. Read from the
+    /// system's own list of taps, so a tap made for no events (or never enabled) fails here even though
+    /// its callback works.
+    @Test func openingTheChatWindowRegistersAListenOnlyClickTapAndClosingRemovesIt() throws {
+        func clickTaps() -> [CGEventTapInformation] {
+            var count: UInt32 = 0
+            #expect(CGGetEventTapList(0, nil, &count) == .success)
+            var taps = Array(repeating: CGEventTapInformation(), count: Int(count) + 16)
+            let listed = taps.withUnsafeMutableBufferPointer { CGGetEventTapList(UInt32($0.count), $0.baseAddress, &count) }
+            #expect(listed == .success)
+            return taps.prefix(Int(count)).filter {
+                $0.tappingProcess == ProcessInfo.processInfo.processIdentifier && $0.eventsOfInterest & chatTapMask != 0
+            }
+        }
+        let monitor = HotkeyService.register(on: HelperChannel(output: { _ in }))
+        #expect(clickTaps().isEmpty)
+        monitor.setChatOpen(true)
+        defer { monitor.setChatOpen(false) }
+        let open = clickTaps()
+        #expect(open.count == 1)
+        guard open.count == 1 else { return }
+        #expect(open[0].eventsOfInterest == chatTapMask)
+        #expect(open[0].options == .listenOnly)
+        #expect(open[0].enabled)
+        monitor.setChatOpen(false)
+        #expect(clickTaps().isEmpty)
+    }
+
     /// Closed and opened again, the chat window hears each app switch once: closing it stops watching.
     @Test func reopeningTheChatWindowTellsEachAppSwitchOnce() async {
         let lines = Lines()

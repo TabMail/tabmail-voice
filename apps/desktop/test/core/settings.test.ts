@@ -638,6 +638,11 @@ test("the chat window closes on a click elsewhere unless switched off", () => {
   app.closesChatElsewhere = false;
   expect(changes).toBe(1);
   expect(settings(store).closesChatElsewhere).toBe(false);
+  // Switched on again, it is on after a relaunch too.
+  app.closesChatElsewhere = true;
+  expect(changes).toBe(2);
+  expect(store.get("closesChatElsewhere")).toBe(true);
+  expect(settings(store).closesChatElsewhere).toBe(true);
 });
 
 /** The user's dictionary (ADR-DESK-038): words typed in Settings, and words learned from the user's

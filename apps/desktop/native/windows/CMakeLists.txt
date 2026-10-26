@@ -178,6 +178,12 @@ if(WIN32)
     if(MSVC)
       target_compile_options(voice-ui-fixture PRIVATE /W4 /WX /utf-8)
     endif()
+    add_executable(voice-mouse-fixture tests/mouse-fixture.cpp)
+    target_compile_definitions(voice-mouse-fixture PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(voice-mouse-fixture PRIVATE user32 gdi32)
+    if(MSVC)
+      target_compile_options(voice-mouse-fixture PRIVATE /W4 /WX /utf-8)
+    endif()
     add_executable(voice-privacy-fixture tests/privacy-fixture.cpp)
     target_compile_definitions(voice-privacy-fixture PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_link_libraries(voice-privacy-fixture PRIVATE nlohmann_json::nlohmann_json user32 ole32 oleaut32 uiautomationcore uuid gdi32)
@@ -200,7 +206,7 @@ if(WIN32)
     add_test(NAME voice-system-protocol COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/system-protocol.mjs $<TARGET_FILE:voice-windows>)
     add_test(NAME voice-hotkey-protocol COMMAND ${NODE_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/protocol.mjs $<TARGET_FILE:voice-hotkey>)
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/protocol.mjs $<TARGET_FILE:voice-hotkey> $<TARGET_FILE:voice-mouse-fixture>)
     # Node's own executable is a signed file every test machine has.
     add_test(NAME voice-update-signature COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/update-signature.mjs $<TARGET_FILE:voice-windows>)
@@ -220,6 +226,8 @@ if(WIN32)
     endif()
     # These fixtures own foreground focus and clipboard state. They cannot overlap.
     set_tests_properties(voice-accessibility voice-paste voice-paste-focus voice-clipboard-keeper PROPERTIES RUN_SERIAL TRUE TIMEOUT 45)
+    # Its fixture clicks the mouse (on its own window), which no other test may be using.
+    set_tests_properties(voice-hotkey-protocol PROPERTIES RUN_SERIAL TRUE)
     # No screen read has a time limit: each case too large to look through whole walks the look's
     # whole node budget.
     set_tests_properties(voice-privacy-provider PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
