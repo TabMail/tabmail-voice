@@ -4,6 +4,7 @@
 
 import ApplicationServices
 import Foundation
+import os
 import Testing
 import VoiceHelperSupport
 @testable import VoiceMacOSKit
@@ -21,9 +22,10 @@ import VoiceHelperSupport
         var allowsRaise = true
         var time = Date().timeIntervalSince1970 * 1000
         var onFocus: () -> Void = {}
+        var onFront: () -> Void = {}
         init() { focused = first; living = [first, second] }
         func system() -> TargetWindows.System {
-            .init(frontmost: { (self.front, "Synthetic app", nil) },
+            .init(frontmost: { self.onFront(); return (self.front, "Synthetic app", nil) },
                   focusedWindow: { _ in self.onFocus(); return self.focused }, windows: { _ in self.living },
                   raise: { pid, window in
                     self.raised += 1
@@ -142,12 +144,19 @@ import VoiceHelperSupport
         let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
         let captured = targets.capture()
         fixture.front = 202; fixture.focused = fixture.second; fixture.allowsRaise = false
-        let activated = Task { @MainActor in
+        // OS activation completes independently of this helper's actor. Other native suites may
+        // deliberately occupy that actor; their work must not postpone the simulated OS event.
+        let activation = OSAllocatedUnfairLock(initialState: false)
+        fixture.onFront = {
+            if activation.withLock({ $0 }) { fixture.front = 101; fixture.focused = fixture.first }
+        }
+        let activated = Task.detached {
             try await Task.sleep(for: .milliseconds(40))
-            fixture.front = 101; fixture.focused = fixture.first
+            activation.withLock { $0 = true }
         }
         try await targets.paste(captured, transaction: 7, deadline: fixture.deadline)
         try await activated.value
+        fixture.onFront = {}
         #expect(fixture.keys == 1)
         let next = targets.capture()
         fixture.front = 202; fixture.focused = fixture.second
