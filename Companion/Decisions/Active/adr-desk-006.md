@@ -162,3 +162,40 @@ came (`listeningPillHorizontalPadding`, 12; a message keeps `pillHorizontalPaddi
 language badge still concentric with its rounded end (`languageBadgeInset`, inside the border). The
 preview checks every listening, thinking and working pill is `pillHeight` tall as laid out.
 
+
+**Amendment 2026-10-25 — the bars follow speech, not the room, and glide (owner, issue #251).** The
+owner: the waveform is "a little bit too responsive … when we're sort of almost silent, it should be
+stable, but it's sort of almost wiggling all the time … it should really detect the speech range and
+then only respond to that and not the white noise"; "the movement of the waveform should be much,
+much more smoother, and this is just a visual difference." Measured on `Scripts/stt-compare`'s ten
+recordings through `LevelSampler` and `LevelEnvelope`: on readings within 3 dB of the room (10th
+percentile of the voice band), the bars sat at 0.36–0.44 of full height on average and moved about 0.1
+from one reading to the next, against 0.45–0.85 for speech, so a quiet room looked almost like talking.
+Two causes: each reading was placed between a floor and a peak of the full band only
+`envelopeMinimumRange` (4 dB) apart once the room was quiet, so the room's own wobble filled much of
+the range; and the bars stepped to each level as it arrived, about 12 times a second.
+- The bars follow the voice band, against the room's noise there (`LevelEnvelope.noise`, the floor
+  that already tells a voice, carried from the last dictation): a reading less than
+  `waveformGateDecibels` (4 dB) over it reads nothing, and full height is the peak envelope of the
+  voice band, at least `waveformMinimumRange` (12 dB) over that gate. The full-band floor and peak,
+  `envelopeMinimumRange`, and the controller's per-reading `levelAttack` and `levelRelease` are gone.
+  Until the room is known (the first dictation after launch, its first third of a second) the bars
+  rest, with the idle ripple.
+- The overlay eases the bars toward each level every frame (`easedLevel`): up over
+  `waveformRiseSeconds` (0.06 s), down over `waveformFallSeconds` (0.18 s), time constants whatever the
+  frame rate.
+- Measured after, the same recordings: room readings 0 in every one; speech 0.52–0.80 on average
+  with the room carried from the dictation before, as before. The first dictation after launch,
+  whose room is learned from its first readings, shows its speech lower (0.06–0.49) until its first
+  pause brings the room down.
+- Nothing else changes: when a voice is heard (the bars' colour), the recording and the upload are as
+  they were.
+- Trade-offs: a voice under 4 dB over the room in the voice band (a very quiet microphone) no longer
+  moves the bars, and right after a move to a much louder room the bars can show its noise until the
+  room's floor rises to it (`envelopeSlowAlpha`, about 4 s), as the colour already could.
+- Tests: `recorder.test.ts` › `LevelEnvelope` (room noise wobbling ±2 dB stays at 0 for 120 readings;
+  under the gate 0, half the range 0.5, past it 1; speech over a carried room moves at once; louder
+  reads higher; a start-up blip doesn't anchor the room; rest until the room is known and on digital
+  silence); `overlay/index.test.ts` › the waveform glides to each new level (up within a rise's time
+  constants, down more slowly). Each was checked against a mutation of the rule it pins (no gate, no
+  minimum range, no rest before the room, no easing, one time constant for both directions).

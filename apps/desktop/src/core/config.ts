@@ -42,21 +42,13 @@ export const maxNormalizationGainDecibels = 30;
 /** Fixed loudness → 0…1 scale for the recording's peak-level diagnostics. */
 export const levelQuietDecibels = -50;
 export const levelLoudDecibels = -30;
-/** Waveform (`LevelEnvelope`): per-chunk EMA weights. The floor and peak envelopes move this
- * fraction toward a reading on their fast side (floor down, peak up)… */
+/** Waveform (`LevelEnvelope`): per-chunk EMA weights. The room's noise and the peak envelope move
+ * this fraction toward a reading on their fast side (the room down, the peak up)… */
 export const envelopeFastAlpha = 0.5;
 /** …and this fraction on their slow side (≈ 4 s time constant at ~12 chunks/s). */
 export const envelopeSlowAlpha = 0.02;
-/** The envelopes are at least this many dB apart, so a steady hum doesn't swing the bars full
- * height. Small: a quiet mic's speech can sit only 2–5 dB above its room noise. */
-export const envelopeMinimumRange = 4;
 /** Quieter than this is digital silence (the device starting): not yet hearing anything. */
 export const silenceDecibels = -80;
-/** The overlay level moves this fraction of the way to a louder reading per chunk
- * (0 = frozen, 1 = no smoothing)… */
-export const levelAttack = 0.7;
-/** …and this much when it falls, so the waveform jumps with the voice and settles gently. */
-export const levelRelease = 0.25;
 /** Recording continues this long after the key is released, so the last word isn't clipped:
  * people tend to let go while still finishing it. It adds to every dictation's wait: owner,
  * 2026-09-29, 150 ms (was 300). */
@@ -646,6 +638,17 @@ export const waveformLevelExponent = 1;
 export const waveformGain = 1;
 /** The bars always ripple this much (0…1) while listening, so the pill looks alive between words. */
 export const waveformIdleLevel = 0.05;
+/** The bars move with speech only (`LevelEnvelope`): a voice-band reading less than this many dB over
+ * the room's noise there reads as nothing, so a nearly silent room leaves them still (owner,
+ * 2026-10-22, issue #251)… */
+export const waveformGateDecibels = 4;
+/** …and full height is at least this many dB over that gate, so the room's noise just past it barely
+ * moves them. */
+export const waveformMinimumRange = 12;
+/** The bars ease toward each new level, every frame, with these time constants (seconds): up quickly
+ * with a word, down gently after it. A level arrives ~12 times a second (`audioChunkFrames`). */
+export const waveformRiseSeconds = 0.06;
+export const waveformFallSeconds = 0.18;
 /** Every color change in the overlay eases over this long, in seconds: the waveform's, from
  * `palette.waveformWaiting` to `palette.waveformVoiced` once a voice is heard, and the thinking
  * circle's, to and from its retry colors (owner, 2026-10-03: "the transition time should be a

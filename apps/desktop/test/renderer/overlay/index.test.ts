@@ -1185,6 +1185,85 @@ describe("the chat window", () => {
     expect(document.querySelector(".chat-timeout")).toBeNull();
   });
 
+  /** A level arrives about 12 times a second: the bars glide toward it every frame instead of stepping
+   * to it, up over `waveformRiseSeconds` and down over the longer `waveformFallSeconds` (owner,
+   * 2026-10-22: the waveform should move much more smoothly). */
+  test("the waveform glides to each new level", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const page = await overlayPage();
+      const center = () => parseFloat(document.querySelectorAll<HTMLElement>(".pill .bar")[(config.overlayMeterBarCount - 1) / 2]?.style.height ?? "");
+      const span = config.overlayMeterMaxBarHeight - config.overlayMeterMinBarHeight;
+      // The center bar at a level, its ripple anywhere in its range.
+      const lowest = (level: number) => config.overlayMeterMinBarHeight + level * (1 - config.waveformRippleDepth) * span;
+      const highest = (level: number) => config.overlayMeterMinBarHeight + Math.min(1, config.waveformIdleLevel + level) * span;
+      const frame = 1_000 / 60;
+
+      await page.show({ ...listening, level: 0 });
+      vi.advanceTimersByTime(frame * 10);
+      expect(center()).toBeLessThanOrEqual(highest(0));
+
+      await page.show({ ...listening, level: 1 });
+      vi.advanceTimersByTime(frame);
+      expect(center()).toBeLessThan(highest(1 - Math.exp(-(2 * frame) / 1_000 / config.waveformRiseSeconds)));
+      vi.advanceTimersByTime(config.waveformRiseSeconds * 1_000 * 5);
+      expect(center()).toBeGreaterThan(lowest(0.95));
+
+      await page.show({ ...listening, level: 0 });
+      vi.advanceTimersByTime(frame);
+      expect(center()).toBeGreaterThan(lowest(Math.exp(-(2 * frame) / 1_000 / config.waveformFallSeconds)));
+      vi.advanceTimersByTime(config.waveformRiseSeconds * 1_000 * 5);
+      // Still falling where a rise that long would be done: it settles more gently than it rises.
+      expect(center()).toBeGreaterThan(lowest(Math.exp(-(config.waveformRiseSeconds * 5 + 2 * frame / 1_000) / config.waveformFallSeconds)));
+      vi.advanceTimersByTime(config.waveformFallSeconds * 1_000 * 8);
+      expect(center()).toBeLessThanOrEqual(highest(0.001));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The bars' motion keeps time, not frames: at the same moment after a level arrives, a 25, 50 or
+   * 125 Hz display shows the same bars, rising and falling. */
+  test("the waveform moves the same at any frame rate", async () => {
+    const heights = async (hz: number) => {
+      const step = 1_000 / hz;
+      let now = 0;
+      let nextHandle = 1;
+      const queued = new Map<number, FrameRequestCallback>();
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        queued.set(nextHandle, callback);
+        return nextHandle++;
+      });
+      vi.stubGlobal("cancelAnimationFrame", (handle: number) => queued.delete(handle));
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const advance = (milliseconds: number) => {
+        for (let frame = 0; frame < milliseconds / step; frame += 1) {
+          now += step;
+          const due = [...queued.values()];
+          queued.clear();
+          for (const callback of due) callback(now);
+        }
+      };
+      const page = await overlayPage();
+      const center = () => parseFloat(document.querySelectorAll<HTMLElement>(".pill .bar")[(config.overlayMeterBarCount - 1) / 2]?.style.height ?? "");
+      await page.show({ ...listening, level: 0 });
+      advance(200);
+      await page.show({ ...listening, level: 1 });
+      advance(200);
+      const risen = center();
+      await page.show({ ...listening, level: 0 });
+      advance(200);
+      const fallen = center();
+      return { risen, fallen };
+    };
+    const [slow, usual, fast] = [await heights(25), await heights(50), await heights(125)];
+    expect(usual.risen).toBeGreaterThan(usual.fallen);
+    for (const other of [slow, fast]) {
+      expect(other.risen).toBeCloseTo(usual.risen, 6);
+      expect(other.fallen).toBeCloseTo(usual.fallen, 6);
+    }
+  });
+
   /** The timeout bar runs down by itself, with no state pushed: full, half gone, then empty; gone once
    * touched, it asks for no more frames. */
   test("the timeout bar runs down with no state pushed", async () => {

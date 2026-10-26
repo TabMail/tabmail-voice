@@ -5184,6 +5184,33 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
           });
 
+          /** An answer spoken aloud moves the waveform as a dictation does: still on the room's noise,
+           * up on a voice, still again on the room, and at rest once it is dropped. */
+          test("an answer spoken aloud moves the waveform with the voice only", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+
+            controller.handle("start");
+            expect(controller.phase).toEqual({ kind: "listening" });
+            const room: number[] = [];
+            for (let reading = 0; reading < 10; reading += 1) {
+              capture.hearWindow(0.01);
+              room.push(controller.level);
+            }
+            expect(room.every((level) => level === 0)).toBe(true);
+            capture.hearWindow(0.1);
+            expect(controller.level).toBeGreaterThan(0.5);
+            capture.hearWindow(0.01);
+            expect(controller.level).toBe(0);
+            capture.hearWindow(0.1);
+            controller.handle("cancel");
+            expect(controller.level).toBe(0);
+            controller.answerConfirmation(false);
+            await done;
+          });
+
           /** The muted check covers the dictation's own hold: an answer spoken soon after it, on a
            * microphone that gives no sound yet, is not ended as muted (ADR-DESK-032 amendment: "A
            * spoken answer to a question is not checked"). */
@@ -6000,6 +6027,29 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await listenTo(noise);
       expect(controller.hasVoice).toBe(false);
       controller.handle("cancel");
+    });
+
+    /** The waveform follows the voice only (owner, 2026-10-22): still on the room's noise, up on a
+     * voice, still again on the room, and at rest once the dictation is cancelled. */
+    test("the waveform moves with a voice, not the room's noise", async () => {
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      const noise = 0.01;
+      controller.handle("start");
+      expect(await eventually(() => capture.starts === 1)).toBe(true);
+      const room: number[] = [];
+      for (let reading = 0; reading < 10; reading += 1) {
+        capture.hearWindow(noise);
+        room.push(controller.level);
+      }
+      expect(room.every((level) => level === 0)).toBe(true);
+      capture.hearWindow(noise * 10);
+      expect(controller.level).toBeGreaterThan(0.5);
+      capture.hearWindow(noise);
+      expect(controller.level).toBe(0);
+      capture.hearWindow(noise * 10);
+      controller.handle("cancel");
+      expect(controller.level).toBe(0);
     });
 
     /** The microphone starts about half a second after the key, so a voice often comes with its first
