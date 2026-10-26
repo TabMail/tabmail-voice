@@ -34,6 +34,7 @@ vi.mock("electron", () => ({
     quit() {},
     getLoginItemSettings: () => ({ openAtLogin: false }),
   },
+  Menu: { buildFromTemplate: (template: unknown) => template, setApplicationMenu() {} },
   session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
   shell: {},
   systemPreferences: {},
