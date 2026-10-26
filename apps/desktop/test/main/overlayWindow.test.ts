@@ -189,6 +189,60 @@ describe("OverlayWindowController", () => {
     return { x: bounds.x + placement.pillX, y };
   }
 
+  /** Dragging the chat window (ADR-DESK-036 amendment) moves the overlay by the drag, the pill and
+   * its bubbles with the chat; it stays there for follow-ups and as the screen's shell changes, kept
+   * on screen; the next chat window opens by the caret again. A drag not started, or after the window
+   * closed, moves nothing. */
+  test("a dragged chat window moves with its pill, and stays", async () => {
+    const caret: Rect = { x: 400, y: 600, width: 1, height: 16 };
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => caret);
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    controller.update({ kind: "idle" }, true);
+    controller.fitChat(120);
+    const opened = overlay.bounds();
+    const pill = pillOnScreen(opened, controller);
+
+    controller.dragChat({ x: 300, y: -200 });
+    expect(overlay.bounds()).toEqual(opened);
+    controller.startChatDrag();
+    controller.dragChat({ x: 150, y: -100 });
+    controller.dragChat({ x: 300.4, y: -200 });
+    const dragged = overlay.bounds();
+    expect(dragged).toEqual({ ...opened, x: opened.x + 300, y: opened.y - 200 });
+    expect(pillOnScreen(dragged, controller)).toEqual({ x: pill.x + 300, y: pill.y - 200 });
+
+    // Dragged far past the screen's edge, it stays on screen.
+    controller.dragChat({ x: 5_000, y: -5_000 });
+    expect(overlay.bounds().x + overlay.bounds().width - config.chatShadowMargin).toBeLessThanOrEqual(workArea.x + workArea.width);
+    expect(overlay.bounds().y + overlay.bounds().height - config.chatShadowMargin - 120 - config.chatPillGap - config.chatStripHeight).toBeGreaterThanOrEqual(workArea.y);
+    controller.dragChat({ x: 300, y: -200 });
+    expect(overlay.bounds()).toEqual(dragged);
+
+    // A follow-up, and the shell's coverage changing, leave it where it was dragged.
+    controller.update({ kind: "arming" }, true);
+    controller.update({ kind: "listening" }, true);
+    controller.refreshPlacement();
+    expect(overlay.bounds()).toEqual(dragged);
+    expect(pillOnScreen(overlay.bounds(), controller)).toEqual({ x: pill.x + 300, y: pill.y - 200 });
+
+    controller.update({ kind: "idle" }, false);
+    controller.startChatDrag();
+    controller.dragChat({ x: -100, y: 0 });
+    expect(overlay.bounds()).toEqual(dragged);
+    await chatShrunk();
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    controller.update({ kind: "idle" }, true);
+    controller.fitChat(120);
+    expect(overlay.bounds()).toEqual(opened);
+    controller.dragChat({ x: 300, y: -200 });
+    expect(overlay.bounds()).toEqual(opened);
+  });
+
   /** Opening the chat window moves and grows the overlay before its page has laid the chat out: it
    * stays transparent until the page has measured the chat, so the pill never shows a frame away from
    * where it is (red-verified); closed before that, it is not left transparent. */

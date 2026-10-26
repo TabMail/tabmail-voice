@@ -1287,6 +1287,44 @@ describe("the chat window", () => {
     }
   });
 
+  /** A mouse press on the chat that moves `chatDragThreshold` drags it (ADR-DESK-036 amendment): the
+   * main process is told the drag started, then how far the pointer has gone on the screen since the
+   * press. A shorter move is a click; a press on a button or a link, or a touch, drags nothing. */
+  test("dragging the chat window tells how far it went", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const drags = () => page.commands.filter((command) => command.type === "chatDragStart" || command.type === "dragChat");
+    const pointer = (target: Element | null, type: string, x: number, y: number, pointerType = "mouse") =>
+      act(async () => {
+        target?.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType, button: 0, screenX: x, screenY: y }));
+      });
+    const text = document.querySelector(".chat-request");
+    expect(text).not.toBeNull();
+
+    await pointer(text, "pointerdown", 100, 100);
+    await pointer(text, "pointermove", 102, 101);
+    await pointer(text, "pointerup", 102, 101);
+    expect(drags()).toEqual([]);
+
+    await pointer(text, "pointerdown", 100, 100);
+    await pointer(text, "pointermove", 100 + config.chatDragThreshold, 100);
+    await pointer(text, "pointermove", 160, 40);
+    await pointer(text, "pointerup", 160, 40);
+    await pointer(text, "pointermove", 200, 40);
+    expect(drags()).toEqual([
+      { type: "chatDragStart" },
+      { type: "dragChat", dx: config.chatDragThreshold, dy: 0 },
+      { type: "dragChat", dx: 60, dy: -60 },
+    ]);
+
+    for (const [target, pointerType] of [[document.querySelector(".chat-close"), "mouse"], [text, "touch"]] as const) {
+      await pointer(target, "pointerdown", 100, 100, pointerType);
+      await pointer(target, "pointermove", 160, 160, pointerType);
+      await pointer(target, "pointerup", 160, 160, pointerType);
+    }
+    expect(drags()).toHaveLength(3);
+  });
+
   /** A pointer entering or moving in the window, a click or a scroll keeps it open; once kept open
    * nothing more is sent. */
   test.each(["pointerover", "pointermove", "pointerdown", "wheel"])("a %s keeps it open", async (type) => {

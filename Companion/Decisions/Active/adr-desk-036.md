@@ -206,3 +206,29 @@ Answer, which also circled, went on behind it.
 > tooltip; it circles alone at the front while running; none without tools), each red-verified against
 > the bubble left out.
 
+
+> **Amended (owner, 2026-10-25): the chat window can be dragged (issue #249).** The owner: *"if I were
+> to drag the answer part or the part where the chat appears, I should be able to drag it to somewhere
+> in the screen"*, and *"pill and everything should move together"*. A mouse press anywhere on the chat
+> window that moves `chatDragThreshold` points drags it (`useChatDrag` in the overlay page); less is
+> a click. Not from a button or a link, which keep their clicks, nor the scroll bar, nor a touch,
+> which scrolls. The page sends `chatDragStart`, then `dragChat {dx, dy}`, the pointer's distance on
+> the screen since the press (the window moves under it), with pointer capture so the moves keep
+> coming past the window's edge.
+>
+> `OverlayWindowController.startChatDrag` / `dragChat` move the overlay window, so the pill and its
+> bubbles move with the chat and nothing moves inside the window. `draggedChat` places it: the
+> pill moved by the drag, the chat on the same side of it as it opened (it never flips mid-drag), the
+> pill, its bubbles and the chat at its measured height kept inside the work area of the display it is
+> dragged to, and the chat's `maxHeight` the room on its side there (at most `chatMaxHeight`), so it
+> still grows on screen. Across, the whole window stays in the work area; a pill that opened by the
+> screen's edge may stay there, so a drag never starts with a jump. The chat stays where it was
+> dragged for follow-ups and when the shell's coverage changes (`refreshPlacement` re-clamps it in
+> place); the next chat window opens by the caret again.
+>
+> Tests: `overlayGeometry.test.ts` (it moves by the drag; dragged past every edge, it and its tallest
+> growth stay on screen; its room by an edge; a pill by the edge doesn't jump), `overlayWindow.test.ts`
+> (the overlay moves by the drag with its pill; it stays through a follow-up and a shell change; no
+> drag without a start or once closing; the next chat opens at the caret), `overlay/index.test.ts`
+> (the threshold; the distance sent; a button or a touch drags nothing), and `index.test.ts` (the
+> commands reach the overlay; malformed distances are refused). Each was red-verified by a mutation.

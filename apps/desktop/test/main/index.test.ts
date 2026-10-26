@@ -58,7 +58,7 @@ const app = vi.hoisted(() => ({
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
-  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; hitTest?: string } | null,
+  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; drags: unknown[]; hitTest?: string } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[]; phase: object } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
@@ -446,6 +446,13 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     }
     pointerOver(over: boolean) {
       this.pointers.push(over);
+    }
+    readonly drags: unknown[] = [];
+    startChatDrag() {
+      this.drags.push("start");
+    }
+    dragChat(delta: { x: number; y: number }) {
+      this.drags.push(delta);
     }
   },
 }));
@@ -1057,6 +1064,11 @@ describe("main process wiring", () => {
     await send({ type: "pointerOver", over: true });
     await send({ type: "pointerOver", over: false });
     expect(await send({ type: "pointerOver", over: "yes" } as never)).toEqual({ error: expect.any(String) });
+    await send({ type: "chatDragStart" });
+    await send({ type: "dragChat", dx: 12, dy: -30 });
+    expect(await send({ type: "dragChat", dx: Number.NaN, dy: 0 })).toEqual({ error: expect.any(String) });
+    expect(await send({ type: "dragChat", dx: 1 } as never)).toEqual({ error: expect.any(String) });
+    expect(app.overlay?.drags).toEqual(["start", { x: 12, y: -30 }]);
     await send({ type: "openChatLink", url: "https://example.com/closed" });
     if (controller) controller.chat = {};
     await send({ type: "openChatLink", url: "https://example.com/docs" });

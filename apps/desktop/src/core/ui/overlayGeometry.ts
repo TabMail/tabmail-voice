@@ -181,6 +181,28 @@ export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Re
   return { x, y, width, height };
 }
 
+/** Where the chat window goes as the user drags it (ADR-DESK-036 amendment; owner, 2026-10-25: the
+ * pill and everything "move together"): its pill, its top edge's center, moved by `delta` from `from`
+ * where the drag started, and how tall the chat may grow there. The pill, its bubbles and the chat,
+ * `contentHeight` tall, stay in the work area, the chat on the same side of them (`below`) and no
+ * taller than the room there (at most `tallest`). Across, the whole window stays in the work area; a
+ * pill that opened by the work area's edge, its window kept in (`chatWindowFrame`), may stay there. */
+export function draggedChat(from: Point, delta: Point, contentHeight: number, workArea: Rect, below: boolean, bubblesUnder: boolean, tallest: number = config.chatMaxHeight): { pill: Point; side: { below: boolean; maxHeight: number } } {
+  const stripTop = chatStripTop(from.y, bubblesUnder);
+  const overStrip = from.y - stripTop;
+  const chat = config.chatPillGap + Math.min(contentHeight, tallest);
+  const highest = workArea.y + (below ? 0 : chat);
+  const lowest = Math.max(highest, maxY(workArea) - config.chatStripHeight - (below ? chat : 0));
+  const top = Math.min(Math.max(stripTop + delta.y, highest), lowest);
+  const half = Math.min(config.chatWidth, workArea.width) / 2 + config.chatShadowMargin;
+  const inside = from.x >= workArea.x && from.x <= maxX(workArea);
+  const left = Math.min(workArea.x - config.chatShadowMargin + half, inside ? from.x : Infinity);
+  const right = Math.max(maxX(workArea) + config.chatShadowMargin - half, inside ? from.x : -Infinity);
+  const x = Math.min(Math.max(from.x + delta.x, left), Math.max(left, right));
+  const room = below ? maxY(workArea) - (top + config.chatStripHeight + config.chatPillGap) : top - config.chatPillGap - workArea.y;
+  return { pill: { x, y: top + overStrip }, side: { below, maxHeight: Math.min(tallest, Math.floor(room)) } };
+}
+
 /** Where the paste history window goes (ADR-DESK-043), `size` big: where the chat window would
  * (owner, 2026-09-30: "like the answer tool"), `chatPillGap` over the pill and its bubbles, or under
  * them where there is more room (`chatSide`), no taller than the room on that side; centered on the

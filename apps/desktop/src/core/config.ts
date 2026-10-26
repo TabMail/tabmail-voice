@@ -874,6 +874,9 @@ export const chatShadowMargin = glassShadowReach;
 /** The chat window sits this far over the pill (or under its bubbles, `chatSide`), which stays
  * where it was (owner, 2026-09-28: the answer box "appears smoothly above in a subtle way"). */
 export const chatPillGap = 10;
+/** A press on the chat window that moves this far (points) drags it, with its pill and bubbles
+ * (ADR-DESK-036); less is a click. */
+export const chatDragThreshold = 4;
 /** The pill and its row of bubbles under it: what the chat window leaves room for beside it. */
 export const chatStripHeight = pillHeight + agentBubbleGap + agentBubbleDiameter;
 /** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCenter`). */

@@ -13,6 +13,7 @@ import {
   bubbleTooltipCenter,
   chatSide,
   chatWindowFrame,
+  draggedChat,
   grownBubble,
   hintCenter,
   hintCenterOver,
@@ -416,5 +417,58 @@ describe("the chat window's place", () => {
   test.each([2, 998])("the chat window stays on screen with the pill at x %d", (x) => {
     const frame = chatWindowFrame({ x, y: 500 }, 120, display, { below: false, ...tallest }, true);
     expect(contains(display, content(frame, 120, false))).toBe(true);
+  });
+});
+
+/** Dragging the chat window (ADR-DESK-036 amendment): the pill, its bubbles and the chat move
+ * together by the drag, the chat on the same side of them; however far the drag goes, the pill, its
+ * bubbles and the chat at its height stay on screen, and the chat may grow only as far as the room on
+ * its side. */
+describe("the dragged chat window's place", () => {
+  const margin = config.chatShadowMargin;
+  const height = 120;
+
+  /** The chat, the pill and its bubbles, in the overlay window placed for `pill` and `side`. */
+  function shown(pill: Point, side: { below: boolean; maxHeight: number }, bubblesUnder: boolean): Rect {
+    const frame = chatWindowFrame(pill, height, display, side, bubblesUnder);
+    return rect(frame.x + margin, frame.y + margin, frame.width - 2 * margin, frame.height - 2 * margin);
+  }
+
+  test.each([
+    [false, true],
+    [false, false],
+    [true, true],
+    [true, false],
+  ])("it moves with the drag and stays on screen (below: %s, bubbles under: %s)", (below, bubblesUnder) => {
+    const from = { x: 500, y: 400 };
+    const moved = draggedChat(from, { x: -120, y: 60 }, height, display, below, bubblesUnder);
+    expect(moved.pill).toEqual({ x: 380, y: 460 });
+    expect(moved.side.below).toBe(below);
+    for (const delta of [{ x: -5_000, y: -5_000 }, { x: 5_000, y: 5_000 }, { x: -5_000, y: 5_000 }, { x: 5_000, y: -5_000 }]) {
+      const { pill, side } = draggedChat(from, delta, height, display, below, bubblesUnder);
+      expect(contains(display, shown(pill, side, bubblesUnder)), JSON.stringify(delta)).toBe(true);
+      expect(side.maxHeight).toBeGreaterThanOrEqual(height);
+      // Grown to its tallest there, it is still on screen.
+      const tallest = chatWindowFrame(pill, side.maxHeight, display, side, bubblesUnder);
+      expect(contains(display, rect(tallest.x + margin, tallest.y + margin, tallest.width - 2 * margin, tallest.height - 2 * margin)), JSON.stringify(delta)).toBe(true);
+      // The pill stays centered in the window: nothing moves inside it.
+      expect(midX(chatWindowFrame(pill, height, display, side, bubblesUnder))).toBeCloseTo(pill.x);
+    }
+  });
+
+  /** Where there is room the chat grows as tall as ever; by the screen's edge, only as tall as the room. */
+  test("the chat may grow as far as the room on its side", () => {
+    expect(draggedChat({ x: 500, y: 700 }, { x: 0, y: 0 }, height, display, false, true).side.maxHeight).toBe(config.chatMaxHeight);
+    const nearTop = draggedChat({ x: 500, y: 700 }, { x: 0, y: -520 }, height, display, false, true);
+    expect(nearTop.side.maxHeight).toBe(nearTop.pill.y - config.chatPillGap - display.y);
+    expect(nearTop.side.maxHeight).toBeLessThan(config.chatMaxHeight);
+  });
+
+  /** A pill that opened by the screen's edge, its window kept on screen around it, doesn't jump as a
+   * drag starts. */
+  test("a pill by the screen's edge stays where it is as the drag starts", () => {
+    for (const x of [2, 998]) {
+      expect(draggedChat({ x, y: 500 }, { x: 0, y: 1 }, height, display, false, true).pill).toEqual({ x, y: 501 });
+    }
   });
 });

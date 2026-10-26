@@ -6,7 +6,7 @@ import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
 import type { Phase } from "../core/dictation/controller.js";
 import { errorName, log } from "../core/log.js";
-import { bubblesFitUnder, chatSide, chatWindowFrame, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/ui/overlayGeometry.js";
+import { bubblesFitUnder, chatSide, chatWindowFrame, draggedChat, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/ui/overlayGeometry.js";
 import type { ChatPlacement } from "../shared/ipc.js";
 
 /** Presentation operations used by the shared placement controller. A platform may present the
@@ -46,7 +46,9 @@ export class OverlayWindowController {
   /** Where the chat window opened, while it shows: by the pill (its top edge's center), which stays
    * there for follow-ups, its bubbles under it or over it as they were, on the side of them with room
    * (`chatSide`). */
-  private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean } | null = null;
+  private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean; dragged: boolean } | null = null;
+  /** Where the chat window's pill was as the drag under way started. */
+  private chatDragFrom: Point | null = null;
   /** The chat window opened and its page hasn't measured it yet: the overlay is transparent meanwhile,
    * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is).
    * Linux has no window opacity (Electron: `setOpacity` "does nothing"); the page's own redraw does it. */
@@ -173,6 +175,9 @@ export class OverlayWindowController {
     // Placed once the closing chat has shrunk.
     if (this.chatShrinkTimer !== null) return;
     if (this.requestedChat) {
+      // Dragged, it stays where the user put it, kept on screen.
+      const dragged = this.chat?.dragged === true ? this.chat.pill : null;
+      if (dragged !== null) return this.placeDraggedChat(dragged, { x: 0, y: 0 }, this.workArea({ ...dragged, width: 0, height: 0 }));
       if (this.chat !== null) this.hideChat();
       this.showChat();
       // A move with unchanged content dimensions need not trigger ResizeObserver again.
@@ -197,6 +202,33 @@ export class OverlayWindowController {
     const pointer = screen.getCursorScreenPoint();
     const frame = this.chatFrame(height);
     if (pointer.x >= frame.x && pointer.x < frame.x + frame.width && pointer.y >= frame.y && pointer.y < frame.y + frame.height) this.pointerOver(true);
+  }
+
+  /** The user started dragging the chat window (ADR-DESK-036): it moves from where it is now. */
+  startChatDrag(): void {
+    if (this.chat === null || this.chatShrinkTimer !== null) return;
+    this.chatDragFrom = this.chat.pill;
+  }
+
+  /** The chat window dragged by `delta` since the drag started: the overlay moves with it, the pill
+   * and its bubbles too, kept on the screen it is dragged to (`draggedChat`), and stays there for
+   * follow-ups. */
+  dragChat(delta: Point): void {
+    const chat = this.chat;
+    const from = this.chatDragFrom;
+    if (chat === null || from === null || this.chatShrinkTimer !== null) return;
+    const moved = { x: Math.round(delta.x), y: Math.round(delta.y) };
+    this.placeDraggedChat(from, moved, this.workArea({ x: from.x + moved.x, y: from.y + moved.y, width: 0, height: 0 }));
+  }
+
+  /** The dragged chat window, its pill moved from `from` by `delta`, placed in `workArea`. */
+  private placeDraggedChat(from: Point, delta: Point, workArea: Rect): void {
+    const chat = this.chat;
+    if (chat === null) return;
+    const { pill, side } = draggedChat(from, delta, this.measuredChatHeight ?? chat.side.maxHeight, workArea, chat.side.below, chat.bubblesUnder);
+    this.chat = { ...chat, pill, workArea, side, dragged: true };
+    this.window.setBounds(rounded(this.chatFrame(side.maxHeight)));
+    this.onPlace?.();
   }
 
   /** The pointer went over the chat window or the note, or off it (`ChatHitTest`): the overlay takes
@@ -233,7 +265,8 @@ export class OverlayWindowController {
     const pill = pillPosition(anchor, workArea);
     const shift = { x: Math.round(origin.x) - origin.x, y: Math.round(origin.y) - origin.y };
     const bubblesUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
-    this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder };
+    this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder, dragged: false };
+    this.chatDragFrom = null;
     this.chatClosing = false;
     this.chatUnmeasured = true;
     this.window.setOpacity(0);

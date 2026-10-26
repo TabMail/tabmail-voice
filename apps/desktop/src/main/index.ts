@@ -962,6 +962,12 @@ function launch(): void {
       case "pointerOver":
         overlay.pointerOver(command.over);
         return;
+      case "chatDragStart":
+        overlay.startChatDrag();
+        return;
+      case "dragChat":
+        overlay.dragChat({ x: command.dx, y: command.dy });
+        return;
       case "copyNotPasted":
         void controller.copyNotPasted();
         return;
