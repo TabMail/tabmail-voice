@@ -20,6 +20,11 @@ const pages: Record<WindowName | "audio", string> = {
   audio: "audio/index.html",
 };
 
+/** The app's own windows, opened from the menu: on macOS the app is in the Dock while one is open
+ * (ADR-DESK-065). The overlay and the paste history float over other apps and keep it out. */
+const presentedWindows = ["settings", "welcome", "contextDebug"] as const satisfies readonly WindowName[];
+type PresentedWindow = (typeof presentedWindows)[number];
+
 /** Where the built app lives: the main script is `dist/node/main/index.js`. */
 const distDirectory = join(__dirname, "../..");
 
@@ -27,6 +32,11 @@ const distDirectory = join(__dirname, "../..");
  * preload, no navigation, no new windows), each drawing the state the main process pushes. */
 export class Windows {
   private readonly open = new Map<WindowName | "audio", BrowserWindow>();
+  /** While the app is in the Dock (macOS): when its icon was asked to show, and that show, which
+   * every window presented meanwhile waits for, so they come forward in the order they were asked;
+   * a hide waiting for its turn. */
+  private dock: { shownAt: number; shown: Promise<void> } | null = null;
+  private dockHideTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly state: <Name extends WindowName>(name: Name) => WindowStates[Name]) {}
 
@@ -148,20 +158,55 @@ export class Windows {
   }
 
   /** A menu-bar app isn't active on its own, so its window would open behind the frontmost app:
-   * bring the app and the window forward. */
-  private present(name: WindowName, options: BrowserWindowConstructorOptions): void {
+   * bring the app and the window forward. On macOS the app is in the Dock while such a window is
+   * open (ADR-DESK-065); showing the icon moves the focus, so the window comes forward once it shows. */
+  private present(name: PresentedWindow, options: BrowserWindowConstructorOptions): void {
+    const docked = this.showInDock();
     const existing = this.open.get(name);
     if (existing && !existing.isDestroyed()) {
-      app.focus({ steal: true });
-      existing.show();
-      existing.focus();
+      void docked.then(() => {
+        if (existing.isDestroyed()) return;
+        app.focus({ steal: true });
+        existing.show();
+        existing.focus();
+      });
       return;
     }
     const window = this.window(name, { ...options, show: false, useContentSize: true });
+    window.on("closed", () => this.leaveDockUnlessPresenting());
     window.once("ready-to-show", () => {
-      app.focus({ steal: true });
-      window.show();
+      void docked.then(() => {
+        if (window.isDestroyed()) return;
+        app.focus({ steal: true });
+        window.show();
+      });
     });
+  }
+
+  /** Shows the app in the Dock on macOS, if it isn't already, and cancels a hide still waiting.
+   * Returns the icon's show, the one still in progress if there is one (Electron's resolves once the
+   * app is shown). */
+  private showInDock(): Promise<void> {
+    if (this.dockHideTimer) {
+      clearTimeout(this.dockHideTimer);
+      this.dockHideTimer = null;
+    }
+    if (process.platform !== "darwin" || !app.dock) return Promise.resolve();
+    this.dock ??= { shownAt: Date.now(), shown: app.dock.show() };
+    return this.dock.shown;
+  }
+
+  /** Once none of the windows the Dock is shown for is open, the app leaves the Dock: no sooner than
+   * `dockHideAfterShowDelay` after the icon was shown, and only if none has opened since. */
+  private leaveDockUnlessPresenting(): void {
+    const shownAt = this.dock?.shownAt;
+    if (shownAt === undefined || this.dockHideTimer || presentedWindows.some((name) => this.isOpen(name))) return;
+    this.dockHideTimer = setTimeout(() => {
+      this.dockHideTimer = null;
+      if (presentedWindows.some((name) => this.isOpen(name))) return;
+      this.dock = null;
+      app.dock?.hide();
+    }, Math.max(0, shownAt + config.dockHideAfterShowDelay - Date.now()));
   }
 
   private window(name: WindowName | "audio", options: BrowserWindowConstructorOptions, configure?: (window: BrowserWindow) => void): BrowserWindow {

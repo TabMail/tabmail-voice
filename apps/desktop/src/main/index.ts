@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
+import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, session, shell } from "electron";
 import { autoUpdater, NsisUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
@@ -126,8 +126,13 @@ function launch(): void {
       error: (text) => process.stderr.write(`${text}\n`),
     },
   });
-  // A menu-bar app: no Dock icon (packaged builds say so in Info.plist as well).
+  // A menu-bar app: no Dock icon (packaged builds say so in Info.plist as well), but for while Settings,
+  // the welcome wizard or the last screen context is open (`Windows`, ADR-DESK-065). In the Dock the app
+  // has the menu bar: its own menu (About, Hide, Quit), Edit (copy and paste in the fields) and Window,
+  // in place of Electron's default, whose View and Help menus (reload, developer tools, Electron's
+  // website) are not the app's.
   app.dock?.hide();
+  if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
 
   const lastRecordingPath = join(tmpdir(), config.debugLastRecordingFileName);
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);

@@ -500,6 +500,11 @@ export const contactStoreRequestTimeout = eventStoreRequestTimeout;
 export const fileStoreRequestTimeout = 30_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
+/** On macOS the Dock icon, shown while Settings, the welcome wizard or the last screen context is
+ * open (ADR-DESK-065), is hidden no sooner than this long after it was shown: Electron ignores a
+ * `dock.hide()` within a second of `dock.show()` (macOS can otherwise leave two icons), which would
+ * leave the icon in the Dock after a window opened and closed quickly. */
+export const dockHideAfterShowDelay = 1_200;
 /** `voice-microphone` exits with this after each dictation and when its capture ends, on every
  * platform (`VoiceMicrophoneRestartExitCode` in the shared core's header): it asks to be started
  * afresh, at once. */

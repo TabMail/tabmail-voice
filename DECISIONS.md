@@ -73,3 +73,4 @@ one line here carrying its number and title.
 - **[ADR-DESK-061](Companion/Decisions/Active/adr-desk-061.md)**: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
 - **[ADR-DESK-062](Companion/Decisions/Active/adr-desk-062.md)**: The default event duration, in Settings and set by agent mode's Settings tool
 - **[ADR-DESK-064](Companion/Decisions/Active/adr-desk-064.md)**: The app sends a protocol version, and shares Thunderbird's and iOS's prompts and tools
+- **[ADR-DESK-065](Companion/Decisions/Active/adr-desk-065.md)**: On macOS the app is in the Dock while Settings is open
