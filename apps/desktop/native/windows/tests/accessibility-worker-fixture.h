@@ -24,12 +24,15 @@
 using JSON = nlohmann::json;
 using HWND = void*;
 using ULONGLONG = uint64_t;
+using DWORD = uint32_t;
 std::atomic<HWND> foreground{reinterpret_cast<HWND>(uintptr_t{42})};
 HWND GetForegroundWindow() { return foreground.load(); }
+bool IsWindow(HWND window) { const auto value = reinterpret_cast<uintptr_t>(window); return value == 42 || value == 84; }
 uint64_t GetTickCount64() { return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 void Sleep(int milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
 [[noreturn]] void ExitProcess(int code) { std::_Exit(code); }
 namespace voice {
+DWORD windowProcess(HWND window) { return reinterpret_cast<uintptr_t>(window) == 42 ? 101 : 202; }
 struct COM { COM() {} ~COM() {} };
 struct Output {
  mutable std::mutex mutex;
