@@ -45,6 +45,8 @@ struct ScreenContext: Sendable, Equatable {
     /// Acquisition could not prove that the entire selection was retained. Disables Edit.
     var selectionUnavailable = false
     var textAfterCaret = ""
+    /// The sides stay private recognition source when only the selection is presented.
+    var caretSelectionOnly = false
     var blocks: [Block] = []
     var nodesVisited = 0
     var coreFailed = false
@@ -53,7 +55,7 @@ struct ScreenContext: Sendable, Equatable {
     mutating func prepareTextBudget() {
         guard sourceBytes == nil, !coreFailed else { return }
         do {
-            let result = try SharedContext.reserveCaret([textBeforeCaret, selectedText, textAfterCaret])
+            let result = try SharedContext.reserveCaret([textBeforeCaret, selectedText, textAfterCaret], selectionOnly: caretSelectionOnly)
             sourceBytes = result.used; textBudgetFull = result.budgetFull
             hiddenMarker = try SharedContext.hiddenMarker()
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }

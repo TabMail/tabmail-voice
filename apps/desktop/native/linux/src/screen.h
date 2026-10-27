@@ -883,15 +883,14 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             selectionUnavailable = caret->selectionUnavailable;
         }
     }
-    // Only what is selected is kept of a focus that is no field, and nothing of the caret's text
-    // when the whole window is read: it reads the field whole (the core's `around`).
+    // Non-field sides remain private recognition source until shared redaction projects only
+    // the selection. The whole-window read carries no independent caret source.
     const auto keep = walk::around(fieldInFocus);
-    if (!keep.around) { around[0].clear(); around[2].clear(); }
-    if (!keep.selection) { around[1].clear(); selectionUnavailable = false; }
+    if (!keep.selection) { around = {}; selectionUnavailable = false; }
     // The focused page checks precede the title, as on macOS.
     const auto title = tree.label(window);
     const auto windowFrame = tree.frame(window);
-    VisibleContext context(around);
+    VisibleContext context(around, keep.selection && !keep.around);
     const auto& limits = walk::limits();
     std::vector<std::pair<typename Tree::Node, bool>> stack{{window, false}};
     while (!stack.empty()) {

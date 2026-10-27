@@ -47,8 +47,8 @@ public:
     static size_t sourceLimit() { return core::request({{"limits", true}}, voice_core_context_json).at("screenBytes").get<size_t>(); }
     // What stands in for a part withheld for privacy.
     static std::string hiddenMarker() { return core::request({{"limits", true}}, voice_core_context_json).at("hiddenMarker").get<std::string>(); }
-    explicit VisibleContext(const std::array<std::string, 3>& caret = {}) {
-        const auto result = core::request({{"reserveCaret", caret}}, voice_core_context_json);
+    explicit VisibleContext(const std::array<std::string, 3>& caret = {}, bool selectionOnly = false) : caretSelectionOnly(selectionOnly) {
+        const auto result = core::request({{"reserveCaret", caret}, {"caretSelectionOnly", caretSelectionOnly}}, voice_core_context_json);
         bytes = result.at("used").get<size_t>();
         textBudgetFull = result.at("budgetFull").get<bool>();
     }
@@ -108,11 +108,13 @@ public:
                          const nlohmann::json& exclusions, uint64_t milliseconds) const {
         fields["blocks"] = blocksJSON();
         fields["caret"] = caret;
+        fields["caretSelectionOnly"] = caretSelectionOnly;
         fields["selectionUnavailable"] = selectionUnavailable;
         return screenReply(std::move(fields), exclusions, nodes, milliseconds, stopped);
     }
 
 private:
+    bool caretSelectionOnly = false;
     size_t bytes = 0;
     std::vector<ContextBlock> blocks;
     static constexpr const char* kinds[] = {"text", "heading", "link", "row", "field", "caret"};

@@ -200,3 +200,9 @@ going off after each dictation (the engine's release has no automated test, by t
   `screen.cpp`: background terminals stay on the viewport reader in both scopes;
   `input-session.cpp`: activation success/refusal before clipboard publication; `gnome-caret.cpp`:
   compositor target/activation wire contracts.
+
+
+| #263 selection recognition context | Verification |
+| --- | --- |
+| macOS `ScreenContextTests` non-field selection and private-source admission; Linux `tests/screen.cpp`; shared context/screen corpus and Rust selection-only tests | Page, list and row values redact with labels outside the selection; benign selection stays usable; hidden sides never enter replies or presentation reservation; whole-window selection stays empty; protected or incomplete sources are not requested. |
+| Windows `voice-page-selection`, `voice-uia-caret`, Windows/Linux real Chromium fixtures | Metadata refusal makes zero source-text calls, approved document identity is checked before text, and plain/styled selected named values are redacted through actual providers. |

@@ -423,6 +423,12 @@ fn caret_text(parts: &[String]) -> String {
         parts[2]
     )
 }
+/// Private source may include a non-field selection's neighbors, which never enter its reply.
+fn caret_selection_only(request: &Value) -> Result<bool, u32> {
+    request
+        .get("caretSelectionOnly")
+        .map_or(Ok(false), |value| value.as_bool().ok_or(1))
+}
 fn read_caret(value: &Value) -> Result<Vec<String>, u32> {
     let parts: Vec<String> = serde_json::from_value(value.clone()).map_err(|_| 1u32)?;
     if parts.len() != 3
@@ -990,6 +996,10 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         // This copy computes only the prospective presentation reservation.
         // Callers retain the complete source for combined redaction.
         let mut caret = read_caret(value)?;
+        if caret_selection_only(&request)? {
+            caret[0].clear();
+            caret[2].clear();
+        }
         present_caret(&mut caret)?;
         let used = caret_text(&caret).len();
         return serde_json::to_vec(&json!({"used":used,"budgetFull":used >= SCREEN_BYTES}))
@@ -1185,6 +1195,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         return Err(1);
     }
     let mut response = json!({});
+    let selection_only = caret_selection_only(&request)?;
     let mut truncated = false;
     let reserved;
     let empty_caret = json!(["", "", ""]);
@@ -1231,7 +1242,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             read.piece();
             if block.kind == "caret" {
                 for (part, text) in caret.iter().enumerate() {
-                    read.push(text, caret_parts + part, true);
+                    read.push(text, caret_parts + part, !selection_only || part == 1);
                 }
                 continue;
             }
@@ -1261,7 +1272,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 read.push(&LINE_BREAK.to_string(), caret_parts, false);
             }
             for (part, text) in caret.iter().enumerate() {
-                read.push(text, caret_parts + part, true);
+                read.push(text, caret_parts + part, !selection_only || part == 1);
             }
         }
         let Layout {
@@ -2073,6 +2084,106 @@ mod budget_tests {
             process(&serde_json::to_vec(&json!({"caretWindow":{"parts":["","",""]}})).unwrap())
                 .is_err()
         );
+    }
+    #[test]
+    fn selection_only_caret_redacts_with_hidden_sides_without_inventing_edges() {
+        for blocks in [json!([{"kind":"caret","text":""}]), json!([])] {
+            for (before, selected, after, expected, redacted) in [
+                (
+                    "Draft. token=",
+                    "syntheticPrivate123",
+                    ". More.",
+                    privacy::PLACEHOLDER,
+                    true,
+                ),
+                (
+                    "token=syntheticPrivate123. Read ",
+                    "ordinary words",
+                    ". More.",
+                    "ordinary words",
+                    false,
+                ),
+                (
+                    "ri",
+                    "sk-assessment-template-v2",
+                    ". More.",
+                    "sk-assessment-template-v2",
+                    false,
+                ),
+                (
+                    "ri ",
+                    "sk-assessment-template-v2",
+                    ". More.",
+                    privacy::PLACEHOLDER,
+                    true,
+                ),
+                ("private prefix. ", "", " private suffix.", "", false),
+            ] {
+                let request = json!({"blocks":blocks,"caret":[before,selected,after],"caretSelectionOnly":true});
+                let reply = call(request.clone());
+                assert_eq!(reply["caret"], json!(["", expected, ""]), "{reply:?}");
+                assert_eq!(reply["selectionRedacted"], redacted);
+                assert_eq!(reply["truncated"], false);
+                let mut screen = request;
+                screen["appName"] = json!("Synthetic page");
+                screen["exclusions"] = json!({"excludedAppIDs":[],"excludedHosts":[]});
+                screen["nodes"] = json!(1);
+                screen["milliseconds"] = json!(1);
+                screen["selectionUnavailable"] = json!(false);
+                let screen: Value = serde_json::from_slice(
+                    &crate::screen::process(&serde_json::to_vec(&screen).unwrap()).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(screen["selectedText"], expected);
+                assert_eq!(screen["selectionRedacted"], redacted);
+                assert_eq!(screen["textBeforeCaret"], "");
+                assert_eq!(screen["textAfterCaret"], "");
+                let serialized = screen.to_string();
+                assert!(
+                    !serialized.contains("syntheticPrivate123")
+                        && !serialized.contains("private prefix")
+                        && !serialized.contains("private suffix")
+                );
+            }
+        }
+    }
+    #[test]
+    fn selection_only_caret_reserves_only_its_projection_and_keeps_source_bounds() {
+        let parts = json!(["x ".repeat(WINDOW / 2), "chosen", " y".repeat(WINDOW / 2)]);
+        let reserved = call(json!({"reserveCaret":parts,"caretSelectionOnly":true}));
+        assert_eq!(reserved["used"], "chosen".len() + 6);
+        assert_eq!(reserved["budgetFull"], false);
+        let late = "z".repeat(SCREEN - 100);
+        let reply = call(
+            json!({"blocks":[{"kind":"text","text":late}],"caret":parts,"caretSelectionOnly":true}),
+        );
+        assert_eq!(reply["caret"], json!(["", "chosen", ""]));
+        assert_eq!(reply["blocks"][0]["text"], late);
+        assert_eq!(reply["truncated"], false);
+        for parts in [
+            json!(["x".repeat(WINDOW + 1), "", ""]),
+            json!(["", "", "é".repeat(WINDOW / 2 + 1)]),
+            json!(["", "s".repeat(SCREEN - 5), ""]),
+        ] {
+            assert!(
+                process(
+                    &serde_json::to_vec(&json!({"reserveCaret":parts,"caretSelectionOnly":true}))
+                        .unwrap()
+                )
+                .is_err()
+            );
+        }
+        for policy in [json!(null), json!("true"), json!(1)] {
+            assert!(
+                process(
+                    &serde_json::to_vec(
+                        &json!({"reserveCaret":["","",""],"caretSelectionOnly":policy})
+                    )
+                    .unwrap()
+                )
+                .is_err()
+            );
+        }
     }
     #[test]
     fn recognition_halo_does_not_consume_the_presentation_reservation() {

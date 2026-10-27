@@ -143,6 +143,23 @@ async function main() {
     await expectRead("Gmail-shaped, before a bold word", "Synthetic opening line\n\nSynthetic ",
                      "line to dictate under.\n\n\n--\nSynthetic signature");
 
+    for (const styled of [false, true]) {
+      const tag = styled ? "b" : "span";
+      await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<p>Draft. token=<${tag} id="selected">syntheticPrivate123</${tag}>. More.</p>`)}`);
+      await delay(500);
+      await window.webContents.executeJavaScript("getSelection().selectAllChildren(document.getElementById('selected'))");
+      await delay(150);
+      const shown = await request("readScreen", { read: styled ? 3 : 1 });
+      assert.deepEqual([shown.textBeforeCaret, shown.selectedText, shown.textAfterCaret], ["", "[redacted]", ""],
+        "a non-field selected value is recognized with its private label, including styled text");
+      assert.equal(shown.selectionRedacted, true);
+      assert.ok(!JSON.stringify(shown).includes("syntheticPrivate123"));
+      const whole = await request("readScreen", { read: styled ? 4 : 2, sameWindowAs: styled ? 3 : 1, wholeWindow: true });
+      assert.equal(whole.selectedText, "");
+      assert.equal(whole.selectionRedacted, false);
+      assert.ok(!JSON.stringify(whole).includes("syntheticPrivate123"));
+    }
+
     if (failures.length) {
       process.stderr.write(`${failures.join("\n")}\n${readerErrors.slice(-1500)}\n`);
       process.exitCode = 1;

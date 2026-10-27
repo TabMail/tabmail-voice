@@ -249,10 +249,41 @@ async function main() {
     assert.equal(selectedPage.focusedRole, "control", "a page in focus is no field");
     assert.equal(selectedPage.host, "data", "a page in focus reports its host");
     assert.deepEqual([selectedPage.textBeforeCaret, selectedPage.selectedText, selectedPage.textAfterCaret],
-      ["", "Unrelated heading outside focused field", ""], "a page in focus keeps its selection and no text around a caret");
-    assert.ok(selectedPage.renderedText.includes("‸Unrelated heading outside focused field‸"), "the selection is marked in the read");
+      ["", "", ""], "a page with an unapproved neighboring password withholds its independent selection");
+    assert.equal(selectedPage.selectionRedacted, true, "withheld recognition source disables Edit");
     assert.ok(selectedPage.renderedText.includes("Unrelated footer outside focused field") && !selectedPage.renderedText.includes("synthetic-secret"),
       "a page in focus is still walked, without its password field");
+    // A safe document keeps ordinary selections; a label outside a selected value still redacts
+    // it, including when styling splits that visual line into native text runs.
+    await window.webContents.executeJavaScript(`(() => {
+      globalThis.selectionPasswords = [...document.querySelectorAll('input[type="password"]')].map(node => [node, node.parentNode, node.nextSibling]);
+      for (const [node] of selectionPasswords) node.remove();
+      getSelection().selectAllChildren(document.querySelector('h1'));
+    })()`);
+    await delay(150);
+    const safePage = await request("readScreen");
+    assert.deepEqual([safePage.textBeforeCaret, safePage.selectedText, safePage.textAfterCaret],
+      ["", "Unrelated heading outside focused field", ""], "an approved page presents only its ordinary selection");
+    assert.equal(safePage.selectionRedacted, false);
+    for (const styled of [false, true]) {
+      await window.webContents.executeJavaScript(`(() => {
+        document.getElementById('pageSecret')?.remove();
+        const paragraph = document.createElement('p'); paragraph.id = 'pageSecret';
+        paragraph.innerHTML = 'Draft. token=<' + (${styled} ? 'b' : 'span') + ' id="pageValue">syntheticPrivate123</' + (${styled} ? 'b' : 'span') + '>. More.';
+        document.body.prepend(paragraph);
+        getSelection().selectAllChildren(document.getElementById('pageValue'));
+      })()`);
+      await delay(150);
+      const redacted = await request("readScreen");
+      assert.deepEqual([redacted.textBeforeCaret, redacted.selectedText, redacted.textAfterCaret], ["", "[redacted]", ""]);
+      assert.equal(redacted.selectionRedacted, true);
+      assert.ok(!JSON.stringify(redacted).includes("syntheticPrivate123"), "selected named value is absent from every reply field");
+    }
+    await window.webContents.executeJavaScript(`(() => {
+      document.getElementById('pageSecret').remove();
+      for (const [node, parent, next] of selectionPasswords) parent.insertBefore(node, next);
+      delete globalThis.selectionPasswords;
+    })()`);
     await window.webContents.executeJavaScript("getSelection().removeAllRanges()");
     await delay(150);
     const plainPage = await request("readScreen");

@@ -136,8 +136,8 @@ struct Provider final : IUIAutomationTextPattern2 {
     HRESULT STDMETHODCALLTYPE get_SupportedTextSelection(SupportedTextSelection* value) override { *value = SupportedTextSelection_Single; return S_OK; }
     CaretSource read() { return UiaCaretSource::read(this); }
     CaretSource read(const UiaCaretSource::LayoutRead& layout) { return UiaCaretSource::read(this, layout); }
-    std::optional<std::string> readPage() {
-        return UiaCaretSource::selectedText(this, range(selectedStart, selectedEnd), range(docStart, docEnd));
+    CaretSource readPage() {
+        return UiaCaretSource::read(this, {}, range(docStart, docEnd));
     }
 };
 HRESULT Visible::get_Length(int* count) { *count = static_cast<int>(owner.visibleSpans.size()); return S_OK; }
@@ -576,19 +576,21 @@ static int run() {
         result = caretLost.read();
         expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"", "", ""}, "caret the provider no longer gives is an empty window");
         Provider page(L"outside " + selection + L" outside", 8, 8 + static_cast<int>(selection.size()));
-        expect(page.readPage() == std::optional<std::string>(std::string(20001, 's')), "page selection remains complete beyond old limit");
-        expect(page.reads == 2 && std::all_of(page.ranges.begin(), page.ranges.end(), [&](const auto& range) {
-            return (range->start == page.selectedStart && range->end == page.selectedEnd) ||
-                (range->start == page.docStart && range->end == page.docEnd);
-        }), "page selection does not acquire adjacent source");
+        result = page.readPage();
+        expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"outside ", std::string(20001, 's'), " outside"},
+            "approved page source retains the full selection and bounded neighbors");
+        expect(page.reads > 2 && page.outsideReads == 0, "page source stays within the approved document");
         Provider pageLarge(std::wstring(oversize, L's'), 0, oversize);
-        expect(!pageLarge.readPage(), "page selection overflow refuses whole selection");
+        expect(pageLarge.readPage().selectionUnavailable, "page selection overflow refuses whole selection");
         Provider pageMoved(L"before chosen after", 7, 13); pageMoved.changeSelection = true;
-        expect(!pageMoved.readPage(), "changed page selection refused");
+        expect(pageMoved.readPage().selectionUnavailable, "changed page selection refused");
         Provider pageChanged(L"before chosen after", 7, 13); pageChanged.changeText = true;
-        expect(!pageChanged.readPage(), "same-length page selection change refused");
+        expect(pageChanged.readPage().selectionUnavailable, "same-length page selection change refused");
         Provider pageOutside(L"plain", 0, 5); pageOutside.selectedStart = 0;
-        expect(!pageOutside.readPage() && pageOutside.reads == 0, "page selection outside document refused before text access");
+        expect(pageOutside.readPage().selectionUnavailable && pageOutside.reads == 0, "page selection outside document refused before text access");
+        Provider pageExpanded(L"before chosen after", 7, 13); pageExpanded.reportedDocumentEnd = pageExpanded.docEnd + 1;
+        expect(pageExpanded.readPage().selectionUnavailable && pageExpanded.reads == 0,
+            "changed document domain is refused before reading any unapproved source");
         // Chromium gives an empty line no character: a caret there sits where the paragraph above
         // ends, on a line of its own that holds only that paragraph's break (measured in Electron).
         const std::wstring rich = L"Hi All,\nWhy does it move?\n--";

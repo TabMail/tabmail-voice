@@ -59,8 +59,8 @@ enum SharedContext {
         return result
     }
     struct Reservation: Decodable { var used: Int; var budgetFull: Bool }
-    static func reserveCaret(_ parts: [String]) throws -> Reservation {
-        let input = try JSONSerialization.data(withJSONObject: ["reserveCaret": parts])
+    static func reserveCaret(_ parts: [String], selectionOnly: Bool = false) throws -> Reservation {
+        let input = try JSONSerialization.data(withJSONObject: ["reserveCaret": parts, "caretSelectionOnly": selectionOnly])
         return try JSONDecoder().decode(Reservation.self, from: Redactor.request(input, operation: .context))
     }
     static func admit(_ text: String, previous: String?, used: Int) throws -> Admission {

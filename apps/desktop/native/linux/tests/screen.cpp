@@ -54,7 +54,7 @@ struct Tree {
             {"selection",{{"complete",!caretOverride || !caretOverride->selectionUnavailable},{"ranges",ranges}}}}},{"caret",caret},{"offsetUnit","scalar"}};
     }
     std::optional<voice::CaretText> selection(Node node) { ++terminalSelections; if (caretOverride) return caretOverride; return voice::CaretText{{"", node->selected, ""}}; }
-    std::optional<voice::CaretText> caret(Node node) { if (node->role != ATSPI_ROLE_ENTRY && !node->editable) return {}; ++counts; ++selections; ++values; if (caretOverride) return caretOverride; return voice::CaretText{{"Reply ", "synthetic", " after"}}; }
+    std::optional<voice::CaretText> caret(Node node) { if (!caretOverride && node->role != ATSPI_ROLE_ENTRY && !node->editable) return {}; ++counts; ++selections; ++values; if (caretOverride) return caretOverride; return voice::CaretText{{"Reply ", "synthetic", " after"}}; }
 };
 struct ProjectedTree : Tree {
     void appendFieldSource(Node node, const std::optional<voice::ContextFrame>&, voice::VisibleContext& context,
@@ -129,6 +129,38 @@ int main() {
     }
     const voice::AppIdentity app{"synthetic.desktop", "Synthetic"};
     const voice::ScreenExclusions policy(JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", {"secret.example"}}});
+    for (const auto role : {ATSPI_ROLE_DOCUMENT_WEB, ATSPI_ROLE_LIST, ATSPI_ROLE_TABLE_ROW}) {
+        for (const bool secret : {false, true}) {
+            const std::string selected = secret ? "syntheticPrivate123" : "ordinary words";
+            const std::string before = secret ? "Draft. token=" : "Draft. Read ";
+            Element text{ATSPI_ROLE_TEXT, before + selected + ". More.", {}, {}};
+            Element focus{role, "", {}, {&text}};
+            Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&focus}};
+            Tree tree;
+            tree.caretOverride = voice::CaretText{{before, selected, ". More."}};
+            const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+            expect(screen["textBeforeCaret"] == "" && screen["textAfterCaret"] == "", "non-field sides never enter presentation");
+            expect(screen["selectedText"] == (secret ? "[redacted]" : selected) && screen["selectionRedacted"] == secret,
+                "non-field selection is recognized with its private bounded context");
+            expect(!secret || screen.dump().find(selected) == std::string::npos, "no reply field or content log leaks the selected secret");
+            expect(screen["renderedText"].get<std::string>().find("Draft.") != std::string::npos, "ordinary page context remains available");
+            voice::walk::readingWholeWindow() = true;
+            const auto whole = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+            voice::walk::readingWholeWindow() = false;
+            expect(whole["selectedText"] == "" && whole["selectionRedacted"] == false, "whole-window read has no independent selection");
+            expect(!secret || whole.dump().find(selected) == std::string::npos, "whole-window tree is still redacted");
+        }
+    }
+    {
+        Element password{ATSPI_ROLE_PASSWORD_TEXT, "synthetic protected value", {}, {}};
+        Element focus{ATSPI_ROLE_DOCUMENT_WEB, "", {}, {&password}};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&focus}};
+        Tree tree;
+        tree.caretOverride = voice::CaretText{{"token=", "syntheticPrivate123", ""}};
+        const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        expect(tree.selections == 0 && tree.values == 0 && screen["selectedText"] == "",
+            "a protected non-field source is refused before any source or neighbor text read");
+    }
     {
         Element field{ATSPI_ROLE_ENTRY, "syntheticSecret123", {}, {}};
         Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&field}};

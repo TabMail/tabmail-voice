@@ -8,6 +8,7 @@
 #include "Privacy/ScreenAccess.h"
 #include "accessible_text.h"
 #include "uia_caret_source.h"
+#include "page_selection.h"
 #include "edit_caret_source.h"
 #include <UIAutomation.h>
 #include <string>
@@ -231,7 +232,6 @@ public:
         if (terminal) return readTerminalScreen(window, element.Get(), app, exclusions, started);
         const bool pageInFocus = element && !protectedFocus && !isEditable && !terminal && isDocument(element.Get());
         std::optional<std::array<std::string, 3>> parts;
-        std::string pageSelection;
         bool selectionUnavailable = false;
         auto logical = isEditable ? AccessibleText::focused(window, automation.Get()) : std::nullopt;
         if (logical) {
@@ -254,22 +254,24 @@ public:
             }
         } else if (isEditable) {
             if (safeTextSubtree(element.Get())) parts = textParts(element.Get(), selectionUnavailable);
-        } else if (pageInFocus) pageSelection = selectedInPage(element.Get(), exclusions, selectionUnavailable);
+        } else if (pageInFocus && !walk::readingWholeWindow()) {
+            auto source = selectedInPage(window, element.Get(), exclusions);
+            selectionUnavailable = source.selectionUnavailable;
+            parts = std::move(source.parts);
+        }
         else if (element && !protectedFocus && terminal) parts = readOnlyParts(element.Get(), selectionUnavailable);
-        // A page in focus gives nothing but its selection, and the whole window nothing of the
-        // caret's text: it reads the field whole (the core's `around`).
-        const auto keep = walk::around(parts.has_value());
-        const bool around = parts && keep.around;
+        // Keep approved page sides privately until redaction projects only the selection. The
+        // whole-window read carries no independent caret source.
+        const auto keep = walk::around(isEditable);
         if (!keep.selection) selectionUnavailable = false;
-        const std::string left = around ? (*parts)[0] : "";
-        const std::string selection = !keep.selection ? "" : parts ? (*parts)[1] : pageSelection;
-        const std::string right = around ? (*parts)[2] : "";
-        VisibleContext context({left, selection, right});
+        const auto source = keep.selection && parts ? *parts : std::array<std::string, 3>{};
+        const auto& selection = source[1];
+        VisibleContext context(source, keep.selection && !keep.around);
         // Only a page that is excluded, or whose address is unknown, is reported as hidden;
         // a read that stopped because the window lost the foreground is no context.
         bool hiddenPage = false;
         std::optional<std::wstring> walkedHost;
-        const FocusRead focus{element.Get(), !terminal && (protectedFocus || parts.has_value()), !selection.empty()};
+        const FocusRead focus{element.Get(), protectedFocus || (isEditable && parts.has_value()), !selection.empty()};
         if (!readVisible(window, focus, context, exclusions, hiddenPage, walkedHost)) {
             return hiddenPage ? hiddenScreen() : JSON(nullptr);
         }
@@ -287,7 +289,7 @@ public:
         const auto pageName = focusedPage && focusedPage->kind == PageHost::Kind::host ? std::optional<std::wstring>(focusedPage->name) : walkedHost;
         return context.reply({{"appName", utf8(app)}, {"bundleID", nullptr}, {"windowTitle", utf8(title)},
             {"host", pageName ? JSON(utf8(*pageName)) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", isEditable ? "editable text" : "control"}},
-            {left, selection, right}, selectionUnavailable, exclusions.lists(), GetTickCount64() - started);
+            source, selectionUnavailable, exclusions.lists(), GetTickCount64() - started);
     }
 
 private:
@@ -535,9 +537,9 @@ private:
         if (!valid || !first) return {};
         return std::array<ContextFrame, 2>{*first, *last};
     }
-    // What is selected in a page that has the focus itself. Empty when nothing is, when the
-    // provider gives no single text selection, or when what holds it can't be shown safe.
-    std::string selectedInPage(IUIAutomationElement* page, const ScreenExclusions& exclusions, bool& selectionUnavailable) {
+    // A selected page value needs its approved bounded neighbors for recognition. The entire
+    // TextPattern source domain must be safe before any of that text is requested.
+    CaretSource selectedInPage(HWND window, IUIAutomationElement* page, const ScreenExclusions& exclusions) {
         CONTROLTYPEID type = 0;
         if (FAILED(page->get_CurrentControlType(&type)) || type != UIA_DocumentControlTypeId) return {};
         ComPtr<IUIAutomationTextPattern> pattern;
@@ -552,21 +554,18 @@ private:
         // A caret alone selects nothing, and is asked for no text.
         int extent = 0;
         if (FAILED(selected->CompareEndpoints(TextPatternRangeEndpoint_Start, selected.Get(), TextPatternRangeEndpoint_End, &extent)) || extent == 0) return {};
-        // A range's text takes in everything under it, so what encloses the selection is
-        // looked through first, within a short budget of its own.
+        // Reading sides expands beyond the selected subtree. Approve the actual document's
+        // enclosing subtree, including protected and excluded descendants, within the same
+        // metadata budget. A failed census withholds the selection, never reads a bare value.
         ComPtr<IUIAutomationElement> enclosing;
-        if (FAILED(selected->GetEnclosingElement(&enclosing)) || !enclosing) return {};
+        if (FAILED(whole->GetEnclosingElement(&enclosing)) || !enclosing) return CaretSource{{}, true};
         try {
+            if (!owns(window, enclosing.Get())) return CaretSource{{}, true};
             PageTree tree{this, {}, GetTickCount64(), HelperConfig::contextSelectionScanMs};
             require(automation->get_RawViewWalker(&tree.walker));
-            if (walk::lookForExcludedPage(tree, enclosing, exclusions, true) != walk::PageLook::none) return {};
-            if (!walk::holdsNoPassword(tree, enclosing)) return {};
-            const auto value = UiaCaretSource::selectedText(pattern.Get(), selected.Get(), whole.Get());
-            if (value) return *value;
-            selectionUnavailable = true;
-            return CaretSource::unread(true).parts[1];
+            return pageSelectionSource(tree, enclosing, exclusions, [&] { return UiaCaretSource::read(pattern.Get(), {}, whole.Get()); });
         } catch (const std::exception&) {
-            return {};
+            return CaretSource{{}, true};
         }
     }
     // The text around the caret in a terminal's focused pane, which is no editable field.

@@ -4845,6 +4845,8 @@
    "expected": {
     "rendered": "alpha beta\n[[hidden for privacy] gamma]"
    }
-  }
- ]
+  },
+    {"name": "non-field selection uses private neighbors without a caret block", "request": {"blocks": [], "caret": ["Draft. token=", "syntheticPrivate123", ". More."], "caretSelectionOnly": true}, "expected": {"caret": ["", "[redacted]", ""], "selectionRedacted": true, "truncated": false, "rendered": ""}},
+    {"name": "non-field selection uses private neighbors in reading order", "request": {"blocks": [{"kind": "caret", "text": ""}], "caret": ["Draft. token=", "syntheticPrivate123", ". More."], "caretSelectionOnly": true}, "expected": {"caret": ["", "[redacted]", ""], "selectionRedacted": true, "truncated": false, "rendered": "» ‸[redacted]‸"}}
+  ]
 }
