@@ -32,32 +32,34 @@ final class TargetWindows {
         var now: () -> Double = { Date().timeIntervalSince1970 * 1000 }
         var post: () async throws -> Void
 
-        static let live = System(
-            frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
-            focusedWindow: { ScreenContextReader.focusedWindow(pid: $0) },
-            windows: { pid in
-                let app = AXUIElementCreateApplication(pid)
-                AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
-                return CaretLocator.attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
-            },
-            raise: { pid, window in
-                AXUIElementSetMessagingTimeout(window, HelperConfig.contextLookupTimeout)
-                _ = AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-                _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-                let app = AXUIElementCreateApplication(pid)
-                AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
-                _ = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-            },
-            clipboardCount: { NSPasteboard.general.changeCount },
-            focusedElement: { pid in
-                let app = AXUIElementCreateApplication(pid)
-                AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
-                guard let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute),
-                      CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
-                return (focused as! AXUIElement)
-            },
-            post: { try await TextInserter.postTargetCommandV() }
-        )
+        static func live(attribute: @escaping (AXUIElement, String) -> CFTypeRef? = CaretLocator.attribute) -> System {
+            System(
+                frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
+                focusedWindow: { ScreenContextReader.focusedWindow(pid: $0) },
+                windows: { pid in
+                    let app = AXUIElementCreateApplication(pid)
+                    AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
+                    return CaretLocator.attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+                },
+                raise: { pid, window in
+                    AXUIElementSetMessagingTimeout(window, HelperConfig.contextLookupTimeout)
+                    _ = AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+                    _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+                    let app = AXUIElementCreateApplication(pid)
+                    AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
+                    _ = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+                },
+                clipboardCount: { NSPasteboard.general.changeCount },
+                focusedElement: { pid in
+                    let app = AXUIElementCreateApplication(pid)
+                    AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
+                    guard let focused = attribute(app, kAXFocusedUIElementAttribute),
+                          CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+                    return (focused as! AXUIElement)
+                },
+                post: { try await TextInserter.postTargetCommandV() }
+            )
+        }
     }
     private let system: System
     private let owner: pid_t
@@ -70,7 +72,7 @@ final class TargetWindows {
     private var observer: AXObserver?
     private var observedApp: AXUIElement?
 
-    init(system: System = .live, owner: pid_t = getppid(), observe: Bool = true) {
+    init(system: System = .live(), owner: pid_t = getppid(), observe: Bool = true) {
         self.system = system
         self.owner = owner
         self.observeEnabled = observe
@@ -168,6 +170,11 @@ final class TargetWindows {
                   exists(target) else { throw HelperError("target activation refused") }
             try await Task.sleep(for: HelperConfig.targetActivationPoll)
         }
+        // Complete blocking window lookups before checking the field: focus can change while
+        // the external app answers one of those lookups.
+        guard captured?.token == target.token, exists(target), inFront(target) else {
+            throw HelperError("paste is no longer current")
+        }
         // Keep element identity, never text offsets: typing and terminal output can move the caret.
         // Apps without an accessible focus keep their existing window-only paste path.
         if let field = target.field {
@@ -175,9 +182,10 @@ final class TargetWindows {
                 throw HelperError("target field unavailable")
             }
         }
-        // Nothing may suspend or make another helper round trip between these checks and key-down.
-        guard captured?.token == target.token, exists(target), inFront(target),
-              system.now() < deadline, system.clipboardCount() == transaction, !isCanceled(target) else {
+        // No blocking AX calls or suspension between the field check and key-down. Recheck scalar
+        // state after the lookup: expiry, cancellation or a newer clipboard may arrive during it.
+        guard captured?.token == target.token, system.now() < deadline,
+              system.clipboardCount() == transaction, !isCanceled(target) else {
             throw HelperError("paste is no longer current")
         }
         try await system.post()

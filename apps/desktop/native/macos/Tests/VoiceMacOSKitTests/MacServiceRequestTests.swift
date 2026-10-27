@@ -12,6 +12,30 @@ import VoiceHelperSupport
 /// error, not converted: a trapping conversion would crash the helper, and with it the dictation.
 @MainActor
 struct MacServiceRequestTests {
+    @Test func aRegisteredPasteDeliversOnceOrRefusesTheDifferentField() async throws {
+        for different in [false, true] {
+            let fixture = TargetWindowsTests.Fixture()
+            let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+            let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+            let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+            let screen = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, window: { _ in nil },
+                read: { _, _, _, _, _, _, _ in nil }, focusedField: { _, _ in nil })
+            ScreenReaderService.register(on: channel, screen: screen, targets: targets)
+            let request: JSON = ["id": 1, "method": "captureTarget", "params": [:]]
+            await channel.handle(line: try JSONEncoder().encode(request))
+            let capturedReply = try JSONDecoder().decode(JSON.self, from: #require(lines.withLock { $0.last }))
+            let captured = try #require(capturedReply["result"])
+            if different { fixture.field = AXUIElementCreateApplication(505) }
+            let paste: JSON = ["id": 2, "method": "pasteTarget", "params": ["target": captured, "transaction": 7, "deadline": .number(floor(fixture.deadline))]]
+            await channel.handle(line: try JSONEncoder().encode(paste))
+            #expect(lines.withLock { $0.count } == 2)
+            let reply = try JSONDecoder().decode(JSON.self, from: #require(lines.withLock { $0.last }))
+            #expect((reply["error"] != nil) == different)
+            #expect((reply["result"] != nil) == !different)
+            #expect(fixture.keys == (different ? 0 : 1))
+        }
+    }
+
     @Test func theAcquiredKeyboardLanguageReachesTheReplyUnchanged() async throws {
         let before = KeyboardLanguage.current()
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])

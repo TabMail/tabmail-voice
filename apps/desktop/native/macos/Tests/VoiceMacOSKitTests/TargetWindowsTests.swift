@@ -37,6 +37,32 @@ import VoiceHelperSupport
         var deadline: Double { time + 1000 }
     }
 
+    @Test func theLiveFieldLookupReturnsNoElementForAnUnavailableApplication() {
+        #expect(TargetWindows.System.live().focusedElement(0) == nil)
+    }
+
+    @Test func theConfiguredNativeFieldLookupAcceptsOnlyAnAXElement() throws {
+        let field = AXUIElementCreateApplication(404)
+        for value: CFTypeRef? in [field, nil, "wrong type" as CFString] {
+            var lookedUp = false
+            let system = TargetWindows.System.live(attribute: { app, name in
+                var pid: pid_t = 0
+                #expect(AXUIElementGetPid(app, &pid) == .success)
+                #expect(pid == 101)
+                #expect(name == kAXFocusedUIElementAttribute)
+                lookedUp = true
+                return value
+            })
+            let result = system.focusedElement(101)
+            #expect(lookedUp)
+            if let value, CFGetTypeID(value) == AXUIElementGetTypeID() {
+                #expect(result.map { CFEqual($0, field) } == true)
+            } else {
+                #expect(result == nil)
+            }
+        }
+    }
+
     @Test func voiceInFrontKeepsTheExactWindowBeforeIt() throws {
         let fixture = Fixture()
         let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
@@ -243,5 +269,57 @@ import VoiceHelperSupport
         let second = TargetWindows(system: fixture.system(), owner: 303, observe: false)
         _ = second.capture()
         #expect(try second.resolve(captured) == nil)
+    }
+    @Test func focusMovedDuringTheFinalWindowLookupDoesNotPasteIntoTheNewField() async throws {
+        let fixture = TargetWindowsTests.Fixture()
+        let initial = try #require(fixture.field)
+        let replacement = AXUIElementCreateApplication(505)
+        var lookups = 0
+        var armed = false
+        var checked = 0
+        var posted: [AXUIElement] = []
+        var system = fixture.system()
+        system.focusedElement = { _ in
+            if armed { checked += 1 }
+            return fixture.field
+        }
+        system.post = {
+            if let field = fixture.field { posted.append(field) }
+            fixture.keys += 1
+        }
+        let targets = TargetWindows(system: system, owner: 303, observe: false)
+        let capture = targets.capture()
+        let snapshot = try #require(try targets.resolve(capture))
+        #expect(snapshot.field.map { CFEqual($0, initial) } == true)
+        fixture.onFocus = {
+            lookups += 1
+            if lookups == 3 { fixture.field = replacement }
+        }
+        armed = true
+        do { try await targets.paste(capture, transaction: 7, deadline: fixture.deadline) } catch {}
+        #expect(checked > 0)
+        #expect(lookups == 3)
+        #expect(fixture.field.map { CFEqual($0, replacement) } == true)
+        #expect(posted.isEmpty)
+        #expect(fixture.keys == 0)
+    }
+    @Test func aVoiceCaptureKeepsItsOriginalFieldAndTheNextExternalActionSelectsItsOwnField() async throws {
+        for inaccessibleWhileVoiceIsInFront in [false, true] {
+            let fixture = TargetWindowsTests.Fixture()
+            let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+            let newerField = AXUIElementCreateApplication(505)
+            fixture.front = 303
+            fixture.field = inaccessibleWhileVoiceIsInFront ? nil : newerField
+            let capture = targets.capture()
+            fixture.front = 101
+            fixture.field = newerField
+            await #expect(throws: (any Error).self) {
+                try await targets.paste(capture, transaction: 7, deadline: fixture.deadline)
+            }
+            #expect(fixture.keys == 0)
+            let next = targets.capture()
+            try await targets.paste(next, transaction: 7, deadline: fixture.deadline)
+            #expect(fixture.keys == 1)
+        }
     }
 }
