@@ -64,7 +64,7 @@ describe("files_search", () => {
     ["presentation", "presentations"], ["spreadsheet", "spreadsheets"], ["folder", "folders"], ["email", "emails"],
   ])("describes a %s search in the chat", (kind, target) => {
     const tool = new FilesSearchTool(store, home);
-    expect(tool.progressLabelFor({ query: "  project\n budget  ", kind })).toBe(`Searching ${target} for “project budget”`);
+    expect(tool.progressLabelFor({ query: "  project\n budget\t\n timeline  ", kind })).toBe(`Searching ${target} for “project budget timeline”`);
     expect(store.queries).toEqual([]);
   });
 
