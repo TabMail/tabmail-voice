@@ -10,10 +10,10 @@ import { agentPart, memoryDate, memoryExchange, memoryRow, memorySessionID } fro
 describe("memory rows", () => {
   /** What the agent did: the reply as said, or the text written with where it went. */
   test("the agent's part is the reply, or the text with where it went", () => {
-    expect(agentPart("answer", "It is sunny.", "Answered", "Mail")).toBe("It is sunny.");
-    expect(agentPart("compose", "Dear team,\nThanks.", "Pasted at the cursor", "Mail")).toBe("Pasted at the cursor in Mail:\nDear team,\nThanks.");
-    expect(agentPart("edit", "Fixed text", "Replaced the selection", null)).toBe("Replaced the selection:\nFixed text");
-    expect(agentPart("compose", "Draft", null, "Mail")).toBe("Draft");
+    expect(agentPart("It is sunny.", null, "Mail")).toBe("It is sunny.");
+    expect(agentPart("Dear team,\nThanks.", "Pasted at the cursor", "Mail")).toBe("Pasted at the cursor in Mail:\nDear team,\nThanks.");
+    expect(agentPart("Fixed text", "Replaced the selection", null)).toBe("Replaced the selection:\nFixed text");
+    expect(agentPart("Draft", null, "Mail")).toBe("Draft");
   });
 
   test("a row holds the request and the agent's part, filed under Voice's one session", () => {

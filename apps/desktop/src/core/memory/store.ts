@@ -2,7 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AgentToolID } from "../agent/tools.js";
 
 /**
  * Memory: every agent-mode request and what came of it, kept on this computer so the agent can
@@ -99,8 +98,8 @@ export const memorySessionID = "voice_agent";
 
 /** What the agent did, as a row says it: the reply, or the text a writing tool wrote, with where it
  * went (`caption`, the chat window's "Pasted at the cursor") and the app it went into. */
-export function agentPart(tool: AgentToolID, text: string, caption: string | null, appName: string | null): string {
-  if (tool === "answer" || caption === null) return text;
+export function agentPart(text: string, caption: string | null, appName: string | null): string {
+  if (caption === null) return text;
   return `${caption}${appName ? ` in ${appName}` : ""}:\n${text}`;
 }
 

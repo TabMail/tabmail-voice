@@ -4,8 +4,9 @@
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
-import { type BubbleKey, memoryBubble, screenReadBubble, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
-import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
+import { type BubbleKey, memoryBubble, screenReadBubble, ranNow } from "../agent/bubbleOrder.js";
+import { type ConnectorID, connectorIDs, connectors } from "../agent/connectors/index.js";
+import { ToolRegistry, type RegisteredTool } from "../agent/toolRegistry.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
 import { isJSONObject, parsedJSON, type ConnectorTool, type ToolQuestion, type ToolSettings } from "../agent/connectors/contract.js";
@@ -14,7 +15,7 @@ import { AgentError, type AgentToolID, agentTools, screenHiddenNote } from "../a
 import { type AudioCapture, AudioRecorder, type RecordedChunk, recordingDuration } from "../audio/recorder.js";
 import { LevelSampler } from "../audio/levelSampler.js";
 import { BackendError } from "../backend/errors.js";
-import { type CompletionsClient, type ServerToolEvent, type ToolCall } from "../backend/completions.js";
+import { type CompletionsClient, type ToolCall } from "../backend/completions.js";
 import { type Transcription, type TranscriptionClient } from "../backend/transcription.js";
 import { joinChunkTexts } from "./chunkJoin.js";
 import { DictationCleanup, spacedFromCaret } from "./cleanup.js";
@@ -841,42 +842,13 @@ export class DictationController extends Observable {
         const memoryTools = new MemoryTools(this.deps.memory);
         // What the tools work with, from the settings read at key-down: a change meanwhile applies next time.
         const toolSettings: ToolSettings = { eventDuration: settings.eventDuration };
+        const registry = this.requestTools(offered, connectorTools, memoryTools, toolSettings, windowRead, context, email.app, transcript, targetApp, isCurrent, signal);
         const { tool, text } = await DesktopAgent.run(
-          transcript,
-          context,
-          screenHidden,
-          conversation,
-          settings.userName,
-          DesktopAgent.loopTools(offered, connectorTools, windowRead !== null && context !== null),
-          client,
-          account,
-          userID,
-          (call, round) => (call.function.name === config.screenReadTool && windowRead !== null && context !== null
-            ? this.runScreenRead(windowRead, isCurrent)
-            : this.runConnectorTool(call, round, connectorTools, memoryTools, toolSettings, isCurrent, signal)),
-          (event) => this.serverToolRan(event, isCurrent),
-          signal,
+          transcript, context, screenHidden, conversation, settings.userName, registry,
+          client, account, userID, (event) => registry.serverEvent(event), signal,
         );
         if (!isCurrent()) return;
-        log.debug(`DictationController: agent ended with ${tool}`);
-        // With Answer off, a reply has nowhere to go.
-        if (!offered.includes(tool)) throw new AgentError("noText");
-        // Writing ends the request, and the conversation: the chat window closes, then the text is
-        // pasted (owner, 2026-10-05).
-        if (tool !== "answer") this.dropChat();
-        this.recent = ranNow(this.recent, tool);
-        this.setPhase({ kind: "running", tool });
-        await agentTools[tool].deliver(text, {
-          emailApp: email.app,
-          paste: (text) => this.paste(text, targetApp, signal),
-          thunderbird: this.deps.thunderbird,
-          // Closed, canceled or superseded meanwhile: the answer goes nowhere.
-          showAnswer: (answer) => {
-            if (isCurrent()) this.showInChat(transcript, tool, answer);
-          },
-          signal,
-        });
-        this.remember(transcript, agentPart(tool, text, agentTools[tool].chatCaption, context?.appName ?? null), settings.memorySizeLimit);
+        this.remember(transcript, agentPart(text, registry.get(tool)?.chatCaption ?? null, context?.appName ?? null), settings.memorySizeLimit);
       }
       if (this.generation !== generation) return;
       this.teardown();
@@ -1123,6 +1095,44 @@ export class DictationController extends Observable {
     }
   }
 
+  /** Bind one flat tool list to this request's captured context and settings. */
+  private requestTools(offered: readonly AgentToolID[], connectorTools: readonly ConnectorTool[], memory: MemoryTools, settings: ToolSettings, windowRead: Promise<ScreenRead | null> | null, context: ScreenContext | null, emailApp: string | null, transcript: string, targetApp: Promise<number | null>, isCurrent: () => boolean, signal: AbortSignal): ToolRegistry {
+    const definitions: RegisteredTool[] = [
+      ...config.answerServerTools.filter(() => offered.includes("answer")).map((name) => ({ name, terminal: false })),
+      ...connectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector.id)).flatMap((connector) => (connector.serverTools ?? []).map((name) => ({ name, terminal: false, bubble: connector.id }))),
+      ...(connectorTools.length === 0 ? [] : [{ name: config.confirmationTool, terminal: false, preservesConfirmation: true, run: (call: ToolCall, round: number) => this.runConfirmationTool(call, round, (tool, args) => registry.perform(tool.name, () => this.runTool(tool, args, settings, signal))) }]),
+      ...connectorTools.map((tool) => ({ name: tool.name, terminal: tool.terminal ?? false, bubble: tool.connector, progressLabel: tool.progressLabel, deferredActivity: true, run: (call: ToolCall, round: number) => this.runConnectorTool(tool, call, round, settings, isCurrent, signal, (args) => registry.perform(tool.name, () => this.runTool(tool, args, settings, signal))) })),
+      ...MemoryTools.names.map((name) => ({ name, terminal: false, bubble: memoryBubble, progressLabel: config.memoryToolProgressLabel, run: (call: ToolCall) => this.runMemoryTool(call, memory) })),
+      ...(windowRead !== null && context !== null ? [{ name: config.screenReadTool, terminal: false, bubble: screenReadBubble, progressLabel: config.screenReadProgressLabel, run: () => this.runScreenRead(windowRead) }] : []),
+      ...offered.map((name) => {
+        const definition = agentTools[name];
+        return { name, terminal: definition.terminal, bubble: name, chatCaption: definition.chatCaption, response: definition.response, advertise: !definition.response,
+          run: async (call: ToolCall) => {
+            const text = definition.text(parsedJSON(call.function.arguments), context);
+            log.content(`DesktopAgent: ${name} wrote`, text);
+            if (!isCurrent()) { signal.throwIfAborted(); throw new AgentError("noText"); }
+            if (definition.closesChat) this.dropChat();
+            this.setPhase({ kind: "running", tool: name });
+            await definition.deliver(text, { emailApp, paste: (text) => this.paste(text, targetApp, signal), thunderbird: this.deps.thunderbird, showAnswer: (answer) => { if (isCurrent()) this.showInChat(transcript, name, answer); }, signal });
+            return text;
+          },
+        };
+      }),
+    ];
+    const registry = new ToolRegistry(definitions, (tool, running, label) => {
+      if (!isCurrent()) return;
+      if (tool.bubble) {
+        if (running) this.appStarted(tool.bubble);
+        else this.appEnded(tool.bubble);
+      }
+      const progress = label === undefined ? tool.progressLabel : label;
+      if (progress !== undefined) this.updateChat({ activity: running ? progress : null });
+    }, (tool) => {
+      if (isCurrent() && !tool?.preservesConfirmation) this.dropAnsweredAloud();
+    });
+    return registry;
+  }
+
   /** Runs a tool agent mode's model called, and returns what the model reads next: the tool's
    * result, that the user declined, what the user answered aloud, or why it could not run. The chat
    * window, open since the request was heard, shows which tool runs, and asks first for a tool that
@@ -1131,44 +1141,37 @@ export class DictationController extends Observable {
    * the call that asked runs as the user was shown it. The confirmation names the question it answers
    * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
    * about as usual. */
-  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], memoryTools: MemoryTools, settings: ToolSettings, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+  private async runConfirmationTool(call: ToolCall, round: number, run: (tool: ConnectorTool, args: Record<string, unknown>) => Promise<string>): Promise<string> {
     const waiting = this.answeredAloud;
-    if (call.function.name === config.confirmationTool) {
-      const answer = parsedJSON(call.function.arguments);
-      if (waiting === null) {
-        log.error(`DictationController: ${config.confirmationTool} called with no spoken answer waiting`);
-        return config.confirmationToolNothingWaiting;
-      }
-      // One written in the round that asked was written before the user answered, and one naming
-      // another question answers it nothing: the answer waits on, for a confirmation that names it.
-      if (round <= waiting.round) {
-        log.error(`DictationController: ${config.confirmationTool} called in the round that asked`);
-        return config.confirmationToolNothingWaiting;
-      }
-      if (isJSONObject(answer) && answer.question_id !== waiting.id) {
-        log.error(`DictationController: ${config.confirmationTool} called for another question`);
-        return config.confirmationToolNothingWaiting;
-      }
-      // Otherwise the call the user answered aloud is answered by the model's very next call only.
-      if (!isJSONObject(answer) || typeof answer.confirmed !== "boolean") {
-        this.dropAnsweredAloud();
-        log.error(`DictationController: ${config.confirmationTool} called without true or false`);
-        return config.confirmationToolNoAnswer;
-      }
-      this.answeredAloud = null;
-      log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
-      // The question the user answered aloud shows the model's answer ticked, as a click would.
-      this.settleQuestion(waiting.question, answer.confirmed ? "confirmed" : "declined");
-      return answer.confirmed ? this.runTool(waiting.tool, waiting.args, settings, isCurrent, signal) : config.connectorToolDeclined;
+    const answer = parsedJSON(call.function.arguments);
+    if (waiting === null) {
+      log.error(`DictationController: ${config.confirmationTool} called with no spoken answer waiting`);
+      return config.confirmationToolNothingWaiting;
     }
-    // Any other call drops the call answered aloud: the answer covered only what its question showed.
-    this.dropAnsweredAloud();
-    if (MemoryTools.handles(call.function.name)) return this.runMemoryTool(call, memoryTools, isCurrent);
-    const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
-    if (tool === undefined) {
-      log.error("DictationController: the agent called a tool this app doesn't have");
-      return `Error: there is no tool named ${call.function.name}.`;
+    // One written in the round that asked was written before the user answered, and one naming
+    // another question answers it nothing: the answer waits on, for a confirmation that names it.
+    if (round <= waiting.round) {
+      log.error(`DictationController: ${config.confirmationTool} called in the round that asked`);
+      return config.confirmationToolNothingWaiting;
     }
+    if (isJSONObject(answer) && answer.question_id !== waiting.id) {
+      log.error(`DictationController: ${config.confirmationTool} called for another question`);
+      return config.confirmationToolNothingWaiting;
+    }
+    // Otherwise the call the user answered aloud is answered by the model's very next call only.
+    if (!isJSONObject(answer) || typeof answer.confirmed !== "boolean") {
+      this.dropAnsweredAloud();
+      log.error(`DictationController: ${config.confirmationTool} called without true or false`);
+      return config.confirmationToolNoAnswer;
+    }
+    this.answeredAloud = null;
+    log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
+    // The question the user answered aloud shows the model's answer ticked, as a click would.
+    this.settleQuestion(waiting.question, answer.confirmed ? "confirmed" : "declined");
+    return answer.confirmed ? run(waiting.tool, waiting.args) : config.connectorToolDeclined;
+  }
+
+  private async runConnectorTool(tool: ConnectorTool, call: ToolCall, round: number, settings: ToolSettings, isCurrent: () => boolean, signal: AbortSignal, run: (args: Record<string, unknown>) => Promise<string>): Promise<string> {
     const args = parsedJSON(call.function.arguments);
     if (!isJSONObject(args)) {
       log.error(`DictationController: ${tool.name} called with arguments that aren't a JSON object`);
@@ -1202,53 +1205,34 @@ export class DictationController extends Observable {
         return config.connectorToolDeclined;
       }
     }
-    return this.runTool(tool, args, settings, isCurrent, signal);
+    return run(args);
   }
 
   /** Runs a memory tool: it only reads, so it asks nothing; memory's bubble runs, and the chat window
    * says what it does. */
-  private async runMemoryTool(call: ToolCall, memoryTools: MemoryTools, isCurrent: () => boolean): Promise<string> {
+  private async runMemoryTool(call: ToolCall, memoryTools: MemoryTools): Promise<string> {
     const args = parsedJSON(call.function.arguments);
     if (!isJSONObject(args)) {
       log.error(`DictationController: ${call.function.name} called with arguments that aren't a JSON object`);
       return "Error: the arguments were not a JSON object.";
     }
     log.debug(`DictationController: running ${call.function.name}`);
-    this.updateChat({ activity: config.memoryToolProgressLabel });
-    this.appStarted(memoryBubble);
-    try {
-      return await memoryTools.run(call.function.name, args);
-    } finally {
-      if (isCurrent()) {
-        this.appEnded(memoryBubble);
-        this.updateChat({ activity: null });
-      }
-    }
+    return memoryTools.run(call.function.name, args);
   }
 
   /** Runs `screen_read`: waits for the whole window as agent mode waits for the screen
    * (`waitForScreen`), and tells the model its text, that it is hidden, or that it gave nothing. It
    * only reads, so it asks nothing; the chat window says what it does. */
-  private async runScreenRead(window: Promise<ScreenRead | null>, isCurrent: () => boolean): Promise<string> {
-    this.dropAnsweredAloud();
+  private async runScreenRead(window: Promise<ScreenRead | null>): Promise<string> {
     log.debug(`DictationController: running ${config.screenReadTool}`);
-    this.updateChat({ activity: config.screenReadProgressLabel });
-    this.appStarted(screenReadBubble);
     const waiting = performance.now();
-    try {
-      const waited = await this.waitForScreen(window, this.agentScreenWait);
-      log.debug(() => `DictationController: waited ${elapsed(waiting)} for the whole window${waited.stopped ? ", stopped with what it had read" : ""}${waited.late ? ", not done" : ""}`);
-      if (isScreenHidden(waited.screen)) return screenHiddenNote;
-      const screen = screenShown(waited.screen);
-      if (screen === null) return config.screenReadUnavailable;
-      log.debug(() => `DictationController: ${config.screenReadTool} gave ${charCount(screen.renderedText)} chars`);
-      return screen.renderedText;
-    } finally {
-      if (isCurrent()) {
-        this.appEnded(screenReadBubble);
-        this.updateChat({ activity: null });
-      }
-    }
+    const waited = await this.waitForScreen(window, this.agentScreenWait);
+    log.debug(() => `DictationController: waited ${elapsed(waiting)} for the whole window${waited.stopped ? ", stopped with what it had read" : ""}${waited.late ? ", not done" : ""}`);
+    if (isScreenHidden(waited.screen)) return screenHiddenNote;
+    const screen = screenShown(waited.screen);
+    if (screen === null) return config.screenReadUnavailable;
+    log.debug(() => `DictationController: ${config.screenReadTool} gave ${charCount(screen.renderedText)} chars`);
+    return screen.renderedText;
   }
 
   /** Keeps an agent-mode request and what came of it (`agent`) in memory, within `maxBytes`, the size
@@ -1266,35 +1250,14 @@ export class DictationController extends Observable {
   }
 
   /** Runs `tool`, confirmed if it asks: the chat window says what it does, and its app's bubble runs. */
-  private async runTool(tool: ConnectorTool, args: Record<string, unknown>, settings: ToolSettings, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+  private async runTool(tool: ConnectorTool, args: Record<string, unknown>, settings: ToolSettings, signal: AbortSignal): Promise<string> {
     log.debug(`DictationController: running ${tool.name}`);
-    this.updateChat({ activity: tool.progressLabel });
-    this.appStarted(tool.connector);
     try {
       return await tool.run(args, signal, settings);
     } catch (error) {
       log.error(`DictationController: ${tool.name} failed: ${errorName(error)}`);
       return `Error: ${error instanceof Error ? error.message : String(error)}`;
-    } finally {
-      if (isCurrent()) {
-        this.appEnded(tool.connector);
-        this.updateChat({ activity: null });
-      }
     }
-  }
-
-  /** A backend tool started or ended within the answer's round: its app's bubble (the web's, for its
-   * search) runs meanwhile, and the chat window says what it does, as for a tool here. The backend's
-   * own tools (the date tools) belong to no app, and only show in the chat. */
-  private serverToolRan(event: ServerToolEvent, isCurrent: () => boolean): void {
-    if (!isCurrent()) return;
-    log.debug(`DictationController: backend ${event.running ? "running" : "ran"} ${event.tool}`);
-    const connector = serverToolConnector(event.tool);
-    if (connector !== null) {
-      if (event.running) this.appStarted(connector);
-      else this.appEnded(connector);
-    }
-    if (event.label !== null) this.updateChat({ activity: event.running ? event.label : null });
   }
 
   /** One of `connector`'s tools starts (or memory's): its bubble moves to the front of the history and
