@@ -830,6 +830,38 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     }
   });
 
+  test.each(["darwin", "win32", "linux"] as const)("history preserves inset bounds through opening, fitting and reopening on %s", async (platform) => {
+    await launch(platform);
+    const { Windows } = await import("../../src/main/windows.js");
+    const { pillPosition } = await import("../../src/core/ui/overlayGeometry.js");
+    const show = vi.spyOn(Windows.prototype, "showHistory");
+    const fit = vi.spyOn(Windows.prototype, "fitHistory");
+    const margin = config.pasteHistoryShadowMargin;
+    for (const width of [240, 325, 1440]) {
+      const workArea = { x: -1500, y: -200, width, height: 900 };
+      for (const x of [workArea.x, workArea.x + width]) {
+        for (const y of [-150, 600]) {
+          const pill = pillPosition({ x, y, width: 1, height: 20 }, workArea);
+          Object.assign(app.overlay!, { pillPlace: { pill, workArea, bubblesUnder: y < 0 } });
+          app.controller?.onShowHistory?.();
+          const opening = show.mock.calls.at(-1)![0];
+          const cardWidth = Math.min(config.pasteHistoryWindowWidth, width - 2 * config.overlayEdgeInset);
+          expect(opening.width).toBe(cardWidth + 2 * margin);
+          expect(opening.x + margin).toBeGreaterThanOrEqual(workArea.x + config.overlayEdgeInset);
+          expect(opening.x + opening.width - margin).toBeLessThanOrEqual(workArea.x + width - config.overlayEdgeInset);
+          await send({ type: "historyHeight", height: 120 });
+          const measured = fit.mock.calls.at(-1)![0];
+          expect([measured.x, measured.width]).toEqual([opening.x, opening.width]);
+          app.controller?.onShowHistory?.();
+          expect(show.mock.calls.at(-1)![0]).toEqual(measured);
+          expect(app.clipboard).toEqual([]);
+          await send({ type: "closeHistory" });
+          expect(app.historyWindow.at(-1)).toBe("close");
+        }
+      }
+    }
+  });
+
   /** A triple tap opens the paste history where the chat window opens, by the pill (ADR-DESK-043), which shows the controller's
    * history and takes its list's height; a click copies the entry, closes the window and gives the
    * user's app its focus back, as Escape does without copying. */
