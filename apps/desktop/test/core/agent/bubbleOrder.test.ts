@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { alphabetical, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, ranNow, serverToolConnector, shownBubbles } from "../../../src/core/agent/bubbleOrder.js";
+import { alphabetical, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, screenReadBubble, ranNow, serverToolConnector, shownBubbles } from "../../../src/core/agent/bubbleOrder.js";
 import { connectorByID, connectorIDs, connectors } from "../../../src/core/agent/connectors/index.js";
 import { agentToolIDs, agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
@@ -25,6 +25,14 @@ describe("bubble order", () => {
     expect(shownBubbles(["compose", "answer"], ["web"])).toEqual(["compose", "answer", memoryBubble, "web"]);
     expect(shownBubbles(["edit"], [])).toEqual(["edit", memoryBubble]);
     expect(shownBubbles([], [])).toEqual([]);
+  });
+
+  test("screen reading has a named bubble only when offered", () => {
+    expect(shownBubbles(["edit"], [], true)).toEqual(["edit", memoryBubble, screenReadBubble]);
+    expect(shownBubbles(["edit"], [], false)).not.toContain(screenReadBubble);
+    expect(shownBubbles([], [], true)).toEqual([]);
+    expect(bubbleName(screenReadBubble)).toBe(config.screenReadBubbleName);
+    expect(bubbleDescription(screenReadBubble)).toBe(config.screenReadBubbleDescription);
   });
 
   test("tools and apps sort together by name", () => {

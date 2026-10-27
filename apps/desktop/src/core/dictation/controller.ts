@@ -4,7 +4,7 @@
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
-import { type BubbleKey, memoryBubble, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
+import { type BubbleKey, memoryBubble, screenReadBubble, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
 import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
@@ -155,6 +155,7 @@ export class DictationController extends Observable {
   private currentPhase: Phase = { kind: "idle" };
   private currentMode: DictationMode = "dictation";
   private currentTools: AgentToolID[] = [];
+  private currentReadsWindow = false;
   private currentLevel = 0;
   private hearing = false;
   /** The transcription that has hit a server error and not yet answered or ended, with the dictation
@@ -308,6 +309,11 @@ export class DictationController extends Observable {
   /** What the current (or last) recording is for. */
   get mode(): DictationMode {
     return this.currentMode;
+  }
+
+  /** Whether this request offers screen_read; kept with its tools between follow-ups. */
+  get readsWindow(): boolean {
+    return this.currentReadsWindow;
   }
 
   /** The tools agent mode offers this time (`DesktopAgent.tools`). Empty in dictation mode, and
@@ -482,6 +488,7 @@ export class DictationController extends Observable {
     this.isScreenReadDone = false;
     this.windowScreen = null;
     this.currentTools = [];
+    this.currentReadsWindow = false;
     this.currentLevel = 0;
     this.peakMeterLevel = 0;
     this.envelope = new LevelEnvelope(this.envelope.room);
@@ -1226,6 +1233,7 @@ export class DictationController extends Observable {
     this.dropAnsweredAloud();
     log.debug(`DictationController: running ${config.screenReadTool}`);
     this.updateChat({ activity: config.screenReadProgressLabel });
+    this.appStarted(screenReadBubble);
     const waiting = performance.now();
     try {
       const waited = await this.waitForScreen(window, this.agentScreenWait);
@@ -1236,7 +1244,10 @@ export class DictationController extends Observable {
       log.debug(() => `DictationController: ${config.screenReadTool} gave ${charCount(screen.renderedText)} chars`);
       return screen.renderedText;
     } finally {
-      if (isCurrent()) this.updateChat({ activity: null });
+      if (isCurrent()) {
+        this.appEnded(screenReadBubble);
+        this.updateChat({ activity: null });
+      }
     }
   }
 
@@ -1557,6 +1568,7 @@ export class DictationController extends Observable {
     this.currentTools = this.currentMode === "agent" && this.isScreenReadDone && this.emailApp !== null
       ? DesktopAgent.tools(this.screenRead, this.dictationSettings.enabledTools)
       : [];
+    this.currentReadsWindow = this.currentTools.length > 0 && this.windowRead !== null && this.screenRead !== null;
     this.changed();
   }
 

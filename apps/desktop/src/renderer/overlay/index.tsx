@@ -5,7 +5,7 @@
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { type AgentChat, type ChatQuestion, type ChatTurn, type EventQuestion, type EventQuestionLine, formattedReply, type QuestionAnswer, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
-import { type BubbleKey, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, shownBubbles } from "../../core/agent/bubbleOrder.js";
+import { type BubbleKey, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, screenReadBubble, shownBubbles } from "../../core/agent/bubbleOrder.js";
 import { isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
@@ -17,7 +17,7 @@ import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
 import { brandBlue, brandColor, rgba } from "../shared/brand.js";
 import { brandGlow, glassShadow, glassStyle } from "../shared/glass.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { CheckIcon, ClipboardIcon, ConnectorIcon, CopyIcon, CrossIcon, EventLineIcon, ExclamationIcon, MemoryIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
+import { CheckIcon, ClipboardIcon, ConnectorIcon, CopyIcon, CrossIcon, EventLineIcon, ExclamationIcon, MemoryIcon, SparklesIcon, ToolIcon, ViewfinderIcon } from "../shared/icons.js";
 import { applyPalette } from "../shared/theme.js";
 import "./index.css";
 
@@ -253,7 +253,7 @@ function PillLayout({
   const pill: Rect = { x: anchor.x - pillSize.width / 2, y: anchor.y, ...pillSize };
   const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
   const kept = useRef<BubbleKey[]>([]);
-  let shown: BubbleKey[] = showsTools ? shownBubbles(state.tools, state.connectors) : [];
+  let shown: BubbleKey[] = showsTools ? shownBubbles(state.tools, state.connectors, state.readsWindow) : [];
   if (keepsBubbles && shown.length === 0) shown = kept.current;
   else kept.current = shown;
   // One bubble runs at a time, the first in the row: the app whose tool runs, else the tool agent mode
@@ -270,6 +270,8 @@ function PillLayout({
       opacity: bubbleRowOpacity(index),
       icon: key === memoryBubble ? (
         <MemoryIcon size={config.agentBubbleSymbolSize} />
+      ) : key === screenReadBubble ? (
+        <ViewfinderIcon size={config.agentBubbleSymbolSize} accent />
       ) : isConnectorID(key) ? (
         <ConnectorIcon connector={key} size={config.agentBubbleSymbolSize} />
       ) : key === "thunderbird" && state.emailAppIcon ? (

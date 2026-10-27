@@ -396,6 +396,7 @@ function launch(): void {
       bubblesFitUnder: overlay.bubblesFitUnder,
       hotkey: controller.settings.hotkey,
       tools: controller.tools,
+      readsWindow: controller.readsWindow,
       connectors: controller.connectors,
       recentBubbles: controller.recentBubbles,
       runningBubble: controller.runningBubble,

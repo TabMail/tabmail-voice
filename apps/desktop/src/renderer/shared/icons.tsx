@@ -212,11 +212,12 @@ export function BookIcon({ size }: { size: number }) {
 }
 
 /** Text in a viewfinder: screen reading. */
-export function ViewfinderIcon({ size }: { size: number }) {
+export function ViewfinderIcon({ size, accent = false }: { size: number; accent?: boolean }) {
+  const Icon = accent ? AccentIcon : PlainIcon;
   return (
-    <PlainIcon size={size}>
+    <Icon size={size}>
       <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M8 9h8M8 12h8M8 15h5" />
-    </PlainIcon>
+    </Icon>
   );
 }
 

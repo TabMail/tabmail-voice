@@ -345,6 +345,8 @@ export const memoryReadTool = "memory_read";
 export const screenReadTool = "screen_read";
 /** What the chat window says while `screen_read` waits for the whole window. */
 export const screenReadProgressLabel = "Reading the whole window";
+export const screenReadBubbleName = "Screen Read";
+export const screenReadBubbleDescription = "Reads the rest of the window when your request needs it.";
 /** What `screen_read` tells the model when the whole window gave nothing, even when asked for what it
  * had read so far. */
 export const screenReadUnavailable = "The window could not be read.";

@@ -4128,11 +4128,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           test("reads the whole window, read after what it shows", async () => {
             const seen: (string | null | undefined)[] = [];
-            const { done } = await ask([], [calling(["screen_read", "{}"]), reply("A summary.")], (controller) => {
+            const bubbles: (string | null)[] = [];
+            const { controller, done } = await ask([], [calling(["screen_read", "{}"]), reply("A summary.")], (controller) => {
               controller.captureWindow = async () => whole;
-              controller.observe(() => seen.push(controller.chat?.activity));
+              controller.observe(() => { seen.push(controller.chat?.activity); bubbles.push(controller.runningBubble); });
             });
             await done;
+            expect(controller.readsWindow).toBe(true);
+            expect(bubbles).toContain("screen_read");
+            expect(controller.runningBubble).toBeNull();
+            expect(controller.recentBubbles).toContain("screen_read");
             expect(completions.body(0).available_tools).toContain("screen_read");
             expect(completionsVars(0)?.screen_text).toBe(selectionScreen("").renderedText);
             expect(told(1)[0]).toBe("Earlier in the thread\n» ‸");
@@ -4222,9 +4227,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
               controller.captureWindow = async () => null;
             }],
           ])("is not offered %s", async (_, prepare) => {
-            const { done } = await ask([], [reply("Hello.")], prepare);
+            const { controller, done } = await ask([], [reply("Hello.")], prepare);
             await done;
             expect(completions.body(0).available_tools).not.toContain("screen_read");
+            expect(controller.readsWindow).toBe(false);
           });
         });
 

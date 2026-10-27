@@ -59,7 +59,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
+const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], readsWindow: false, connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 /** The note for a text not pasted. */
 const note = { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Move the review to Friday." } as const;
@@ -473,6 +473,26 @@ describe("overlay page", () => {
 
     await page.show({ ...listening, mode: "agent", tools: [] });
     expect(memory()).toBeNull();
+  });
+
+  test("screen reading has its icon, running animation and hover tooltip", async () => {
+    const page = await overlayPage();
+    const state: OverlayState = { ...running, tools: ["answer", "compose"], readsWindow: true, recentBubbles: ["screen_read"], runningBubble: "screen_read" };
+    await page.show(state);
+    const bubble = document.querySelector<HTMLElement>('.bubble[aria-label="screen_read"]');
+    expect(document.querySelector(".bubble")).toBe(bubble);
+    expect(bubble?.style.transform).toBe(`scale(${config.agentBubbleRunningScale})`);
+    expect(bubble?.querySelector(".spinning")).not.toBeNull();
+    expect(bubble?.querySelector("svg")?.outerHTML).toContain("var(--accent)");
+    expect(bubble?.querySelector("svg path")?.getAttribute("d")).toContain("M3 8V5");
+    await act(async () => {
+      bubble?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
+    });
+    expect([...(document.querySelector('[role="tooltip"]')?.children ?? [])].map((line) => line.textContent)).toEqual([config.screenReadBubbleName, config.screenReadBubbleDescription]);
+    await page.show({ ...state, runningBubble: null, phase: { kind: "running", tool: null } });
+    expect(bubble?.querySelector(".spinning")).toBeNull();
+    await page.show({ ...state, readsWindow: false });
+    expect(document.querySelector('.bubble[aria-label="screen_read"]')).toBeNull();
   });
 
   /** A bubble under the pointer grows and says what it is: its name over its Settings description, a
