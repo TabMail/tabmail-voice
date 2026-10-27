@@ -44,13 +44,20 @@ test("activity ends when execution fails", async () => {
 
 test("server tools share registered activity and cannot run locally", async () => {
   const events: [string, boolean, string | null][] = [];
-  const registry = new ToolRegistry([tool("server_lookup", { run: undefined })], (definition, running, label) => events.push([definition.name, running, label ?? null]));
+  let localRuns = 0;
+  const registry = new ToolRegistry([tool("server_lookup", { run: undefined }), tool("local", { run: async () => { localRuns++; return "local result"; } })], (definition, running, label) => events.push([definition.name, running, label ?? null]));
   registry.serverEvent({ tool: "server_lookup", running: true, label: "Looking" });
   registry.serverEvent({ tool: "unknown", running: true, label: "Ignored" });
+  registry.serverEvent({ tool: "local", running: true, label: "Ignored local" });
+  registry.serverEvent({ tool: "local", running: false, label: null });
+  expect(localRuns).toBe(0);
   registry.serverEvent({ tool: "server_lookup", running: false, label: null });
-  expect(registry.names).toEqual(["server_lookup"]);
+  expect(registry.names).toEqual(["server_lookup", "local"]);
   expect(events).toEqual([["server_lookup", true, "Looking"], ["server_lookup", false, null]]);
   expect((await registry.execute(call("server_lookup"), 0)).terminal).toBe(false);
+  expect(await registry.execute(call("local"), 0)).toEqual({ tool: "local", text: "local result", terminal: false });
+  expect(localRuns).toBe(1);
+  expect(events.slice(2)).toEqual([["local", true, null], ["local", false, null]]);
 });
 
 test("an unavailable response handler cannot deliver a reply", () => {
@@ -59,7 +66,11 @@ test("an unavailable response handler cannot deliver a reply", () => {
 
 test("duplicate names and ambiguous response handlers are refused", () => {
   expect(() => new ToolRegistry([tool("same"), tool("same")])).toThrow();
-  expect(() => new ToolRegistry([tool("a", { response: true }), tool("b", { response: true })])).toThrow();
+  const a = tool("a", { response: true, terminal: true });
+  const b = tool("b", { response: true, terminal: true });
+  expect(() => new ToolRegistry([a])).not.toThrow();
+  expect(() => new ToolRegistry([b])).not.toThrow();
+  expect(() => new ToolRegistry([a, b])).toThrow();
 });
 
 test("only client call attempts consume the before-call policy, including unknown calls", async () => {

@@ -540,6 +540,21 @@ describe("registered terminal behavior", () => {
     expect(completions.body(0).available_tools).toEqual([]);
   });
 
+  test("cancellation during a normal response cannot report a successful outcome", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply("A response."));
+    const abort = new AbortController();
+    const seen: string[] = [];
+    const registry = new ToolRegistry([{ name: "show_text", response: true, terminal: true, run: async () => {
+      seen.push("response ran");
+      abort.abort();
+      return "too late";
+    } }]);
+    await expect(DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(seen).toEqual(["response ran"]);
+    expect(completions.requests).toHaveLength(1);
+  });
+
   test("failed terminal delivery does not run later tools or request another round", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([{ id: "finish", name: "custom_finish", arguments: "{}" }, { id: "later", name: "later", arguments: "{}" }]));
