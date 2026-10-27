@@ -37,6 +37,13 @@ show while debug mode is on (the switch on AND an allowed account, `AppSettings.
   signing in to an account that is not allowed, and so does a launch with debug mode off (the switch
   or the account changed while the app was closed). Deleting and writing run in order
   (`LastRecording`), so a recording still being written when debug mode goes off is removed after it
-  lands. The last screen context, held in memory only, is dropped the same way.
-- **Show Log File** offers `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the file debug mode
-  writes (ADR-DESK-015).
+  lands. A dictation that started with debug mode on but ends after it went off keeps nothing: the
+  delete is the one place a change of debug mode applies mid-dictation, because "off" is a privacy
+  action (`LastRecording.follow`). The last screen context, held in memory, and the sample tip are
+  dropped the same way, and the windows showing them are redrawn.
+- The file is created for this user alone (mode 0600), over nothing: an existing file or symlink at
+  that name is removed first and never written through (the temporary folder is shared on Linux).
+- The debug log file (ADR-DESK-015) is NOT deleted when debug mode goes off; it stays for the owner
+  to read and rotates by size. Whether it should go too is the owner's call.
+- **Show Log File** offers the file debug mode writes (ADR-DESK-015; on macOS
+  `~/Library/Logs/TabMail Voice/TabMail Voice.log`, elsewhere Electron's `logs` folder).

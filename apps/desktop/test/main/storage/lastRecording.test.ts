@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -24,9 +24,16 @@ afterEach(() => {
 /** The last recording kept for the debug menu: written while debug mode is on, deleted when it goes
  * off, in order, so a write still pending is removed too. */
 describe("LastRecording", () => {
+  test("keeps nothing until debug mode is on", async () => {
+    const recording = new LastRecording(join(scratch(), "last.wav"));
+    recording.keep(Uint8Array.from([1]));
+    await recording.flush();
+    expect(recording.exists).toBe(false);
+  });
+
   test("keeps the latest recording and replaces the one before", async () => {
     const recording = new LastRecording(join(scratch(), "last.wav"));
-    expect(recording.exists).toBe(false);
+    recording.follow(true);
     recording.keep(Uint8Array.from([1, 2, 3]));
     recording.keep(Uint8Array.from([4, 5]));
     await recording.flush();
@@ -34,23 +41,48 @@ describe("LastRecording", () => {
     expect([...readFileSync(recording.path)]).toEqual([4, 5]);
   });
 
-  test("discard deletes the file, and is fine with none", async () => {
+  test("off deletes the file, and is fine with none", async () => {
     const recording = new LastRecording(join(scratch(), "last.wav"));
-    recording.discard();
+    recording.follow(false);
     await recording.flush();
+    recording.follow(true);
     recording.keep(Uint8Array.from([1]));
-    recording.discard();
+    recording.follow(false);
     await recording.flush();
     expect(existsSync(recording.path)).toBe(false);
   });
 
-  /** The invariant: after debug mode goes off no recording is on disk, even one written just then. */
-  test("a discard right after a keep leaves nothing behind", async () => {
+  /** The invariant: with debug mode off no recording is on disk, also for a dictation that started
+   * with it on and ends after it went off. */
+  test("a recording that ends after debug mode went off is not kept", async () => {
     const recording = new LastRecording(join(scratch(), "last.wav"));
+    recording.follow(true);
     recording.keep(Uint8Array.from([1, 2, 3]));
-    recording.discard();
+    recording.follow(false);
+    recording.keep(Uint8Array.from([4]));
     await recording.flush();
     expect(existsSync(recording.path)).toBe(false);
+
+    recording.follow(true);
+    recording.keep(Uint8Array.from([5]));
+    await recording.flush();
+    expect([...readFileSync(recording.path)]).toEqual([5]);
+  });
+
+  /** The temporary folder is shared on Linux: the file is for this user alone, and a symlink planted
+   * at its name is replaced, never written through. */
+  test.skipIf(process.platform === "win32")("is private to the user and never written through a symlink", async () => {
+    const folder = scratch();
+    const victim = join(folder, "victim");
+    writeFileSync(victim, "untouched");
+    const recording = new LastRecording(join(folder, "last.wav"));
+    symlinkSync(victim, recording.path);
+    recording.follow(true);
+    recording.keep(Uint8Array.from([7]));
+    await recording.flush();
+    expect(readFileSync(victim, "utf8")).toBe("untouched");
+    expect([...readFileSync(recording.path)]).toEqual([7]);
+    expect(statSync(recording.path).mode & 0o777).toBe(0o600);
   });
 
   test("a write that fails is logged without a path or content, and later ones still run", async () => {
@@ -58,6 +90,7 @@ describe("LastRecording", () => {
     configureLog({ isDebugBuild: false, sinks: { error: (text) => void errors.push(text) } });
     const folder = scratch();
     const missing = new LastRecording(join(folder, "no-such-folder", "last.wav"));
+    missing.follow(true);
     missing.keep(Uint8Array.from([1]));
     await missing.flush();
     expect(errors).toHaveLength(1);
@@ -65,6 +98,7 @@ describe("LastRecording", () => {
     expect(errors[0]).not.toContain(folder);
 
     const recording = new LastRecording(join(folder, "last.wav"));
+    recording.follow(true);
     recording.keep(Uint8Array.from([9]));
     await recording.flush();
     expect(existsSync(recording.path)).toBe(true);

@@ -791,11 +791,19 @@ function launch(): void {
   const followDebugMode = () => {
     const on = settings.isDebugMode(account.email);
     setDebugMode(on);
-    // The last recording and screen context live only while debug mode is on: switched off, or the
-    // account no longer allowed it, they are dropped (also at launch, after a switch changed while the app was closed).
-    if (!on) {
-      lastRecording.discard();
+    // The last recording, screen context and sample tip live only while debug mode is on: switched
+    // off, or the account no longer allowed it, they are dropped (the recording also at launch, after
+    // a switch changed while the app was closed), and a recording still being made is not kept.
+    lastRecording.follow(on);
+    if (on) return;
+    if (probe.lastContext !== null) {
       probe.lastContext = null;
+      windows.push("contextDebug");
+    }
+    if (showsSmokeTip) {
+      showsSmokeTip = false;
+      windows.push("overlay");
+      tray.update();
     }
   };
   followDebugMode();

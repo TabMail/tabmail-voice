@@ -81,7 +81,7 @@ const app = vi.hoisted(() => ({
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; showSettings: () => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void } } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
   trayState: null as (() => { update: unknown }) | null,
@@ -1379,6 +1379,34 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
       expect(menuDebugMode()).toBe(true);
       expect(app.dictationSettings?.().keepsRecording).toBe(true);
+    });
+
+    /** Everything behind the debug items goes when debug mode does: the sample tip, the last screen
+     * context (and the window showing it is redrawn), and a recording whose dictation started in
+     * debug mode but ends after it went off. */
+    test("switching it off clears the smoke tip and the last screen context, and keeps no recording still in progress", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      const contextShown = () => (app.handlers.get(channels.getState)?.({}, "contextDebug") as { context: unknown }).context;
+      app.helpers.get("voice-screen-reader")!.replies.set("readScreen", () => blankScreen({ appName: "Shown", renderedText: "Shown" }));
+      const controller = app.controller as unknown as { captureContext: (policy: { apps: string[]; sites: string[] }) => Promise<unknown> };
+      await controller.captureContext({ apps: [], sites: [] });
+      expect(contextShown()).not.toBeNull();
+      app.trayActions?.debug.toggleSmokeTip();
+      expect(app.trayActions?.debug.showsSmokeTip()).toBe(true);
+      const pushed: string[] = [];
+      app.listeners.set("voice:state", [...(app.listeners.get("voice:state") ?? []), (...args: unknown[]) => void pushed.push(String(args[1]))]);
+
+      expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
+      expect(contextShown()).toBeNull();
+      expect(app.trayActions?.debug.showsSmokeTip()).toBe(false);
+      expect(pushed).toEqual(expect.arrayContaining(["contextDebug", "overlay"]));
+
+      // The dictation that started with debug mode on ends now: nothing is kept.
+      app.keepRecording?.(Uint8Array.from([1]));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(existsSync(lastRecording())).toBe(false);
     });
 
     test("signing out deletes the file: no account is allowed debug mode", async () => {
