@@ -44,6 +44,21 @@ int main() {
             "native transport preserves private context through the production finalizer");
         expect(reply.at("textBeforeCaret") == "" && reply.at("textAfterCaret") == "" &&
             reply.dump().find("syntheticPrivate123") == std::string::npos, "no private source escapes any reply field");
+        // Private recognition neighbors must not displace visible text at the native budget edge.
+        const std::array<std::string, 3> largeSource{
+            "private prefix. " + std::string(6000, 'a'), "chosen", std::string(6000, 'b') + ". private suffix"};
+        VisibleContext boundary(largeSource, true);
+        boundary.append(ContextKind::text, std::string(VisibleContext::sourceLimit() - 100, 'z'));
+        expect(!boundary.textBudgetFull, "private source does not consume presentation reservation");
+        boundary.append(ContextKind::text, "visible-tail-marker");
+        const auto boundaryReply = boundary.reply({{"appName", "Synthetic page"}}, largeSource, false,
+            {{"excludedAppIDs", nlohmann::json::array()}, {"excludedHosts", nlohmann::json::array()}}, 0);
+        expect(boundary.count() == 2 && boundaryReply.at("selectedText") == "chosen" &&
+            boundaryReply.at("renderedText").get<std::string>().find("visible-tail-marker") != std::string::npos,
+            "selection and late visible text survive native budget admission");
+        expect(boundaryReply.at("textBeforeCaret") == "" && boundaryReply.at("textAfterCaret") == "" &&
+            boundaryReply.dump().find("private prefix") == std::string::npos &&
+            boundaryReply.dump().find("private suffix") == std::string::npos, "recognition neighbors remain private");
         for (const auto refusal : {"password", "excluded", "expired", "missing"}) {
             neighbor = {}; tree = {}; textReads = 0;
             const std::string mode(refusal);

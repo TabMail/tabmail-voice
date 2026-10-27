@@ -51,6 +51,25 @@ struct ScreenContextTests {
         #expect(try context.renderedText() == "» ‸")
     }
 
+    @Test func privateNeighborsDoNotDisplaceLateVisibleContext() throws {
+        let limits = try SharedContext.sourceLimits()
+        let screenBytes = limits.selectionSourceBytes + 6
+        var context = ScreenContext(appName: "Synthetic page")
+        context.textBeforeCaret = "private prefix. " + String(repeating: "a ", count: 3000)
+        context.selectedText = "chosen"
+        context.textAfterCaret = String(repeating: " b", count: 3000) + ". private suffix"
+        context.caretSelectionOnly = true
+        context.append(.text, String(repeating: "z", count: screenBytes - 100))
+        #expect(!context.textBudgetFull)
+        context.append(.text, "visible-tail-marker")
+        #expect(context.blocks.count == 2)
+        let reply = context.json(ScreenExclusions())
+        #expect(reply["selectedText"]?.string == "chosen")
+        #expect(reply["renderedText"]?.string?.contains("visible-tail-marker") == true)
+        #expect(reply["textBeforeCaret"]?.string == "")
+        #expect(reply["textAfterCaret"]?.string == "")
+    }
+
     @Test func selectionIsBracketedByCaretMarkers() throws {
         var context = ScreenContext(appName: "Example")
         context.textBeforeCaret = "a "

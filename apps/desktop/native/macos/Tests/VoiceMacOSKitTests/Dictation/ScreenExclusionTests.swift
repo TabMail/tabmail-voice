@@ -402,15 +402,15 @@ struct ScreenExclusionTests {
         #expect(try read.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
         #expect(!read.context.blocks.contains { $0.kind == .caret })
 
-        // A caret in the page with text selected (Firefox gives the page's text around it): the
-        // selection is kept, as the caret block before the page; the text around it is the page's
-        // own, read once, by the walk.
+        // A selection whose source includes a password is withheld before its text is read.
+        // The ordinary safe walk still retains the rest of the page.
         let selected = page(Self.caret)
         let chosen = gather(selected.window, focused: selected.area, focusPath: [selected.window], excluding: ["example.com"])
         #expect(chosen.read)
-        #expect(chosen.context.selectedText == "balance")
+        #expect(chosen.context.selectedText.isEmpty && chosen.context.selectionUnavailable)
         #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
-        #expect(try chosen.context.renderedText() == "» ‸balance‸\n## Headlines\naccount 1234 balance 99\n> search")
+        #expect(chosen.asked.caret == 0)
+        #expect(try chosen.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
 
         // A caret with nothing selected adds no caret block.
         let caret = page(["caretBefore": "account 1234 ", "caretSelected": "", "caretAfter": "balance 99"])
@@ -471,13 +471,14 @@ struct ScreenExclusionTests {
         // The same with no focus at all: the focus takes nothing away.
         #expect(try gather(plain.window, focused: nil, focusPath: [], excluding: []).context.renderedText() == whole)
 
-        // Something selected in it is kept, as the caret block before it; the text around the
-        // selection is the element's own, read once, by the walk.
+        // The password in this selection's source prevents acquisition of its caret text.
+        // The safe walk still reads the ordinary rows and field.
         let selected = mail(Self.caret)
         let chosen = gather(selected.window, focused: selected.list, focusPath: [selected.window], excluding: [])
-        #expect(chosen.context.selectedText == "balance")
+        #expect(chosen.context.selectedText.isEmpty && chosen.context.selectionUnavailable)
         #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
-        #expect(try chosen.context.renderedText() == "Inbox\n» ‸balance‸\n| Sender One | Quarterly plan\n> search")
+        #expect(chosen.asked.caret == 0)
+        #expect(try chosen.context.renderedText() == whole)
 
         // A focused button is skipped outside web content like any button, and read inside it.
         let button = FakeElement("AXButton", [kAXTitleAttribute: "Send"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Inner"])])

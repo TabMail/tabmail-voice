@@ -253,36 +253,30 @@ async function main() {
     assert.equal(selectedPage.selectionRedacted, true, "withheld recognition source disables Edit");
     assert.ok(selectedPage.renderedText.includes("Unrelated footer outside focused field") && !selectedPage.renderedText.includes("synthetic-secret"),
       "a page in focus is still walked, without its password field");
-    // A safe document keeps ordinary selections; a label outside a selected value still redacts
-    // it, including when styling splits that visual line into native text runs.
-    await window.webContents.executeJavaScript(`(() => {
-      globalThis.selectionPasswords = [...document.querySelectorAll('input[type="password"]')].map(node => [node, node.parentNode, node.nextSibling]);
-      for (const [node] of selectionPasswords) node.remove();
-      getSelection().selectAllChildren(document.querySelector('h1'));
-    })()`);
-    await delay(150);
-    const safePage = await request("readScreen");
-    assert.deepEqual([safePage.textBeforeCaret, safePage.selectedText, safePage.textAfterCaret],
-      ["", "Unrelated heading outside focused field", ""], "an approved page presents only its ordinary selection");
-    assert.equal(safePage.selectionRedacted, false);
-    for (const styled of [false, true]) {
+    // Keep the same warmed document/provider, but give the independent selection an approved
+    // source domain. Restore the original nodes afterward so later field tests keep their state.
+    await window.webContents.executeJavaScript("globalThis.selectionOriginalNodes = [...document.body.childNodes]");
+    for (const kind of ["benign", "plain", "styled"]) {
       await window.webContents.executeJavaScript(`(() => {
-        document.getElementById('pageSecret')?.remove();
-        const paragraph = document.createElement('p'); paragraph.id = 'pageSecret';
-        paragraph.innerHTML = 'Draft. token=<' + (${styled} ? 'b' : 'span') + ' id="pageValue">syntheticPrivate123</' + (${styled} ? 'b' : 'span') + '>. More.';
-        document.body.prepend(paragraph);
+        const paragraph = document.createElement('p');
+        const tag = ${JSON.stringify(kind)} === 'styled' ? 'b' : 'span';
+        const selected = ${JSON.stringify(kind)} === 'benign' ? 'ordinary words' : 'syntheticPrivate123';
+        const prefix = ${JSON.stringify(kind)} === 'benign' ? 'Read ' : 'token=';
+        paragraph.innerHTML = 'Draft. ' + prefix + '<' + tag + ' id="pageValue">' + selected + '</' + tag + '>. More.';
+        document.body.replaceChildren(paragraph);
         getSelection().selectAllChildren(document.getElementById('pageValue'));
       })()`);
-      await delay(150);
-      const redacted = await request("readScreen");
-      assert.deepEqual([redacted.textBeforeCaret, redacted.selectedText, redacted.textAfterCaret], ["", "[redacted]", ""]);
-      assert.equal(redacted.selectionRedacted, true);
-      assert.ok(!JSON.stringify(redacted).includes("syntheticPrivate123"), "selected named value is absent from every reply field");
+      await delay(300);
+      const selected = await request("readScreen");
+      const secret = kind !== "benign";
+      assert.deepEqual([selected.textBeforeCaret, selected.selectedText, selected.textAfterCaret],
+        ["", secret ? "[redacted]" : "ordinary words", ""], "approved source presents only its redacted or benign selection");
+      assert.equal(selected.selectionRedacted, secret);
+      assert.ok(!JSON.stringify(selected).includes("syntheticPrivate123"), "selected named value is absent from every reply field");
     }
     await window.webContents.executeJavaScript(`(() => {
-      document.getElementById('pageSecret').remove();
-      for (const [node, parent, next] of selectionPasswords) parent.insertBefore(node, next);
-      delete globalThis.selectionPasswords;
+      document.body.replaceChildren(...selectionOriginalNodes);
+      delete globalThis.selectionOriginalNodes;
     })()`);
     await window.webContents.executeJavaScript("getSelection().removeAllRanges()");
     await delay(150);
