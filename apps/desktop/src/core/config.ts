@@ -274,6 +274,9 @@ export const agentPrompt = "system_prompt_desktop_agent_loop";
  * `available_tools`: they run on the server, read nothing of the user's, and answer "what day is next
  * Friday" right. */
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
+/** What the model reads for a Compose or Edit it called beside other tools: the text is held, the
+ * other calls run, and the held text is pasted once the loop ends (owner, 2026-10-19). */
+export const agentWritingHeld = "Held: this text is pasted when you finish. Call it again only to change the text; otherwise finish with a short reply.";
 /** What the model reads for a tool call the user declined in the chat window. */
 export const connectorToolDeclined = "The user declined, so nothing was done.";
 /** What a tool call returns when its request ended (canceled or superseded) before its question
@@ -391,9 +394,32 @@ export const memorySearchMaxLength = 500;
 export const memoryIDMaxLength = 100;
 /** What the chat window says while a memory tool runs. */
 export const memoryToolProgressLabel = "Looking through past requests";
-/** The bubble of the memory tools, which runs while they do (owner, 2026-10-19). */
+/** The bubble of memory and the knowledge base, which runs while their tools do (owner, 2026-10-19). */
 export const memoryBubbleName = "Memory";
-export const memoryBubbleDescription = "Looks back at your earlier requests.";
+export const memoryBubbleDescription = "Looks back at your earlier requests, and keeps what you ask it to remember.";
+
+// MARK: Knowledge base and writing style (ADR-DESK-063)
+
+/** The agent loop's knowledge-base tools, as the backend names them. */
+export const kbAddTool = "kb_add";
+export const kbDelTool = "kb_del";
+/** The backend prompt that learns a chat's knowledge into the knowledge base (`KBRefiner`). */
+export const kbRefinePrompt = "system_prompt_kb_refine";
+/** A chat window that closes after at least this many requests has its knowledge learned into the
+ * knowledge base (`KBRefiner`), as on iOS. */
+export const kbRefineMinUserTurns = 3;
+/** The refine's limits, as Thunderbird and iOS send them: reminders past due by more than this many
+ * days are removed, and the knowledge base is kept to this many bullets. */
+export const kbRefineReminderRetentionDays = 14;
+export const kbRefineMaxBullets = 200;
+/** Settings' history of the knowledge base and writing style: at most this many entries, the oldest
+ * dropped first; an edit is recorded once edits have stopped for this long (ms), as on iOS. */
+export const promptHistoryMax = 100;
+export const promptHistoryQuietPeriod = 2_000;
+/** The longest bullet the Settings fields take (characters). */
+export const personalizationBulletMaxLength = 2_000;
+/** The longest history entry id Settings may name to restore. */
+export const promptHistoryIDMaxLength = 100;
 
 // MARK: Apps excluded from screen reading
 
@@ -788,10 +814,11 @@ export const setNameTip: TipSettings = {
   maxDisplays: null,
 };
 /** What's new: agent mode keeps its requests on this computer and can look them up (ADR-DESK-061),
- * shown once, ahead of the other tips (owner, 2026-10-03: "really punchy"), long enough to read
- * twice. It took the place of the one for long dictations (ADR-DESK-049). */
-export const agentMemoryTip: TipSettings = {
-  lines: ["New: agent mode remembers", "past requests, on this computer"],
+ * and keeps what it learns about the user there too (ADR-DESK-063), shown once, ahead of the other
+ * tips (owner, 2026-10-03: "really punchy"), long enough to read twice. It took the place of the one
+ * for memory alone (`agentMemory`), which took that of the one for long dictations (ADR-DESK-049). */
+export const agentKnowledgeBaseTip: TipSettings = {
+  lines: ["New: agent mode remembers", "requests and learns about you,", "on this computer"],
   displayDuration: 6_000,
   maxDisplays: 1,
 };

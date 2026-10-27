@@ -108,3 +108,8 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   switched apps, so nothing was pasted" (`DesktopAgent.Failure.appChanged`, 2026-09-26 review). The
   Thunderbird tool is exempt: it brings Thunderbird to the front itself, and has its own focus checks.
 
+**Amendment 2026-10-19 — the knowledge base and writing style (ADR-DESK-063).** Agent mode's
+request now also carries the user's knowledge base (`user_kb_content`, always) and writing style
+(`user_composition_prompt`, its three sections only, when Compose or Edit is offered), both read at
+key-down, and the loop offers `kb_add` and `kb_del`. A chat window closing after at least three
+requests sends its requests and replies to the backend's knowledge-base refine.

@@ -6,7 +6,7 @@ import * as config from "../config.js";
 import { type ConnectorID, connectorByID } from "./connectors/index.js";
 import { type AgentToolID, isAgentToolID, agentTools } from "./tools.js";
 
-/** The bubble of the memory tools, which come with every request that offers a tool
+/** The bubble of the memory tools and the knowledge base's, which come with every request that offers a tool
  * (`ToolRegistry`): it shows with the tools' bubbles and runs while they do (owner,
  * 2026-10-19). It has no switch in Settings. */
 export const memoryBubble = "memory" as const;

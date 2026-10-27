@@ -90,6 +90,7 @@ vi.mock("../../../src/main/storage/jsonFileStore.js", () => ({
       return key === "hasFinishedWelcome" ? true : undefined;
     }
     set() {}
+    setAll() {}
     remove() {}
   },
 }));

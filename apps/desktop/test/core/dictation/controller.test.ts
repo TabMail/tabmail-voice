@@ -22,6 +22,9 @@ import { CorrectionWatch } from "../../../src/core/dictionary/correctionWatch.js
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
+import { UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { compositionSections } from "../../../src/core/personalization/bulletMerge.js";
+import { defaultKnowledgeBase } from "../../../src/core/personalization/defaults.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { type MicrophoneStatus, PermissionsModel } from "../../../src/core/onboarding/permissions.js";
 import type { ScreenContext, ScreenRead } from "../../../src/core/dictation/screenContext.js";
@@ -120,6 +123,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
   let used: string[][];
   /** What agent mode kept, and what its memory tools read. */
   let memory: FakeMemory;
+  /** The writing style and knowledge base. */
+  let prompts: UserPrompts;
 
   beforeEach(() => {
     transcription = new StubTransport();
@@ -131,9 +136,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
     prefs = { value: defaultSettings() };
     tipStore = new MemoryStore();
     // Told what's new already, unless a test starts afresh: it would take the first tip's turn.
-    new TipBook(tipStore).markLearned("agentMemory");
+    new TipBook(tipStore).markLearned("agentKnowledgeBase");
     used = [];
     memory = new FakeMemory();
+    prompts = new UserPrompts(new MemoryStore());
   });
 
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
@@ -188,6 +194,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       keepRecording: options.keepRecording,
       useWords: (texts) => used.push([...texts]),
       memory,
+      prompts,
     });
     return { controller, pastes, copies, history, clipboardSaves: () => clipboardSaves };
   }
@@ -2622,7 +2629,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases).toContainEqual(running("edit"));
       expect(completions.requests).toHaveLength(1);
       expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
-      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "edit"]);
+      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", "edit"]);
       expect(completionsVars(0)?.user_request).toBe(request);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
     });
@@ -2637,7 +2644,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.captureWindow = async () => selectionScreen("Ship it Friday or else.");
       });
 
-      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "screen_read", "edit"]);
+      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", "screen_read", "edit"]);
     });
 
     /** Agent mode logs the request, the text its tool wrote (fitted to the selection) and the paste. */
@@ -2711,7 +2718,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         completions.enqueue(200, writes(tool, "The launch budget is 500."));
         const { pastes } = await carryOut(selectionScreen(selected));
         expect(pastes).toEqual(["The launch budget is 500."]);
-        expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", tool]);
+        expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", tool]);
         const toolResults = (i: number) =>
           (completions.body(i).conversation_state as { harmony_messages: { role: string; content: string }[] }).harmony_messages.filter((m) => m.role === "tool").map((m) => m.content);
         const searched = JSON.parse(toolResults(1)[0] ?? "{}") as Record<string, unknown>;
@@ -2824,7 +2831,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(selected), new FakeThunderbird());
 
       expect(controller.tools).toEqual([tool]);
-      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", tool]);
+      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", tool]);
       expect(completions.requests).toHaveLength(2);
       expect(JSON.stringify(completions.body(1).conversation_state)).toContain(`there is no tool named ${other}`);
       expect(pastes).toEqual(["Here."]);
@@ -4409,6 +4416,33 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(controller.runningBubble).toBeNull();
           });
 
+          /** Memory's bubble runs at the front while its search does, alone, as an app's does while its
+           * tool runs (owner, 2026-10-19), and stops with it. */
+          test("memory's bubble runs while a memory tool does", async () => {
+            const searching = deferred<void>();
+            const searched = deferred<void>();
+            const search = memory.search.bind(memory);
+            memory.search = async (request) => {
+              searching.resolve();
+              await searched.promise;
+              return search(request);
+            };
+            const running: (string | null)[] = [];
+            const { controller, done } = await ask([], [calling(["memory_search", JSON.stringify({ query: "launch" })]), reply("Nothing found.")], (controller) => controller.observe(() => running.push(controller.runningBubble)));
+            await searching.promise;
+            expect(controller.runningBubble).toBe("memory");
+            expect(controller.recentBubbles[0]).toBe("memory");
+            searched.resolve();
+            await done;
+            // Stopped when the search ended, before Answer's bubble ran for the reply.
+            const ran = running.indexOf("memory");
+            const answered = running.indexOf("answer", ran);
+            expect(answered).toBeGreaterThan(ran);
+            expect(running.slice(ran, answered)).toContain(null);
+            expect(controller.recentBubbles).toEqual(["answer", "memory"]);
+            expect(controller.runningBubble).toBeNull();
+          });
+
           test("each request searches memory afresh, so a search after Clear All finds nothing", async () => {
             memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
             const search = calling(["memory_search", JSON.stringify({ query: "launch review" })]);
@@ -4472,6 +4506,223 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const { controller } = await done;
             expect(JSON.parse(told(1)[0] ?? "{}")).toEqual({ error: "memory search failed" });
             expect(controller.chat?.turns.at(-1)?.reply).toBe("I couldn't look that up.");
+          });
+        });
+
+        /** The knowledge base and writing style (ADR-DESK-063): `kb_add` and `kb_del` run on this
+         * computer, every request carries the knowledge base as it was at key-down, and a chat of
+         * enough requests is refined into it when it closes. */
+        describe("the knowledge base", () => {
+          function refinedReply(knowledgeBase: string): string {
+            return Fixtures.completionsStream(JSON.stringify({ assistant: "", refined_kb: knowledgeBase }));
+          }
+
+          /** The refine requests sent so far. */
+          function refines(): number {
+            return completions.requests.filter((_, index) => completionsVars(index)?.content === config.kbRefinePrompt).length;
+          }
+
+          test("kb_add keeps the statement, and the next request carries it", async () => {
+            const { done } = await ask([], [calling(["kb_add", JSON.stringify({ statement: "Prefers morning meetings" })]), reply("Noted.")]);
+            const { controller } = await done;
+            expect(JSON.parse(told(1)[0] ?? "null")).toBe("Added to knowledge base.");
+            expect(completionsVars(0)?.user_kb_content).toBe(defaultKnowledgeBase);
+            expect(prompts.knowledgeBase).toBe(`${defaultKnowledgeBase}\n- [Pinned] Prefers morning meetings.`);
+
+            controller.closeChat();
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, reply("Morning it is."));
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => completions.requests.length === 3)).toBe(true);
+            expect(completionsVars(2)?.user_kb_content).toBe(prompts.knowledgeBase);
+          });
+
+          /** "Remember that, and write it": a fact and the draft in one step. The fact is kept,
+           * the model is told the draft is held, and once it finishes the draft is pasted (owner,
+           * 2026-10-19: "let the loop finish"). */
+          test("kb_add called with Compose keeps the statement, then pastes the draft", async () => {
+            const pasted: string[] = [];
+            const { done } = await ask([], [calling(["kb_add", JSON.stringify({ statement: "Lunch is at noon" })], ["compose", JSON.stringify({ text: "Lunch is at noon." })]), reply("Saved, and pasted.")], () => setTools(["compose"]), {
+              paste: async (text) => {
+                pasted.push(text);
+              },
+            });
+            await done;
+            expect(told(1)).toEqual([JSON.stringify("Added to knowledge base."), config.agentWritingHeld]);
+            expect(prompts.knowledgeBase).toBe(`${defaultKnowledgeBase}\n- [Pinned] Lunch is at noon.`);
+            expect(pasted).toEqual(["Lunch is at noon."]);
+          });
+
+          /** A write that can't be pasted fails before the round's other calls run: a fact asked to be
+           * kept beside it is not kept, and nothing is pasted (ADR-DESK-055, amendment 2026-10-19). */
+          test.each([
+            ["a Compose without text", "compose" as const, "{}", selectionScreen(""), new AgentError("noText").message],
+            ["an Edit of a redacted selection", "edit" as const, JSON.stringify({ text: "Rewritten." }), { ...selectionScreen("token [redacted] here"), selectionRedacted: true }, new AgentError("secretInSelection").message],
+          ])("kb_add beside %s fails before the knowledge base changes", async (_case, tool, args, screen, message) => {
+            setTools([tool, "answer"]);
+            const before = prompts.knowledgeBase;
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, calling(["kb_add", JSON.stringify({ statement: "Lunch is at noon" })], [tool, args]));
+            const { controller, pastes } = await carryOut(screen);
+            expect(controller.phase).toEqual(failed(message));
+            expect(prompts.knowledgeBase).toBe(before);
+            expect(pastes).toEqual([]);
+            expect(completions.requests).toHaveLength(1);
+          });
+
+          /** Memory's bubble runs for a knowledge-base tool too, and it moves to the front of the row.
+           * It stops when the tool ends, so Answer's bubble runs alone for the reply. */
+          test("memory's bubble runs for kb_add", async () => {
+            const running: (string | null)[] = [];
+            const { done } = await ask([], [calling(["kb_add", JSON.stringify({ statement: "Lunch is at noon" })]), reply("Saved.")], (controller) => controller.observe(() => running.push(controller.runningBubble)));
+            const { controller } = await done;
+            const ran = running.indexOf("memory");
+            const answered = running.indexOf("answer", ran);
+            expect(ran).toBeGreaterThanOrEqual(0);
+            expect(answered).toBeGreaterThan(ran);
+            expect(running.slice(ran, answered)).toContain(null);
+            expect(controller.recentBubbles).toEqual(["answer", "memory"]);
+            expect(controller.runningBubble).toBeNull();
+          });
+
+          test("kb_del removes the statement", async () => {
+            prompts.updateKnowledgeBase(() => "- alpha.\n- [Pinned] Prefers morning meetings.");
+            const { done } = await ask([], [calling(["kb_del", JSON.stringify({ statement: "[Pinned] prefers morning meetings" })]), reply("Forgotten.")]);
+            await done;
+            expect(JSON.parse(told(1)[0] ?? "null")).toBe("Removed from knowledge base.");
+            expect(prompts.knowledgeBase).toBe("- alpha.");
+          });
+
+          test("arguments that aren't a JSON object are refused without editing the knowledge base", async () => {
+            const { done } = await ask([], [calling(["kb_add", "[1]"]), reply("Sorry.")]);
+            await done;
+            expect(told(1)).toEqual(["Error: the arguments were not a JSON object."]);
+            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
+          });
+
+          /** Settings are snapshotted at key-down: a knowledge base or writing style changed while
+           * the hotkey is held applies from the next request. */
+          test("a request carries the knowledge base and writing style as they were at key-down", async () => {
+            const styleAtKeyDown = prompts.personalization.writingStyle;
+            const { controller } = await openChat((controller) => {
+              controller.onPhaseChange = (phase) => {
+                if (phase.kind === "listening") {
+                  prompts.updateKnowledgeBase(() => "- Changed while held.");
+                  prompts.editCompositionSection(compositionSections[1] as string, ["I write in English Only."], ["I write in French."]);
+                }
+              };
+            });
+            expect(completionsVars(0)?.user_kb_content).toBe(defaultKnowledgeBase);
+            expect(completionsVars(0)?.user_composition_prompt).toBe(styleAtKeyDown);
+            expect(styleAtKeyDown).toContain("# Language\n- I write in English Only.");
+
+            controller.onPhaseChange = undefined;
+            queue("and how do I fix it", "answer", "Define it before the call.");
+            await followUp(controller);
+            expect(completionsVars(1)?.user_kb_content).toBe("- Changed while held.");
+            expect(completionsVars(1)?.user_composition_prompt).toBe(prompts.personalization.writingStyle);
+            expect(prompts.personalization.writingStyle).toContain("# Language\n- I write in French.");
+          });
+
+          /** The writing style goes only to a request that can write (Compose or Edit offered). */
+          test("a request that can only answer carries no writing style", async () => {
+            const { done } = await ask([], [reply("It is noon.")]);
+            await done;
+            expect(completionsVars(0)?.user_kb_content).toBe(defaultKnowledgeBase);
+            expect(completionsVars(0)?.user_composition_prompt).toBe("");
+          });
+
+          /** A chat of at least `kbRefineMinUserTurns` requests is refined when it closes, and what
+           * the refine learned is kept. */
+          test("a chat of enough requests is refined when it closes", async () => {
+            const { controller } = await openChat();
+            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
+              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
+              await followUp(controller);
+            }
+            const sent = completions.requests.length;
+            completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Asks about errors often.`));
+
+            controller.closeChat();
+
+            expect(await eventually(() => prompts.knowledgeBase.endsWith("- Asks about errors often."))).toBe(true);
+            expect(completions.requests).toHaveLength(sent + 1);
+            expect(completionsVars(sent)?.content).toBe(config.kbRefinePrompt);
+            expect(completionsVars(sent)?.chat_history).toBe(`[USER]: ${question}\n\n[AGENT]: ${answer}\n\n[USER]: follow up 1\n\n[AGENT]: Reply 1.\n\n[USER]: follow up 2\n\n[AGENT]: Reply 2.`);
+          });
+
+          /** Consent withdrawn while the chat is open: closing it sends nothing more to TabMail. */
+          test("a chat closed after consent was withdrawn isn't refined", async () => {
+            const { controller } = await openChat();
+            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
+              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
+              await followUp(controller);
+            }
+            completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Learned without consent.`));
+            prefs.value = { ...prefs.value, hasConsented: false };
+
+            controller.closeChat();
+            await sleep(100);
+
+            expect(refines()).toBe(0);
+            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
+          });
+
+          /** A follow-up written into the app closes the chat window, which refines the chat: its
+           * answered requests, not the one written into the app. */
+          test("a chat closed by a follow-up written into the app is refined", async () => {
+            const { controller } = await openChat();
+            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
+              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
+              await followUp(controller);
+            }
+            queue("write the fix here", "compose", "Define it first.");
+            completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Writes fixes in place.`));
+            const sent = completions.requests.length;
+
+            await followUp(controller);
+
+            expect(controller.chat).toBeNull();
+            expect(await eventually(() => prompts.knowledgeBase.endsWith("- Writes fixes in place."))).toBe(true);
+            expect(refines()).toBe(1);
+            expect(completionsVars(sent + 1)?.content).toBe(config.kbRefinePrompt);
+            const history = String(completionsVars(sent + 1)?.chat_history);
+            expect(history).toContain("[USER]: follow up 2");
+            expect(history).not.toContain("write the fix here");
+          });
+
+          test("a shorter chat isn't refined", async () => {
+            const { controller } = await openChat();
+            for (let turn = 2; turn < config.kbRefineMinUserTurns; turn += 1) {
+              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
+              await followUp(controller);
+            }
+            controller.closeChat();
+            await sleep(100);
+            expect(refines()).toBe(0);
+          });
+
+          /** Signing out, or into another account, ends the conversation without refining it:
+           * nothing it said is sent under the next account or reaches the knowledge base it reads. */
+          test.each(["signed out", "switched"])("a chat ended by the account's change isn't refined (%s)", async (how) => {
+            const account = signedIn(auth);
+            const { controller } = await openChat(() => {}, undefined, { account });
+            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
+              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
+              await followUp(controller);
+            }
+            completions.enqueue(200, refinedReply("- Learned from the first account."));
+
+            if (how === "signed out") account.signOut();
+            else {
+              auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+              await account.verify(Fixtures.email, "123456");
+            }
+            await sleep(100);
+
+            expect(controller.chat).toBeNull();
+            expect(refines()).toBe(0);
+            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
           });
         });
 
@@ -4578,7 +4829,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           expect(tool.runs).toEqual([{ title: "Launch review", day: "friday", hour: 10.5, note: null }]);
           expect(whileRunning.map((chat) => [chat?.pendingRequest, chat?.activity, chat?.turns])).toEqual([[toolRequest, detailed ? "Looking for Launch review" : tool.progressLabel, []]]);
-          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read"]);
+          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read", "kb_add", "kb_del"]);
           expect(completions.body(0).disable_tools).toBe(false);
           expect(told(1)).toEqual(["Added."]);
           expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer, questions: [] }]);
@@ -4691,7 +4942,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
           await done;
 
-          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read"]);
+          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read", "kb_add", "kb_del"]);
           expect(completions.body(0).web_search_enabled).toBe(false);
           expect(reminders.runs).toEqual([]);
           expect(calendar.runs).toEqual([{}]);
@@ -4712,7 +4963,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
           await done;
 
-          expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "compose"]);
+          expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", "compose"]);
           expect(calendar.runs).toEqual([]);
           expect(told(1)).toEqual(["Error: there is no tool named example_read."]);
           expect(pasted).toEqual(["I'm free at 3."]);
@@ -4729,7 +4980,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
           await done;
 
-          expect(completions.body(0).available_tools).toEqual(webOn ? ["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "memory_search", "memory_read"] : ["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read"]);
+          expect(completions.body(0).available_tools).toEqual(webOn ? ["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "memory_search", "memory_read", "kb_add", "kb_del"] : ["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read", "kb_add", "kb_del"]);
           expect(completions.body(0).web_search_enabled).toBe(webOn);
         });
 
@@ -6443,7 +6694,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Added it."]);
           expect(controller.chat?.closesAt).toBeNull();
           expect(chatChanges).toEqual([true]);
-          expect(completions.body(2).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read", "compose"]);
+          expect(completions.body(2).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read", "kb_add", "kb_del", "compose"]);
         });
 
         /** A chat window touched and then closed leaves the next one untouched: it times out. */
@@ -6503,18 +6754,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
       tipStore = new MemoryStore();
       const { controller } = makeController({ capture: new CountingCapture(true) });
       const whatsNewDuration = 300;
-      controller.tipDisplayDuration = (tip) => (tip === "agentMemory" ? whatsNewDuration : 60_000);
+      controller.tipDisplayDuration = (tip) => (tip === "agentKnowledgeBase" ? whatsNewDuration : 60_000);
 
       controller.handle("start");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
-      expect(controller.tip).toBe("agentMemory");
+      expect(controller.tip).toBe("agentKnowledgeBase");
       expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       controller.handle("cancel");
-      expect(new TipBook(tipStore).isEligible("agentMemory")).toBe(false);
+      expect(new TipBook(tipStore).isEligible("agentKnowledgeBase")).toBe(false);
 
       controller.handle("start");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
       expect(controller.tip).toBe("agentAndHistory");
+      controller.handle("cancel");
+    });
+
+    /** A user who saw the memory tip of 0.4.0 to 0.5.2 is told what's new now: the knowledge base and
+     * writing style go with agent mode, which its consent page did not say (ADR-DESK-063). */
+    test("a user told of memory before is shown the what's-new tip once", async () => {
+      tipStore = new MemoryStore({ "tip.agentMemory.displays": 1, "tip.agentMemory.learned": true });
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      controller.tipDisplayDuration = () => 60_000;
+
+      controller.handle("start");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      const shown = controller.tip;
+      expect(shown === null ? null : tipDetails[shown]).toBe(config.agentKnowledgeBaseTip);
+      controller.handle("cancel");
+      controller.handle("start");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      expect(controller.tip).not.toBe(shown);
       controller.handle("cancel");
     });
 
@@ -6524,13 +6793,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       tipStore = new MemoryStore();
       const { controller } = makeController({ capture: new CountingCapture(true) });
       const whatsNewDuration = 300;
-      controller.tipDisplayDuration = (tip) => (tip === "agentMemory" ? whatsNewDuration : tipDetails[tip].displayDuration);
+      controller.tipDisplayDuration = (tip) => (tip === "agentKnowledgeBase" ? whatsNewDuration : tipDetails[tip].displayDuration);
 
       controller.handle("startHandsFree");
-      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "agentMemory")).toBe(true);
+      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "agentKnowledgeBase")).toBe(true);
       controller.handle("listenHandsFree");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
-      expect(controller.tip).toBe("agentMemory");
+      expect(controller.tip).toBe("agentKnowledgeBase");
       expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
       controller.handle("cancel");
     });

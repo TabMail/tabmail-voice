@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../../src/core/config.js";
+import { compositionSections } from "../../src/core/personalization/bulletMerge.js";
 import { channels, isAudioReport, isCommand, isWindowName } from "../../src/shared/ipc.js";
 
 /** The channel names the preload script writes out, read from its source: a sandboxed preload
@@ -70,6 +71,14 @@ describe("IPC", () => {
       { type: "clearMemory" },
       { type: "searchMemory", query: "" },
       { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength) },
+      ...compositionSections.map((section) => ({ type: "editWritingStyle", section, shown: [], bullets: ["Short sentences."] })),
+      { type: "editKnowledgeBase", shown: ["a"], bullets: [] },
+      // A bullet longer than the Settings fields take, as kb_add or a refine can store, still lets
+      // the knowledge base be edited.
+      { type: "editKnowledgeBase", shown: ["x".repeat(config.personalizationBulletMaxLength + 1), "a"], bullets: ["a"] },
+      { type: "resetWritingStyle" },
+      { type: "resetKnowledgeBase" },
+      { type: "restorePromptHistory", id: "x".repeat(config.promptHistoryIDMaxLength) },
       ...config.memorySizeLimitChoices.map((value) => ({ type: "setMemorySizeLimit", value })),
       ...config.eventDurationChoices.map((value) => ({ type: "setEventDuration", value })),
       { type: "setEventDuration", value: config.eventDurationMin },
@@ -130,6 +139,14 @@ describe("IPC", () => {
     { type: "searchMemory" },
     { type: "searchMemory", query: 1 },
     { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength + 1) },
+    { type: "editWritingStyle", section: "# Not a section", shown: [], bullets: [] },
+    { type: "editWritingStyle", section: compositionSections[0], shown: [], bullets: "Short sentences." },
+    { type: "editWritingStyle", shown: [], bullets: [] },
+    { type: "editKnowledgeBase", bullets: [] },
+    { type: "editKnowledgeBase", shown: [], bullets: [1] },
+    { type: "restorePromptHistory" },
+    { type: "restorePromptHistory", id: 1 },
+    { type: "restorePromptHistory", id: "x".repeat(config.promptHistoryIDMaxLength + 1) },
     { type: "setMemorySizeLimit" },
     { type: "setMemorySizeLimit", value: "1073741824" },
     { type: "setMemorySizeLimit", value: (config.memorySizeLimitChoices[0] ?? 0) + 1 },

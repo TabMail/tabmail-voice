@@ -24,6 +24,8 @@ import * as config from "../core/config.js";
 import { CorrectionWatch } from "../core/dictionary/correctionWatch.js";
 import { DictationController, isResting } from "../core/dictation/controller.js";
 import { MemoryPage } from "../core/memory/page.js";
+import { personalizationState } from "../core/personalization/page.js";
+import { UserPrompts } from "../core/personalization/prompts.js";
 import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { liveTransport } from "../core/backend/http.js";
@@ -203,6 +205,9 @@ function launch(): void {
   // Settings › Memory reads nothing until memory's database exists: the helper creates it at its
   // first start, when agent mode is first chosen.
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
+  // The writing style and knowledge base, in a file of their own: per user of this computer, as
+  // memory is (ADR-DESK-063).
+  const prompts = new UserPrompts(new JSONFileStore(join(app.getPath("userData"), "userPrompts.json")));
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
 
   let wizard: WelcomeWizard | null = null;
@@ -293,6 +298,7 @@ function launch(): void {
     corrections: nativeAudio ? new CorrectionWatch(fieldReader, (words) => settings.learnWords(words)) : undefined,
     useWords: (texts) => settings.useWords(texts),
     memory,
+    prompts,
     keepRecording: (wav) => lastRecording.keep(wav),
   });
   controller.captureContext = (exclusions, target) => probe.capture(exclusions, target);
@@ -442,6 +448,7 @@ function launch(): void {
       version: app.getVersion(),
       update: updater?.state ?? null,
       memory: memoryPage.state,
+      personalization: personalizationState(prompts),
     };
   }
 
@@ -811,6 +818,7 @@ function launch(): void {
   account.observe(followDebugMode);
   permissions.observe(pushSettingsWindows);
   memoryPage.observe(() => windows.push("settings"));
+  prompts.observe(() => windows.push("settings"));
 
   // The hotkey's event tap can't be created until Accessibility is granted: configure again once
   // the grant lands.
@@ -847,6 +855,7 @@ function launch(): void {
   /** An exclusion or a removal that could not be written to disk did not happen, and the user is
    * told. */
   const exclusionUnsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
+  const personalizationUnsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
   const removalUnsaved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
 
   /** Asks the user for an app, and excludes it from screen reading. */
@@ -915,6 +924,21 @@ function launch(): void {
         return memoryPage.remove(command.memId);
       case "clearMemory":
         return memoryPage.clear();
+      case "editWritingStyle":
+        if (!prompts.editCompositionSection(command.section, command.shown, command.bullets)) throw new Error(personalizationUnsaved);
+        return;
+      case "editKnowledgeBase":
+        if (!prompts.editKnowledgeBase(command.shown, command.bullets)) throw new Error(personalizationUnsaved);
+        return;
+      case "resetWritingStyle":
+        if (!prompts.resetComposition()) throw new Error(personalizationUnsaved);
+        return;
+      case "resetKnowledgeBase":
+        if (!prompts.resetKnowledgeBase()) throw new Error(personalizationUnsaved);
+        return;
+      case "restorePromptHistory":
+        if (!prompts.restore(command.id)) throw new Error(personalizationUnsaved);
+        return;
       case "excludeApp":
         return excludePickedApp();
       case "removeExcludedApp":
@@ -1047,6 +1071,7 @@ function launch(): void {
         fieldReaderHelper.stop();
         microphoneHelper.stop();
         memory.stop();
+        prompts.flushHistory();
         accessibilityActivator?.stop();
         return logFile.flush();
       })
@@ -1068,7 +1093,7 @@ function launch(): void {
   // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
   // says what's new, so the tip that tells a user who set the app up before never shows to this one.
   if (!settings.hasFinishedWelcome) {
-    tips.markLearned("agentMemory");
+    tips.markLearned("agentKnowledgeBase");
     showWelcome();
   }
 }

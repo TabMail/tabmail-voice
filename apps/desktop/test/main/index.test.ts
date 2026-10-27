@@ -14,6 +14,7 @@ import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
+import type { PersonalizationState } from "../../src/core/personalization/page.js";
 import { memoryRow } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels } from "../../src/shared/ipc.js";
@@ -65,6 +66,8 @@ const app = vi.hoisted(() => ({
   overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; drags: unknown[]; isTakingClicks: boolean; hitTest?: string } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[]; phase: object } | null,
   stored: new Map<string, unknown>(),
+  /** Every file a store was opened on, by path, with its values (the preferences file's are `stored`). */
+  files: new Map<string, Map<string, unknown>>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
   savesFail: false,
   opened: [] as string[],
@@ -76,6 +79,8 @@ const app = vi.hoisted(() => ({
   appData: null as string | null,
   /** `app.getPath("userData")`, the app's own folder (memory's is in it). */
   userData: "/nonexistent",
+  /** The writing style and knowledge base the controller was given (ADR-DESK-063). */
+  prompts: null as import("../../src/core/personalization/prompts.js").UserPrompts | null,
   /** Memory as the app made it: a stand-in that keeps it in a list. */
   memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string }; stops: number }) | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
@@ -266,22 +271,39 @@ vi.mock("../../src/core/backend/http.js", () => ({
     throw new Error("no network in tests");
   },
 }));
-vi.mock("../../src/main/storage/jsonFileStore.js", () => ({
-  JSONFileStore: class {
-    get(key: string) {
-      // Set up, unless a test stores otherwise.
-      if (key === "hasFinishedWelcome" && !app.stored.has(key)) return true;
-      return app.stored.get(key);
-    }
-    set(key: string, value: unknown) {
-      app.stored.set(key, value);
-      return !app.savesFail;
-    }
-    remove(key: string) {
-      app.stored.delete(key);
-    }
-  },
-}));
+vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
+  const { join } = await import("node:path");
+  return {
+    /** Each file its own values, kept across launches: the app folder's preferences file is
+     * `app.stored`, any other is in `app.files` by its path. */
+    JSONFileStore: class {
+      private readonly values: Map<string, unknown>;
+      constructor(path: string) {
+        this.values = path === join(app.userData, "settings.json") ? app.stored : (app.files.get(path) ?? new Map<string, unknown>());
+        app.files.set(path, this.values);
+      }
+      get(key: string) {
+        // Set up, unless a test stores otherwise.
+        if (key === "hasFinishedWelcome" && this.values === app.stored && !app.stored.has(key)) return true;
+        return this.values.get(key);
+      }
+      set(key: string, value: unknown) {
+        this.values.set(key, value);
+        return !app.savesFail;
+      }
+      setAll(values: Record<string, unknown>) {
+        for (const [key, value] of Object.entries(values)) {
+          if (value === undefined) this.values.delete(key);
+          else this.values.set(key, value);
+        }
+        return !app.savesFail;
+      }
+      remove(key: string) {
+        this.values.delete(key);
+      }
+    },
+  };
+});
 vi.mock("../../src/main/native/macos/osascript.js", () => ({
   osascript: {
     run: async (source: string, args: readonly string[]) => {
@@ -377,10 +399,11 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; keepRecording?: typeof app.keepRecording }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
       app.dictationSettings = dependencies.settings;
       app.keepRecording = dependencies.keepRecording;
       app.capture = dependencies.capture;
+      app.prompts = dependencies.prompts;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
       app.frontmostApp = dependencies.frontmostApp;
@@ -557,6 +580,7 @@ afterEach(() => {
   app.overlay = null;
   app.controller = null;
   app.stored.clear();
+  app.files.clear();
   app.savesFail = false;
   app.opened = [];
   app.openFailure = null;
@@ -567,6 +591,7 @@ afterEach(() => {
   if (app.userData !== "/nonexistent") rmSync(app.userData, { recursive: true, force: true });
   app.userData = "/nonexistent";
   app.memory = null;
+  app.prompts = null;
   app.fullName = null;
   app.trayActions = null;
   app.dictationSettings = null;
@@ -2008,6 +2033,132 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(state().eventDuration).toBe(50);
   });
 
+  /** Settings › Personalization's commands (ADR-DESK-063): each changes the stored texts and the
+   * state Settings shows, and pushes it; one the file can't keep is reported and changes nothing. */
+  test("the writing style and knowledge base are edited, reset and restored from Settings", async () => {
+    await launch("darwin");
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
+    const pushed: PersonalizationState[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, pushedState) => {
+        if (name === "settings") pushed.push((pushedState as { personalization: PersonalizationState }).personalization);
+      },
+    ]);
+    const promptsFile = () => app.files.get(join(app.userData, "userPrompts.json"));
+    const storedKB = () => promptsFile()?.get("user_prompts:user_kb.md");
+    const storedStyle = () => promptsFile()?.get("user_prompts:user_composition.md");
+    const language = () => page().writingStyle.find((one) => one.section === "Language")?.bullets;
+    const defaults = page().knowledgeBase;
+    expect(defaults).toHaveLength(3);
+    expect(language()).toEqual(["I write in English Only."]);
+    expect(page().history).toEqual([]);
+
+    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+    expect(storedKB()).toContain("- Prefers short replies.");
+    expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(pushed.at(-1)?.knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+
+    expect(await send({ type: "editWritingStyle", section: "Language", shown: ["I write in English Only."], bullets: ["I write in English and French."] })).toEqual({ error: null });
+    expect(storedStyle()).toContain("- I write in English and French.");
+    expect(storedStyle()).not.toContain("English Only");
+    expect(language()).toEqual(["I write in English and French."]);
+    expect(pushed.at(-1)?.writingStyle.find((one) => one.section === "Language")?.bullets).toEqual(["I write in English and French."]);
+
+    // A reset brings the default back, recording the text as it was first.
+    expect(await send({ type: "resetKnowledgeBase" })).toEqual({ error: null });
+    expect(page().knowledgeBase).toEqual(defaults);
+    expect(pushed.at(-1)?.knowledgeBase).toEqual(defaults);
+    const kbReset = page().history[0];
+    expect(kbReset).toMatchObject({ source: "reset", fields: ["kb"], restores: ["Prefers short replies."] });
+    expect(await send({ type: "resetWritingStyle" })).toEqual({ error: null });
+    expect(language()).toEqual(["I write in English Only."]);
+
+    // Restoring the knowledge base's reset puts back both texts as they were then.
+    expect(await send({ type: "restorePromptHistory", id: kbReset?.id })).toEqual({ error: null });
+    expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(language()).toEqual(["I write in English and French."]);
+    expect(pushed.at(-1)?.knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+
+    // The file can't be written: each command says so, and the texts stay as they are.
+    app.savesFail = true;
+    const [kbBefore, styleBefore] = [storedKB(), storedStyle()];
+    const shownBefore = { knowledgeBase: page().knowledgeBase, writingStyle: page().writingStyle };
+    const unsaved = { error: "This couldn't be saved, so nothing changed. Check the disk and try again." };
+    for (const command of [
+      { type: "editKnowledgeBase", shown: shownBefore.knowledgeBase, bullets: ["Only this."] },
+      { type: "editWritingStyle", section: "Language", shown: ["I write in English and French."], bullets: ["I write in German."] },
+      { type: "resetKnowledgeBase" },
+      { type: "resetWritingStyle" },
+      { type: "restorePromptHistory", id: kbReset?.id },
+    ]) {
+      expect(await send(command), command.type).toEqual(unsaved);
+      expect(storedKB(), command.type).toBe(kbBefore);
+      expect(storedStyle(), command.type).toBe(styleBefore);
+      expect({ knowledgeBase: page().knowledgeBase, writingStyle: page().writingStyle }, command.type).toEqual(shownBefore);
+    }
+  });
+
+  /** The knowledge base changed outside Settings (by `kb_add`, `kb_del` or the refine): the Settings
+   * window is pushed the new state. */
+  test("a knowledge base change made outside Settings reaches the Settings window", async () => {
+    await launch("darwin");
+    const pushed: string[][] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, pushedState) => {
+        if (name === "settings") pushed.push((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase);
+      },
+    ]);
+    expect(app.prompts?.updateKnowledgeBase((current) => `${current}\n- Learned in a chat.`)).toBe("saved");
+    expect(pushed.at(-1)).toContain("Learned in a chat.");
+  });
+
+  /** Edits still waiting for their quiet period are recorded in the history when the app quits, not
+   * lost. */
+  test("quitting records the edits waiting for their quiet period", async () => {
+    await launch("darwin");
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
+    const defaults = page().knowledgeBase;
+    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+    const promptsFile = app.files.get(join(app.userData, "userPrompts.json"));
+    expect(promptsFile?.get("prompt_history")).toBeUndefined();
+
+    app.appEvents.get("before-quit")?.({ preventDefault() {} });
+    await vi.waitFor(() => expect(app.quits).toBe(1));
+    const history = promptsFile?.get("prompt_history") as { source: string; fields: string[]; kb: string }[];
+    expect(history.map(({ source, fields }) => ({ source, fields }))).toEqual([{ source: "local_edit", fields: ["kb"] }]);
+    expect(history[0]?.kb).toContain("- Prefers short replies.");
+  });
+
+  /** The writing style and knowledge base are the computer user's: kept in their own file in the
+   * app's folder, apart from the preferences, and read again at the next launch; another user's
+   * folder has its own. */
+  test("the knowledge base is kept in the app's folder, apart from the preferences, across launches", async () => {
+    const [first, second] = [mkdtempSync(join(tmpdir(), "TabMailVoiceTests-")), mkdtempSync(join(tmpdir(), "TabMailVoiceTests-"))];
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
+    const relaunch = async (userData: string) => {
+      app.handlers.clear();
+      app.listeners.clear();
+      app.userData = userData;
+      await launch("darwin");
+    };
+    try {
+      await relaunch(first);
+      const defaults = page().knowledgeBase;
+      expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+      expect(app.files.get(join(first, "userPrompts.json"))?.get("user_prompts:user_kb.md")).toContain("- Prefers short replies.");
+      expect([...app.stored.keys()].filter((key) => key.startsWith("user_prompts:") || key === "prompt_history")).toEqual([]);
+
+      await relaunch(second);
+      expect(page().knowledgeBase).toEqual(defaults);
+
+      await relaunch(first);
+      expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    } finally {
+      app.userData = "/nonexistent";
+      for (const folder of [first, second]) rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   /** Memory is the computer user's, not the account's (ADR-DESK-061): signing out and signing in
    * with another account keep it, in the same folder; quitting ends its helper. */
   test("memory stays across sign-out and another account, and its helper ends at quit", async () => {
@@ -2050,7 +2201,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.stored.set("hasFinishedWelcome", finishedWelcome);
     await launch("darwin");
     expect(app.dialogs).toEqual([]);
-    expect(app.stored.get("tip.agentMemory.learned") === true).toBe(!tipShows);
+    expect(app.stored.get("tip.agentKnowledgeBase.learned") === true).toBe(!tipShows);
   });
 
   /** Each way a user opens a window opens the one it names: the tray's Settings and Welcome Guide,

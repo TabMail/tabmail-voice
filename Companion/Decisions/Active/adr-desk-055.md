@@ -106,3 +106,17 @@ Selection eligibility, redacted-selection refusal, enabled-tool and connector po
 and cancellation checks still apply. The UI lifecycle is shared by local tools and registered
 backend-tool events. `screen_read` now has its viewfinder bubble, normal running animation and hover
 tooltip, as the other tools; the earlier no-bubble statement is superseded.
+
+**Amendment 2026-10-19 (owner): a write beside other tools lets the loop finish.** With the knowledge
+base's tools (ADR-DESK-063) the model can call `kb_add` and Compose in one round ("remember that and
+write it"); the writing call ended the request and the fact was never kept. The owner chose: *let the
+loop finish*, then paste. So a round calling the offered writing tool and nothing else still ends the
+request at once, but one calling it beside other tools holds its text (checked as it comes, so a call
+without text or an Edit of a redacted selection still fails before anything runs), runs the others,
+and answers the writing call with `agentWritingHeld`; the loop goes on, a later writing call
+replaces the held text, and when the loop ends (a reply, or a writing call alone) the held text is
+pasted and any reply is not shown. The round limit ends the loop with a reply, which pastes the held
+text too. On the flat tool registry the loop knows no tool by name: what it holds is a round's first
+terminal call made beside non-terminal ones, checked by its tool's `check` (for Compose and Edit, the
+text they would paste), and a round of terminal calls alone runs its first one. Rejected: running the round's other calls and ending at once (no extra round, but the model
+never hears what its other calls did).

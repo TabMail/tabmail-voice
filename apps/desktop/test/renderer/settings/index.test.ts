@@ -11,6 +11,9 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
+import { personalizationState } from "../../../src/core/personalization/page.js";
+import { UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
 
 const signedIn: SettingsState = {
@@ -47,6 +50,15 @@ const signedIn: SettingsState = {
   version: "1.2.3",
   update: { kind: "idle" },
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
+  personalization: {
+    writingStyle: [
+      { section: "General writing style", bullets: ["ALWAYS start with a greeting."] },
+      { section: "Language", bullets: ["I write in English Only."] },
+      { section: "Useful links to personal website and other resources", bullets: [] },
+    ],
+    knowledgeBase: ["Prefers morning meetings.", "Works with Sam."],
+    history: [],
+  },
 };
 
 /** What the stand-in main process answers: one reply for every command, or one per command. */
@@ -55,7 +67,7 @@ type Reply = CommandResult | Promise<CommandResult> | ((command: Command) => Com
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
  * each command with `reply` and then pushes `after` (as the main process pushes the new state), or
  * what `after` gives at that moment. */
-async function settingsPage(reply: Reply, after: SettingsState | (() => SettingsState), initial = signedIn): Promise<{ commands: Command[] }> {
+async function settingsPage(reply: Reply, after: SettingsState | (() => SettingsState), initial = signedIn): Promise<{ commands: Command[]; push: (state: SettingsState) => Promise<void> }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const commands: Command[] = [];
@@ -76,7 +88,9 @@ async function settingsPage(reply: Reply, after: SettingsState | (() => Settings
     await import("../../../src/renderer/settings/index.js");
   });
   await act(async () => listener?.(initial));
-  return { commands };
+  // A state the main process pushes on its own (a change made elsewhere).
+  const push = (state: SettingsState) => act(async () => listener?.(state));
+  return { commands, push };
 }
 
 function button(label: string): HTMLButtonElement {
@@ -426,6 +440,240 @@ describe("Settings page", () => {
     });
   });
 
+  /** Settings › Personalization (ADR-DESK-063): the writing style's sections and the knowledge base
+   * as editable lists, Reset, and the history. */
+  describe("personalization", () => {
+    const language = "Language";
+    const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
+
+    async function open(initial: SettingsState = signedIn, reply: Reply = { error: null }): Promise<{ commands: Command[]; push: (state: SettingsState) => Promise<void> }> {
+      const page = await settingsPage(reply, initial, initial);
+      await act(async () => button("Personalization").click());
+      return page;
+    }
+
+    /** Each section is shown by its name. */
+    test("shows the writing style's sections by name and the knowledge base's items", async () => {
+      await open();
+      const lists = [...document.querySelectorAll("ul.dictionary")].map((list) => list.getAttribute("aria-label"));
+      expect(lists).toEqual(["General writing style", "Language", "Useful links to personal website and other resources", "Knowledge base"]);
+      expect(field("Knowledge base, item 2").value).toBe("Works with Sam.");
+    });
+
+    /** A bullet the user types is capped, as ADR-DESK-063 says: the boundary takes any length, so
+     * these fields are the only cap. */
+    test("the Settings fields cap a typed bullet", async () => {
+      await open();
+      expect(field("Add to Knowledge base").maxLength).toBe(config.personalizationBulletMaxLength);
+      expect(field("Knowledge base, item 1").maxLength).toBe(config.personalizationBulletMaxLength);
+    });
+
+    /** An edit sends the whole list as edited, with the list it was made on, so the main process can
+     * keep what changed meanwhile. */
+    test("an item edited and left is saved with the list it was made on", async () => {
+      const { commands } = await open();
+      const item = field("Knowledge base, item 1");
+      await act(async () => type(item, "Prefers afternoon meetings."));
+      await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
+    });
+
+    /** An item edited, then removed with its own Remove: the press focuses Remove first, and the
+     * item is removed, with the main process applying each command to the stored knowledge base and
+     * pushing the result (a save as focus left the field replaced the row under the press, and the
+     * removal was lost). */
+    test("an item edited and then removed is removed", async () => {
+      const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- Prefers morning meetings.\n- Works with Sam." }));
+      // The stand-in main process: the command just sent applied to the store, then its state pushed.
+      let sent: Command[] = [];
+      const page = await settingsPage({ error: null }, () => {
+        const command = sent.at(-1);
+        if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
+        return { ...signedIn, personalization: personalizationState(prompts) };
+      });
+      sent = page.commands;
+      await act(async () => button("Personalization").click());
+      const item = field("Knowledge base, item 1");
+      await act(async () => type(item, "Prefers afternoon meetings."));
+      const remove = document.querySelector<HTMLButtonElement>('button[aria-label="Remove Knowledge base, item 1"]') as HTMLButtonElement;
+      // Pressing Remove moves focus to it, then it is clicked.
+      await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: remove })));
+      await act(async () => remove.click());
+      expect(prompts.knowledgeBase).toBe("- Works with Sam.");
+    });
+
+    /** The knowledge base changed elsewhere (`kb_add`, `kb_del`, a refine) while Settings shows it:
+     * each field shows its own bullet, what is being typed in a later field stays, and is saved with
+     * the list shown now, and a field left untouched saves nothing. */
+    test("a knowledge base changed elsewhere keeps what is being typed", async () => {
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase } });
+      const { commands, push } = await open(withKB(["Alpha.", "Beta.", "Gamma."]));
+      const item = field("Knowledge base, item 3");
+      await act(async () => type(item, "Gamma, edited."));
+
+      // One removed before it, then one added before it.
+      await push(withKB(["Beta.", "Gamma."]));
+      expect([field("Knowledge base, item 1").value, field("Knowledge base, item 2").value]).toEqual(["Beta.", "Gamma, edited."]);
+      expect(field("Knowledge base, item 2")).toBe(item);
+      await push(withKB(["Zero.", "Beta.", "Gamma."]));
+      expect([field("Knowledge base, item 1").value, field("Knowledge base, item 2").value, field("Knowledge base, item 3").value]).toEqual(["Zero.", "Beta.", "Gamma, edited."]);
+
+      await act(async () => field("Knowledge base, item 2").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(commands).toEqual([]);
+      await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Zero.", "Beta.", "Gamma."], bullets: ["Zero.", "Beta.", "Gamma, edited."] }]);
+    });
+
+    /** Equal bullets (an Add of one already there stores it twice) are each a row of their own, and a
+     * change made elsewhere around them shows exactly the list pushed. */
+    test.each([
+      [["Alpha.", "Alpha.", "Beta."], ["Gamma.", "Alpha.", "Beta."]],
+      [["Alpha.", "Alpha.", "Beta."], ["Alpha.", "Beta."]],
+      [["Alpha.", "Beta.", "Alpha."], ["Beta.", "Alpha."]],
+      [["Alpha.", "Alpha."], ["Zero.", "Alpha.", "Alpha."]],
+    ])("equal bullets %j, changed elsewhere to %j, show as pushed", async (before, after) => {
+      const errors: unknown[] = [];
+      vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => void errors.push(args[0]));
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase } });
+      const rows = () => [...document.querySelectorAll<HTMLTextAreaElement>('ul[aria-label="Knowledge base"] textarea')].map((element) => element.value);
+      const { push } = await open(withKB(before));
+      expect(rows()).toEqual(before);
+      await push(withKB(after));
+      expect(rows()).toEqual(after);
+      // React reports a key shared by two rows.
+      expect(errors).toEqual([]);
+    });
+
+    /** A bullet is one line: Enter leaves the field, which saves it, rather than breaking the line. */
+    test("Enter in an item takes no line break, and saves it", async () => {
+      const { commands } = await open();
+      const item = field("Knowledge base, item 1");
+      await act(async () => item.focus());
+      await act(async () => type(item, "Prefers afternoon meetings."));
+      expect(commands).toEqual([]);
+      const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+      await act(async () => item.dispatchEvent(enter));
+      expect(enter.defaultPrevented).toBe(true);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
+    });
+
+    /** An emptied item is sent empty, and the store leaves empty bullets out (`UserPrompts`' test
+     * "a knowledge base cleared in Settings stays empty"). */
+    test("an item emptied and left is saved empty", async () => {
+      const { commands } = await open();
+      const item = field("Knowledge base, item 1");
+      await act(async () => type(item, "   "));
+      expect(commands).toEqual([]);
+      await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["", "Works with Sam."] }]);
+    });
+
+    test("Escape puts an item back as it was, and leaving it then saves nothing", async () => {
+      const { commands } = await open();
+      const item = field("Knowledge base, item 1");
+      await act(async () => type(item, "Something else."));
+      await act(async () => item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      expect(item.value).toBe("Prefers morning meetings.");
+      await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(commands).toEqual([]);
+    });
+
+    /** A bullet another writer stored with a leading space (a multi-line kb_add, a refine) is
+     * shown as stored; leaving it untouched saves nothing. */
+    test("an item stored with a leading space and left untouched saves nothing", async () => {
+      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: [" Alice.", "Works with Sam."] } });
+      const item = field("Knowledge base, item 1");
+      expect(item.value).toBe(" Alice.");
+      await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(commands).toEqual([]);
+    });
+
+    test("an item is removed, and one added at the end", async () => {
+      const { commands } = await open();
+      await act(async () => (document.querySelector('button[aria-label="Remove Knowledge base, item 1"]') as HTMLButtonElement).click());
+      const add = field("Add to Knowledge base");
+      await act(async () => type(add, "  Likes short replies.  "));
+      await act(async () => (add.form as HTMLFormElement).requestSubmit());
+      expect(commands).toEqual([
+        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Works with Sam."] },
+        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers morning meetings.", "Works with Sam.", "Likes short replies."] },
+      ]);
+    });
+
+    test("a writing-style edit names its section", async () => {
+      const { commands } = await open();
+      const add = field("Add to Language");
+      await act(async () => type(add, "I also write in French."));
+      await act(async () => (add.form as HTMLFormElement).requestSubmit());
+      expect(commands).toEqual([{ type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English Only.", "I also write in French."] }]);
+    });
+
+    /** Reset asks first, in place; Cancel sends nothing. */
+    test("Reset asks before it resets", async () => {
+      const { commands } = await open();
+      const resets = () => [...document.querySelectorAll("button")].filter((element) => element.textContent === "Reset…");
+      await act(async () => resets()[1]?.click());
+      await act(async () => button("Cancel").click());
+      expect(commands).toEqual([]);
+      await act(async () => resets()[1]?.click());
+      expect(visibleText()).toContain("Reset your knowledge base to the default?");
+      await act(async () => button("Reset").click());
+      await act(async () => resets()[0]?.click());
+      await act(async () => button("Reset").click());
+      expect(commands).toEqual([{ type: "resetKnowledgeBase" }, { type: "resetWritingStyle" }]);
+    });
+
+    test("a change that couldn't be saved says so", async () => {
+      await open(signedIn, { error: "This couldn't be saved, so nothing changed." });
+      await act(async () => (document.querySelector('button[aria-label="Remove Knowledge base, item 1"]') as HTMLButtonElement).click());
+      expect(visibleText()).toContain("This couldn't be saved, so nothing changed.");
+    });
+
+    /** Each entry shows, opened, what restoring it brings back and takes away; Restore asks first. */
+    test("a history entry shows what restoring it changes, and restores once confirmed", async () => {
+      const withHistory: SettingsState = {
+        ...signedIn,
+        personalization: {
+          ...signedIn.personalization,
+          history: [
+            { id: "now", timestamp: new Date().toISOString(), source: "local_edit", fields: ["kb"], restores: [], removes: [] },
+            { id: "then", timestamp: new Date(Date.now() - 86_400_000).toISOString(), source: "reset", fields: ["composition", "kb"], restores: ["Likes short replies."], removes: ["Works with Sam."] },
+          ],
+        },
+      };
+      const { commands } = await open(withHistory);
+      const items = [...document.querySelectorAll('ul[aria-label="History"] > li')];
+      expect(items.map((item) => item.querySelector(".history-heading > span")?.textContent)).toEqual([expect.stringMatching(/^Edit .* · Knowledge base$/), expect.stringMatching(/^Reset .* · Writing style, Knowledge base$/)]);
+
+      const show = (item: Element | undefined) => [...(item?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Show") as HTMLButtonElement;
+      await act(async () => show(items[0]).click());
+      // An entry that adds and removes no item can still differ (in order, or an item kept twice):
+      // it can be restored too.
+      expect(items[0]?.textContent).toContain("No items added or removed.");
+      expect(([...(items[0]?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Restore…") as HTMLButtonElement).disabled).toBe(false);
+
+      await act(async () => show(items[1]).click());
+      expect(items[1]?.querySelector(".history-restores")?.textContent).toBe("+ Likes short replies.");
+      expect(items[1]?.querySelector(".history-removes")?.textContent).toContain("Works with Sam.");
+      const restoreFirst = () => ([...(items[1]?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Restore…") as HTMLButtonElement).click();
+      await act(async () => restoreFirst());
+      expect(commands).toEqual([]);
+      await act(async () => button("Cancel").click());
+      expect(commands).toEqual([]);
+      await act(async () => restoreFirst());
+      await act(async () => button("Restore").click());
+      expect(commands).toEqual([{ type: "restorePromptHistory", id: "then" }]);
+
+      // Hide closes the entry again.
+      const toggle = items[1]?.querySelector(".history-heading > button") as HTMLButtonElement;
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      await act(async () => toggle.click());
+      expect(items[1]?.querySelector(".history-restores")).toBeNull();
+      expect(toggle.textContent).toBe("Show");
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    });
+  });
+
   /** Settings › Memory (ADR-DESK-061): usage against the limit, the limit, the requests kept
    * (searchable, each removable) and Clear All. */
   describe("memory", () => {
@@ -703,6 +951,7 @@ describe("Settings page", () => {
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
+      Personalization: ["Writing style", "General writing style", "Knowledge base", "No changes yet."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
@@ -1157,6 +1406,15 @@ describe("Settings page", () => {
       "Agent mode’s requests, and what it answered or wrote, are kept on this computer so it can look back at them when you ask. Plain dictation isn’t kept.",
       "When memory reaches the limit, the oldest requests are removed first.",
       "No requests kept yet.",
+      // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
+      "How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it.",
+      "General writing style",
+      "Language",
+      "Useful links to personal website and other resources",
+      "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
+      `Agent mode adds to it when you ask it to remember something, and learns from a chat of ${config.kbRefineMinUserTurns} or more requests when its window closes.`,
+      "Each change to your writing style and knowledge base is kept here, so you can put an earlier version back.",
+      "No changes yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

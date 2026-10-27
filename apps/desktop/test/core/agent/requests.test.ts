@@ -10,12 +10,14 @@ import { parsedJSON } from "../../../src/core/agent/connectors/contract.js";
 import { ToolRegistry, type RegisteredTool } from "../../../src/core/agent/toolRegistry.js";
 import { AgentError, type AgentToolID, isAgentToolID, agentToolIDs, agentTools, EditTool, redactionPlaceholder, screenHiddenNote, selectionUnreadNote } from "../../../src/core/agent/tools.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
+import * as config from "../../../src/core/config.js";
 import { CompletionsClient, type ServerToolEvent, type ToolCall } from "../../../src/core/backend/completions.js";
 import { screen } from "../../support/screens.js";
 import { Fixtures, signedIn, StubTransport } from "../../support/stubs.js";
 
 const request = "make this friendlier";
 const all = agentToolIDs;
+const noPersonalization = { knowledgeBase: "", writingStyle: "" };
 
 function selectionScreen(selected: string) {
   return screen({
@@ -45,16 +47,16 @@ async function thrown(promise: Promise<unknown>): Promise<unknown> {
 }
 
 /** Bind test tool handlers to the same registry contract used by the real loop. */
-async function runAgent(request: string, context: Parameters<typeof DesktopAgent.message>[1], hidden: boolean, conversation: string, userName: string, names: readonly string[], client: Parameters<typeof DesktopAgent.run>[6], account: Parameters<typeof DesktopAgent.run>[7], userID: string | null, run: (call: ToolCall, round: number) => Promise<string>, onServerTool: (event: ServerToolEvent) => void, signal?: AbortSignal) {
+async function runAgent(request: string, context: Parameters<typeof DesktopAgent.message>[1], hidden: boolean, conversation: string, userName: string, names: readonly string[], client: Parameters<typeof DesktopAgent.run>[7], account: Parameters<typeof DesktopAgent.run>[8], userID: string | null, run: (call: ToolCall, round: number) => Promise<string>, onServerTool: (event: ServerToolEvent) => void, signal?: AbortSignal) {
   const definitions: RegisteredTool[] = names.map((name) => {
     if (isAgentToolID(name)) {
       const output = agentTools[name];
-      return { name, terminal: output.terminal, run: async (call) => output.text(parsedJSON(call.function.arguments), context) };
+      return { name, terminal: output.terminal, check: (call) => void output.text(parsedJSON(call.function.arguments), context), run: async (call) => output.text(parsedJSON(call.function.arguments), context) };
     }
     return { name, terminal: false, run };
   });
   definitions.push({ name: "answer", terminal: agentTools.answer.terminal, response: true, advertise: false, run: async (call) => agentTools.answer.text(parsedJSON(call.function.arguments), context) });
-  const outcome = await DesktopAgent.run(request, context, hidden, conversation, userName, new ToolRegistry(definitions), client, account, userID, onServerTool, signal);
+  const outcome = await DesktopAgent.run(request, context, hidden, conversation, userName, noPersonalization, new ToolRegistry(definitions), client, account, userID, onServerTool, signal);
   if (!isAgentToolID(outcome.tool)) throw new Error("Expected an output action in this fixture.");
   return { tool: outcome.tool, text: outcome.text };
 }
@@ -64,36 +66,52 @@ describe("DesktopAgent", () => {
   /** Every variable the backend prompt renders is sent, empty when unknown: the backend leaves a
    * missing one in the prompt as written. */
   test("without a screen every variable is sent empty", () => {
-    const message = DesktopAgent.message(request, null, false, "", "");
+    const message = DesktopAgent.message(request, null, false, "", "", noPersonalization, []);
     expect(message.content).toBe("system_prompt_desktop_agent_loop");
-    expect(message.vars).toEqual({ app_name: "", web_host: "", window_title: "", screen_text: "", selected_text: "", terminal_program: "", user_request: request, conversation: "", user_name: "" });
+    expect(message.vars).toEqual({ app_name: "", web_host: "", window_title: "", screen_text: "", selected_text: "", terminal_program: "", user_request: request, conversation: "", user_name: "", user_kb_content: "", user_composition_prompt: "" });
+  });
+
+  /** The knowledge base goes with every request; the writing style only with a request that can
+   * write (Compose or Edit offered), as Thunderbird sends it only to its writing prompts. */
+  test("the knowledge base always goes, the writing style only when the request can write", () => {
+    const personalization = { knowledgeBase: "- Prefers mornings.", writingStyle: "# Style\n- Short sentences." };
+    for (const tools of [["compose"], ["edit"], ["answer", "compose"], ["memory_search", "kb_add", "edit"]]) {
+      const vars = DesktopAgent.message(request, null, false, "", "", personalization, tools).vars;
+      expect(vars.user_kb_content).toBe("- Prefers mornings.");
+      expect(vars.user_composition_prompt).toBe("# Style\n- Short sentences.");
+    }
+    for (const tools of [[], ["answer"], ["date_to_day", "memory_search", "kb_add", "kb_del"]]) {
+      const vars = DesktopAgent.message(request, null, false, "", "", personalization, tools).vars;
+      expect(vars.user_kb_content).toBe("- Prefers mornings.");
+      expect(vars.user_composition_prompt).toBe("");
+    }
   });
 
   /** The user's name goes with the prompt, empty when none is set, so the backend can tell the user's
    * own messages on screen from other people's. */
   test("the user's name is sent", () => {
-    expect(DesktopAgent.message(request, null, false, "", "Alex Example").vars.user_name).toBe("Alex Example");
-    expect(DesktopAgent.message(request, null, false, "", "").vars.user_name).toBe("");
+    expect(DesktopAgent.message(request, null, false, "", "Alex Example", noPersonalization, []).vars.user_name).toBe("Alex Example");
+    expect(DesktopAgent.message(request, null, false, "", "", noPersonalization, []).vars.user_name).toBe("");
   });
 
   /** A screen hidden for privacy: the agent is told so where the screen's text goes, and nothing else
    * of the screen is sent. A screen that was only not read says nothing. */
   test("the agent is told when the screen is hidden for privacy", () => {
-    const hidden = DesktopAgent.message(request, null, true, "", "").vars;
+    const hidden = DesktopAgent.message(request, null, true, "", "", noPersonalization, []).vars;
     expect(hidden.screen_text).toBe(screenHiddenNote);
     expect(hidden.screen_text).toMatch(/^\[Hidden for privacy: /);
     expect([hidden.app_name, hidden.web_host, hidden.window_title, hidden.selected_text, hidden.terminal_program]).toEqual(["", "", "", "", ""]);
-    expect(DesktopAgent.message(request, null, false, "", "").vars.screen_text).toBe("");
+    expect(DesktopAgent.message(request, null, false, "", "", noPersonalization, []).vars.screen_text).toBe("");
   });
 
   /** The chat window's conversation goes with the request. */
   test("the conversation is sent", () => {
     const conversation = "User: when is the sync?\nTabMail: Thursdays at 10:00.";
-    expect(DesktopAgent.message(request, null, false, conversation, "").vars.conversation).toBe(conversation);
+    expect(DesktopAgent.message(request, null, false, conversation, "", noPersonalization, []).vars.conversation).toBe(conversation);
   });
 
   test("the agent is sent the screen with the selection marked, and the program in a terminal", () => {
-    const message = DesktopAgent.message(request, selectionScreen("Ship it Friday."), false, "", "");
+    const message = DesktopAgent.message(request, selectionScreen("Ship it Friday."), false, "", "", noPersonalization, []);
 
     expect(message.vars.app_name).toBe("Example Notes");
     expect(message.vars.web_host).toBe("notes.example.com");
@@ -106,22 +124,22 @@ describe("DesktopAgent", () => {
 
   /** A selection of only blank space is no text to edit. */
   test("a blank selection counts as none", () => {
-    expect(DesktopAgent.message(request, selectionScreen(" \n"), false, "", "").vars.selected_text).toBe("");
-    expect(DesktopAgent.message(request, selectionScreen("\n"), false, "", "").vars.selected_text).toBe("");
+    expect(DesktopAgent.message(request, selectionScreen(" \n"), false, "", "", noPersonalization, []).vars.selected_text).toBe("");
+    expect(DesktopAgent.message(request, selectionScreen("\n"), false, "", "", noPersonalization, []).vars.selected_text).toBe("");
   });
 
   /** A selection the helper could not give at all arrives as only its placeholder: the agent is
    * told so in words, never handed the placeholder as if the user had selected it. */
   test("an unread selection reaches the agent as a note, not as selected text", () => {
     const unread = { ...selectionScreen(redactionPlaceholder), selectionRedacted: true };
-    expect(DesktopAgent.message(request, unread, false, "", "").vars.selected_text).toBe(selectionUnreadNote);
+    expect(DesktopAgent.message(request, unread, false, "", "", noPersonalization, []).vars.selected_text).toBe(selectionUnreadNote);
   });
 
   test("a selection with a secret taken out still reaches the agent as selected", () => {
     const partly = { ...selectionScreen(`token ${redactionPlaceholder} for the demo`), selectionRedacted: true };
-    expect(DesktopAgent.message(request, partly, false, "", "").vars.selected_text).toBe(`token ${redactionPlaceholder} for the demo`);
+    expect(DesktopAgent.message(request, partly, false, "", "", noPersonalization, []).vars.selected_text).toBe(`token ${redactionPlaceholder} for the demo`);
     // Not redacted: the same text is the user's own, placeholder-looking or not.
-    expect(DesktopAgent.message(request, selectionScreen(redactionPlaceholder), false, "", "").vars.selected_text).toBe(redactionPlaceholder);
+    expect(DesktopAgent.message(request, selectionScreen(redactionPlaceholder), false, "", "", noPersonalization, []).vars.selected_text).toBe(redactionPlaceholder);
   });
 
   test("the placeholder is the helpers' own", () => {
@@ -196,27 +214,71 @@ describe("the agent's tool loop", () => {
     ]);
   });
 
-  /** A call to the writing tool ends the request (owner, 2026-10-05): its text is what is pasted, the
-   * round's other calls never run, the text the model wrote beside it is not used, and nothing more is
-   * asked. */
-  test("a compose call runs after earlier tools and ends the loop with its text", async () => {
+  /** A Compose called beside other tools (owner, 2026-10-19: "let the loop finish"): the others run,
+   * the model is told the text is held, and when the loop ends, whatever the model replies, the held
+   * text is what is pasted. */
+  test("a compose called beside other tools is held until the loop ends, then pasted", async () => {
     const { completions, client, account } = setup();
     const call = (id: string, name: string, args: string) => ({ id, type: "function", function: { name, arguments: args } });
     completions.enqueue(200, Fixtures.completionsStream(JSON.stringify({
       assistant: "Here is what I will paste.",
-      tool_calls: [call("call_a", "example_read", "{}"), call("call_b", "compose", '{"text":"  Lunch is at noon.\\n"}')],
+      tool_calls: [call("call_a", "kb_add", '{"statement":"Lunch is at noon."}'), call("call_b", "compose", '{"text":"  Lunch is at noon.\\n"}')],
       conversation_state: Fixtures.loopState(),
     })));
-    completions.enqueue(200, Fixtures.reply("Never asked."));
+    completions.enqueue(200, Fixtures.reply("Saved, and here is the text."));
     const ran: string[] = [];
 
-    const outcome = await runAgent("paste lunch time", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
+    const outcome = await runAgent("remember lunch and paste it", null, false, "", "", [...tools, "kb_add", "compose"], client, account, Fixtures.userID, async (call) => {
       ran.push(call.id);
-      return "";
+      return '"Added to knowledge base."';
     }, ignoreServerTools);
 
     expect(outcome).toEqual({ tool: "compose", text: "Lunch is at noon." });
     expect(ran).toEqual(["call_a"]);
+    expect(completions.requests).toHaveLength(2);
+    const results = (completions.body(1).conversation_state as { harmony_messages: Record<string, unknown>[] }).harmony_messages.filter((one) => one.role === "tool");
+    expect(results).toEqual([
+      { role: "tool", content: '"Added to knowledge base."', tool_call_id: "call_a" },
+      { role: "tool", content: config.agentWritingHeld, tool_call_id: "call_b" },
+    ]);
+  });
+
+  /** While a text is held the loop goes on as long as the model calls tools; a later writing call
+   * replaces the held text, and one alone ends the loop with it. */
+  test.each([
+    ["the model goes on calling tools, then replies", [[{ id: "call_c", name: "example_read", arguments: "{}" }], "reply"], "First draft.", ["call_a", "call_c"]],
+    ["the model writes again on its own", [[{ id: "call_c", name: "compose", arguments: '{"text":"Second draft."}' }]], "Second draft.", ["call_a"]],
+    ["the model writes again beside a tool, then replies", [[{ id: "call_c", name: "example_read", arguments: "{}" }, { id: "call_d", name: "compose", arguments: '{"text":"Second draft."}' }], "reply"], "Second draft.", ["call_a", "call_c"]],
+  ] as const)("a held text: %s", async (_case, rounds, pasted, expectedRuns) => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }, { id: "call_b", name: "compose", arguments: '{"text":"First draft."}' }]));
+    for (const round of rounds) completions.enqueue(200, round === "reply" ? Fixtures.reply("Done.") : Fixtures.toolCalls([...round]));
+    const ran: string[] = [];
+
+    const outcome = await runAgent("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
+      ran.push(call.id);
+      return "";
+    }, ignoreServerTools);
+
+    expect(outcome).toEqual({ tool: "compose", text: pasted });
+    expect(ran).toEqual(expectedRuns);
+    expect(completions.requests).toHaveLength(rounds.length + 1);
+  });
+
+  /** A writing call that can't be pasted fails as it comes, beside other tools too: none of them
+   * runs, and nothing more is asked. */
+  test("a writing call without text beside other tools fails before they run", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "kb_add", arguments: '{"statement":"Likes tea."}' }, { id: "call_b", name: "compose", arguments: "{}" }]));
+    const ran: string[] = [];
+
+    const error = await thrown(runAgent("write it", null, false, "", "", [...tools, "kb_add", "compose"], client, account, Fixtures.userID, async (call) => {
+      ran.push(call.id);
+      return "";
+    }, ignoreServerTools));
+
+    expect((error as AgentError).kind).toBe("noText");
+    expect(ran).toEqual([]);
     expect(completions.requests).toHaveLength(1);
   });
 
@@ -508,22 +570,58 @@ describe("terminal selection writing boundary", () => {
 
 /** The loop must know nothing about a tool's name or output destination. */
 describe("registered terminal behavior", () => {
-  test("executes in order and stops after a new terminal tool delivers", async () => {
+  test("a round of terminal calls only delivers its first one, and asks nothing more", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([
+      { id: "finish", name: "custom_finish", arguments: "{}" },
+      { id: "other", name: "other_finish", arguments: "{}" },
+    ]));
+    const delivered: string[] = [];
+    const registry = new ToolRegistry([
+      { name: "custom_finish", terminal: true, run: async () => { delivered.push("delivered"); return "final text"; } },
+      { name: "other_finish", terminal: true, run: async () => { delivered.push("wrong"); return "wrong"; } },
+    ]);
+    expect(await DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "custom_finish", text: "final text" });
+    expect(delivered).toEqual(["delivered"]);
+    expect(completions.requests).toHaveLength(1);
+  });
+
+  test("of two terminal calls beside other tools only the first is held, and nothing delivers mid-loop", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([
       { id: "first", name: "lookup", arguments: "{}" },
       { id: "finish", name: "custom_finish", arguments: "{}" },
-      { id: "late", name: "must_not_run", arguments: "{}" },
+      { id: "other", name: "other_finish", arguments: "{}" },
     ]));
+    completions.enqueue(200, Fixtures.reply("Done."));
     const delivered: string[] = [];
     const registry = new ToolRegistry([
       { name: "lookup", terminal: false, run: async () => { delivered.push("looked up"); return "found"; } },
       { name: "custom_finish", terminal: true, run: async () => { delivered.push("delivered"); return "final text"; } },
-      { name: "must_not_run", terminal: false, run: async () => { delivered.push("wrong"); return "wrong"; } },
+      { name: "other_finish", terminal: true, run: async () => { delivered.push("wrong"); return "wrong"; } },
     ]);
-    expect(await DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "custom_finish", text: "final text" });
+    expect(await DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "custom_finish", text: "final text" });
     expect(delivered).toEqual(["looked up", "delivered"]);
-    expect(completions.requests).toHaveLength(1);
+    expect(completions.requests).toHaveLength(2);
+  });
+
+  test("a terminal call beside other tools is held: they run in order, and it delivers when the loop ends", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([
+      { id: "first", name: "lookup", arguments: "{}" },
+      { id: "finish", name: "custom_finish", arguments: "{}" },
+      { id: "late", name: "later", arguments: "{}" },
+    ]));
+    completions.enqueue(200, Fixtures.reply("Done."));
+    const delivered: string[] = [];
+    const registry = new ToolRegistry([
+      { name: "lookup", terminal: false, run: async () => { delivered.push("looked up"); return "found"; } },
+      { name: "custom_finish", terminal: true, check: () => { delivered.push("checked"); }, run: async () => { delivered.push("delivered"); return "final text"; } },
+      { name: "later", terminal: false, run: async () => { delivered.push("later"); return "later"; } },
+    ]);
+    expect(await DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "custom_finish", text: "final text" });
+    expect(delivered).toEqual(["checked", "looked up", "later", "delivered"]);
+    expect(completions.requests).toHaveLength(2);
   });
 
   test("normal model text executes the configured response tool", async () => {
@@ -535,7 +633,7 @@ describe("registered terminal behavior", () => {
       shown.push(args.text);
       return args.text;
     } }]);
-    expect(await DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "show_text", text: "A response." });
+    expect(await DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "show_text", text: "A response." });
     expect(shown).toEqual(["A response."]);
     expect(completions.body(0).available_tools).toEqual([]);
   });
@@ -550,7 +648,7 @@ describe("registered terminal behavior", () => {
       abort.abort();
       return "too late";
     } }]);
-    await expect(DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
     expect(seen).toEqual(["response ran"]);
     expect(completions.requests).toHaveLength(1);
   });
@@ -562,9 +660,9 @@ describe("registered terminal behavior", () => {
     let later = false;
     const registry = new ToolRegistry([
       { name: "custom_finish", terminal: true, run: async () => { throw failure; } },
-      { name: "later", terminal: false, run: async () => { later = true; return ""; } },
+      { name: "later", terminal: true, run: async () => { later = true; return ""; } },
     ]);
-    await expect(DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {})).rejects.toBe(failure);
+    await expect(DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {})).rejects.toBe(failure);
     expect(later).toBe(false);
     expect(completions.requests).toHaveLength(1);
   });
@@ -574,7 +672,7 @@ describe("registered terminal behavior", () => {
     completions.enqueue(200, Fixtures.toolCalls([{ id: "finish", name: "custom_finish", arguments: "{}" }]));
     const abort = new AbortController();
     const registry = new ToolRegistry([{ name: "custom_finish", terminal: true, run: async () => { abort.abort(); return "too late"; } }]);
-    await expect(DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
     expect(completions.requests).toHaveLength(1);
   });
 });

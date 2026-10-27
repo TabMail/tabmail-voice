@@ -347,3 +347,53 @@ ul.dictionary {
     background: Highlight;
   }
 }
+
+/* Settings › Personalization: each text's card opens with its title and Reset; a writing style
+ * section's name heads its bullets; each bullet is a field filling its row, as tall as its text. History rows open to
+ * the bullets a restore brings back (in the accent) and takes away (struck out). */
+.group-title {
+  font-weight: 600;
+}
+
+.bullet-editor {
+  border-top: 1px solid var(--separator);
+}
+
+/* A bullet's field, styled as a text field, wraps and grows with its text (`field-sizing`). */
+textarea.bullet-text {
+  flex: 1;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 0.5px solid var(--control-border);
+  border-radius: 5px;
+  background: var(--control);
+  color: var(--text);
+  font: inherit;
+  overflow-wrap: anywhere;
+  resize: none;
+  field-sizing: content;
+}
+
+.history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.history-restores {
+  color: var(--accent);
+}
+
+.history-removes {
+  color: var(--secondary);
+  text-decoration: line-through;
+}
