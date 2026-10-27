@@ -31,6 +31,8 @@ export interface ConnectorTool {
   readonly connector: ConnectorID;
   /** What the chat window says while it runs ("Checking your calendar"). */
   readonly progressLabel: string;
+  /** Optional detail for this invocation, shown only while its effect runs. */
+  progressLabelFor?(args: Record<string, unknown>): string;
   /** What the chat window asks before the tool sends or creates anything ("Add “Launch review” to
    * your calendar on Friday at 10:00?"); null for ordinary reads. Explicit document reads also ask before sharing text. The tool runs only if the
    * user confirms (owner, 2026-09-26: send or create = confirm first, always). */

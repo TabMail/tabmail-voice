@@ -99,3 +99,11 @@ test("a configured response must have a local terminal handler", () => {
   expect(() => new ToolRegistry([tool("response", { response: true })])).toThrow();
   expect(() => new ToolRegistry([tool("response", { response: true, terminal: true, run: undefined })])).toThrow();
 });
+
+
+test("invocation labels accompany activity start and cleanup", async () => {
+  const events: [boolean, string | undefined][] = [];
+  const registry = new ToolRegistry([tool("lookup")], (_, running, label) => events.push([running, label ?? undefined]));
+  await registry.perform("lookup", async () => "found", "Searching emails for invoice");
+  expect(events).toEqual([[true, "Searching emails for invoice"], [false, "Searching emails for invoice"]]);
+});

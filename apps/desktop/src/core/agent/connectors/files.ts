@@ -77,7 +77,15 @@ export const filesConnector = defineConnector({
 export class FilesSearchTool implements ConnectorTool {
   readonly name = "files_search";
   readonly connector = "files";
-  readonly progressLabel = "Searching your files";
+  readonly progressLabel = "Searching files and emails";
+
+  progressLabelFor(args: Record<string, unknown>): string {
+    const kinds: Record<FileKind, string> = { any: "files and emails", document: "documents", pdf: "PDFs", image: "images", presentation: "presentations", spreadsheet: "spreadsheets", folder: "folders", email: "emails" };
+    const kind = Arguments.text(args, "kind") ?? "any";
+    const target = isFileKind(kind) ? kinds[kind] : kinds.any;
+    const query = Arguments.text(args, "query")?.replace(/\s+/gu, " ");
+    return `Searching ${target}${query ? ` for “${query}”` : ""}`;
+  }
 
   constructor(
     private readonly store: FileStore,

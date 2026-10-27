@@ -4508,8 +4508,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
          * model calls does while it runs (owner, 2026-10-09: "always show what's going on"). Its result
          * goes back to the model, and the answer joins the chat, which then times out unless touched.
          * The loop is offered the date tools and this computer's tools. */
-        test("an answer's tool runs in the chat window, which shows the request and what the tool does", async () => {
-          const tool = new FakeLoopTool();
+        test.each([false, true])("an answer's tool runs in the chat window with its description (invocation detail: %s)", async (detailed) => {
+          const tool = Object.assign(new FakeLoopTool(), detailed ? { progressLabelFor: (args: Record<string, unknown>) => `Looking for ${String(args.title)}` } : {});
           const whileRunning: (AgentChat | null)[] = [];
           let controllerRef: DictationController | undefined;
           tool.during = async () => {
@@ -4523,7 +4523,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { pastes } = await done;
 
           expect(tool.runs).toEqual([{ title: "Launch review", day: "friday", hour: 10.5, note: null }]);
-          expect(whileRunning.map((chat) => [chat?.pendingRequest, chat?.activity, chat?.turns])).toEqual([[toolRequest, tool.progressLabel, []]]);
+          expect(whileRunning.map((chat) => [chat?.pendingRequest, chat?.activity, chat?.turns])).toEqual([[toolRequest, detailed ? "Looking for Launch review" : tool.progressLabel, []]]);
           expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "memory_search", "memory_read"]);
           expect(completions.body(0).disable_tools).toBe(false);
           expect(told(1)).toEqual(["Added."]);
