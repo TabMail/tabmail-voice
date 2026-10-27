@@ -169,3 +169,9 @@ neither. A terminal set to draw a character otherwise (iTerm2's ambiguous-width 
 sequences) still has that row's borders a column off: a row whose borders are not at the cursor's
 border columns ends the box.
 
+
+**Amendment 2026-10-26 — agent writing uses the same paste spacing.** Compose and Edit pass
+their captured screen context to the controller's shared paste function, just as dictation does.
+The existing `spacedFromCaret` rule applies on both sides of their output too; Edit still preserves
+the selection's boundary whitespace, so existing blanks and line breaks are not doubled. History
+and text copied from an unpasted note remain as written. No additional screen read is made.

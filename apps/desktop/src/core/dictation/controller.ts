@@ -1113,7 +1113,7 @@ export class DictationController extends Observable {
             if (!isCurrent()) { signal.throwIfAborted(); throw new AgentError("noText"); }
             if (definition.closesChat) this.dropChat();
             this.setPhase({ kind: "running", tool: name });
-            await definition.deliver(text, { emailApp, paste: (text) => this.paste(text, targetApp, signal), thunderbird: this.deps.thunderbird, showAnswer: (answer) => { if (isCurrent()) this.showInChat(transcript, name, answer); }, signal });
+            await definition.deliver(text, { emailApp, paste: (text) => this.paste(text, targetApp, signal, context), thunderbird: this.deps.thunderbird, showAnswer: (answer) => { if (isCurrent()) this.showInChat(transcript, name, answer); }, signal });
             return text;
           },
         };
@@ -1465,7 +1465,7 @@ export class DictationController extends Observable {
    * the text in the paste history, pasted or not. Only into `targetApp`, the app in front at
    * key-down: when the user has gone to another app (`focusChanged`), nothing is pasted and the
    * clipboard is left alone; the dictation ends with a note that copies the text when clicked
-   * (`NotPastedError`, ADR-DESK-042). A dictation passes its screen read at key-down, to be spaced from
+   * (`NotPastedError`, ADR-DESK-042). Dictation and agent writing pass their screen read at key-down, to be spaced from
    * a delimiter before the caret and from a word after it (`spacedFromCaret`); the history and the
    * note's copy get the text as it is. */
   private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal, screenRead: ScreenContext | null = null): Promise<void> => {

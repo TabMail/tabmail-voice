@@ -17,7 +17,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-005](Companion/Decisions/Active/adr-desk-005.md)**: Speech-to-text on the TabMail backend (OpenRouter), shared by all platforms
 - **[ADR-DESK-006](Companion/Decisions/Active/adr-desk-006.md)**: Boot the microphone at key-down, reveal the overlay at the caret after the hold
 - **[ADR-DESK-007](Companion/Decisions/Active/adr-desk-007.md)**: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
-- **[ADR-DESK-008](Companion/Decisions/Active/adr-desk-008.md)**: Clean up every transcript with the screen context, on the backend
+- **[ADR-DESK-008](Companion/Decisions/Active/adr-desk-008.md)**: Agent Compose/Edit share dictation caret spacing; Clean up every transcript with the screen context, on the backend
 - **[ADR-DESK-009](Companion/Decisions/Active/adr-desk-009.md)**: The app identifies itself to the backend as `voice` (was `macos`)
 - **[ADR-DESK-010](Companion/Decisions/Active/adr-desk-010.md)**: A welcome wizard for consent, permissions and features; screen reading switchable
 - **[ADR-DESK-011](Companion/Decisions/Active/adr-desk-011.md)**: Agent mode on a double tap: the agent chooses a tool, the tool writes the text *(its two calls superseded by one tool loop, ADR-DESK-055)*

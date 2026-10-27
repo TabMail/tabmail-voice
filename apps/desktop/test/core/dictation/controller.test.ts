@@ -784,9 +784,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([transcript]);
     });
 
-    /** Only a dictation is spaced: text not pasted, which the note copies, and agent mode's, go as
-     * written. */
-    test.each<["dictation" | "agent"]>([["dictation"], ["agent"]])("%s text after a delimiter is not spaced when copied or written by the agent", async (mode) => {
+    /** Text copied from an unpasted note keeps the written text, without caret spacing. */
+    test.each<["dictation" | "agent"]>([["dictation"], ["agent"]])("%s text after a delimiter is not spaced when copied", async (mode) => {
       prefs.value = { ...defaultSettings(), enabledTools: ["compose"] };
       const written = "Synthetic composed result.";
       transcription.enqueue(200, mode === "agent" ? { text: request } : cleanedReply);
@@ -794,7 +793,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes, copies } = makeController({
         capture: new CountingCapture(true),
         frontmostApp: async () => 101,
-        ...(mode === "dictation" ? { paste: async () => { throw new PasteTargetError(); } } : {}),
+        paste: async () => { throw new PasteTargetError(); },
       });
       controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: "Note:", renderedText: "» Note:‸" });
 
@@ -802,7 +801,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller) && (pastes.length === 1 || controller.phase.kind === "notPasted"))).toBe(true);
       await controller.copyNotPasted();
 
-      expect(mode === "dictation" ? copies : pastes).toEqual([mode === "dictation" ? cleaned : written]);
+      expect(copies).toEqual([mode === "dictation" ? cleaned : written]);
+    });
+
+    test.each([
+      { tool: "compose", selectedText: "", before: "Previous.", after: "Next", expected: " Written. " },
+      { tool: "edit", selectedText: "Old text", before: "Previous.", after: "Next", expected: " Written. " },
+      { tool: "edit", selectedText: " Old text\n", before: "Previous.", after: "Next", expected: " Written.\n" },
+      { tool: "compose", selectedText: "", before: "Previous. ", after: " Next", expected: "Written." },
+      { tool: "edit", selectedText: "Old text", before: "(", after: ")", expected: "Written." },
+    ] as const)("$tool uses dictation spacing with selection '$selectedText', before '$before', after '$after'", async ({ tool, selectedText, before, after, expected }) => {
+      prefs.value = { ...defaultSettings(), enabledTools: [tool] };
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, writes(tool, "Written."));
+      const { controller, pastes, history } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => blankScreen({ selectedText, textBeforeCaret: before, textAfterCaret: after });
+
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => settled(controller) && pastes.length === 1)).toBe(true);
+      expect(pastes).toEqual([expected]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([tool === "edit" && selectedText.startsWith(" ") ? " Written.\n" : "Written."]);
     });
 
     test.each(["dictation", "agent"] as const)("%s pastes into the captured target after another window takes focus", async (mode) => {
