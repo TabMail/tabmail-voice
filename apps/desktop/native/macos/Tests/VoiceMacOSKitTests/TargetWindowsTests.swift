@@ -15,6 +15,7 @@ import VoiceHelperSupport
         let second = AXUIElementCreateApplication(202)
         var front: pid_t = 101
         var focused: AXUIElement
+        var field: AXUIElement? = AXUIElementCreateApplication(404)
         var living: [AXUIElement]
         var clipboard = 7
         var keys = 0
@@ -31,7 +32,7 @@ import VoiceHelperSupport
                     self.raised += 1
                     if self.allowsRaise { self.front = pid; self.focused = window }
                   },
-                  clipboardCount: { self.clipboard }, now: { self.time }, post: { self.keys += 1 })
+                  clipboardCount: { self.clipboard }, focusedElement: { _ in self.field }, now: { self.time }, post: { self.keys += 1 })
         }
         var deadline: Double { time + 1000 }
     }
@@ -178,6 +179,61 @@ import VoiceHelperSupport
             try await changed.value
             #expect(fixture.keys == 0)
         }
+    }
+
+
+    @Test func aChangedOrMissingFieldNeverReceivesThePaste() async {
+        for missing in [false, true] {
+            let fixture = Fixture()
+            let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+            let captured = targets.capture()
+            fixture.field = missing ? nil : AXUIElementCreateApplication(505)
+            await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.deadline) }
+            #expect(fixture.keys == 0)
+        }
+    }
+
+    @Test func aFieldChangedDuringWindowActivationNeverReceivesThePaste() async {
+        let fixture = Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let captured = targets.capture()
+        fixture.front = 202; fixture.focused = fixture.second
+        fixture.onFocus = {
+            if fixture.raised > 0 { fixture.field = AXUIElementCreateApplication(505) }
+        }
+        await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.deadline) }
+        #expect(fixture.raised == 1)
+        #expect(fixture.keys == 0)
+    }
+
+    @Test func theSameFieldCanReceiveTextAfterItsContentsChange() async throws {
+        let fixture = Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let captured = targets.capture()
+        // No text or selection snapshot participates in identity. Re-reading the same AX object
+        // after typing, layout changes or caret movement must still permit the paste.
+        fixture.field = AXUIElementCreateApplication(404)
+        try await targets.paste(captured, transaction: 7, deadline: fixture.deadline)
+        #expect(fixture.keys == 1)
+    }
+
+    @Test func anAppWithoutAnAccessibleFieldStillReceivesItsPaste() async throws {
+        let fixture = Fixture()
+        fixture.field = nil
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        let captured = targets.capture()
+        try await targets.paste(captured, transaction: 7, deadline: fixture.deadline)
+        #expect(fixture.keys == 1)
+    }
+
+    @Test func voiceInFrontPreservesThePreviousFieldsIdentity() async {
+        let fixture = Fixture()
+        let targets = TargetWindows(system: fixture.system(), owner: 303, observe: false)
+        fixture.front = 303
+        let captured = targets.capture()
+        fixture.field = AXUIElementCreateApplication(505)
+        await #expect(throws: (any Error).self) { try await targets.paste(captured, transaction: 7, deadline: fixture.deadline) }
+        #expect(fixture.keys == 0)
     }
 
     @Test func aRestartedReaderNeverResolvesAnOldToken() throws {

@@ -1218,7 +1218,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       },
     ]);
     const text = "Move the review to Friday.\nAnd send the agenda tonight.";
-    const note = { kind: "notPasted", message: "Switched apps. Click to copy.", text };
+    const note = { kind: "notPasted", message: "Couldn't paste. Click to copy.", text };
     if (app.controller) app.controller.phase = note;
 
     app.overlay?.onPlace?.();

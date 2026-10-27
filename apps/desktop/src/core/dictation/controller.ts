@@ -60,7 +60,7 @@ export type Phase =
   | { kind: "notPasted"; message: string; text: string };
 
 /** What the pointer's note says when the text was not pasted. */
-export const notPastedMessage = "Switched apps. Click to copy.";
+export const notPastedMessage = "Couldn't paste. Click to copy.";
 
 /** What the note says once clicked, when the clipboard refused the text: the paste history has it. */
 export const notCopiedMessage = "Couldn't copy. It's in the paste history.";

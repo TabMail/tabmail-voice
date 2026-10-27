@@ -120,3 +120,15 @@ is no alternative-window, title, geometry or process-only substitution. Native c
 deadlines and clipboard ownership checks remain in force. Implementation: `TargetWindows` in the
 main process; each platform's capture and activation adapters. macOS's ownership split is recorded
 in ADR-DESK-053's amendment of the same date.
+
+
+**Amendment 2026-10-26 (owner): offer copy when the field can no longer receive the paste.**
+The macOS reader retains the focused AX element with the captured window, including the external
+window remembered before Voice. After restoring that window, it compares the current focused
+element with the retained one. A missing or different element refuses the paste through the existing
+not-pasted card, now captioned "Couldn't paste. Click to copy." No text, caret offset or selection is
+compared or restored, so typing in the same element does not itself refuse a paste. Apps exposing
+no focused element at capture retain the existing window-only paste behavior of ADR-DESK-002.
+The same card still handles a lost window or refused activation, for dictation and agent Edit/Compose.
+Logical field tracking through replacement elements, and equivalent field guards on Windows/Linux,
+are tracked in [#276](https://github.com/TabMail/tabmail-voice/issues/276) (P4).

@@ -62,7 +62,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
 const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], readsWindow: false, connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 /** The note for a text not pasted. */
-const note = { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Move the review to Friday." } as const;
+const note = { kind: "notPasted", message: "Couldn't paste. Click to copy.", text: "Move the review to Friday." } as const;
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent", runningBubble: "answer" };
 
@@ -171,7 +171,7 @@ describe("overlay page", () => {
    * takes no more clicks. */
   test("the not-pasted note shows its message by a clipboard, and the text it copies when clicked", async () => {
     const page = await overlayPage();
-    const message = "Switched apps. Click to copy.";
+    const message = "Couldn't paste. Click to copy.";
     await page.show({ ...listening, phase: { ...note, message } });
     expect(document.querySelector(".pill .message")?.textContent).toBe(message);
     // The text itself, then a Copy link with its copy sign.

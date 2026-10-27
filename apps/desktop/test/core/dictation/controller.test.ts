@@ -861,6 +861,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * the user is known to be. */
     test.each<[string, (reads: number) => Promise<number | null>]>([
       ["the target activation is refused", async (reads) => (reads === 1 ? 101 : 202)],
+      ["the field in the same window is unavailable", async () => 101],
       ["the native target identity is lost at paste", async (reads) => (reads === 1 ? 101 : Promise.reject(new Error("helper exited")))],
       ["the app in front couldn't be read at key-down", async (reads) => (reads === 1 ? Promise.reject(new Error("helper exited")) : 101)],
       ["no app was in front at key-down", async (reads) => (reads === 1 ? null : 101)],
@@ -874,13 +875,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes, copies, history } = makeController({
         capture: new CountingCapture(true),
         frontmostApp: () => frontmost((reads += 1)),
-        ...(_ === "the target activation is refused" || _ === "the native target identity is lost at paste" ? { paste: async () => { throw new PasteTargetError(); } } : {}),
+        ...(_ === "the field in the same window is unavailable" || _ === "the target activation is refused" || _ === "the native target identity is lost at paste" ? { paste: async () => { throw new PasteTargetError(); } } : {}),
       });
 
       await holdAndRelease(controller);
       expect(await eventually(() => controller.phase.kind === "notPasted")).toBe(true);
 
-      expect(controller.phase).toEqual({ kind: "notPasted", message: "Switched apps. Click to copy.", text: cleaned });
+      expect(controller.phase).toEqual({ kind: "notPasted", message: "Couldn't paste. Click to copy.", text: cleaned });
       expect(pastes).toEqual([]);
       // The clipboard is the user's until the note is clicked (owner, 2026-10-08).
       expect(copies).toEqual([]);

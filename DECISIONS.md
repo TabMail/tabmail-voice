@@ -51,7 +51,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-039](Companion/Decisions/Active/adr-desk-039.md)**: A shorter wait between the release and the text
 - **[ADR-DESK-040](Companion/Decisions/Active/adr-desk-040.md)**: The recording is peak-normalized before it is uploaded
 - **[ADR-DESK-041](Companion/Decisions/Active/adr-desk-041.md)**: The app updates itself from cdn.tabmail.ai
-- **[ADR-DESK-042](Companion/Decisions/Active/adr-desk-042.md)**: The text goes where the caret was at key-down, or onto the clipboard Captured target window, before Voice, background reads, restore/activate before paste (2026-10-26).
+- **[ADR-DESK-042](Companion/Decisions/Active/adr-desk-042.md)**: The text goes where the caret was at key-down, or onto the clipboard Captured target window, before Voice, background reads, restore/activate before paste, macOS focused field identity and click-to-copy on field loss; P4 scene tracking #276 (2026-10-26).
 - **[ADR-DESK-043](Companion/Decisions/Active/adr-desk-043.md)**: The paste history, on a triple tap
 - **[ADR-DESK-044](Companion/Decisions/Active/adr-desk-044.md)**: The code in folders by concern, each with a place for what comes next
 - **[ADR-DESK-045](Companion/Decisions/Active/adr-desk-045.md)**: Apps the screen is never read in, with the password managers built in

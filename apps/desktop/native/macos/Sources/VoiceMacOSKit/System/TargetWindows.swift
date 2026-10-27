@@ -18,6 +18,7 @@ final class TargetWindows {
         var name: String
         var bundleID: String?
         var window: AXUIElement
+        var field: AXUIElement?
         var json: JSON { ["window": .string(token), "pid": .number(Double(pid))] }
     }
     @MainActor
@@ -27,6 +28,7 @@ final class TargetWindows {
         var windows: (pid_t) -> [AXUIElement]
         var raise: (pid_t, AXUIElement) -> Void
         var clipboardCount: () -> Int
+        var focusedElement: (pid_t) -> AXUIElement?
         var now: () -> Double = { Date().timeIntervalSince1970 * 1000 }
         var post: () async throws -> Void
 
@@ -47,6 +49,13 @@ final class TargetWindows {
                 _ = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
             },
             clipboardCount: { NSPasteboard.general.changeCount },
+            focusedElement: { pid in
+                let app = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
+                guard let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute),
+                      CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+                return (focused as! AXUIElement)
+            },
             post: { try await TextInserter.postTargetCommandV() }
         )
     }
@@ -107,7 +116,7 @@ final class TargetWindows {
         guard pid != owner else { return }
         guard let window = system.focusedWindow(pid) else { previous = nil; return }
         let changedApp = previous?.pid != pid
-        previous = Target(token: UUID().uuidString, pid: pid, name: name, bundleID: bundleID, window: window)
+        previous = Target(token: UUID().uuidString, pid: pid, name: name, bundleID: bundleID, window: window, field: system.focusedElement(pid))
         if changedApp && observeEnabled { observe(pid) }
     }
 
@@ -118,7 +127,7 @@ final class TargetWindows {
             captured = nil
             return .null
         }
-        let snapshot = Target(token: UUID().uuidString, pid: target.pid, name: target.name, bundleID: target.bundleID, window: target.window)
+        let snapshot = Target(token: UUID().uuidString, pid: target.pid, name: target.name, bundleID: target.bundleID, window: target.window, field: target.field)
         captured = snapshot
         cancelState.withLock { $0 = (snapshot.token, false) }
         return snapshot.json
@@ -158,6 +167,13 @@ final class TargetWindows {
             guard !isCanceled(target), ContinuousClock.now < end, system.now() < deadline,
                   exists(target) else { throw HelperError("target activation refused") }
             try await Task.sleep(for: HelperConfig.targetActivationPoll)
+        }
+        // Keep element identity, never text offsets: typing and terminal output can move the caret.
+        // Apps without an accessible focus keep their existing window-only paste path.
+        if let field = target.field {
+            guard let focused = system.focusedElement(target.pid), CFEqual(field, focused) else {
+                throw HelperError("target field unavailable")
+            }
         }
         // Nothing may suspend or make another helper round trip between these checks and key-down.
         guard captured?.token == target.token, exists(target), inFront(target),
