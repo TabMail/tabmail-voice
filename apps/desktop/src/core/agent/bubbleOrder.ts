@@ -10,25 +10,29 @@ import { type AgentToolID, isAgentToolID, agentTools } from "./tools.js";
  * (`DesktopAgent.loopTools`): it shows with the tools' bubbles and runs while they do (owner,
  * 2026-10-19). It has no switch in Settings. */
 export const memoryBubble = "memory" as const;
+/** The optional whole-window reading tool. */
+export const screenReadBubble = "screen_read" as const;
 
 /** One of agent mode's bubbles under the pill: a tool's, an app's that Answer reaches, or memory's. */
-export type BubbleKey = AgentToolID | ConnectorID | typeof memoryBubble;
+export type BubbleKey = AgentToolID | ConnectorID | typeof memoryBubble | typeof screenReadBubble;
 
 /** The bubble's name, as Settings shows it. */
 export function bubbleName(key: BubbleKey): string {
   if (key === memoryBubble) return config.memoryBubbleName;
+  if (key === screenReadBubble) return config.screenReadBubbleName;
   return isAgentToolID(key) ? agentTools[key].displayName : connectorByID[key].displayName;
 }
 
 /** The bubbles agent mode shows, before their order: the `tools` offered, memory's whenever any is
  * (its tools come with them), and the `apps` Answer reaches. */
-export function shownBubbles(tools: readonly AgentToolID[], apps: readonly ConnectorID[]): BubbleKey[] {
-  return [...tools, ...(tools.length > 0 ? [memoryBubble] : []), ...apps];
+export function shownBubbles(tools: readonly AgentToolID[], apps: readonly ConnectorID[], readsWindow = false): BubbleKey[] {
+  return [...tools, ...(tools.length > 0 ? [memoryBubble, ...(readsWindow ? [screenReadBubble] : [])] : []), ...apps];
 }
 
 /** What the bubble's tooltip says it does, as Settings does. */
 export function bubbleDescription(key: BubbleKey): string {
   if (key === memoryBubble) return config.memoryBubbleDescription;
+  if (key === screenReadBubble) return config.screenReadBubbleDescription;
   return isAgentToolID(key) ? agentTools[key].settingsDescription : connectorByID[key].settingsDescription;
 }
 

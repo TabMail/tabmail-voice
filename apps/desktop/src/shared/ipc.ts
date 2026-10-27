@@ -42,6 +42,8 @@ export interface OverlayState {
   bubblesFitUnder: boolean;
   hotkey: DictationHotkey;
   tools: AgentToolID[];
+  /** Whether this request offers the whole-window screen-reading tool. */
+  readsWindow: boolean;
   /** The apps whose bubbles show beside the tools' (`DictationController.connectors`). */
   connectors: ConnectorID[];
   /** The bubbles whose tools ran, the most recent first, which the row is ordered by (`bubbleOrder`). */
