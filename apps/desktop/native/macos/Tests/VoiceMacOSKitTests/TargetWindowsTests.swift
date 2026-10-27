@@ -392,4 +392,69 @@ import VoiceHelperSupport
             #expect(fixture.keys == 0)
         }
     }
+    @Test func unavailableForegroundAfterTheFieldReplyRefusesWithoutKeys() async throws {
+        let fixture = TargetWindowsTests.Fixture()
+        let originalField = try #require(fixture.field)
+        var armed = false
+        var unavailable = false
+        var fieldReplies = 0
+        var delivered: [String] = []
+        var system = fixture.system()
+        system.frontmost = { unavailable ? nil : (fixture.front, "Synthetic app", nil) }
+        system.focusedElement = { _ in
+            if armed { fieldReplies += 1; unavailable = true }
+            return originalField
+        }
+        system.post = { delivered.append(unavailable ? "none" : String(fixture.front)); fixture.keys += 1 }
+        let targets = TargetWindows(system: system, owner: 303, observe: false)
+        let capture = targets.capture()
+        let snapshot = try #require(try targets.resolve(capture))
+        #expect(snapshot.field.map { CFEqual($0, originalField) } == true)
+        #expect(snapshot.pid == 101)
+        armed = true
+        var refused = false
+        do { try await targets.paste(capture, transaction: 7, deadline: fixture.deadline) }
+        catch { refused = true }
+        #expect(fieldReplies == 1)
+        #expect(unavailable)
+        #expect(refused)
+        #expect(delivered.isEmpty)
+        #expect(fixture.keys == 0)
+    }
+
+    @Test func anAppWithoutAccessibleFocusStillRefusesANewerForegroundApp() async throws {
+        let fixture = TargetWindowsTests.Fixture()
+        fixture.field = nil
+        var armed = false
+        var windowReplies = 0
+        var delivered: [pid_t] = []
+        var system = fixture.system()
+        system.focusedWindow = { _ in
+            if armed {
+                windowReplies += 1
+                if windowReplies == 3 {
+                    fixture.front = 202
+                    fixture.focused = fixture.second
+                    return fixture.first
+                }
+            }
+            return fixture.focused
+        }
+        system.post = { delivered.append(fixture.front); fixture.keys += 1 }
+        let targets = TargetWindows(system: system, owner: 303, observe: false)
+        let capture = targets.capture()
+        let snapshot = try #require(try targets.resolve(capture))
+        #expect(snapshot.field == nil)
+        #expect(snapshot.pid == 101)
+        armed = true
+        var refused = false
+        do { try await targets.paste(capture, transaction: 7, deadline: fixture.deadline) }
+        catch { refused = true }
+        #expect(windowReplies == 3)
+        #expect(fixture.front == 202)
+        #expect(CFEqual(fixture.focused, fixture.second))
+        #expect(refused)
+        #expect(delivered.isEmpty)
+        #expect(fixture.keys == 0)
+    }
 }
