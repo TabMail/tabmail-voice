@@ -6,8 +6,9 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DesktopAgent } from "../../../src/core/agent/requests.js";
-import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
-import { AgentError, type AgentToolID, agentToolIDs, agentTools, EditTool, redactionPlaceholder, screenHiddenNote, selectionUnreadNote } from "../../../src/core/agent/tools.js";
+import { parsedJSON } from "../../../src/core/agent/connectors/contract.js";
+import { ToolRegistry, type RegisteredTool } from "../../../src/core/agent/toolRegistry.js";
+import { AgentError, type AgentToolID, isAgentToolID, agentToolIDs, agentTools, EditTool, redactionPlaceholder, screenHiddenNote, selectionUnreadNote } from "../../../src/core/agent/tools.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient, type ServerToolEvent, type ToolCall } from "../../../src/core/backend/completions.js";
 import { screen } from "../../support/screens.js";
@@ -41,6 +42,21 @@ async function thrown(promise: Promise<unknown>): Promise<unknown> {
     return error;
   }
   return undefined;
+}
+
+/** Bind test tool handlers to the same registry contract used by the real loop. */
+async function runAgent(request: string, context: Parameters<typeof DesktopAgent.message>[1], hidden: boolean, conversation: string, userName: string, names: readonly string[], client: Parameters<typeof DesktopAgent.run>[6], account: Parameters<typeof DesktopAgent.run>[7], userID: string | null, run: (call: ToolCall, round: number) => Promise<string>, onServerTool: (event: ServerToolEvent) => void, signal?: AbortSignal) {
+  const definitions: RegisteredTool[] = names.map((name) => {
+    if (isAgentToolID(name)) {
+      const output = agentTools[name];
+      return { name, terminal: output.terminal, run: async (call) => output.text(parsedJSON(call.function.arguments), context) };
+    }
+    return { name, terminal: false, run };
+  });
+  definitions.push({ name: "answer", terminal: agentTools.answer.terminal, response: true, advertise: false, run: async (call) => agentTools.answer.text(parsedJSON(call.function.arguments), context) });
+  const outcome = await DesktopAgent.run(request, context, hidden, conversation, userName, new ToolRegistry(definitions), client, account, userID, onServerTool, signal);
+  if (!isAgentToolID(outcome.tool)) throw new Error("Expected an output action in this fixture.");
+  return { tool: outcome.tool, text: outcome.text };
 }
 
 /** The agent's backend prompt: what it is sent, and which tools it is offered. Never the network. */
@@ -126,10 +142,10 @@ describe("DesktopAgent", () => {
   /** Edit and Compose are never offered together: text selected is Edit, nothing (or only blank
    * space, or no screen read) is Compose; Answer beside it. Thunderbird's relay has no backend tool. */
   test("the selection decides the writing tool", () => {
-    expect(DesktopAgent.writingTool(selectionScreen("Ship it."))).toBe("edit");
-    expect(DesktopAgent.writingTool(selectionScreen(""))).toBe("compose");
-    expect(DesktopAgent.writingTool(selectionScreen(" \n"))).toBe("compose");
-    expect(DesktopAgent.writingTool(null)).toBe("compose");
+    expect(DesktopAgent.tools(selectionScreen("Ship it."), all)[0]).toBe("edit");
+    expect(DesktopAgent.tools(selectionScreen(""), all)[0]).toBe("compose");
+    expect(DesktopAgent.tools(selectionScreen(" \n"), all)[0]).toBe("compose");
+    expect(DesktopAgent.tools(null, all)[0]).toBe("compose");
     expect(DesktopAgent.tools(selectionScreen("Ship it."), all)).toEqual(["edit", "answer"]);
     expect(DesktopAgent.tools(null, all)).toEqual(["compose", "answer"]);
   });
@@ -151,7 +167,7 @@ describe("DesktopAgent", () => {
 /** The agent's tool loop: each round's tool calls run here, and their results go back with the loop's
  * state until the model replies or calls the writing tool. Never the network. */
 describe("the agent's tool loop", () => {
-  const tools = ["date_to_day", "time_delta", "example_read"];
+  const tools = ["date_to_day", "time_delta", "example_read", "example_other"];
   const ignoreServerTools = () => {};
 
   /** The backend's own tools are heard of as they start and end, while the round's stream arrives,
@@ -170,7 +186,7 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, events + Fixtures.reply("Found it."));
     const heard: ServerToolEvent[] = [];
 
-    const answer = await DesktopAgent.run("search it", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", (event) => heard.push(event));
+    const answer = await runAgent("search it", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", (event) => heard.push(event));
 
     expect(answer).toEqual({ tool: "answer", text: "Found it." });
     expect(heard).toEqual([
@@ -180,42 +196,10 @@ describe("the agent's tool loop", () => {
     ]);
   });
 
-  /** With Answer on, the loop is offered the backend's date tools, every tool that runs on this
-   * computer, the memory tools and the writing tool; with it off, the memory tools and the writing
-   * tool: an Edit or a Compose may draw on an earlier request. With no tool, nothing. */
-  test("the loop is offered the date tools, this computer's tools, memory and the writing tool", () => {
-    const tool = (name: string): ConnectorTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read"]);
-    expect(DesktopAgent.loopTools(["compose", "answer"], [tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_create", "memory_search", "memory_read", "compose"]);
-    expect(DesktopAgent.loopTools(["edit"], [tool("example_read")])).toEqual(["memory_search", "memory_read", "edit"]);
-    expect(DesktopAgent.loopTools([], [tool("example_read")])).toEqual([]);
-  });
-
-  /** With the window read (and not hidden), the loop may read the whole of it (`screen_read`,
-   * ADR-DESK-016 2026-10-25), Answer on or off, beside the memory tools; with no tool, nothing. */
-  test("the loop is offered the whole window when the window was read", () => {
-    const tool = (name: string): ConnectorTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.loopTools(["answer"], [], true)).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read", "screen_read"]);
-    expect(DesktopAgent.loopTools(["compose", "answer"], [tool("example_read")], true)).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "memory_search", "memory_read", "screen_read", "compose"]);
-    expect(DesktopAgent.loopTools(["edit"], [], true)).toEqual(["memory_search", "memory_read", "screen_read", "edit"]);
-    expect(DesktopAgent.loopTools(["edit"], [], false)).toEqual(["memory_search", "memory_read", "edit"]);
-    expect(DesktopAgent.loopTools([], [], true)).toEqual([]);
-  });
-
-  /** An app whose tools are offered brings the backend's own tools it has (the web, its search), after
-   * the date tools, once however many of its tools there are; one with none of its tools offered
-   * (switched off, or none on this computer), or an app with no backend tools, brings nothing. */
-  test("an app switched on brings its backend tools", () => {
-    const tool = (name: string, connector: ConnectorTool["connector"]): ConnectorTool => ({ name, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "web_open", "memory_search", "memory_read"]);
-    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_note", "memory_search", "memory_read"]);
-    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read"]);
-  });
-
   /** A call to the writing tool ends the request (owner, 2026-10-05): its text is what is pasted, the
    * round's other calls never run, the text the model wrote beside it is not used, and nothing more is
    * asked. */
-  test("a compose call ends the loop with its text, running nothing else", async () => {
+  test("a compose call runs after earlier tools and ends the loop with its text", async () => {
     const { completions, client, account } = setup();
     const call = (id: string, name: string, args: string) => ({ id, type: "function", function: { name, arguments: args } });
     completions.enqueue(200, Fixtures.completionsStream(JSON.stringify({
@@ -226,13 +210,13 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("Never asked."));
     const ran: string[] = [];
 
-    const outcome = await DesktopAgent.run("paste lunch time", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
+    const outcome = await runAgent("paste lunch time", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
       ran.push(call.id);
       return "";
     }, ignoreServerTools);
 
     expect(outcome).toEqual({ tool: "compose", text: "Lunch is at noon." });
-    expect(ran).toEqual([]);
+    expect(ran).toEqual(["call_a"]);
     expect(completions.requests).toHaveLength(1);
   });
 
@@ -243,7 +227,7 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_b", name: "edit", arguments: '{"text":"Sync on Thursday at 10:00."}' }]));
     const ran: string[] = [];
 
-    const outcome = await DesktopAgent.run("replace this with my next meeting", selectionScreen("next meeting\n"), false, "", "", [...tools, "edit"], client, account, Fixtures.userID, async (call) => {
+    const outcome = await runAgent("replace this with my next meeting", selectionScreen("next meeting\n"), false, "", "", [...tools, "edit"], client, account, Fixtures.userID, async (call) => {
       ran.push(call.id);
       return "Sync, Thursday 10:00";
     }, ignoreServerTools);
@@ -255,19 +239,19 @@ describe("the agent's tool loop", () => {
 
   /** Only the writing tool the loop was offered ends it: a call to the other one is an ordinary call,
    * which the app has no tool for. */
-  test("a call to the writing tool not offered runs as any other call", async () => {
+  test("a call to an unregistered writing tool returns an unknown-tool result without dispatch", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "edit", arguments: '{"text":"Over the selection."}' }]));
     completions.enqueue(200, Fixtures.reply("Done."));
     const ran: string[] = [];
 
-    const outcome = await DesktopAgent.run("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
+    const outcome = await runAgent("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
       ran.push(call.function.name);
       return "Error: there is no tool named edit.";
     }, ignoreServerTools);
 
     expect(outcome).toEqual({ tool: "answer", text: "Done." });
-    expect(ran).toEqual(["edit"]);
+    expect(ran).toEqual([]);
   });
 
   /** A writing call with no text to paste fails, pasting nothing. */
@@ -275,7 +259,7 @@ describe("the agent's tool loop", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "compose", arguments: args }]));
 
-    const error = await thrown(DesktopAgent.run("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(runAgent("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
     expect((error as AgentError).kind).toBe("noText");
   });
 
@@ -286,7 +270,7 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "edit", arguments: '{"text":"connect with postgres"}' }]));
     const redacted = { ...selectionScreen("connect with postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
 
-    const error = await thrown(DesktopAgent.run(request, redacted, false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(runAgent(request, redacted, false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
 
     expect(error).toBeInstanceOf(AgentError);
     expect((error as AgentError).kind).toBe("secretInSelection");
@@ -299,14 +283,14 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("It connects to the database."));
     const redacted = { ...selectionScreen("postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
 
-    expect(await DesktopAgent.run("what is this", redacted, false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools)).toEqual({ tool: "answer", text: "It connects to the database." });
+    expect(await runAgent("what is this", redacted, false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools)).toEqual({ tool: "answer", text: "It connects to the database." });
   });
 
   test("a backend error is reported as itself", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(402, { error: "no_active_subscription" });
 
-    const error = await thrown(DesktopAgent.run(request, selectionScreen("Ship it."), false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(runAgent(request, selectionScreen("Ship it."), false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
     expect(error).toBeInstanceOf(BackendError);
     expect((error as BackendError).kind).toBe("subscriptionRequired");
   });
@@ -318,7 +302,7 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("  Friday is the 3rd.\n"));
     const calls: ToolCall[] = [];
 
-    const answer = await DesktopAgent.run("what day is friday", null, false, "User: hi\nTabMail: Hello.", "", tools, client, account, Fixtures.userID, async (call) => {
+    const answer = await runAgent("what day is friday", null, false, "User: hi\nTabMail: Hello.", "", tools, client, account, Fixtures.userID, async (call) => {
       calls.push(call);
       return "";
     }, ignoreServerTools);
@@ -344,7 +328,7 @@ describe("the agent's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("Both done."));
     const ran: string[] = [];
 
-    const answer = await DesktopAgent.run("do both", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
+    const answer = await runAgent("do both", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
       ran.push(`${call.id} ${call.function.name} ${call.function.arguments}`);
       return `result of ${call.id}`;
     }, ignoreServerTools);
@@ -377,7 +361,7 @@ describe("the agent's tool loop", () => {
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
     const ran: string[] = [];
 
-    const answer = await DesktopAgent.run("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async (toolCall) => {
+    const answer = await runAgent("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async (toolCall) => {
       ran.push(toolCall.id);
       return "read";
     }, ignoreServerTools);
@@ -401,7 +385,7 @@ describe("the agent's tool loop", () => {
     completions.enqueue(401, { error: "invalid_token" });
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
 
-    const error = await thrown(DesktopAgent.run("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(runAgent("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async () => "", ignoreServerTools));
 
     expect((error as BackendError).kind).toBe("unauthorized");
     expect(completions.requests).toHaveLength(2);
@@ -415,7 +399,7 @@ describe("the agent's tool loop", () => {
     let ran = 0;
 
     const error = await thrown(
-      DesktopAgent.run("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
+      runAgent("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
         ran += 1;
         return "";
       }, ignoreServerTools),
@@ -431,7 +415,7 @@ describe("the agent's tool loop", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply(" \n"));
 
-    const error = await thrown(DesktopAgent.run("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(runAgent("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools));
     expect((error as AgentError).kind).toBe("noText");
   });
 
@@ -441,7 +425,7 @@ describe("the agent's tool loop", () => {
     const abort = new AbortController();
     abort.abort();
 
-    await thrown(DesktopAgent.run("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools, abort.signal));
+    await thrown(runAgent("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools, abort.signal));
     expect(completions.requests).toHaveLength(0);
   });
 
@@ -455,7 +439,7 @@ describe("the agent's tool loop", () => {
     const ran: string[] = [];
 
     const error = await thrown(
-      DesktopAgent.run("read it", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
+      runAgent("read it", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
         ran.push(call.id);
         abort.abort();
         return "";
@@ -475,7 +459,7 @@ describe("the agent's tool loop", () => {
     const abort = new AbortController();
 
     await thrown(
-      DesktopAgent.run("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
+      runAgent("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
         abort.abort();
         return "";
       }, ignoreServerTools, abort.signal),
@@ -503,7 +487,7 @@ describe("terminal selection writing boundary", () => {
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: writing ?? "edit", arguments: '{"text":"friendlier text"}' }]));
     const pastes: string[] = [];
     const writeAndDeliver = async () => {
-      const { tool, text } = await DesktopAgent.run(request, context, false, "", "", DesktopAgent.loopTools(offered, []), client, account, Fixtures.userID, async () => "", () => {});
+      const { tool, text } = await runAgent(request, context, false, "", "", offered.filter((name) => !agentTools[name].response), client, account, Fixtures.userID, async () => "", () => {});
       await agentTools[tool].deliver(text, { paste: async (value) => { pastes.push(value); }, emailApp: null,
         thunderbird: null as never, showAnswer: () => {}, signal: new AbortController().signal });
     };
@@ -519,5 +503,63 @@ describe("terminal selection writing boundary", () => {
       expect((error as AgentError).kind).toBe("secretInSelection");
       expect(pastes).toEqual([]);
     }
+  });
+});
+
+/** The loop must know nothing about a tool's name or output destination. */
+describe("registered terminal behavior", () => {
+  test("executes in order and stops after a new terminal tool delivers", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([
+      { id: "first", name: "lookup", arguments: "{}" },
+      { id: "finish", name: "custom_finish", arguments: "{}" },
+      { id: "late", name: "must_not_run", arguments: "{}" },
+    ]));
+    const delivered: string[] = [];
+    const registry = new ToolRegistry([
+      { name: "lookup", terminal: false, run: async () => { delivered.push("looked up"); return "found"; } },
+      { name: "custom_finish", terminal: true, run: async () => { delivered.push("delivered"); return "final text"; } },
+      { name: "must_not_run", terminal: false, run: async () => { delivered.push("wrong"); return "wrong"; } },
+    ]);
+    expect(await DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "custom_finish", text: "final text" });
+    expect(delivered).toEqual(["looked up", "delivered"]);
+    expect(completions.requests).toHaveLength(1);
+  });
+
+  test("normal model text executes the configured response tool", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply("  A response.  "));
+    const shown: string[] = [];
+    const registry = new ToolRegistry([{ name: "show_text", response: true, advertise: false, terminal: true, run: async (call) => {
+      const args = JSON.parse(call.function.arguments) as { text: string };
+      shown.push(args.text);
+      return args.text;
+    } }]);
+    expect(await DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "show_text", text: "A response." });
+    expect(shown).toEqual(["A response."]);
+    expect(completions.body(0).available_tools).toEqual([]);
+  });
+
+  test("failed terminal delivery does not run later tools or request another round", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "finish", name: "custom_finish", arguments: "{}" }, { id: "later", name: "later", arguments: "{}" }]));
+    const failure = new Error("delivery failed");
+    let later = false;
+    const registry = new ToolRegistry([
+      { name: "custom_finish", terminal: true, run: async () => { throw failure; } },
+      { name: "later", terminal: false, run: async () => { later = true; return ""; } },
+    ]);
+    await expect(DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {})).rejects.toBe(failure);
+    expect(later).toBe(false);
+    expect(completions.requests).toHaveLength(1);
+  });
+
+  test("cancellation during terminal execution cannot report a successful outcome", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "finish", name: "custom_finish", arguments: "{}" }]));
+    const abort = new AbortController();
+    const registry = new ToolRegistry([{ name: "custom_finish", terminal: true, run: async () => { abort.abort(); return "too late"; } }]);
+    await expect(DesktopAgent.run(request, null, false, "", "", registry, client, account, Fixtures.userID, () => {}, abort.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(completions.requests).toHaveLength(1);
   });
 });

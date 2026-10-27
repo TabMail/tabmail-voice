@@ -25,6 +25,8 @@ import type { WebFetch, WebOpener } from "./web.js";
 export interface ConnectorTool {
   /** The function name, as in the backend's registry. */
   readonly name: string;
+  /** A completed handler ends the request when set; ordinary lookups continue the loop. */
+  readonly terminal?: boolean;
   /** The app it reaches, whose switch in Settings and the welcome wizard turns it on and off. */
   readonly connector: ConnectorID;
   /** What the chat window says while it runs ("Checking your calendar"). */

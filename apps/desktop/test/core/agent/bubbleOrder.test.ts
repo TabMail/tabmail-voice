@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { alphabetical, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, screenReadBubble, ranNow, serverToolConnector, shownBubbles } from "../../../src/core/agent/bubbleOrder.js";
-import { connectorByID, connectorIDs, connectors } from "../../../src/core/agent/connectors/index.js";
+import { alphabetical, bubbleDescription, bubbleName, bubbleOrder, memoryBubble, screenReadBubble, ranNow, shownBubbles } from "../../../src/core/agent/bubbleOrder.js";
+import { connectorByID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import { agentToolIDs, agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
 
@@ -56,11 +56,4 @@ describe("bubble order", () => {
     expect(recent).toEqual(["answer", "web"]);
   });
 
-  /** A backend tool belongs to the app whose server tools list it; the backend's own (the date tools)
-   * to none. */
-  test("a backend tool's app", () => {
-    for (const connector of connectors) for (const tool of connector.serverTools ?? []) expect(serverToolConnector(tool)).toBe(connector.id);
-    expect(serverToolConnector("search_web")).toBe("web");
-    expect(serverToolConnector("date_to_day")).toBeNull();
-  });
 });

@@ -4120,6 +4120,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
           return { controller: made, done, chatChanges };
         }
 
+        test("a connector can terminate through its tool configuration", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { terminal: true });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply("Must not be requested.")]);
+          await done;
+          expect(tool.runs).toEqual([{}]);
+          expect(completions.requests).toHaveLength(1);
+          expect(controller.chat).toBeNull();
+          expect(controller.phase).toEqual(idle);
+        });
+
         /** `screen_read` (ADR-DESK-016, 2026-10-25): the agent is given what the window shows, and
          * reads the whole window, read since, only when it asks. It is offered with a window read and
          * not hidden, Answer on or off, and runs here. */
@@ -4524,7 +4534,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const search = (event: string) => `event: ${event}\ndata: {"tool_name":"search_web","display_label":"Searching the web: launch"}\n\n`;
           const round = search("tool_started") + 'event: tool_completed\ndata: {"tool_name":"date_to_day"}\n\n' + search("tool_completed") + reply(answer);
           const seen: [string | null, string | null, string[]][] = [];
-          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), round], (controller) => {
+          const { controller, done } = await ask([tool, new FakeLoopTool("web_read", "Reading the web", "web")], [calling(["example_create", "{}"]), round], (controller) => {
             controllerRef = controller;
             controller.observe(() => seen.push([controller.runningBubble, controller.chat?.activity ?? null, controller.recentBubbles]));
           }, { inChat: true });
@@ -4557,7 +4567,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           };
           const search = (event: string) => `event: ${event}\ndata: {"tool_name":"search_web","display_label":"Searching the web: launch"}\n\n`;
           const seen: [string | null, string | null][] = [];
-          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), search("tool_started") + search("tool_completed") + calling(["example_create", "{}"]), reply(answer)], (controller) => {
+          const { controller, done } = await ask([tool, new FakeLoopTool("web_read", "Reading the web", "web")], [calling(["example_create", "{}"]), search("tool_started") + search("tool_completed") + calling(["example_create", "{}"]), reply(answer)], (controller) => {
             controllerRef = controller;
             controller.observe(() => seen.push([controller.runningBubble, controller.chat?.activity ?? null]));
           }, { inChat: true });
@@ -5094,6 +5104,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           test.each([
             ["memory_search", { query: "launch review" }],
             ["memory_read", { timestamp: Date.now() - 24 * 60 * 60 * 1_000 }],
+            ["unregistered_tool", {}],
           ])("the model's confirmation after a %s call does nothing", async (name, args) => {
             memory.rows.push(memoryRow("plan the launch review", "Launch review on Friday.", Date.now() - 24 * 60 * 60 * 1_000, "earlier"));
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
@@ -5105,6 +5116,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
             expect(tool.runs).toEqual([]);
             expect(told(3).at(-1)).toBe(config.confirmationToolNothingWaiting);
+          });
+
+          test("backend activity does not consume a spoken confirmation", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const search = 'event: tool_started\ndata: {"tool_name":"search_web","display_label":"Searching"}\n\n' + 'event: tool_completed\ndata: {"tool_name":"search_web","display_label":"Searching"}\n\n';
+            const { controller, done } = await ask([tool, new FakeLoopTool("web_read", "Reading the web", "web")], [calling(sameCall), search + calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            await sayAloud(controller, "Yes, add it.");
+            await done;
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+            expect(told(2)).toEqual(["Added."]);
           });
 
           /** One spoken answer is one answer: the model's tool a second time does nothing. */

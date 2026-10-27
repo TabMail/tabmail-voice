@@ -24,10 +24,6 @@ export class MemoryTools {
 
   constructor(private readonly store: AgentMemory) {}
 
-  static handles(name: string): boolean {
-    return MemoryTools.names.includes(name);
-  }
-
   /** Runs the tool `name` with `args` (the call's parsed arguments), and returns what the model reads. */
   async run(name: string, args: Record<string, unknown>): Promise<string> {
     const result = name === config.memorySearchTool ? await this.search(args) : await this.read(args);

@@ -41,12 +41,6 @@ describe("MemoryTools", () => {
     tools = new MemoryTools(memory);
   });
 
-  test("handles the two memory tools only", () => {
-    expect(MemoryTools.handles(config.memorySearchTool)).toBe(true);
-    expect(MemoryTools.handles(config.memoryReadTool)).toBe(true);
-    expect(MemoryTools.handles("web_search")).toBe(false);
-  });
-
   describe(config.memorySearchTool, () => {
     /** Every page of a listing (`args`, with no query), walked from the first until one says no more
      * follow: each exchange's request, in the order listed, and the last page's answer. */

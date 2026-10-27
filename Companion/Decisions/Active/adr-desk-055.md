@@ -91,3 +91,18 @@ restore the operation's captured target before pasting (ADR-DESK-042). The initi
 `screen_read`'s whole read address that same window even when Voice or another window is now in
 front (ADR-DESK-016). The chat continues to close before a write; clicking it is allowed to activate
 Voice, whose next follow-up targets the preceding external window.
+
+
+**Amendment 2026-10-26 (owner): a flat registry executes every tool.** One request-scoped
+`ToolRegistry` holds the enabled tool definitions. Each definition declares its handler, bubble,
+progress label and `terminal` behavior; the response definition also declares `response: true`.
+`DesktopAgent.run` dispatches calls by name, appends nonterminal results for the next model round,
+and stops after a terminal handler finishes. It has no Compose/Edit name checks and no separate
+post-loop delivery path. Calls execute in their returned order: calls before the terminal call run,
+and calls after it do not. This supersedes the earlier rule that a writing call skipped every other
+call in its round. Edit and Compose close the chat and paste inside their handlers; Answer receives
+normal assistant text through the same registry and keeps the conversation open for follow-ups.
+Selection eligibility, redacted-selection refusal, enabled-tool and connector policy, confirmation
+and cancellation checks still apply. The UI lifecycle is shared by local tools and registered
+backend-tool events. `screen_read` now has its viewfinder bubble, normal running animation and hover
+tooltip, as the other tools; the earlier no-bubble statement is superseded.

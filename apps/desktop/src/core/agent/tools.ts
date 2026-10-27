@@ -12,7 +12,7 @@ import type { ThunderbirdRelay } from "./connectors/thunderbird/relay.js";
  * chat relay. A tool that hands the request to another app goes through that app's connector
  * (ADR-DESK-020). Each tool's bubble shows above the pill while agent mode listens, and its border
  * circles while it runs. Edit and Compose are never offered together: the selection decides which
- * (`DesktopAgent.writingTool`). Each offered one (`offeredAgentToolIDs`) can be switched off in Settings
+ * (each definition's `available`). Each offered one (`offeredAgentToolIDs`) can be switched off in Settings
  * and the welcome wizard; all are on by default (owner, 2026-09-26).
  */
 export type AgentToolID = "edit" | "compose" | "thunderbird" | "answer";
@@ -74,6 +74,14 @@ async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<v
 
 /** One of agent mode's tools: where the text the backend loop wrote goes. */
 export interface AgentTool {
+  /** Whether a completed handler ends this request. */
+  terminal: boolean;
+  /** A normal assistant reply is routed through this definition. */
+  response?: boolean;
+  closesChat: boolean;
+  available(context: ScreenContext | null): boolean;
+  /** Validate and fit model arguments before performing any delivery. */
+  text(args: unknown, context: ScreenContext | null): string;
   displayName: string;
   /** The icon shown in the tool's bubble (an SF Symbol name on macOS), unless it shows the app's
    * icon (Thunderbird's). */
@@ -83,8 +91,6 @@ export interface AgentTool {
   /** What the tool did with its text, shown over it in the chat window; null for Answer, whose text
    * is the reply itself. */
   chatCaption: string | null;
-  /** The text the loop wrote (trimmed, not empty), ready to deliver. */
-  fitted(text: string, context: ScreenContext | null): string;
   /** Puts the text where the tool puts it. Throws when it can't: then nothing is pasted, though Edit's
    * and Compose's text goes into the paste history and the note that copies it (ADR-DESK-042). */
   deliver(text: string, context: ToolContext): Promise<void>;
@@ -138,16 +144,17 @@ const trailingSpace = /[\s\u0085]*$/;
 
 /** Writes in place of the selected text, as asked; offered only when text is selected. */
 export const EditTool = {
+  terminal: true,
+  closesChat: true,
+  available: (context: ScreenContext | null) => selection(context) !== "",
+  text(args: unknown, context: ScreenContext | null): string {
+    if (context?.selectionRedacted === true) throw new AgentError("secretInSelection");
+    return EditTool.fittedToSelection(outputText(args), selection(context));
+  },
   displayName: "Edit",
   symbolName: "pencil",
   settingsDescription: "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
   chatCaption: "Replaced the selection",
-
-  /** With the selection's own leading and trailing blank space, so replacing a whole line keeps its
-   * line break. */
-  fitted(text: string, context: ScreenContext | null): string {
-    return EditTool.fittedToSelection(text, selection(context));
-  },
 
   /** Pastes over the selection, which the non-activating overlay leaves in place. */
   deliver: pasteIntoTargetApp,
@@ -163,11 +170,14 @@ export const EditTool = {
 
 /** Writes new text at the caret, as asked; offered only when nothing is selected. */
 export const ComposeTool: AgentTool = {
+  terminal: true,
+  closesChat: true,
+  available: (context) => selection(context) === "",
+  text: (args) => outputText(args),
   displayName: "Compose",
   symbolName: "square.and.pencil",
   settingsDescription: "Writes new text where your cursor is: a reply, a message, a note, a command.",
   chatCaption: "Pasted at the cursor",
-  fitted: (text) => text,
 
   /** Pastes at the caret. */
   deliver: pasteIntoTargetApp,
@@ -177,11 +187,14 @@ export const ComposeTool: AgentTool = {
  * (ADR-DESK-014). Never offered: the backend loop has no tool for it until the native connector to
  * TabMail's add-on replaces this relay (ADR-DESK-037). */
 export const ThunderbirdTool: AgentTool = {
+  terminal: true,
+  closesChat: true,
+  available: () => false,
+  text: (args) => outputText(args),
   displayName: "Thunderbird",
   symbolName: "envelope",
   settingsDescription: "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
   chatCaption: "Sent to TabMail in Thunderbird",
-  fitted: (text) => text,
 
   /** Hands the message to the Thunderbird connector, for the email app the dictation started with.
    * Not held to the app in front at key-down: the relay brings Thunderbird to the front itself, and
@@ -196,11 +209,15 @@ export const ThunderbirdTool: AgentTool = {
  * also reaches the user's apps and the web. Its bubble runs, and its chat window opens, only when the
  * agent answers (owner, 2026-10-07). */
 export const AnswerTool: AgentTool = {
+  terminal: true,
+  response: true,
+  closesChat: false,
+  available: () => true,
+  text: (args) => outputText(args),
   displayName: "Answer",
   symbolName: "text.bubble",
   settingsDescription: "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up: your earlier requests and its replies go with the follow-up.",
   chatCaption: null,
-  fitted: (text) => text,
 
   /** Shows the reply in the chat window, whatever app is in front: it is not pasted anywhere. */
   async deliver(text, context) {
@@ -214,3 +231,10 @@ export const agentTools: Record<AgentToolID, AgentTool> = {
   thunderbird: ThunderbirdTool,
   answer: AnswerTool,
 };
+
+/** Output tools accept one nonempty text argument before delivery. */
+function outputText(args: unknown): string {
+  const text = args !== null && typeof args === "object" && "text" in args && typeof args.text === "string" ? trimWhitespace(args.text) : "";
+  if (text === "") throw new AgentError("noText");
+  return text;
+}

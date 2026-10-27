@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../config.js";
-import { type ConnectorID, connectorByID, connectors } from "./connectors/index.js";
+import { type ConnectorID, connectorByID } from "./connectors/index.js";
 import { type AgentToolID, isAgentToolID, agentTools } from "./tools.js";
 
 /** The bubble of the memory tools, which come with every request that offers a tool
- * (`DesktopAgent.loopTools`): it shows with the tools' bubbles and runs while they do (owner,
+ * (`ToolRegistry`): it shows with the tools' bubbles and runs while they do (owner,
  * 2026-10-19). It has no switch in Settings. */
 export const memoryBubble = "memory" as const;
 /** The optional whole-window reading tool. */
@@ -54,10 +54,4 @@ export function bubbleOrder(shown: readonly BubbleKey[], recent: readonly Bubble
 /** `recent` with `key` moved to the front, as it runs. */
 export function ranNow(recent: readonly BubbleKey[], key: BubbleKey): BubbleKey[] {
   return [key, ...recent.filter((other) => other !== key)];
-}
-
-/** The app whose backend tool `tool` is (`Connector.serverTools`): the web's search. Null for the
- * backend's own tools, which belong to no app (the date tools). */
-export function serverToolConnector(tool: string): ConnectorID | null {
-  return connectors.find((connector) => connector.serverTools?.includes(tool) ?? false)?.id ?? null;
 }
