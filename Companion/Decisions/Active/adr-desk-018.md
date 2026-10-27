@@ -44,6 +44,7 @@ show while debug mode is on (the switch on AND an allowed account, `AppSettings.
 - The file is created for this user alone (mode 0600), over nothing: an existing file or symlink at
   that name is removed first and never written through (the temporary folder is shared on Linux).
 - The debug log file (ADR-DESK-015) is NOT deleted when debug mode goes off; it stays for the owner
-  to read and rotates by size. Whether it should go too is the owner's call.
+  to read and rotates by size. Owner, 2026-10-27, decided: keep it ("having those logs is fine. This
+  is really debug mode, and it's only something that you can turn on if you are our developers").
 - **Show Log File** offers the file debug mode writes (ADR-DESK-015; on macOS
   `~/Library/Logs/TabMail Voice/TabMail Voice.log`, elsewhere Electron's `logs` folder).
