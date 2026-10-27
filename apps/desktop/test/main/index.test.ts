@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir, userInfo } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { screen as blankScreen } from "../support/screens.js";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConnectorTool } from "../../src/core/agent/connectors/contract.js";
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
@@ -40,6 +40,9 @@ const app = vi.hoisted(() => ({
   corrections: undefined as { watch(target: number, pasted: string): void; stop(): void } | undefined,
   frontmostApp: undefined as (() => Promise<number | null>) | undefined,
   useWords: undefined as ((texts: readonly string[]) => void) | undefined,
+  /** The dictation settings snapshot and the last-recording callback, as the app gave the controller. */
+  dictationSettings: null as (() => { keepsRecording: boolean }) | null,
+  keepRecording: undefined as ((wav: Uint8Array) => void) | undefined,
   prewarms: 0,
   /** The paste history the controller was given, what went on the clipboard, the history window's
    * openings, moves and closings, and each time the app was hidden. */
@@ -78,7 +81,7 @@ const app = vi.hoisted(() => ({
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; showSettings: () => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void } | null } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
   trayState: null as (() => { update: unknown }) | null,
@@ -374,7 +377,9 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords> }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; keepRecording?: typeof app.keepRecording }) {
+      app.dictationSettings = dependencies.settings;
+      app.keepRecording = dependencies.keepRecording;
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
@@ -564,6 +569,8 @@ afterEach(() => {
   app.memory = null;
   app.fullName = null;
   app.trayActions = null;
+  app.dictationSettings = null;
+  app.keepRecording = undefined;
   app.presented = [];
   app.trayState = null;
   app.packaged = false;
@@ -1320,6 +1327,124 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect((await import("../../src/core/log.js")).isDebugLogging()).toBe(false);
   });
 
+  /** The debug items and the last recording follow debug mode in a packaged build (ADR-DESK-018,
+   * amended 2026-10-27): the menu shows them while it is on, a dictation keeps its audio only if it
+   * started with it on, and switching it off (or signing out) deletes the file. */
+  describe("debug mode in a packaged build", () => {
+    let folder: string;
+    const lastRecording = () => join(folder, config.debugLastRecordingFileName);
+    const signIn = (email: string) => {
+      app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email } });
+    };
+    const menuDebugMode = () => (app.trayState?.() as unknown as { debugMode: boolean }).debugMode;
+    const gone = () => vi.waitFor(() => expect(existsSync(lastRecording())).toBe(false));
+
+    beforeEach(() => {
+      folder = mkdtempSync(join(tmpdir(), "voice-debug-mode-"));
+      vi.doMock("node:os", async () => ({ ...await vi.importActual<typeof import("node:os")>("node:os"), tmpdir: () => folder }));
+      app.packaged = true;
+      Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
+    });
+
+    afterEach(() => {
+      vi.doUnmock("node:os");
+      rmSync(folder, { recursive: true, force: true });
+    });
+
+    test("on: the menu shows the debug items and a dictation keeps its recording", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      expect(menuDebugMode()).toBe(true);
+      expect(app.dictationSettings?.().keepsRecording).toBe(true);
+      expect(app.trayActions?.debug.hasLastRecording()).toBe(false);
+
+      app.keepRecording?.(Uint8Array.from([1, 2, 3]));
+      await vi.waitFor(() => expect(readFileSync(lastRecording())).toEqual(Buffer.from([1, 2, 3])));
+      expect(app.trayActions?.debug.hasLastRecording()).toBe(true);
+    });
+
+    test("switching it off hides the items, keeps no more and deletes the file; on again keeps again", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      app.keepRecording?.(Uint8Array.from([1]));
+      await vi.waitFor(() => expect(existsSync(lastRecording())).toBe(true));
+
+      expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
+      expect(menuDebugMode()).toBe(false);
+      expect(app.dictationSettings?.().keepsRecording).toBe(false);
+      await gone();
+
+      expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
+      expect(menuDebugMode()).toBe(true);
+      expect(app.dictationSettings?.().keepsRecording).toBe(true);
+    });
+
+    /** Everything behind the debug items goes when debug mode does: the sample tip, the last screen
+     * context (and the window showing it is redrawn), and a recording whose dictation started in
+     * debug mode but ends after it went off. */
+    test("switching it off clears the smoke tip and the last screen context, and keeps no recording still in progress", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      const contextShown = () => (app.handlers.get(channels.getState)?.({}, "contextDebug") as { context: unknown }).context;
+      app.helpers.get("voice-screen-reader")!.replies.set("readScreen", () => blankScreen({ appName: "Shown", renderedText: "Shown" }));
+      const controller = app.controller as unknown as { captureContext: (policy: { apps: string[]; sites: string[] }) => Promise<unknown> };
+      await controller.captureContext({ apps: [], sites: [] });
+      expect(contextShown()).not.toBeNull();
+      app.trayActions?.debug.toggleSmokeTip();
+      expect(app.trayActions?.debug.showsSmokeTip()).toBe(true);
+      const pushed: string[] = [];
+      app.listeners.set("voice:state", [...(app.listeners.get("voice:state") ?? []), (...args: unknown[]) => void pushed.push(String(args[1]))]);
+
+      expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
+      expect(contextShown()).toBeNull();
+      expect(app.trayActions?.debug.showsSmokeTip()).toBe(false);
+      expect(pushed).toEqual(expect.arrayContaining(["contextDebug", "overlay"]));
+
+      // The dictation that started with debug mode on ends now: nothing is kept.
+      app.keepRecording?.(Uint8Array.from([1]));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(existsSync(lastRecording())).toBe(false);
+    });
+
+    test("on at launch, and an unrelated settings change while on, keep the file", async () => {
+      writeFileSync(lastRecording(), "audio");
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      expect(await send({ type: "setSmartDictation", value: true })).toEqual({ error: null });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(readFileSync(lastRecording(), "utf8")).toBe("audio");
+      expect(app.trayActions?.debug.hasLastRecording()).toBe(true);
+    });
+
+    test("signing out deletes the file: no account is allowed debug mode", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      app.keepRecording?.(Uint8Array.from([1]));
+      await vi.waitFor(() => expect(existsSync(lastRecording())).toBe(true));
+
+      expect(await send({ type: "signOut" })).toEqual({ error: null });
+      expect(menuDebugMode()).toBe(false);
+      await gone();
+    });
+
+    test("off at launch (switch off, or an account not allowed) deletes a file left from before", async () => {
+      for (const [email, switchOn] of [["tester@tabmail.ai", false], ["tester@example.com", true]] as const) {
+        writeFileSync(lastRecording(), "audio");
+        app.stored.set("debugMode", switchOn);
+        signIn(email);
+        await launch("darwin");
+        expect(menuDebugMode()).toBe(false);
+        expect(app.dictationSettings?.().keepsRecording).toBe(false);
+        await gone();
+      }
+    });
+  });
+
   /** Settings › General shows the app's own version. */
   test("the settings state carries the app's version", async () => {
     app.version = "9.8.7";
@@ -1938,7 +2063,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.presented = [];
     app.trayActions?.showSettings();
     app.trayActions?.showWelcome();
-    app.trayActions?.debug?.showLastScreenContext();
+    app.trayActions?.debug.showLastScreenContext();
     app.appEvents.get("second-instance")?.();
     expect(app.presented).toEqual(["settings", "welcome", "contextDebug", "settings"]);
   });

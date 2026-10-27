@@ -145,8 +145,9 @@ going off after each dictation (the engine's release has no automated test, by t
 - ⌥-letter while holding Right Option types the special character and inserts nothing.
 - A tap shorter than `minimumHoldDuration` uploads nothing; holding without speaking shows
   "Didn't catch that. Try again." on one line and types nothing.
-- The last word survives releasing the key mid-word (`releaseTailDuration`). Debug builds:
-  menu › Play Last Recording plays exactly what was uploaded.
+- The last word survives releasing the key mid-word (`releaseTailDuration`). With debug mode on (any
+  build): menu › Play Last Recording plays exactly what was uploaded; with it off the item is gone and
+  no recording file is left (ADR-DESK-018).
 - Mic indicator in the menu bar clears `releaseTailDuration` after the key is released.
 - Signed out / no subscription / network off: the overlay shows a clear message.
 - Granting Accessibility in System Settings makes the hotkey work without relaunching.
@@ -167,7 +168,7 @@ going off after each dictation (the engine's release has no automated test, by t
 - In debug mode, start dictation from the menu, then untick the agreement in Welcome Guide…: the
   menu's Stop Dictation is still enabled and stops the recording; Start Dictation is then disabled.
   Switching debug mode off while recording from the menu leaves Stop Dictation in the menu.
-- Screen reading off (wizard or Settings): the menu's Show Last Screen Context (unpackaged build with debug mode on) stays unchanged
+- Screen reading off (wizard or Settings): the menu's Show Last Screen Context (any build with debug mode on) stays unchanged
   after a dictation.
 - Overlay appears just below the text cursor (TextEdit, Mail, Safari); below the focused field
   where the app exposes no caret; at the mouse pointer only when neither is available. It never

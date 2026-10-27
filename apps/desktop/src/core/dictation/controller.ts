@@ -115,7 +115,8 @@ export interface DictationDependencies {
   /** Memory: every agent-mode request and what came of it, which the agent can look back at
    * (ADR-DESK-061). */
   memory: AgentMemory;
-  /** Debug builds only: keeps the latest recording for "Play Last Recording". */
+  /** Keeps the latest recording for "Play Last Recording"; called only for a dictation that started
+   * in debug mode (`DictationSettings.keepsRecording`). */
   keepRecording?: (wav: Uint8Array) => void;
   /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`) in the field of the app
    * or window it was pasted into (`targetApp`), read by voice-field-reader; none without the native
@@ -1584,7 +1585,7 @@ export class DictationController extends Observable {
     const micDelay = recording.firstChunkAt === null ? "no audio" : `${Math.round(recording.firstChunkAt - startedAt)}ms`;
     log.debug(() => `DictationController: recorded ${recordingDuration(recording).toFixed(2)}s, peak ${recording.peakLevel.toFixed(3)}, gain ${(20 * Math.log10(recording.gain)).toFixed(1)} dB, waveform peak ${this.peakMeterLevel.toFixed(3)}, first audio after ${micDelay}`);
 
-    this.deps.keepRecording?.(encodeWAV(recording.pcm, recording.sampleRate));
+    if (this.dictationSettings.keepsRecording) this.deps.keepRecording?.(encodeWAV(recording.pcm, recording.sampleRate));
 
     // No loudness gate: on quiet built-in microphones speech sits only a few dB above the room
     // noise, so any level threshold rejects real speech. The model decides; an empty transcript is

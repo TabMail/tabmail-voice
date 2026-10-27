@@ -33,4 +33,7 @@ Never logged: audio (the transcription request shows its size in its place) and 
   switch and the account signed in as they change (`setDebugMode` in `core/log.ts`). The helpers now
   always send their `debug` lines and the app keeps them only while it logs. Keeping the last
   recording (audio) stays debug builds only.*
+- *Amended 2026-10-27 (owner): the last recording is kept in a release build too, but only while
+  debug mode is on: per dictation, from the settings snapshot taken at key-down
+  (`DictationSettings.keepsRecording`, ADR-DESK-017). See ADR-DESK-018's amendment.*
 

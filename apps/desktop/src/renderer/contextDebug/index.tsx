@@ -7,7 +7,7 @@ import { useWindowState } from "../shared/bridge.js";
 import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 
-/** Debug builds only: the last captured screen context (`ScreenContextDebugView.swift`). */
+/** Debug mode only: the last captured screen context (`ScreenContextDebugView.swift`). */
 function ContextDebug() {
   const state = useWindowState("contextDebug");
   if (!state) return null;

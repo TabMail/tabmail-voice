@@ -67,7 +67,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -139,7 +139,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"] } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"] } = {},
   ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory; clipboardSaves: () => number } {
     const pastes: string[] = [];
     const copies: string[] = [];
@@ -185,6 +185,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
       connectorTools: options.connectorTools ?? [],
       corrections: options.corrections,
+      keepRecording: options.keepRecording,
       useWords: (texts) => used.push([...texts]),
       memory,
     });
@@ -3152,7 +3153,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions, target) => {
@@ -3182,6 +3183,59 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
       expect(await eventually(() => memory.limits.length === 2)).toBe(true);
       expect(memory.limits).toEqual([config.memorySizeLimitDefault, config.memorySizeLimitChoices[0]]);
+    });
+
+    /** The last recording (ADR-DESK-018) is kept only for a dictation that started in debug mode, as the
+     * settings snapshot of key-down says: a switch flipped during the hold applies from the next one. */
+    describe("keeping the last recording", () => {
+      async function dictateKeeping(): Promise<{ kept: Uint8Array[]; controller: DictationController }> {
+        const kept: Uint8Array[] = [];
+        transcription.enqueue(200, { text: "we ship friday" });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        const { controller } = makeController({ capture: new CountingCapture(true), keepRecording: (wav) => void kept.push(wav) });
+        return { kept, controller };
+      }
+
+      test("debug mode off keeps nothing", async () => {
+        prefs.value = { ...defaultSettings(), keepsRecording: false };
+        const { kept, controller } = await dictateKeeping();
+        await holdAndRelease(controller);
+        expect(await eventually(() => controller.phase.kind !== "listening" && controller.phase.kind !== "transcribing")).toBe(true);
+        expect(kept).toHaveLength(0);
+      });
+
+      test("debug mode on keeps the recording as a WAV file", async () => {
+        prefs.value = { ...defaultSettings(), keepsRecording: true };
+        const { kept, controller } = await dictateKeeping();
+        await holdAndRelease(controller);
+        expect(await eventually(() => kept.length === 1)).toBe(true);
+        expect(new TextDecoder().decode(kept[0]?.subarray(0, 4))).toBe("RIFF");
+      });
+
+      test("the switch at key-down decides, in both directions", async () => {
+        prefs.value = { ...defaultSettings(), keepsRecording: false };
+        const { kept, controller } = await dictateKeeping();
+        controller.onPhaseChange = (phase) => {
+          if (phase.kind === "listening") prefs.value = { ...prefs.value, keepsRecording: true };
+        };
+        await holdAndRelease(controller);
+        expect(await eventually(() => controller.phase.kind !== "listening" && controller.phase.kind !== "transcribing")).toBe(true);
+        expect(kept).toHaveLength(0);
+
+        controller.onPhaseChange = undefined;
+        transcription.enqueue(200, { text: "we ship friday" });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        await holdAndRelease(controller);
+        expect(await eventually(() => kept.length === 1)).toBe(true);
+
+        controller.onPhaseChange = (phase) => {
+          if (phase.kind === "listening") prefs.value = { ...prefs.value, keepsRecording: false };
+        };
+        transcription.enqueue(200, { text: "we ship friday" });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        await holdAndRelease(controller);
+        expect(await eventually(() => kept.length === 2)).toBe(true);
+      });
     });
 
     /** The bubbles show the tools switched on at key-down, the ones the request is offered: a tool

@@ -75,7 +75,7 @@ export function screenShown(read: ScreenRead | null): ScreenContext | null {
  * (`isDebugLogging`) the latest capture is kept in memory for the debug window. Logs sizes and timings; the text goes to the debug
  * log file only (ADR-DESK-015). */
 export class ScreenContextProbe {
-  /** While debug logging is on: the latest capture, for the debug window (debug builds). */
+  /** While debug logging is on: the latest capture, for the debug window (shown while debug mode is on). */
   lastContext: ScreenContext | null = null;
   private generation = 0;
   /** Each capture's read, by the promise `capture` gave for it, and each whole window's, by the

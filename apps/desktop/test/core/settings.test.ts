@@ -65,6 +65,7 @@ describe("debug mode", () => {
 
     expect(app.isDebugMode(email)).toBe(isOn);
     expect(app.dictation(email).backendURL).toBe(isOn ? config.developmentBackendURL : config.productionBackendURL);
+    expect(app.dictation(email).keepsRecording).toBe(isOn);
   });
 
   /** The switch is kept across launches, on and then off again, and starts off. */
@@ -215,6 +216,7 @@ describe("AppSettings", () => {
       hasConsented: true,
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,
+      keepsRecording: false,
       readsScreen: true,
       excludedApps: config.builtInExcludedApps.map((excluded) => excluded.bundleIdentifier),
       excludedSites: [...config.builtInExcludedSites],

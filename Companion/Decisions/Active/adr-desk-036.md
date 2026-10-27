@@ -260,7 +260,7 @@ Edge placement uses `overlayEdgeInset` (the pill/chat gap) around chat and the p
 the pill's horizontal clamp reserves the chat width plus that inset. Narrow chat windows shrink
 by both insets. Tips go outward from the complete group: above when opening up, below when opening
 down, including beyond chat during follow-ups. Chat always reserves the tip footprint so showing
-or hiding a tip never shifts the panel, pill or tools. The unpackaged debug menu's temporary
+or hiding a tip never shifts the panel, pill or tools. The debug menu's (shown while debug mode is on, in any build; ADR-DESK-018) temporary
 “Show Smoke Test Tip” checkbox toggles a persistent sample tip for manual verification.
 
 The transparent native surface is fitted to the display independently of its content. The renderer
