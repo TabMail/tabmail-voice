@@ -322,4 +322,74 @@ import VoiceHelperSupport
             #expect(fixture.keys == 1)
         }
     }
+    @Test func anAppSwitchWhileTheFieldReplyIsInFlightCannotReceiveTheOlderPaste() async throws {
+        let fixture = TargetWindowsTests.Fixture()
+        let originalField = try #require(fixture.field)
+        var armed = false
+        var fieldLookups = 0
+        var delivered: [pid_t] = []
+        var system = fixture.system()
+        system.focusedElement = { _ in
+            if armed {
+                fieldLookups += 1
+                fixture.front = 202
+                fixture.focused = fixture.second
+            }
+            return originalField
+        }
+        system.post = { delivered.append(fixture.front); fixture.keys += 1 }
+        let targets = TargetWindows(system: system, owner: 303, observe: false)
+        let capture = targets.capture()
+        let target = try #require(try targets.resolve(capture))
+        #expect(target.pid == 101)
+        #expect(target.field.map { CFEqual($0, originalField) } == true)
+        armed = true
+        var refused = false
+        do { try await targets.paste(capture, transaction: 7, deadline: fixture.deadline) }
+        catch { refused = true }
+        #expect(fieldLookups == 1)
+        #expect(fixture.front == 202)
+        #expect(refused)
+        #expect(delivered.isEmpty)
+        #expect(fixture.keys == 0)
+    }
+    @Test func aFinalWindowLookupFailureOrANewerWindowRefusesBeforeKeys() async throws {
+        for inventoryUnavailable in [false, true] {
+            let fixture = TargetWindowsTests.Fixture()
+            fixture.field = nil
+            var armed = false
+            var activationObserved = false
+            var boundaryConsumed = false
+            var delivered: [AXUIElement] = []
+            var system = fixture.system()
+            system.focusedWindow = { _ in
+                if armed { activationObserved = true }
+                return fixture.focused
+            }
+            system.windows = { _ in
+                if armed && activationObserved {
+                    boundaryConsumed = true
+                    if inventoryUnavailable { return [] }
+                    fixture.focused = fixture.second
+                }
+                return fixture.living
+            }
+            system.post = { delivered.append(fixture.focused); fixture.keys += 1 }
+            let targets = TargetWindows(system: system, owner: 303, observe: false)
+            let capture = targets.capture()
+            let snapshot = try #require(try targets.resolve(capture))
+            #expect(snapshot.field == nil)
+            #expect(CFEqual(snapshot.window, fixture.first))
+            armed = true
+            var refused = false
+            do { try await targets.paste(capture, transaction: 7, deadline: fixture.deadline) }
+            catch { refused = true }
+            #expect(boundaryConsumed)
+            #expect(fixture.front == 101)
+            if !inventoryUnavailable { #expect(CFEqual(fixture.focused, fixture.second)) }
+            #expect(refused)
+            #expect(delivered.isEmpty)
+            #expect(fixture.keys == 0)
+        }
+    }
 }

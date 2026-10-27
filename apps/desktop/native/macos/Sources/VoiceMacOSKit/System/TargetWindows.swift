@@ -183,8 +183,8 @@ final class TargetWindows {
             }
         }
         // No blocking AX calls or suspension between the field check and key-down. Recheck scalar
-        // state after the lookup: expiry, cancellation or a newer clipboard may arrive during it.
-        guard captured?.token == target.token, system.now() < deadline,
+        // state after the lookup: foreground, expiry, cancellation or clipboard may change during it.
+        guard system.frontmost()?.0 == target.pid, captured?.token == target.token, system.now() < deadline,
               system.clipboardCount() == transaction, !isCanceled(target) else {
             throw HelperError("paste is no longer current")
         }
