@@ -132,6 +132,15 @@ describe("UserPrompts", () => {
     expect(extractBullets(prompts.knowledgeBase)).toEqual(["alpha", "[Pinned] Added meanwhile."]);
   });
 
+  /** Saving one bullet changes no other: an untouched bullet a refine stored with a leading space
+   * stays byte for byte when another is edited. */
+  test("an edit of one bullet keeps an untouched one as stored", () => {
+    const { prompts } = setup({ [kbKey]: "- Alpha.\n-  Beta." });
+    const shown = personalizationState(prompts).knowledgeBase;
+    expect(prompts.editKnowledgeBase(shown, shown.map((bullet) => (bullet === "Alpha." ? "Alpha, edited." : bullet)))).toBe(true);
+    expect(prompts.knowledgeBase).toBe("- Alpha, edited.\n-  Beta.");
+  });
+
   test("an edit that changes nothing writes nothing", () => {
     const { store, prompts, changes } = setup({ [kbKey]: "- alpha" });
     expect(prompts.editKnowledgeBase(["alpha"], ["alpha"])).toBe(true);

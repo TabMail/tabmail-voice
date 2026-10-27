@@ -586,6 +586,25 @@ describe("registered terminal behavior", () => {
     expect(completions.requests).toHaveLength(1);
   });
 
+  test("of two terminal calls beside other tools only the first is held, and nothing delivers mid-loop", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([
+      { id: "first", name: "lookup", arguments: "{}" },
+      { id: "finish", name: "custom_finish", arguments: "{}" },
+      { id: "other", name: "other_finish", arguments: "{}" },
+    ]));
+    completions.enqueue(200, Fixtures.reply("Done."));
+    const delivered: string[] = [];
+    const registry = new ToolRegistry([
+      { name: "lookup", terminal: false, run: async () => { delivered.push("looked up"); return "found"; } },
+      { name: "custom_finish", terminal: true, run: async () => { delivered.push("delivered"); return "final text"; } },
+      { name: "other_finish", terminal: true, run: async () => { delivered.push("wrong"); return "wrong"; } },
+    ]);
+    expect(await DesktopAgent.run(request, null, false, "", "", noPersonalization, registry, client, account, Fixtures.userID, () => {})).toEqual({ tool: "custom_finish", text: "final text" });
+    expect(delivered).toEqual(["looked up", "delivered"]);
+    expect(completions.requests).toHaveLength(2);
+  });
+
   test("a terminal call beside other tools is held: they run in order, and it delivers when the loop ends", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([

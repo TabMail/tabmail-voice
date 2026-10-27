@@ -46,6 +46,12 @@ describe("applyKBPatch", () => {
     expect(applyKBPatch("User likes coffee.", "DEL\nUser likes coffee")).toBeNull();
   });
 
+  /** A line starting with an en or em dash reads as a bullet once made plain, but is not one: DEL
+   * leaves it, as Thunderbird does. */
+  test("DEL leaves a line that only reads as a bullet once made plain", () => {
+    expect(applyKBPatch("\u2013 User likes coffee.\n- Other.", "DEL\nUser likes coffee")).toBeNull();
+  });
+
   test("a patch with no operation fails", () => {
     expect(applyKBPatch("- something", "not a valid operation")).toBeNull();
     expect(applyKBPatch("- something", "ADD")).toBeNull();

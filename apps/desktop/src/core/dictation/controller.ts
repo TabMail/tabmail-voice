@@ -518,8 +518,8 @@ export class DictationController extends Observable {
       this.currentLanguage = language;
       this.changed();
     });
-    // What's new goes first, once (`agentMemory`).
-    this.dueTips = ["agentMemory", "agentAndHistory"];
+    // What's new goes first, once (`agentKnowledgeBase`).
+    this.dueTips = ["agentKnowledgeBase", "agentAndHistory"];
     if (this.currentMode === "agent") this.prepareAgent();
     void this.warmUp(settings.backendURL);
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
@@ -1665,7 +1665,7 @@ export class DictationController extends Observable {
     this.secondPressTimer = after(config.minimumHoldDuration, () => {
       if (this.generation !== current) return;
       this.secondPressTimer = null;
-      this.dueTips = ["agentMemory", "agentAndHistory"];
+      this.dueTips = ["agentKnowledgeBase", "agentAndHistory"];
       this.showDueTip();
     });
   }
@@ -1680,9 +1680,9 @@ export class DictationController extends Observable {
       this.onNothingListening?.();
       return;
     }
-    this.dueTips = ["agentMemory", "handsFree"];
+    this.dueTips = ["agentKnowledgeBase", "handsFree"];
     // What's new shows only once: up as the tap ended, it stays its time.
-    if (this.currentTip !== "agentMemory") this.hideTip();
+    if (this.currentTip !== "agentKnowledgeBase") this.hideTip();
     log.debug("DictationController: second press was a tap; listening without the key");
   }
 

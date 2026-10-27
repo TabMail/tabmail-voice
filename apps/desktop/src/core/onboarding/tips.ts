@@ -18,18 +18,20 @@ import { type KeyValueStore, storedBool, storedInteger } from "../util/keyValueS
  *   listens, every time, but for the name tip's turn. Never learned: nothing marks it so.
  * - `setName`: adding a name in Settings lets agent mode tell the user's messages from others'; shown
  *   as agent mode is switched on while no name is set, every time. Never learned: a name set ends it.
- * - `agentMemory`: what's new, once (owner, 2026-10-03: "an ordinary tooltip that shows with high
+ * - `agentKnowledgeBase`: what's new, once (owner, 2026-10-03: "an ordinary tooltip that shows with high
  *   priority only once"): agent mode keeps its requests on this computer and can look them up
- *   (ADR-DESK-061). First in line at the next dictation; learned at launch by a user still in the
- *   welcome wizard, whose consent page says it. */
-export type DictationTip = "agentAndHistory" | "doubleTap" | "handsFree" | "setName" | "agentMemory";
+ *   (ADR-DESK-061), and keeps what it learns about the user there too (ADR-DESK-063). First in line at
+ *   the next dictation; learned at launch by a user still in the welcome wizard, whose consent page
+ *   says it. A new what's-new has a new id, so the count of the one before (`agentMemory`, which
+ *   0.4.0 to 0.5.2 showed) never holds it back. */
+export type DictationTip = "agentAndHistory" | "doubleTap" | "handsFree" | "setName" | "agentKnowledgeBase";
 
 export const tipDetails: Record<DictationTip, config.TipSettings> = {
   agentAndHistory: config.agentAndHistoryTip,
   doubleTap: config.doubleTapTip,
   handsFree: config.handsFreeTip,
   setName: config.setNameTip,
-  agentMemory: config.agentMemoryTip,
+  agentKnowledgeBase: config.agentKnowledgeBaseTip,
 };
 
 /** One piece of a tip's line: words, or a key drawn as a keycap. */

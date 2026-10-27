@@ -816,8 +816,8 @@ export const setNameTip: TipSettings = {
 /** What's new: agent mode keeps its requests on this computer and can look them up (ADR-DESK-061),
  * and keeps what it learns about the user there too (ADR-DESK-063), shown once, ahead of the other
  * tips (owner, 2026-10-03: "really punchy"), long enough to read twice. It took the place of the one
- * for long dictations (ADR-DESK-049). */
-export const agentMemoryTip: TipSettings = {
+ * for memory alone (`agentMemory`), which took that of the one for long dictations (ADR-DESK-049). */
+export const agentKnowledgeBaseTip: TipSettings = {
   lines: ["New: agent mode remembers", "requests and learns about you,", "on this computer"],
   displayDuration: 6_000,
   maxDisplays: 1,

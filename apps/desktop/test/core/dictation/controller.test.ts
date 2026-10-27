@@ -136,7 +136,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     prefs = { value: defaultSettings() };
     tipStore = new MemoryStore();
     // Told what's new already, unless a test starts afresh: it would take the first tip's turn.
-    new TipBook(tipStore).markLearned("agentMemory");
+    new TipBook(tipStore).markLearned("agentKnowledgeBase");
     used = [];
     memory = new FakeMemory();
     prompts = new UserPrompts(new MemoryStore());
@@ -4553,6 +4553,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(pasted).toEqual(["Lunch is at noon."]);
           });
 
+          /** A write that can't be pasted fails before the round's other calls run: a fact asked to be
+           * kept beside it is not kept, and nothing is pasted (ADR-DESK-055, amendment 2026-10-19). */
+          test.each([
+            ["a Compose without text", "compose" as const, "{}", selectionScreen(""), new AgentError("noText").message],
+            ["an Edit of a redacted selection", "edit" as const, JSON.stringify({ text: "Rewritten." }), { ...selectionScreen("token [redacted] here"), selectionRedacted: true }, new AgentError("secretInSelection").message],
+          ])("kb_add beside %s fails before the knowledge base changes", async (_case, tool, args, screen, message) => {
+            setTools([tool, "answer"]);
+            const before = prompts.knowledgeBase;
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, calling(["kb_add", JSON.stringify({ statement: "Lunch is at noon" })], [tool, args]));
+            const { controller, pastes } = await carryOut(screen);
+            expect(controller.phase).toEqual(failed(message));
+            expect(prompts.knowledgeBase).toBe(before);
+            expect(pastes).toEqual([]);
+            expect(completions.requests).toHaveLength(1);
+          });
+
           /** Memory's bubble runs for a knowledge-base tool too, and it moves to the front of the row.
            * It stops when the tool ends, so Answer's bubble runs alone for the reply. */
           test("memory's bubble runs for kb_add", async () => {
@@ -6737,18 +6754,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
       tipStore = new MemoryStore();
       const { controller } = makeController({ capture: new CountingCapture(true) });
       const whatsNewDuration = 300;
-      controller.tipDisplayDuration = (tip) => (tip === "agentMemory" ? whatsNewDuration : 60_000);
+      controller.tipDisplayDuration = (tip) => (tip === "agentKnowledgeBase" ? whatsNewDuration : 60_000);
 
       controller.handle("start");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
-      expect(controller.tip).toBe("agentMemory");
+      expect(controller.tip).toBe("agentKnowledgeBase");
       expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       controller.handle("cancel");
-      expect(new TipBook(tipStore).isEligible("agentMemory")).toBe(false);
+      expect(new TipBook(tipStore).isEligible("agentKnowledgeBase")).toBe(false);
 
       controller.handle("start");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
       expect(controller.tip).toBe("agentAndHistory");
+      controller.handle("cancel");
+    });
+
+    /** A user who saw the memory tip of 0.4.0 to 0.5.2 is told what's new now: the knowledge base and
+     * writing style go with agent mode, which its consent page did not say (ADR-DESK-063). */
+    test("a user told of memory before is shown the what's-new tip once", async () => {
+      tipStore = new MemoryStore({ "tip.agentMemory.displays": 1, "tip.agentMemory.learned": true });
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      controller.tipDisplayDuration = () => 60_000;
+
+      controller.handle("start");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      const shown = controller.tip;
+      expect(shown === null ? null : tipDetails[shown]).toBe(config.agentKnowledgeBaseTip);
+      controller.handle("cancel");
+      controller.handle("start");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      expect(controller.tip).not.toBe(shown);
       controller.handle("cancel");
     });
 
@@ -6758,13 +6793,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       tipStore = new MemoryStore();
       const { controller } = makeController({ capture: new CountingCapture(true) });
       const whatsNewDuration = 300;
-      controller.tipDisplayDuration = (tip) => (tip === "agentMemory" ? whatsNewDuration : tipDetails[tip].displayDuration);
+      controller.tipDisplayDuration = (tip) => (tip === "agentKnowledgeBase" ? whatsNewDuration : tipDetails[tip].displayDuration);
 
       controller.handle("startHandsFree");
-      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "agentMemory")).toBe(true);
+      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "agentKnowledgeBase")).toBe(true);
       controller.handle("listenHandsFree");
       expect(await eventually(() => controller.tip !== null)).toBe(true);
-      expect(controller.tip).toBe("agentMemory");
+      expect(controller.tip).toBe("agentKnowledgeBase");
       expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
       controller.handle("cancel");
     });

@@ -2201,7 +2201,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.stored.set("hasFinishedWelcome", finishedWelcome);
     await launch("darwin");
     expect(app.dialogs).toEqual([]);
-    expect(app.stored.get("tip.agentMemory.learned") === true).toBe(!tipShows);
+    expect(app.stored.get("tip.agentKnowledgeBase.learned") === true).toBe(!tipShows);
   });
 
   /** Each way a user opens a window opens the one it names: the tray's Settings and Welcome Guide,

@@ -89,7 +89,7 @@ its reset when another account signs in) comes next, in the same release.
   characters for a bullet the user types.
 - **Consent.** The consent page's memory line now names the writing style and what agent mode learns
   about the user (ADR-DESK-010, amended); users who consented before are told by the release's one
-  what's-new tip, and are not asked again. That tip (ADR-DESK-061's `agentMemory`) now reads "New:
+  what's-new tip, and are not asked again. That tip, ADR-DESK-061's what's-new under a new id (`agentKnowledgeBase`, so the count of `agentMemory`, which 0.4.0 to 0.5.2 showed, never holds it back), reads "New:
   agent mode remembers / requests and learns about you, / on this computer".
 
 **Consequences:**

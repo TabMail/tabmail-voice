@@ -1093,7 +1093,7 @@ function launch(): void {
   // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
   // says what's new, so the tip that tells a user who set the app up before never shows to this one.
   if (!settings.hasFinishedWelcome) {
-    tips.markLearned("agentMemory");
+    tips.markLearned("agentKnowledgeBase");
     showWelcome();
   }
 }
