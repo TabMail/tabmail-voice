@@ -130,5 +130,8 @@ not-pasted card, now captioned "Couldn't paste. Click to copy." No text, caret o
 compared or restored, so typing in the same element does not itself refuse a paste. Apps exposing
 no focused element at capture retain the existing window-only paste behavior of ADR-DESK-002.
 The same card still handles a lost window or refused activation, for dictation and agent Edit/Compose.
+Blocking window lookups finish before the field comparison. A final foreground-app observation,
+then deadline, clipboard and cancellation checks, follow it immediately before key-down; a slow AX
+reply must not authorize the older paste through a newer foreground choice.
 Logical field tracking through replacement elements, and equivalent field guards on Windows/Linux,
 are tracked in [#276](https://github.com/TabMail/tabmail-voice/issues/276) (P4).
