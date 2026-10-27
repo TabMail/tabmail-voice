@@ -101,7 +101,11 @@ describe("overlay geometry", () => {
           const caret = rect(500, bottom - lineHeight, 1, lineHeight);
           const origin = overlayOrigin(caret, canvas, config.pillHeight, area);
           const pillTop = origin.y + (canvas.height - config.pillHeight) / 2;
-          expect(pillTop + tipBottom, `tip off screen for a ${lineHeight} pt line at ${bottom}`).toBeLessThanOrEqual(maxY(area));
+          const tipBox = opensUpward(caret, pill.height, area)
+            ? framed(hintCenterOver(rect(0, pillTop, pill.width, pill.height), [], tip), tip)
+            : framed(hintCenter(rect(0, pillTop, pill.width, pill.height), tip), tip);
+          expect(tipBox.y).toBeGreaterThanOrEqual(area.y);
+          expect(maxY(tipBox)).toBeLessThanOrEqual(maxY(area));
           const drawnPill = rect(origin.x + (canvas.width - pill.width) / 2, pillTop, pill.width, pill.height);
           expect(intersects(drawnPill, caret), `pill covers a ${lineHeight} pt line at ${bottom}`).toBe(false);
           if (pillTop >= maxY(caret)) {
@@ -221,7 +225,7 @@ describe("overlay geometry", () => {
   /** Only a tip that stays up while listening goes over the pill, and only in an overlay opened
    * above the caret's line: the hands-free tip (owner, 2026-09-27). Timed tips stay under the pill. */
   test.each(allTips.flatMap((name) => [false, true].map((upward) => [name, upward] as const)))("only the hands-free tip goes over the pill, only when opened upward (%s, %s)", (name, upward) => {
-    expect(tipGoesAbove(tipDetails[name].displayDuration, upward)).toBe(upward && name === "handsFree");
+    expect(tipGoesAbove(tipDetails[name].displayDuration, upward)).toBe(upward);
   });
 
   /** A tip over the pill: centered over it, clear of the pill and of agent mode's bubbles, overlapping
@@ -350,13 +354,18 @@ describe("the chat window's place", () => {
     expect([...bottoms]).toEqual([top + config.chatStripHeight + margin]);
   });
 
-  /** Under the pill and its bubbles when there is no room over them for the tallest window, the
-   * window's top edge staying put as it grows; exactly enough room keeps it over them. */
-  test.each([true, false])("the chat window opens under the pill without room over it (bubbles under: %s)", (bubblesUnder) => {
+  /** Chat opens toward the screen center even when its tallest content fits on both sides. */
+  test.each([true, false])("the chat opens toward the vertical center (bubbles under: %s)", (bubblesUnder) => {
     const top = bubblesUnder ? 0 : row;
-    const lowest = display.y + config.chatPillGap + config.chatMaxHeight + top;
-    expect(chatSide(lowest, bubblesUnder, display)).toEqual({ below: false, ...tallest });
-    expect(chatSide(lowest - 1, bubblesUnder, display)).toEqual({ below: true, ...tallest });
+    const center = display.y + display.height / 2;
+    const boundary = center - config.chatStripHeight / 2 + top;
+    expect(chatSide(boundary, bubblesUnder, display).below).toBe(false);
+    expect(chatSide(boundary - 1, bubblesUnder, display).below).toBe(true);
+    const tall = rect(0, 100, 1000, 1600);
+    for (const tallest of [40, config.chatMaxHeight]) {
+      expect(chatSide(tall.y + 500 + top, bubblesUnder, tall, tallest)).toEqual({ below: true, maxHeight: tallest });
+      expect(chatSide(maxY(tall) - 500 + top, bubblesUnder, tall, tallest)).toEqual({ below: false, maxHeight: tallest });
+    }
     const pill = { x: 500, y: 40 + top };
     for (const height of [40, config.chatMaxHeight]) {
       const frame = chatWindowFrame(pill, height, display, { below: true, ...tallest }, bubblesUnder);
@@ -398,10 +407,10 @@ describe("the chat window's place", () => {
     const room = config.chatMaxHeight - 20;
     const top = bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
     // `room` over the pill and its bubbles, less under them; then `room` under them, less over.
-    const low = short.y + config.chatPillGap + room + top;
+    const low = short.y + config.overlayEdgeInset + config.chatPillGap + room + top;
     const lowSide = chatSide(low, bubblesUnder, short);
     expect(lowSide).toEqual({ below: false, maxHeight: room });
-    const high = maxY(short) - room - config.chatPillGap - config.chatStripHeight + top;
+    const high = maxY(short) - config.overlayEdgeInset - room - config.chatPillGap - config.chatStripHeight + top;
     const highSide = chatSide(high, bubblesUnder, short);
     expect(highSide).toEqual({ below: true, maxHeight: room });
     // The other side had room too, only less: each time neither side fits the tallest.
@@ -411,6 +420,17 @@ describe("the chat window's place", () => {
     expect(under).toBeLessThan(room);
     expect(over).toBeGreaterThan(0);
     expect(over).toBeLessThan(room);
+  });
+
+  test.each([300, 1000])("chat keeps an inset at horizontal edges (area width: %s)", (width) => {
+    const area = rect(-1000, 50, width, 900);
+    for (const x of [area.x, maxX(area)]) {
+      const frame = chatWindowFrame({ x, y: 500 }, 120, area, { below: false, ...tallest }, true);
+      const chat = content(frame, 120, false);
+      expect(chat.x).toBeGreaterThanOrEqual(area.x + config.overlayEdgeInset);
+      expect(maxX(chat)).toBeLessThanOrEqual(maxX(area) - config.overlayEdgeInset);
+      expect(chat.width).toBe(Math.min(config.chatWidth, width - 2 * config.overlayEdgeInset));
+    }
   });
 
   /** A pill at a screen edge keeps the chat on screen; only its shadow margin may spill. */
@@ -470,7 +490,7 @@ describe("the dragged chat window's place", () => {
   test("the chat may grow as far as the room on its side", () => {
     expect(draggedChat(group({ x: 500, y: 700 }), { x: 0, y: 0 }, height, display, false, true).side.maxHeight).toBe(config.chatMaxHeight);
     const nearTop = draggedChat(group({ x: 500, y: 700 }), { x: 0, y: -520 }, height, display, false, true);
-    expect(nearTop.side.maxHeight).toBe(nearTop.pill.y - config.chatPillGap - display.y);
+    expect(nearTop.side.maxHeight).toBe(nearTop.pill.y - config.chatPillGap - display.y - config.overlayEdgeInset);
     expect(nearTop.side.maxHeight).toBeLessThan(config.chatMaxHeight);
   });
 
@@ -504,7 +524,7 @@ describe("the dragged chat window's place", () => {
     const short = rect(display.x, display.y, display.width, 250);
     const moved = draggedChat(group({ x: 500, y: 700 }), { x: 0, y: -400 }, config.chatMaxHeight, short, below, true);
     expect(moved.side.below).toBe(below);
-    expect(moved.side.maxHeight).toBe(250 - config.chatStripHeight - config.chatPillGap);
+    expect(moved.side.maxHeight).toBe(250 - 2 * config.overlayEdgeInset - config.chatStripHeight - config.chatPillGap);
     expect(contains(short, drawn(frame(moved, true, short, config.chatMaxHeight)))).toBe(true);
   });
 });

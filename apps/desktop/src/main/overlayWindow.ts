@@ -7,7 +7,7 @@ import * as config from "../core/config.js";
 import type { Phase } from "../core/dictation/controller.js";
 import { errorName, log } from "../core/log.js";
 import { bubblesFitUnder, chatSide, chatWindowFrame, draggedChat, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/ui/overlayGeometry.js";
-import type { ChatPlacement } from "../shared/ipc.js";
+import type { ChatPlacement, OverlayState } from "../shared/ipc.js";
 
 /** Presentation operations used by the shared placement controller. A platform may present the
  * same renderer through a native window without duplicating caret or chat placement logic. */
@@ -33,6 +33,9 @@ export type ChatHitTest = "pointer" | "frame";
  */
 export class OverlayWindowController {
   private anchor: Rect | null = null;
+  private standalone: { pill: Point; placement: NonNullable<OverlayState["overlayPlacement"]> } | null = null;
+
+  get overlayPlacement(): OverlayState["overlayPlacement"] { return this.standalone?.placement; }
   private requestedChat = false;
   private requestedPill = false;
   private lookupGeneration = 0;
@@ -111,8 +114,10 @@ export class OverlayWindowController {
   get chatPlacement(): ChatPlacement | null {
     const chat = this.chat;
     if (chat === null) return null;
-    // In the window as placed, its origin rounded.
-    return { ...chat.side, ...(chat.workArea.width < config.chatWidth ? { width: chat.workArea.width } : {}), bubblesUnder: chat.bubblesUnder, pillX: chat.pill.x - Math.round(this.chatFrame(chat.side.maxHeight).x) };
+    const logical = rounded(this.chatFrame(chat.side.maxHeight));
+    const actual = this.window.getBounds();
+    const frameOffset = { x: logical.x - actual.x, top: logical.y - actual.y, bottom: logical.y + logical.height - actual.y - actual.height };
+    return { ...(Object.values(frameOffset).some((offset) => offset !== 0) ? { frameOffset } : {}), ...chat.side, ...(chat.workArea.width - 2 * config.overlayEdgeInset < config.chatWidth ? { width: Math.max(0, chat.workArea.width - 2 * config.overlayEdgeInset) } : {}), bubblesUnder: chat.bubblesUnder, pillX: chat.pill.x - actual.x };
   }
 
   /** Shows the overlay for `phase`, and the chat window over its pill while it is open (`chatOpen`),
@@ -246,7 +251,7 @@ export class OverlayWindowController {
     if (chat === null) return;
     const { pill, pillOffset, side } = draggedChat(from, delta, this.measuredChatHeight ?? chat.side.maxHeight, workArea, chat.side.below, chat.bubblesUnder);
     this.chat = { ...chat, pill, workArea, side, pillOffset };
-    this.window.setBounds(rounded(this.chatFrame(side.maxHeight)));
+    this.placeChatSurface();
     this.onPlace?.();
   }
 
@@ -279,12 +284,10 @@ export class OverlayWindowController {
     const anchor = this.anchor ?? this.pointer();
     if (!this.hasPlacementArea(anchor)) { this.window.hide(); return; }
     const workArea = this.workArea(anchor);
-    // Rounded as `position` placed the canvas, so the pill doesn't move by a fraction of a point.
-    const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
-    const pill = pillPosition(anchor, workArea);
-    const shift = { x: Math.round(origin.x) - origin.x, y: Math.round(origin.y) - origin.y };
-    const bubblesUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
-    this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder, pillOffset: null };
+    if (this.standalone === null) this.position();
+    const pill = this.standalone!.pill;
+    const bubblesUnder = this.placedBubblesFitUnder;
+    this.chat = { pill: { ...pill }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder, pillOffset: null };
     this.chatDragFrom = null;
     this.chatClosing = false;
     this.chatUnmeasured = true;
@@ -293,9 +296,21 @@ export class OverlayWindowController {
     this.takesClicks = false;
     this.window.setIgnoreMouseEvents(true, { forward: true });
     if (this.chatHitTest === "frame") this.takeClicks(true);
-    this.window.setBounds(rounded(this.chatFrame(this.chat.side.maxHeight)));
+    this.placeChatSurface();
     this.window.showInactive();
     this.onPlace?.();
+  }
+
+  /** Native windows stay on screen; logical content retains its screen anchor inside that surface. */
+  private placeChatSurface(): void {
+    const chat = this.chat!;
+    const frame = rounded(this.chatFrame(chat.side.maxHeight));
+    const width = Math.min(frame.width, chat.workArea.width);
+    const height = Math.min(frame.height, chat.workArea.height);
+    this.window.setBounds({ width, height,
+      x: Math.min(Math.max(frame.x, chat.workArea.x), chat.workArea.x + chat.workArea.width - width),
+      y: Math.min(Math.max(frame.y, chat.workArea.y), chat.workArea.y + chat.workArea.height - height),
+    });
   }
 
   private chatFrame(height: number): Rect {
@@ -371,7 +386,16 @@ export class OverlayWindowController {
     const workArea = this.workArea(anchor);
     // The not-pasted note keeps room under the pill's top for all of it, as tall as it gets.
     const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea, this.note ? config.noteMaxHeight : undefined);
-    this.window.setBounds({ x: Math.round(origin.x), y: Math.round(origin.y), ...config.overlayCanvasSize });
+    const canvas = { width: Math.min(config.overlayCanvasSize.width, workArea.width), height: Math.min(config.overlayCanvasSize.height, workArea.height) };
+    const pill = { x: Math.round(origin.x) + config.overlayCanvasSize.width / 2, y: Math.round(origin.y) + (config.overlayCanvasSize.height - config.pillHeight) / 2 };
+    // Keep the transparent surface on screen, and position the pill independently inside it.
+    this.window.setBounds({
+      x: Math.round(Math.min(Math.max(origin.x, workArea.x), workArea.x + workArea.width - canvas.width)),
+      y: Math.round(Math.min(Math.max(origin.y, workArea.y), workArea.y + workArea.height - canvas.height)),
+      ...canvas,
+    });
+    const actual = this.window.getBounds();
+    this.standalone = { pill, placement: { anchor: { x: pill.x - actual.x, y: pill.y - actual.y }, canvas: { width: actual.width, height: actual.height } } };
     this.placedUpward = opensUpward(anchor, config.pillHeight, workArea);
     this.placedBubblesFitUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
     this.onPlace?.();

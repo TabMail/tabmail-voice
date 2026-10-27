@@ -249,3 +249,23 @@ Answer, which also circled, went on behind it.
 > capture, a release outside or leaving the chat before it drags ends the press, a drag under way goes
 > on past the chat's edge, and a new press replaces the one before), and `index.test.ts` (the commands reach the overlay;
 > malformed and non-finite distances are refused). Each was red-verified by a mutation.
+
+**Amendment 2026-10-26: chat opens toward the vertical screen center.** Choose the roomier
+side of the entire pill-and-tool strip, even when a full-height chat fits on both sides. Preserve
+the pill's original placement and the tools' above/below order and spacing when chat opens; reserve
+the whole strip between chat and the screen edge. The chosen side remains fixed as chat grows or
+is dragged. This supersedes the earlier preference for opening above whenever full height fits.
+
+Edge placement uses `overlayEdgeInset` (the pill/chat gap) around chat and the pill vertically;
+the pill's horizontal clamp reserves the chat width plus that inset. Narrow chat windows shrink
+by both insets. Tips go outward from the complete group: above when opening up, below when opening
+down, including beyond chat during follow-ups. Chat always reserves the tip footprint so showing
+or hiding a tip never shifts the panel, pill or tools. The unpackaged debug menu's temporary
+“Show Smoke Test Tip” checkbox toggles a persistent sample tip for manual verification.
+
+The transparent native surface is fitted to the display independently of its content. The renderer
+receives the standalone pill's explicit local anchor and canvas size; chat retains the same screen
+anchor and maps its logical frame into the native surface using `frameOffset`. Native bounds can
+be constrained by the OS, so neither the canvas center nor requested window origin is a content
+anchor. `test:placement` measures real rendered screen coordinates and was red/green verified on
+the faulty smoke-test implementation and its fix. The work is based on the peer's flat-tool branch.

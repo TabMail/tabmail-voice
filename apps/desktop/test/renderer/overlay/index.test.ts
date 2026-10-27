@@ -310,8 +310,8 @@ describe("overlay page", () => {
   test.each<[DictationTip, boolean, boolean]>([
     ["handsFree", true, true],
     ["handsFree", false, false],
-    ["agentAndHistory", true, false],
-    ["doubleTap", true, false],
+    ["agentAndHistory", true, true],
+    ["doubleTap", true, true],
   ])("the %s tip, opened upward %s, is over the pill: %s", async (tip, opensUpward, over) => {
     const page = await overlayPage();
     await page.show({ ...listening, tip, opensUpward });
@@ -985,7 +985,7 @@ describe("the chat window", () => {
     expect(chatPlacement.below ? layer?.style.top : layer?.style.bottom).toBe("0px");
     expect(parseFloat(document.querySelector<HTMLElement>(".chat-canvas .pill-anchor")?.style.left ?? "")).toBe(chatPlacement.pillX);
     // It grows no taller than the screen leaves it room for there, then scrolls.
-    expect(document.querySelector<HTMLElement>(".chat-scroll")?.style.maxHeight).toBe(`${chatPlacement.maxHeight}px`);
+    expect(document.querySelector<HTMLElement>(".chat-scroll")?.style.maxHeight).toBe(`${chatPlacement.maxHeight - config.tipFootprint}px`);
     // The last request's bubbles (Compose's and memory's) stay under the pill.
     expect(document.querySelectorAll(".chat-canvas .bubble")).toHaveLength(2);
   });
@@ -1901,7 +1901,7 @@ describe("the chat window", () => {
     const height = chatSize.height + 2 * config.pillBorderWidth;
     expect(box?.style.height).toBe(`${height}px`);
     expect(box?.style.transition).toBe(`height ${config.chatGrowDurationSeconds}s ease-out`);
-    expect(page.commands).toContainEqual({ type: "chatHeight", height });
+    expect(page.commands).toContainEqual({ type: "chatHeight", height: height + config.tipFootprint });
 
     const grown = chatSize.height + 40;
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
@@ -1913,9 +1913,31 @@ describe("the chat window", () => {
     });
     expect(box?.style.height).toBe(`${grown + 2 * config.pillBorderWidth}px`);
     expect(page.commands.filter((command) => command.type === "chatHeight")).toEqual([
-      { type: "chatHeight", height },
-      { type: "chatHeight", height: grown + 2 * config.pillBorderWidth },
+      { type: "chatHeight", height: height + config.tipFootprint },
+      { type: "chatHeight", height: grown + 2 * config.pillBorderWidth + config.tipFootprint },
     ]);
+  });
+
+  test.each([false, true])("toggling a chat tip leaves the chat, pill and tools in place (below: %s)", async (below) => {
+    const page = await overlayPage();
+    const state: OverlayState = { ...listening, mode: "agent", tools: ["compose", "answer"], chatPlacement: { ...above, below }, chat: chat(null), tip: null };
+    await page.show(state);
+    const pill = page.pillFrame();
+    const bubbles = [...document.querySelectorAll<HTMLElement>(".bubble")].map(bubbleCenter);
+    const box = document.querySelector<HTMLElement>(".chat")?.getAttribute("style");
+    const scroll = document.querySelector<HTMLElement>(".chat-scroll")?.getAttribute("style");
+    await page.show({ ...state, tip: "handsFree" });
+    expect(page.pillFrame()).toEqual(pill);
+    expect([...document.querySelectorAll<HTMLElement>(".bubble")].map(bubbleCenter)).toEqual(bubbles);
+    expect(document.querySelector<HTMLElement>(".chat")?.getAttribute("style")).toBe(box);
+    expect(document.querySelector<HTMLElement>(".chat-scroll")?.getAttribute("style")).toBe(scroll);
+    const tip = document.querySelector<HTMLElement>(".chat-tip");
+    expect(tip).not.toBeNull();
+    const offset = config.chatShadowMargin + config.chatStripHeight + config.chatPillGap + chatSize.height + 2 * config.pillBorderWidth + config.tipGap;
+    expect(below ? tip?.style.top : tip?.style.bottom).toBe(`${offset}px`);
+    await page.show(state);
+    expect(document.querySelector(".chat-tip")).toBeNull();
+    expect(page.pillFrame()).toEqual(pill);
   });
 
   /** Each move of the pointer says whether it is over the chat or the pill's bubbles, for the overlay

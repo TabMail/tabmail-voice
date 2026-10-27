@@ -7,7 +7,7 @@ import { deferred } from "../support/stubs.js";
 import type { BrowserWindow } from "electron";
 import * as config from "../../src/core/config.js";
 import type { Phase } from "../../src/core/dictation/controller.js";
-import type { Rect } from "../../src/core/ui/overlayGeometry.js";
+import { bubbleRow, type Rect } from "../../src/core/ui/overlayGeometry.js";
 import { OverlayWindowController } from "../../src/main/overlayWindow.js";
 import { shellPlacementArea } from "../../src/main/native/windows/overlayArea.js";
 import { linuxFallbackAnchor } from "../../src/main/native/linux/overlayArea.js";
@@ -27,6 +27,7 @@ vi.mock("electron", () => ({
 /** The overlay window as far as the controller uses it. */
 function overlayWindow(): BrowserWindow {
   let visible = false;
+  let bounds = { x: 0, y: 0, ...config.overlayCanvasSize };
   return {
     isVisible: () => visible,
     showInactive: () => {
@@ -35,7 +36,8 @@ function overlayWindow(): BrowserWindow {
     hide: () => {
       visible = false;
     },
-    setBounds() {},
+    setBounds(value: Rect) { bounds = value; },
+    getBounds: () => bounds,
     setOpacity() {},
   } as unknown as BrowserWindow;
 }
@@ -106,7 +108,7 @@ describe("OverlayWindowController", () => {
     controller.refreshPlacement();
     expect(overlay.visible()).toBe(true);
     expect(overlay.bounds().x).toBeGreaterThan(original.x);
-    expect(pillOnScreen(overlay.bounds()).x).toBeGreaterThanOrEqual(724);
+    expect(pillOnScreen(overlay.bounds(), controller).x).toBeGreaterThanOrEqual(724);
     expect(overlay.ignoresMouse()).toBe(true);
 
     exclusions = [workArea];
@@ -182,10 +184,13 @@ describe("OverlayWindowController", () => {
    * the chat window at `bounds` as `controller` places it (its bubbles `row` over it, or none). */
   function pillOnScreen(bounds: Rect, controller?: OverlayWindowController): { x: number; y: number } {
     const placement = controller?.chatPlacement;
-    if (!placement) return { x: bounds.x + bounds.width / 2, y: bounds.y + (bounds.height - config.pillHeight) / 2 };
+    if (!placement) {
+      const anchor = controller?.overlayPlacement?.anchor ?? { x: bounds.width / 2, y: (bounds.height - config.pillHeight) / 2 };
+      return { x: bounds.x + anchor.x, y: bounds.y + anchor.y };
+    }
     const margin = config.chatShadowMargin;
     const overBubbles = placement.bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
-    const y = placement.below ? bounds.y + margin + overBubbles : bounds.y + bounds.height - margin - config.chatStripHeight + overBubbles;
+    const y = placement.below ? bounds.y + (placement.frameOffset?.top ?? 0) + margin + overBubbles : bounds.y + bounds.height + (placement.frameOffset?.bottom ?? 0) - margin - config.chatStripHeight + overBubbles;
     return { x: bounds.x + placement.pillX, y };
   }
 
@@ -220,7 +225,7 @@ describe("OverlayWindowController", () => {
     expect(placed.at(-1)).toEqual(controller.chatPlacement);
     const placement = controller.chatPlacement;
     if (placement === null) throw new Error("no chat placement");
-    expect(chatTop(overlay.bounds(), 120)).toBe(workArea.y);
+    expect(chatTop(overlay.bounds(), 120) + (placement.frameOffset?.bottom ?? 0)).toBe(workArea.y + config.overlayEdgeInset);
     expect(placement.maxHeight).toBe(120);
     expect(placement.below).toBe(false);
   });
@@ -236,11 +241,13 @@ describe("OverlayWindowController", () => {
     try {
       const { overlay, controller } = await draggableChat({ current: [] });
       const before = overlay.bounds();
+      const beforeX = before.x + (controller.chatPlacement?.frameOffset?.x ?? 0);
       const pill = pillOnScreen(before, controller);
       controller.startChatDrag();
       controller.dragChat({ x: 1500, y: -100 });
       const after = overlay.bounds();
-      expect(after).toEqual({ ...before, x: before.x + 1500, y: before.y - 100 });
+      expect(after.x + (controller.chatPlacement?.frameOffset?.x ?? 0)).toBe(beforeX + 1500);
+      expect(after.y).toBe(before.y - 100);
       expect(pillOnScreen(after, controller)).toEqual({ x: pill.x + 1500, y: pill.y - 100 });
       expect(after.x + config.chatShadowMargin).toBeGreaterThanOrEqual(other.x);
       expect(after.x + after.width - config.chatShadowMargin).toBeLessThanOrEqual(other.x + other.width);
@@ -270,10 +277,11 @@ describe("OverlayWindowController", () => {
     exclusions.current = [];
     controller.refreshPlacement();
     const widened = overlay.bounds();
+    const beforeX = widened.x + (controller.chatPlacement?.frameOffset?.x ?? 0);
     const pill = pillOnScreen(widened, controller);
     controller.startChatDrag();
     controller.dragChat({ x: 20, y: 0 });
-    expect(overlay.bounds()).toEqual({ ...widened, x: widened.x + 20 });
+    expect(overlay.bounds().x + (controller.chatPlacement?.frameOffset?.x ?? 0)).toBe(beforeX + 20);
     expect(pillOnScreen(overlay.bounds(), controller)).toEqual({ ...pill, x: pill.x + 20 });
 
     // Grown short (the shell over the top of the screen), it fits under the shell, above its pill.
@@ -286,7 +294,7 @@ describe("OverlayWindowController", () => {
     expect(placement?.maxHeight).toBeLessThan(config.chatMaxHeight);
     const frame = overlay.bounds();
     const tallest = placement?.maxHeight ?? 0;
-    expect(chatTop(frame, tallest)).toBeGreaterThanOrEqual(short.y);
+    expect(chatTop(frame, tallest) + (placement?.frameOffset?.bottom ?? 0)).toBeGreaterThanOrEqual(short.y);
     expect(frame.y + frame.height - config.chatShadowMargin).toBeLessThanOrEqual(short.y + short.height);
   });
 
@@ -439,7 +447,7 @@ describe("OverlayWindowController", () => {
     await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
-    const pill = pillOnScreen(overlay.bounds());
+    const pill = pillOnScreen(overlay.bounds(), controller);
     const place = controller.pillPlace;
     // The window's origin is rounded: within a point.
     expect(Math.abs(place.pill.x - pill.x)).toBeLessThanOrEqual(1);
@@ -478,7 +486,7 @@ describe("OverlayWindowController", () => {
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     expect(overlay.ignoresMouse()).toBe(true);
     expect(controller.isTakingClicks).toBe(false);
-    const pill = pillOnScreen(overlay.bounds());
+    const pill = pillOnScreen(overlay.bounds(), controller);
 
     controller.update({ kind: "running", tool: "answer" }, true);
     // Over the chat only, as the page says the pointer is.
@@ -787,6 +795,8 @@ describe("OverlayWindowController", () => {
    * the pill, it opens over them. Either way it stays on screen. */
   test.each([
     ["top", 40, { below: true, bubblesUnder: true }],
+    ["upper middle", 340, { below: true, bubblesUnder: true }],
+    ["lower middle", 540, { below: false, bubblesUnder: true }],
     ["bottom", workArea.height - 40, { below: false, bubblesUnder: false }],
   ])("near the %s the chat window keeps clear of the pill and its bubbles", async (_, y, placement) => {
     const caret: Rect = { x: 400, y, width: 1, height: 16 };
@@ -796,14 +806,21 @@ describe("OverlayWindowController", () => {
     await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(overlay.visible()).toBe(true));
-    const pill = pillOnScreen(overlay.bounds());
+    const pill = pillOnScreen(overlay.bounds(), controller);
+
+    const bubblesUnder = controller.bubblesFitUnder;
+    const bubblesAt = (point: { x: number; y: number }, under: boolean) => bubbleRow({ x: point.x - config.pillHeight / 2, y: point.y, width: config.pillHeight, height: config.pillHeight }, 4, under);
+    const bubbles = bubblesAt(pill, bubblesUnder);
 
     controller.update({ kind: "running", tool: "answer" }, true);
 
     expect(controller.chatPlacement).toMatchObject(placement);
     for (const height of [config.chatMaxHeight, 120]) {
       controller.fitChat(height);
-      expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
+      const placedPill = pillOnScreen(overlay.bounds(), controller);
+      expect(placedPill).toEqual(pill);
+      expect(controller.chatPlacement?.bubblesUnder).toBe(bubblesUnder);
+      expect(bubblesAt(placedPill, controller.chatPlacement?.bubblesUnder ?? !bubblesUnder)).toEqual(bubbles);
       const margin = config.chatShadowMargin;
       expect(overlay.bounds().y + margin).toBeGreaterThanOrEqual(workArea.y);
       expect(overlay.bounds().y + overlay.bounds().height - margin).toBeLessThanOrEqual(workArea.height);
@@ -820,7 +837,7 @@ describe("OverlayWindowController", () => {
       await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(overlay.visible()).toBe(true));
-      const pill = pillOnScreen(overlay.bounds());
+      const pill = pillOnScreen(overlay.bounds(), controller);
       screenNow.pointer = { x: 300, y: 700 };
 
       controller.update({ kind: "running", tool: "answer" }, true);
@@ -845,7 +862,7 @@ describe("OverlayWindowController", () => {
       await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(overlay.visible()).toBe(true));
-      const pill = pillOnScreen(overlay.bounds());
+      const pill = pillOnScreen(overlay.bounds(), controller);
 
       controller.update({ kind: "running", tool: "answer" }, true);
 
@@ -918,7 +935,7 @@ describe("OverlayWindowController", () => {
       controller.update(end);
 
       expect(overlay.visible()).toBe(true);
-      const pill = pillOnScreen(overlay.bounds());
+      const pill = pillOnScreen(overlay.bounds(), controller);
       if (atPointer) {
         expect(Math.abs(pill.x - screenNow.pointer.x)).toBeLessThanOrEqual(1);
         expect(pill.y).toBeGreaterThan(screenNow.pointer.y);
@@ -941,7 +958,7 @@ describe("OverlayWindowController", () => {
       const controller = new OverlayWindowController(overlay.window, async () => null);
       controller.update({ kind: "transcribing" });
       controller.update({ kind: "notPasted", message: "Click to copy.", text: "Hello there." });
-      expect(pillOnScreen(overlay.bounds()).y + config.noteMaxHeight).toBeLessThanOrEqual(bottom);
+      expect(pillOnScreen(overlay.bounds(), controller).y + config.noteMaxHeight).toBeLessThanOrEqual(bottom);
     } finally {
       screenNow.pointer = pointerAtRest;
     }
@@ -1034,7 +1051,7 @@ test("a shell exclusion region constrains the shared pill and interactive chat",
   controller.update({ kind: "running", tool: "answer" }, true);
   controller.fitChat(320);
   controller.pointerOver(true);
-  expect(controller.chatPlacement?.width).toBe(325);
+  expect(controller.chatPlacement?.width).toBe(325 - 2 * config.overlayEdgeInset);
   expect(overlay.ignoresMouse()).toBe(false);
   const bounds = overlay.bounds();
   expect(bounds.x + config.chatShadowMargin).toBeGreaterThanOrEqual(area.x);
@@ -1063,7 +1080,7 @@ test("placement refresh recovers chat after Search leaves no usable area", () =>
   area = { x: 0, y: 0, width: 325, height: 900 };
   controller.refreshPlacement();
   expect(overlay.visible()).toBe(true);
-  expect(controller.chatPlacement?.width).toBe(325);
+  expect(controller.chatPlacement?.width).toBe(325 - 2 * config.overlayEdgeInset);
   area = { x: 900, y: 0, width: 300, height: 900 };
   controller.pointerOver(true);
   controller.refreshPlacement();

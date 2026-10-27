@@ -26,7 +26,8 @@
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
-    "preview": "npm run build:renderer && electron scripts/preview/index.mts"
+    "preview": "npm run build:renderer && electron scripts/preview/index.mts",
+    "test:placement": "npm run build:main && npm run build:renderer && electron scripts/preview/placement.mts"
   },
   "dependencies": {
     "@jitl/quickjs-wasmfile-release-sync": "0.32.0",

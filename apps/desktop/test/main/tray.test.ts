@@ -65,7 +65,7 @@ function menu(update: UpdateState | null, state: () => MenuState = () => ({ ...r
  * from the debug items (ADR-DESK-065: each puts the app in the Dock on macOS). */
 test("the menu's window items open the window each names", () => {
   const opened: string[] = [];
-  const debug = { hasLastRecording: () => false, playLastRecording: () => {}, showLastScreenContext: () => void opened.push("contextDebug"), showLogFile: () => {} };
+  const debug = { hasLastRecording: () => false, playLastRecording: () => {}, showLastScreenContext: () => void opened.push("contextDebug"), showsSmokeTip: () => true, toggleSmokeTip: () => void opened.push("smokeTip"), showLogFile: () => {} };
   const { item, clicked } = menu(null, () => ({ ...ready, hasConsented: false, isSignedIn: false, debugMode: true }));
   for (const label of ["Settings…", "Sign In to TabMail…", "Welcome Guide…", "Finish Setting Up TabMail Voice…"]) item(label)?.click?.();
   expect(clicked).toEqual(["showSettings", "showSettings", "showWelcome", "showWelcome"]);
@@ -73,6 +73,10 @@ test("the menu's window items open the window each names", () => {
   new TrayMenu("/nonexistent", () => ({ ...ready, debugMode: true }), { ...actionsFrom(clicked), debug });
   tray.items.find((entry) => entry.label === "Show Last Screen Context")?.click?.();
   expect(opened).toEqual(["contextDebug"]);
+  const smokeTip = tray.items.find((entry) => entry.label === "Show Smoke Test Tip");
+  expect(smokeTip).toMatchObject({ type: "checkbox", checked: true });
+  smokeTip?.click?.();
+  expect(opened).toEqual(["contextDebug", "smokeTip"]);
 });
 
 /** The menu's update item (ADR-DESK-041): packaged builds only, just above Quit, and it does what it

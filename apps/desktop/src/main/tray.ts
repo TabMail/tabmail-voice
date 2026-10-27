@@ -22,6 +22,8 @@ export interface TrayActions {
     hasLastRecording(): boolean;
     playLastRecording(): void;
     showLastScreenContext(): void;
+    showsSmokeTip(): boolean;
+    toggleSmokeTip(): void;
     showLogFile(): void;
   } | null;
 }
@@ -92,6 +94,7 @@ export class TrayMenu {
         { type: "separator" },
         { label: "Play Last Recording", enabled: debug.hasLastRecording(), click: () => debug.playLastRecording() },
         { label: "Show Last Screen Context", click: () => debug.showLastScreenContext() },
+        { label: "Show Smoke Test Tip", type: "checkbox", checked: debug.showsSmokeTip(), click: () => debug.toggleSmokeTip() },
         { label: "Show Log File", click: () => debug.showLogFile() },
       );
     }

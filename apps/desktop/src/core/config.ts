@@ -879,6 +879,8 @@ export const chatConfirmationMinimumDisplay = 500;
  * time left, as the chat window's own (owner, 2026-09-28: "Confirmation should get a time limit of 30
  * seconds max, and it should show a timer ticking, similar to the undo toast"). A touch doesn't stop it. */
 export const chatConfirmationTimeout = 30_000;
+/** Visible inset from display edges for the pill/tool strip and chat, in points. */
+export const overlayEdgeInset = agentBubbleGap;
 export const chatWidth = 380;
 /** The chat grows with its conversation up to this height, then scrolls. */
 export const chatMaxHeight = 320;

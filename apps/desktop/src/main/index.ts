@@ -351,6 +351,7 @@ function launch(): void {
   const updatePlatform = isDebugBuild ? null : makeUpdatePlatform();
   const updater = updatePlatform === null ? null : makeUpdater(updatePlatform);
 
+  let showsSmokeTip = false;
   const tray = new TrayMenu(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), menuState, {
     showWelcome,
     showSettings,
@@ -365,6 +366,8 @@ function launch(): void {
           hasLastRecording: () => existsSync(lastRecordingPath),
           playLastRecording: () => void shell.openPath(lastRecordingPath),
           showLastScreenContext: () => windows.showContextDebug(),
+          showsSmokeTip: () => showsSmokeTip,
+          toggleSmokeTip: () => { showsSmokeTip = !showsSmokeTip; windows.push("overlay"); tray.update(); },
           showLogFile: () => shell.showItemInFolder(logPath),
         }
       : null,
@@ -383,6 +386,7 @@ function launch(): void {
 
   function overlayState(): OverlayState {
     return {
+      overlayPlacement: overlay.overlayPlacement,
       phase: controller.phase,
       mode: controller.mode,
       level: controller.level,
@@ -390,7 +394,7 @@ function launch(): void {
       hasVoice: controller.hasVoice,
       isRetrying: controller.isRetrying,
       language: controller.language,
-      tip: controller.tip,
+      tip: showsSmokeTip ? "handsFree" : controller.tip,
       ...(gnomeIntegration ? { gnomeRecordingKeys: gnomeIntegration.state === "ready" } : {}),
       opensUpward: overlay.opensUpward,
       bubblesFitUnder: overlay.bubblesFitUnder,

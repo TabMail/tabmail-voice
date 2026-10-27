@@ -150,9 +150,9 @@ function Overlay() {
   const placement = state.chatPlacement;
   const chat = placement === null ? null : (state.chat ?? lastChat.current);
   const isChatClosing = chat !== null && state.chat === null;
-  const canvas = config.overlayCanvasSize;
+  const canvas = state.overlayPlacement?.canvas ?? config.overlayCanvasSize;
   // The one-line pill's top edge, centered in the canvas: taller pills grow downward.
-  let anchor: Point = { x: canvas.width / 2, y: (canvas.height - config.pillHeight) / 2 };
+  let anchor: Point = state.overlayPlacement?.anchor ?? { x: canvas.width / 2, y: (canvas.height - config.pillHeight) / 2 };
   let layer: { size: Size; style?: CSSProperties } = { size: canvas };
   let pillMode: Mode | null = mode.kind === "hidden" || mode.kind === "swirl" ? null : mode;
   let showsTools = state.mode === "agent" && (mode.kind === "listening" || mode.kind === "transcribing" || mode.kind === "retrying" || mode.kind === "running");
@@ -163,20 +163,20 @@ function Overlay() {
     pillMode = mode.kind === "hidden" ? { kind: "resting" } : mode.kind === "swirl" ? { kind: "listening" } : mode;
     showsTools = true;
   }
-  const tip = mode.kind === "listening" && chat === null ? state.tip : null;
+  const tip = state.tip;
 
   // One tree with the chat window open or not, so the pill and its bubbles stay as they were as it
   // opens.
   return (
     <div className={chat === null ? "canvas" : "canvas chat-canvas"} style={chat === null ? { width: canvas.width, height: canvas.height } : undefined}>
-      {chat === null && swirl && <GatheringSwirl key={`swirl-${swirl.key}`} dispersing={false} leaving={swirl.leaving} />}
-      {chat === null && mode.kind === "hidden" && exiting && <GatheringSwirl key={`dispersing-${exiting.key}`} dispersing />}
+      {chat === null && swirl && <GatheringSwirl anchor={anchor} size={canvas} key={`swirl-${swirl.key}`} dispersing={false} leaving={swirl.leaving} />}
+      {chat === null && mode.kind === "hidden" && exiting && <GatheringSwirl anchor={anchor} size={canvas} key={`dispersing-${exiting.key}`} dispersing />}
       {chat === null && mode.kind === "hidden" && exiting?.pill && (
         <PillLayout key={`exiting-${exiting.key}`} mode={exiting.pill} state={state} tip={null} showsTools={false} keepsBubbles={false} exiting anchor={anchor} canvas={canvas} bubblesUnder={state.bubblesFitUnder} />
       )}
-      {chat !== null && placement !== null && <ChatBox chat={chat} below={placement.below} maxHeight={placement.maxHeight} width={placement.width ?? config.chatWidth} pillOrigin={chatPillOrigin(placement)} closing={isChatClosing} />}
+      {chat !== null && placement !== null && <ChatBox frameOffset={placement.frameOffset} tip={tip} hotkey={state.hotkey} gnomeRecordingKeys={state.gnomeRecordingKeys === true} chat={chat} below={placement.below} maxHeight={placement.maxHeight} width={placement.width ?? config.chatWidth} pillOrigin={chatPillOrigin(placement)} closing={isChatClosing} />}
       {pillMode !== null && (
-        <PillLayout mode={pillMode} state={state} tip={tip} showsTools={showsTools} keepsBubbles={chat !== null} exiting={false} anchor={anchor} canvas={layer.size} bubblesUnder={placement?.bubblesUnder ?? state.bubblesFitUnder} layerStyle={layer.style} />
+        <PillLayout mode={pillMode} state={state} tip={chat === null ? tip : null} showsTools={showsTools} keepsBubbles={chat !== null} exiting={false} anchor={anchor} canvas={layer.size} bubblesUnder={placement?.bubblesUnder ?? state.bubblesFitUnder} layerStyle={layer.style} />
       )}
     </div>
   );
@@ -191,8 +191,8 @@ function chatPillLayer(placement: ChatPlacement): { anchor: Point; size: Size; s
   const height = config.chatBubbleTooltipRoom + config.chatStripHeight + margin;
   const size = { width: (placement.width ?? config.chatWidth) + 2 * margin, height };
   const overBubbles = placement.bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
-  if (placement.below) return { anchor: { x: placement.pillX, y: margin + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, top: 0, height } };
-  return { anchor: { x: placement.pillX, y: config.chatBubbleTooltipRoom + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, bottom: 0, height } };
+  if (placement.below) return { anchor: { x: placement.pillX, y: margin + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, top: placement.frameOffset?.top ?? 0, height } };
+  return { anchor: { x: placement.pillX, y: config.chatBubbleTooltipRoom + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, bottom: -(placement.frameOffset?.bottom ?? 0), height } };
 }
 
 /** The pill's center, from the chat window's own corner, as a CSS `transform-origin`: the chat grows
@@ -203,7 +203,7 @@ function chatPillOrigin(placement: ChatPlacement): string {
   const pillCenter = anchor.y + config.pillHeight / 2;
   // The chat's edge on the pill's side, from the window's edge on that side, as `ChatBox` places it.
   const offset = margin + config.chatStripHeight + config.chatPillGap;
-  const x = anchor.x - margin;
+  const x = anchor.x - margin - (placement.frameOffset?.x ?? 0);
   // Under the pill, the window's top edge is the layer's; over it, the window's bottom edge is.
   return placement.below ? `${x}px ${pillCenter - offset}px` : `${x}px calc(100% + ${offset - (size.height - pillCenter)}px)`;
 }
@@ -405,7 +405,7 @@ function useChatDrag(): {
  * window at its tallest; it reports that height, the part of the window that takes clicks, and the
  * pointer moving over it or off it (`ChatHitTest`). Under the pill's bubbles instead when there is no
  * room over it (`below`). Light in light and dark mode alike, as the pill. */
-function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat: AgentChat; below: boolean; maxHeight: number; width: number; pillOrigin: string; closing: boolean }) {
+function ChatBox({ frameOffset, tip, hotkey, gnomeRecordingKeys, chat, below, maxHeight, width, pillOrigin, closing }: { frameOffset?: ChatPlacement["frameOffset"]; tip: DictationTip | null; hotkey: DictationHotkey; gnomeRecordingKeys: boolean; chat: AgentChat; below: boolean; maxHeight: number; width: number; pillOrigin: string; closing: boolean }) {
   const [sizeRef, contentSize] = useSize<HTMLDivElement>();
   const appearRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -445,7 +445,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
     return () => shrinking?.cancel();
   }, [closing]);
   useEffect(() => {
-    if (height !== undefined) void send({ type: "chatHeight", height });
+    if (height !== undefined) void send({ type: "chatHeight", height: height + config.tipFootprint });
   }, [height]);
   useEffect(() => {
     // Over the chat or the pill's bubbles, or not. Each move says so: the window may have been placed
@@ -479,6 +479,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
   const margin = config.chatShadowMargin;
   const offset = margin + config.chatStripHeight + config.chatPillGap;
   return (
+    <>
     <div
       ref={appearRef}
       className="chat"
@@ -497,8 +498,8 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
       onPointerLeave={drag.onPointerLeave}
       onWheel={touch}
       style={{
-        left: margin,
-        ...(below ? { top: offset } : { bottom: offset }),
+        left: margin + (frameOffset?.x ?? 0),
+        ...(below ? { top: offset + (frameOffset?.top ?? 0) } : { bottom: offset - (frameOffset?.bottom ?? 0) }),
         transformOrigin: pillOrigin,
         width,
         height,
@@ -515,7 +516,7 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
           const scroll = event.currentTarget;
           atBottom.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= config.chatFontSize * 2;
         }}
-        style={{ maxHeight, gap: config.chatTurnSpacing, padding: config.chatPadding, paddingTop: config.chatPadding + config.chatCloseButtonSize }}
+        style={{ maxHeight: Math.max(0, maxHeight - config.tipFootprint), gap: config.chatTurnSpacing, padding: config.chatPadding, paddingTop: config.chatPadding + config.chatCloseButtonSize }}
       >
         {chat.turns.map((turn) => (
           <div key={turn.id} className="chat-turn" style={{ gap: config.chatTurnSpacing }}>
@@ -540,6 +541,12 @@ function ChatBox({ chat, below, maxHeight, width, pillOrigin, closing }: { chat:
         ✕
       </button>
     </div>
+    {tip !== null && height !== undefined && (
+      <div className="chat-tip" style={{ position: "absolute", left: margin + (frameOffset?.x ?? 0) + width / 2, transform: "translateX(-50%)", ...(below ? { top: offset + (frameOffset?.top ?? 0) + height + config.tipGap } : { bottom: offset - (frameOffset?.bottom ?? 0) + height + config.tipGap }), pointerEvents: "none" }}>
+        <TipTooltip tip={tip} hotkey={hotkey} gnomeRecordingKeys={gnomeRecordingKeys} pointsDown={!below} />
+      </div>
+    )}
+    </>
   );
 }
 
@@ -1406,9 +1413,9 @@ function tooltipPath({ width, height }: Size): string {
  * Dispersing plays it in reverse: out from the orbit, fading away. It fades in as it appears and
  * out when `leaving`, with the pill's spring (the Swift swirl's opacity transition), so the wide
  * ring it starts from shows faintly and it reads as the small, soft ring it gathers into. */
-function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; leaving?: boolean }) {
+function GatheringSwirl({ anchor, size, dispersing, leaving = false }: { anchor: Point; size: Size; dispersing: boolean; leaving?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const { width, height } = config.overlayCanvasSize;
+  const { width, height } = size;
   useLayoutEffect(() => {
     ref.current?.animate(leaving ? [...fadeKeyframes].reverse() : fadeKeyframes, { duration: config.pillSpringResponseSeconds * 1000, easing: config.pillSpringEasing, fill: leaving ? "forwards" : "backwards" });
   }, [leaving]);
@@ -1434,7 +1441,7 @@ function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; 
       context.globalAlpha = (0.35 + 0.65 * (1 - fraction)) * fade;
       context.fillStyle = brandColor(fraction);
       context.beginPath();
-      context.arc(width / 2 + Math.cos(angle) * r, height / 2 + Math.sin(angle) * r, dot / 2, 0, 2 * Math.PI);
+      context.arc(anchor.x + Math.cos(angle) * r, anchor.y + config.pillHeight / 2 + Math.sin(angle) * r, dot / 2, 0, 2 * Math.PI);
       context.fill();
     }
   });

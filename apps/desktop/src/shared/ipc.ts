@@ -24,6 +24,8 @@ import type { WelcomeStep } from "../core/onboarding/welcomeWizard.js";
 
 /** What the overlay draws. */
 export interface OverlayState {
+  /** Standalone pill anchor inside the actual native surface; transparent canvas edges are not anchors. */
+  overlayPlacement?: { anchor: { x: number; y: number }; canvas: { width: number; height: number } };
   phase: Phase;
   mode: DictationMode;
   level: number;
@@ -59,6 +61,8 @@ export interface OverlayState {
 }
 
 export interface ChatPlacement {
+  /** Logical canvas edges relative to the actual on-screen surface after native bounds constraints. */
+  frameOffset?: { x: number; top: number; bottom: number };
   /** Chat content width when the available placement region is narrower than its usual width. */
   width?: number;
   /** Under the pill and its bubbles (`chatSide`), or over them. */

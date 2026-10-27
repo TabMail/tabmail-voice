@@ -31,7 +31,7 @@ export const midY = (rect: Rect): number => rect.y + rect.height / 2;
 /**
  * Window origin that puts the pill's top edge just below the caret's line (the pill just above the
  * line when there's no room below), centered horizontally on the caret and kept inside the display's
- * work area with a tip under it, or `roomBelow` under the pill's top (the not-pasted note's
+ * work area with a small edge inset, or `roomBelow` under the pill's top (the not-pasted note's
  * `noteMaxHeight`). The canvas is larger than the pill (room for the swirl); the one-line pill sits
  * vertically centered in it and taller pills grow downward.
  */
@@ -40,8 +40,8 @@ export function overlayOrigin(anchor: Rect, canvas: Size, pillHeight: number, wo
   const pillTopInset = (canvas.height - pillHeight) / 2;
   let pillTop = maxY(anchor) + gap;
   if (opensUpward(anchor, pillHeight, workArea)) pillTop = anchor.y - gap - pillHeight;
-  pillTop = Math.min(Math.max(pillTop, workArea.y), maxY(workArea) - roomBelow);
-  const footprint = Math.min(canvas.width, workArea.width);
+  pillTop = Math.min(Math.max(pillTop, workArea.y + config.overlayEdgeInset), maxY(workArea) - roomBelow);
+  const footprint = Math.min(config.chatWidth + 2 * config.overlayEdgeInset, workArea.width);
   const center = Math.min(Math.max(midX(anchor), workArea.x + footprint / 2), maxX(workArea) - footprint / 2);
   const x = center - canvas.width / 2;
   return { x, y: pillTop - pillTopInset };
@@ -50,12 +50,12 @@ export function overlayOrigin(anchor: Rect, canvas: Size, pillHeight: number, wo
 /** Whether the pill goes above the caret's line, there being no room below for the listening pill
  * and a tip under it. */
 export function opensUpward(anchor: Rect, pillHeight: number, workArea: Rect): boolean {
-  return maxY(anchor) + config.overlayCaretGap + heightUnderPillTop(pillHeight) > maxY(workArea);
+  return maxY(anchor) + config.overlayCaretGap + pillHeight + config.tipFootprint > maxY(workArea);
 }
 
-/** The pill and a tip under it, from the pill's top edge down. */
+/** The pill and its visible screen-edge inset, from the pill's top edge down. */
 function heightUnderPillTop(pillHeight: number): number {
-  return pillHeight + config.tipFootprint;
+  return pillHeight + config.overlayEdgeInset;
 }
 
 /** Whether a row of agent mode's bubbles fits under the pill, with the tip under it
@@ -63,7 +63,7 @@ function heightUnderPillTop(pillHeight: number): number {
  * would cover it, nor when it sits too near the bottom of the work area. */
 export function bubblesFitUnder(anchor: Rect, pillHeight: number, workArea: Rect): boolean {
   const row = config.agentBubbleGap + config.agentBubbleDiameter;
-  return maxY(anchor) + config.overlayCaretGap + heightUnderPillTop(pillHeight) + row <= maxY(workArea);
+  return maxY(anchor) + config.overlayCaretGap + pillHeight + config.tipFootprint + row <= maxY(workArea);
 }
 
 /** Centers of agent mode's `count` bubbles, in one row under the pill at `pill`, `agentBubbleGap`
@@ -128,11 +128,10 @@ export function hintCenterOver(pill: Rect, bubbles: Rect[], size: Size): Point {
   return { x: midX(pill), y: top - config.tipGap - size.height / 2 };
 }
 
-/** Whether a tip goes over the pill: when it stays up while listening (no display duration, as
- * the hands-free tip) and the overlay opened above the caret's line, so it never covers that line
- * for the whole dictation (owner, 2026-09-27: "above pill when opening up"). */
-export function tipGoesAbove(displayDuration: number | null, opensUpward: boolean): boolean {
-  return opensUpward && displayDuration === null;
+/** Near the bottom edge every tip goes above the complete pill/tool group; near the top it goes
+ * below. Tip duration affects visibility, never placement. */
+export function tipGoesAbove(_displayDuration: number | null, opensUpward: boolean): boolean {
+  return opensUpward;
 }
 
 /** Where the pill sits on screen for a caret at `anchor`, as `overlayOrigin` places the overlay: its
@@ -151,15 +150,14 @@ function chatStripTop(pillTop: number, bubblesUnder: boolean): number {
 
 /** Where the chat window goes: over the pill and its bubbles (owner, 2026-09-28: "the answer box
  * appear above the chat bubble"), or under them (`below`), and how tall it may grow there
- * (`maxHeight`). Over them when there is room there for it at its tallest (`tallest`, the chat's
- * `chatMaxHeight` unless the paste history's), the pill's top edge at `pillTop`; under them when there
- * is room there instead; otherwise on the side with more room, no taller than that room, so it stays
- * on screen and scrolls. Decided once, as it opens, so it never flips as it grows. */
+ * (`maxHeight`). Opens toward the work area's vertical center, on the roomier side of the
+ * complete pill-and-bubble strip. The strip keeps its order and position, and the chat grows no
+ * taller than the available room (`tallest` at most). Decided once, so it never flips as it grows. */
 export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect, tallest: number = config.chatMaxHeight): { below: boolean; maxHeight: number } {
   const stripTop = chatStripTop(pillTop, bubblesUnder);
-  const over = stripTop - config.chatPillGap - workArea.y;
-  const under = maxY(workArea) - (stripTop + config.chatStripHeight + config.chatPillGap);
-  const below = over < tallest && under > over;
+  const over = stripTop - config.chatPillGap - workArea.y - config.overlayEdgeInset;
+  const under = maxY(workArea) - config.overlayEdgeInset - (stripTop + config.chatStripHeight + config.chatPillGap);
+  const below = under > over;
   return { below, maxHeight: Math.min(tallest, Math.floor(below ? under : over)) };
 }
 
@@ -179,13 +177,13 @@ export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Re
   const y = below ? stripTop - margin : stripTop + config.chatStripHeight + margin - height;
   if (pillOffset !== undefined) return { x: pill.x - pillOffset, y, width, height };
   let x = pill.x - width / 2;
-  x = Math.min(Math.max(x, workArea.x - margin), maxX(workArea) + margin - width);
+  x = Math.min(Math.max(x, workArea.x + config.overlayEdgeInset - margin), maxX(workArea) - config.overlayEdgeInset + margin - width);
   return { x, y, width, height };
 }
 
 /** The overlay window's width while the chat window shows in `workArea`, its shadow's margin included. */
 function chatFrameWidth(workArea: Rect): number {
-  return Math.min(config.chatWidth, workArea.width) + 2 * config.chatShadowMargin;
+  return Math.min(config.chatWidth, Math.max(0, workArea.width - 2 * config.overlayEdgeInset)) + 2 * config.chatShadowMargin;
 }
 
 /** Where the chat window goes as the user drags it (ADR-DESK-036 amendment; owner, 2026-10-25: the
@@ -197,16 +195,16 @@ function chatFrameWidth(workArea: Rect): number {
 export function draggedChat(group: { pill: Point; pillOffset: number }, delta: Point, contentHeight: number, workArea: Rect, below: boolean, bubblesUnder: boolean, tallest: number = config.chatMaxHeight): { pill: Point; pillOffset: number; side: { below: boolean; maxHeight: number } } {
   const stripTop = chatStripTop(group.pill.y, bubblesUnder);
   const overStrip = group.pill.y - stripTop;
-  const fits = Math.max(0, workArea.height - config.chatStripHeight - config.chatPillGap);
+  const fits = Math.max(0, workArea.height - 2 * config.overlayEdgeInset - config.chatStripHeight - config.chatPillGap);
   const chat = config.chatPillGap + Math.min(contentHeight, tallest, fits);
-  const highest = workArea.y + (below ? 0 : chat);
-  const lowest = Math.max(highest, maxY(workArea) - config.chatStripHeight - (below ? chat : 0));
+  const highest = workArea.y + config.overlayEdgeInset + (below ? 0 : chat);
+  const lowest = Math.max(highest, maxY(workArea) - config.overlayEdgeInset - config.chatStripHeight - (below ? chat : 0));
   const top = Math.min(Math.max(stripTop + delta.y, highest), lowest);
   const width = chatFrameWidth(workArea);
   const pillOffset = Math.min(Math.max(group.pillOffset, 0), width);
   const margin = config.chatShadowMargin;
-  const left = Math.min(Math.max(group.pill.x - pillOffset + delta.x, workArea.x - margin), maxX(workArea) + margin - width);
-  const room = below ? maxY(workArea) - (top + config.chatStripHeight + config.chatPillGap) : top - config.chatPillGap - workArea.y;
+  const left = Math.min(Math.max(group.pill.x - pillOffset + delta.x, workArea.x + config.overlayEdgeInset - margin), maxX(workArea) - config.overlayEdgeInset + margin - width);
+  const room = below ? maxY(workArea) - config.overlayEdgeInset - (top + config.chatStripHeight + config.chatPillGap) : top - config.chatPillGap - workArea.y - config.overlayEdgeInset;
   return { pill: { x: left + pillOffset, y: top + overStrip }, pillOffset, side: { below, maxHeight: Math.max(0, Math.min(tallest, Math.floor(room))) } };
 }
 
