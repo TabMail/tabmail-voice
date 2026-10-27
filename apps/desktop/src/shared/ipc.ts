@@ -13,6 +13,8 @@ import * as config from "../core/config.js";
 import type { DictionaryEntry } from "../core/dictionary/entries.js";
 import type { ExcludedApp } from "../core/dictation/excludedApps.js";
 import type { MemoryPageState } from "../core/memory/page.js";
+import { compositionSections } from "../core/personalization/bulletMerge.js";
+import type { PersonalizationState } from "../core/personalization/page.js";
 import type { UpdateState } from "../core/ui/menuModel.js";
 import type { PasteEntry } from "../core/dictation/pasteHistory.js";
 import type { ScreenContext } from "../core/dictation/screenContext.js";
@@ -142,6 +144,9 @@ export interface SettingsState {
   update: UpdateState | null;
   /** Settings › Memory: past agent-mode requests (ADR-DESK-061). */
   memory: MemoryPageState;
+  /** Settings › Personalization: the writing style, the knowledge base and their history
+   * (ADR-DESK-063). */
+  personalization: PersonalizationState;
 }
 
 /** Whether VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
@@ -226,6 +231,14 @@ export type Command =
   | { type: "setMemorySizeLimit"; value: number }
   | { type: "removeMemory"; memId: string }
   | { type: "clearMemory" }
+  /** Settings › Personalization: a writing style section's or the knowledge base's bullets edited,
+   * from those the page showed (`shown`); either text reset to its default; the texts put back as a
+   * history entry holds them. */
+  | { type: "editWritingStyle"; section: string; shown: string[]; bullets: string[] }
+  | { type: "editKnowledgeBase"; shown: string[]; bullets: string[] }
+  | { type: "resetWritingStyle" }
+  | { type: "resetKnowledgeBase" }
+  | { type: "restorePromptHistory"; id: string }
   | { type: "setConsent"; value: boolean }
   | { type: "requestMicrophone" }
   | { type: "requestAccessibility" }
@@ -318,7 +331,15 @@ export function isCommand(value: unknown): value is Command {
     case "dismissNotPasted":
     case "loadMemory":
     case "clearMemory":
+    case "resetWritingStyle":
+    case "resetKnowledgeBase":
       return true;
+    case "editWritingStyle":
+      return typeof command.section === "string" && compositionSections.includes(command.section) && isBulletList(command.shown) && isBulletList(command.bullets);
+    case "editKnowledgeBase":
+      return isBulletList(command.shown) && isBulletList(command.bullets);
+    case "restorePromptHistory":
+      return typeof command.id === "string" && command.id.length <= config.promptHistoryIDMaxLength;
     case "searchMemory":
       return typeof command.query === "string" && command.query.length <= config.memorySearchMaxLength;
     case "setMemorySizeLimit":
@@ -377,6 +398,14 @@ export function isCommand(value: unknown): value is Command {
     default:
       return false;
   }
+}
+
+/** Whether `value` is a list of bullets. Neither their number nor their length is capped: the knowledge
+ * base's other writers (`kb_add`, the refine) aren't, and an edit carries every bullet shown, so a cap
+ * here would refuse every edit of a knowledge base holding one bullet past it (the Settings fields
+ * keep a typed bullet within `personalizationBulletMaxLength`). */
+function isBulletList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((bullet) => typeof bullet === "string");
 }
 
 /** Whether `value`, as received over IPC, is a well-formed `AudioReport`. */

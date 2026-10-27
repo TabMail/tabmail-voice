@@ -76,3 +76,8 @@ anytime in Settings." The closing "Nothing it sends is stored" stays true: it is
 memory is kept on this computer only. Users who consented before are told once, by the what's-new tip
 (ADR-DESK-049's way, its amendment of this date), and are not asked again.
 
+**Amendment 2026-10-19 — the knowledge base and writing style (ADR-DESK-063).** The memory line
+becomes "Your past agent-mode requests, your writing style and what it learns about you, kept only
+on this computer so it can use them. Edit or remove them anytime in Settings." They are sent with
+agent-mode requests and not stored by TabMail, so the closing line stays true. Users who consented
+before are not asked again: the release's one what's-new tip tells them, as for memory.

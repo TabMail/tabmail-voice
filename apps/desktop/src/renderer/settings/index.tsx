@@ -15,16 +15,17 @@ import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dic
 import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { formatBytes } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
+import type { PromptHistoryItem } from "../../core/personalization/page.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
+import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, PenIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
 import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
-type SectionName = "account" | "dictation" | "dictionary" | "agent" | "memory" | "privacy" | "permissions" | "general";
+type SectionName = "account" | "dictation" | "dictionary" | "agent" | "personalization" | "memory" | "privacy" | "permissions" | "general";
 
 /** The sidebar's sections, in order, each with its title and icon. */
 const sections: { name: SectionName; title: string; icon: (size: number) => ReactNode }[] = [
@@ -32,6 +33,7 @@ const sections: { name: SectionName; title: string; icon: (size: number) => Reac
   { name: "dictation", title: "Dictation", icon: (size) => <MicrophoneIcon size={size} /> },
   { name: "dictionary", title: "Dictionary", icon: (size) => <BookIcon size={size} /> },
   { name: "agent", title: "Agent mode", icon: (size) => <SparklesLineIcon size={size} /> },
+  { name: "personalization", title: "Personalization", icon: (size) => <PenIcon size={size} /> },
   { name: "memory", title: "Memory", icon: (size) => <HistoryIcon size={size} /> },
   { name: "privacy", title: "Privacy", icon: (size) => <EyeOffIcon size={size} /> },
   { name: "permissions", title: "Permissions", icon: (size) => <LockShieldIcon size={size} /> },
@@ -101,6 +103,9 @@ function Settings() {
         </div>
         <div hidden={shown !== "agent"}>
           <AgentPane state={state} />
+        </div>
+        <div hidden={shown !== "personalization"}>
+          <PersonalizationPane state={state} />
         </div>
         <div hidden={shown !== "memory"}>
           <MemoryPane state={state} />
@@ -623,6 +628,236 @@ function MemoryPane({ state }: { state: SettingsState }) {
         )}
       </Group>
     </>
+  );
+}
+
+/** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages:
+ * the writing style's three sections and the knowledge base each as a list of bullets to edit, add
+ * to and remove from, each text with a reset to its default, confirmed in place; and their history,
+ * the newest first, each entry showing what restoring it would change, with Restore, confirmed in
+ * place. */
+function PersonalizationPane({ state }: { state: SettingsState }) {
+  const personalization = state.personalization;
+  const [failure, setFailure] = useState<string | null>(null);
+  const run = async (command: Command) => {
+    setFailure(null);
+    const { error } = await send(command);
+    setFailure(error);
+  };
+  return (
+    <>
+      <Group captions={["How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it."]}>
+        <div className="row">
+          <span className="group-title">Writing style</span>
+          <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
+        </div>
+        {personalization.writingStyle.map(({ section, bullets }) => (
+          <BulletEditor key={section} title={section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
+        ))}
+      </Group>
+      <Group
+        captions={[
+          "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
+          `Agent mode adds to it when you ask it to remember something, and learns from a chat of ${config.kbRefineMinUserTurns} or more requests when its window closes.`,
+        ]}
+      >
+        <div className="row">
+          <span className="group-title">Knowledge base</span>
+          <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
+        </div>
+        <BulletEditor title="Knowledge base" hideTitle bullets={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
+      </Group>
+      {failure !== null && (
+        <Group>
+          <div className="row">
+            <span className="error">{failure}</span>
+          </div>
+        </Group>
+      )}
+      <Group captions={["Each change to your writing style and knowledge base is kept here, so you can put an earlier version back."]}>
+        <div className="row">
+          <span className="group-title">History</span>
+        </div>
+        {personalization.history.length === 0 ? (
+          <div className="row">
+            <span className="caption">No changes yet.</span>
+          </div>
+        ) : (
+          <ul className="dictionary" aria-label="History">
+            {personalization.history.map((item) => (
+              <HistoryRow key={item.id} item={item} onRestore={() => void run({ type: "restorePromptHistory", id: item.id })} />
+            ))}
+          </ul>
+        )}
+      </Group>
+    </>
+  );
+}
+
+/** Reset, then a question in its place: reset to the default, or not. */
+function ResetButton({ what, onReset }: { what: string; onReset: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) return <button onClick={() => setConfirming(true)}>Reset…</button>;
+  return (
+    <span className="buttons">
+      <span className="caption">Reset your {what} to the default? You can restore it from History.</span>
+      <button onClick={() => setConfirming(false)}>Cancel</button>
+      <button
+        className="default"
+        onClick={() => {
+          setConfirming(false);
+          onReset();
+        }}
+      >
+        Reset
+      </button>
+    </span>
+  );
+}
+
+/** A list of bullets: each one a field, saved as it is left or Return is pressed, with a remove
+ * button; then a field to add one. `onChange` is given the whole list as edited. */
+function BulletEditor({ title, hideTitle = false, bullets, onChange }: { title: string; hideTitle?: boolean; bullets: string[]; onChange: (bullets: string[]) => Promise<void> }) {
+  const [draft, setDraft] = useState("");
+  const add = (event: FormEvent) => {
+    event.preventDefault();
+    if (draft.trim() === "") return;
+    void onChange([...bullets, draft.trim()]);
+    setDraft("");
+  };
+  return (
+    <div className="bullet-editor">
+      {!hideTitle && (
+        <div className="row">
+          <span className="caption">{title}</span>
+        </div>
+      )}
+      <ul className="dictionary" aria-label={title}>
+        {bullets.map((bullet, index) => (
+          // Keyed by the text and how many equal bullets come before it, not by position: a bullet
+          // changed elsewhere (a tool, a refine) shows afresh, and one added or removed elsewhere
+          // leaves the other rows, and what is being typed in them, as they are.
+          <BulletRow
+            key={`${bullets.slice(0, index).filter((other) => other === bullet).length}:${bullet}`}
+            bullet={bullet}
+            label={`${title}, item ${index + 1}`}
+            onSave={(text) => void onChange(bullets.map((other, at) => (at === index ? text : other)))}
+            onRemove={() => void onChange(bullets.filter((_, at) => at !== index))}
+          />
+        ))}
+      </ul>
+      <form className="row" onSubmit={add}>
+        <input type="text" placeholder="Add an item" aria-label={`Add to ${title}`} maxLength={config.personalizationBulletMaxLength} value={draft} onChange={(event) => setDraft(event.target.value)} />
+        <button type="submit" disabled={draft.trim() === ""}>
+          Add
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function BulletRow({ bullet, label, onSave, onRemove }: { bullet: string; label: string; onSave: (text: string) => void; onRemove: () => void }) {
+  const [text, setText] = useState(bullet);
+  const save = () => {
+    // An emptied field removes its bullet, as the store leaves empty ones out. Compared trimmed,
+    // so a change of spaces alone saves nothing.
+    if (text.trim() !== bullet.trim()) onSave(text.trim());
+  };
+  return (
+    // Saved when focus leaves the row, not the field: a press on the row's own Remove focuses it
+    // first, and a save then would replace the row (its key is its text) under the press, losing it.
+    <li
+      className="row"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) save();
+      }}
+    >
+      {/* A field that wraps and grows with its text, so a long bullet reads whole; a bullet is one
+       * line, so Enter saves it rather than breaking it. */}
+      <textarea
+        className="bullet-text"
+        rows={1}
+        aria-label={label}
+        maxLength={config.personalizationBulletMaxLength}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") setText(bullet);
+        }}
+      />
+      <button className="link" aria-label={`Remove ${label}`} onClick={onRemove}>
+        Remove
+      </button>
+    </li>
+  );
+}
+
+/** How a history entry came about, as iOS labels it. */
+const historySources: Record<PromptHistoryItem["source"], string> = { local_edit: "Edit", reset: "Reset" };
+
+/** One history entry: how and when, what it changed, and, opened, what restoring it would change,
+ * with Restore, confirmed in place. */
+function HistoryRow({ item, onRestore }: { item: PromptHistoryItem; onRestore: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const fields = item.fields.map((field) => (field === "kb" ? "Knowledge base" : "Writing style")).join(", ");
+  const unchanged = item.restores.length === 0 && item.removes.length === 0;
+  return (
+    <li className="row stack">
+      <div className="history-heading">
+        <span>
+          {historySources[item.source]} <span className="caption">{memoryDate(Date.parse(item.timestamp))} · {fields}</span>
+        </span>
+        <button className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Hide" : "Show"}
+        </button>
+      </div>
+      {open && (
+        <>
+          {unchanged ? (
+            <span className="caption">No items added or removed.</span>
+          ) : (
+            <ul className="history-changes">
+              {item.restores.map((bullet) => (
+                <li key={`+${bullet}`} className="history-restores">
+                  + {bullet}
+                </li>
+              ))}
+              {item.removes.map((bullet) => (
+                <li key={`-${bullet}`} className="history-removes">
+                  − {bullet}
+                </li>
+              ))}
+            </ul>
+          )}
+          {confirming ? (
+            <div className="buttons">
+              <span className="caption">Put your writing style and knowledge base back as they were then?</span>
+              <button onClick={() => setConfirming(false)}>Cancel</button>
+              <button
+                className="default"
+                onClick={() => {
+                  setConfirming(false);
+                  onRestore();
+                }}
+              >
+                Restore
+              </button>
+            </div>
+          ) : (
+            <div className="buttons">
+              <button onClick={() => setConfirming(true)}>
+                Restore…
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </li>
   );
 }
 

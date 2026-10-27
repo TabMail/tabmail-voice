@@ -27,7 +27,7 @@ apps/desktop/
 ├── native/memory/       native-fts.json, the tabmail-native-fts commit `voice-memory` is built from (ADR-DESK-061)
 ├── native/macos/        SwiftPM helpers voice-hotkey, voice-macos, voice-microphone, voice-screen-reader, voice-field-reader (ADR-DESK-044)
 ├── native/windows/      CMake/MSVC helpers (Win32 hotkey, UI Automation and paste, WASAPI, the screen read)
-├── src/core/            Platform-free logic: config, palette, log, settings; agent/ (flat toolRegistry, tool definitions, connectors/, ADR-DESK-011), dictation/, audio/, backend/, dictionary/, memory/, hotkey/, onboarding/, ui/, util/
+├── src/core/            Platform-free logic: config, palette, log, settings; agent/ (flat toolRegistry, tool definitions, connectors/, ADR-DESK-011), dictation/, audio/, backend/, dictionary/, memory/, personalization/ (the knowledge base and writing style, ADR-DESK-063), hotkey/, onboarding/, ui/, util/
 ├── src/main/            Main process: index.ts, audioCapture, windows and tray, documents/ (ADR-DESK-051), updater (ADR-DESK-041/050), native/ (helper clients; macos/, windows/, linux/), storage/
 ├── src/preload/, src/shared/ipc.ts, src/renderer/ (one folder per window: overlay, settings, welcome, history, contextDebug)
 └── test/                Vitest, mirroring src/; support/ (stubs, fakes)

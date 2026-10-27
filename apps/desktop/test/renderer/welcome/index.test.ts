@@ -107,8 +107,9 @@ describe("welcome wizard", () => {
     expect(sent[1]).toContain("Passwords and secrets are left out, and you can switch this off.");
     expect(sent[2]).toContain("Your dictionary, so words are spelled your way.");
     expect(sent[3]).toBe("In agent mode, your request, the text you’ve selected, and whatever its tools need to help.");
-    // Memory (ADR-DESK-061): agent-mode requests are kept, on this computer only, and can be removed.
-    expect(sent[4]).toBe("Your past agent-mode requests, kept only on this computer so it can recall them. Remove them anytime in Settings.");
+    // Memory (ADR-DESK-061), the writing style and knowledge base (ADR-DESK-063): kept on this
+    // computer only, and can be edited or removed.
+    expect(sent[4]).toBe("Your past agent-mode requests, your writing style and what it learns about you, kept only on this computer so it can use them. Edit or remove them anytime in Settings.");
     expect(sent[5]).toBe("Only when you dictate, and only to help with it. Nothing it sends is stored.");
   });
 

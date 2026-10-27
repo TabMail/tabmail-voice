@@ -275,6 +275,15 @@ export function MemoryIcon({ size }: { size: number }) {
   return <AccentIcon size={size}>{historyPath}</AccentIcon>;
 }
 
+/** A pen writing a line: personalization, the writing style and knowledge base. */
+export function PenIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4M12 20h8" />
+    </PlainIcon>
+  );
+}
+
 /** A gear: general options. */
 export function GearIcon({ size }: { size: number }) {
   return (

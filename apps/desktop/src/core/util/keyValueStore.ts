@@ -9,6 +9,9 @@ export interface KeyValueStore {
   /** False when the value could not be kept past this run (the file could not be written): it is
    * held until the app quits. */
   set(key: string, value: unknown): boolean;
+  /** Sets every key in `values` at once (`undefined` removes one), kept or lost together: false, as
+   * for `set`, when none of them could be kept past this run. */
+  setAll(values: Readonly<Record<string, unknown>>): boolean;
   remove(key: string): void;
 }
 
@@ -26,6 +29,14 @@ export class MemoryStore implements KeyValueStore {
 
   set(key: string, value: unknown): boolean {
     this.values.set(key, value);
+    return true;
+  }
+
+  setAll(values: Readonly<Record<string, unknown>>): boolean {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) this.values.delete(key);
+      else this.values.set(key, value);
+    }
     return true;
   }
 

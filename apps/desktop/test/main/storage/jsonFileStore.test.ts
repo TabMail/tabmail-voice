@@ -57,6 +57,22 @@ describe("JSONFileStore", () => {
     expect(new JSONFileStore(path).get("excludedSites")).toBeUndefined();
   });
 
+  /** Values set together are kept or lost together: a relaunch never reads one of them changed
+   * and another not. */
+  test("values set together are written together, or not at all", () => {
+    const path = join(scratch(), "userPrompts.json");
+    const store = new JSONFileStore(path);
+    expect(store.setAll({ first: "one", second: "two", gone: "soon" })).toBe(true);
+    expect(store.setAll({ gone: undefined })).toBe(true);
+    expect(new JSONFileStore(path).snapshot()).toEqual({ first: "one", second: "two" });
+
+    configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+    mkdirSync(`${path}.tmp`);
+    expect(store.setAll({ first: "uno", second: "dos" })).toBe(false);
+    expect([store.get("first"), store.get("second")]).toEqual(["uno", "dos"]);
+    expect(new JSONFileStore(path).snapshot()).toEqual({ first: "one", second: "two" });
+  });
+
   test("a saved value is in the file as written", () => {
     const path = join(scratch(), "settings.json");
     expect(new JSONFileStore(path).set("excludedSites", ["example.com"])).toBe(true);

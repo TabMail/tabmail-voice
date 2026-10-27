@@ -98,7 +98,24 @@ const settings = {
   suggestedName: "Alex Example",
   enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"],
   memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
+  personalization: {
+    writingStyle: [
+      { section: "General writing style", bullets: ["ALWAYS sign off as the user using the **First Name Only**.", "I want to sound friendly and professional, but not too formal.", "ALWAYS start with a greeting.", "I generally use Cheers or Best, depending on the context."] },
+      { section: "Language", bullets: ["I write in English Only."] },
+      { section: "Useful links to personal website and other resources", bullets: ["[Example Website](https://example.com)"] },
+    ],
+    knowledgeBase: ["User is using TabMail as their AI assistant for emails.", "[Pinned] Prefers meetings in the morning.", "Works with Sam on the launch review."],
+    history: [],
+  },
 } satisfies SettingsState;
+/** Settings › Personalization with a history: an edit, then a reset. */
+const personalization = {
+  ...settings.personalization,
+  history: [
+    { id: "h2", timestamp: new Date(Date.now() - 20 * 60_000).toISOString(), source: "local_edit" as const, fields: ["kb" as const], restores: [], removes: [] },
+    { id: "h1", timestamp: new Date(Date.now() - 2 * 86_400_000).toISOString(), source: "reset" as const, fields: ["kb" as const], restores: ["Prefers short replies."], removes: ["[Pinned] Prefers meetings in the morning.", "Works with Sam on the launch review."] },
+  ],
+};
 /** Settings › Memory with requests kept: an answer, a Compose, and an older Edit, the newest first. */
 const memory = {
   sizeLimit: gigabyte,
@@ -208,6 +225,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-agent-apps-running", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], runningBubble: "calendar" }],
     ["overlay-agent-memory-running", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["compose", "answer"], connectors: allConnectors, recentBubbles: ["memory", "answer"], runningBubble: "memory" }],
     ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
+    ["overlay-agent-memory-running", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["compose", "answer"], connectors: allConnectors, recentBubbles: ["memory", "answer"], runningBubble: "memory" }],
     ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-not-pasted", { phase: { kind: "notPasted", message: "Switched apps. Click to copy.", text: "Let's move the launch review to Friday at ten, and I'll send the agenda tonight." } }],
@@ -265,6 +283,12 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-privacy", page: "settings/index.html", size: settingsWindowSize, section: "Privacy", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }, { bundleIdentifier: "org.example.notes", name: "Example Notes" }], excludedSites: ["example.com", "bank.example.org"] } },
   { name: "settings-permissions-vscode", page: "settings/index.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   { name: "settings-general", page: "settings/index.html", size: settingsWindowSize, section: "General", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, debugAllowed: true } },
+  // Personalization: the writing style's sections, the knowledge base and the history.
+  { name: "settings-personalization", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  // The whole page, down to the history, in a window tall enough to hold it.
+  { name: "settings-personalization-whole", page: "settings/index.html", size: { width: settingsWindowSize.width, height: settingsWindowSize.height * 3 }, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   // Memory: usage against the limit, the requests kept, the newest first; dark; nothing kept yet; a
   // search that found nothing; the helper not answering; a lower limit just applied.
   { name: "settings-memory", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },

@@ -20,6 +20,9 @@ export interface RegisteredTool {
   readonly advertise?: boolean;
   /** Only the confirmation-answer tool preserves the question answered aloud. */
   readonly preservesConfirmation?: boolean;
+  /** Throws when a terminal call can't complete (no text to paste): checked before the call is held
+   * and the round's other calls run. */
+  readonly check?: (call: ToolCall) => void;
   /** Absent for tools the backend executes itself. */
   readonly run?: (call: ToolCall, round: number) => Promise<string>;
 }

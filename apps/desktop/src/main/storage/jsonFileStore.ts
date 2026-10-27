@@ -20,6 +20,12 @@ export class JSONFileStore extends MemoryStore {
     return this.save();
   }
 
+  /** One write of the file, which replaces it whole: every value is in it, or none is. */
+  override setAll(values: Readonly<Record<string, unknown>>): boolean {
+    super.setAll(values);
+    return this.save();
+  }
+
   override remove(key: string): void {
     super.remove(key);
     this.save();

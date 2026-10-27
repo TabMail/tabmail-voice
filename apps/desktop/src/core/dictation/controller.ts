@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
-import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
+import { type AgentChat, appendTurn, type ChatTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
 import { type BubbleKey, memoryBubble, screenReadBubble, ranNow } from "../agent/bubbleOrder.js";
 import { type ConnectorID, connectorIDs, connectors } from "../agent/connectors/index.js";
 import { ToolRegistry, type RegisteredTool } from "../agent/toolRegistry.js";
-import { DesktopAgent } from "../agent/requests.js";
+import { DesktopAgent, type Personalization } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
 import { isJSONObject, parsedJSON, type ConnectorTool, type ToolQuestion, type ToolSettings } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
@@ -26,6 +26,9 @@ import { TransportError } from "../backend/http.js";
 import { LevelEnvelope } from "../audio/levelEnvelope.js";
 import { agentPart, type AgentMemory, memoryRow } from "../memory/store.js";
 import { MemoryTools } from "../memory/tools.js";
+import { KBRefiner } from "../personalization/kbRefine.js";
+import { KBTools } from "../personalization/kbTools.js";
+import type { UserPrompts } from "../personalization/prompts.js";
 import { elapsed, errorName, log } from "../log.js";
 import { Observable } from "../util/observable.js";
 import type { PasteHistory } from "./pasteHistory.js";
@@ -115,6 +118,9 @@ export interface DictationDependencies {
   /** Memory: every agent-mode request and what came of it, which the agent can look back at
    * (ADR-DESK-061). */
   memory: AgentMemory;
+  /** The user's knowledge base and writing style (ADR-DESK-063): sent with agent mode's requests,
+   * edited by its `kb_add` and `kb_del`, and refined when a chat window closes. */
+  prompts: UserPrompts;
   /** Keeps the latest recording for "Play Last Recording"; called only for a dictation that started
    * in debug mode (`DictationSettings.keepsRecording`). */
   keepRecording?: (wav: Uint8Array) => void;
@@ -230,6 +236,10 @@ export class DictationController extends Observable {
   private releasedAt: number | null = null;
   /** The settings this dictation started with; it reads no others. */
   private dictationSettings: DictationSettings;
+  /** The knowledge base and writing style this dictation started with, read with its settings. */
+  private dictationPersonalization: Personalization;
+  /** Learns a closed chat's knowledge into the knowledge base, one chat at a time. */
+  private readonly refiner: KBRefiner;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
   /** The app in front at key-down: the paste goes there only, and the corrections are learned from
@@ -301,6 +311,8 @@ export class DictationController extends Observable {
   constructor(private readonly deps: DictationDependencies) {
     super();
     this.dictationSettings = deps.settings();
+    this.dictationPersonalization = deps.prompts.personalization;
+    this.refiner = new KBRefiner(deps.prompts);
     deps.account.onAccountChange = () => this.accountChanged();
   }
 
@@ -461,6 +473,7 @@ export class DictationController extends Observable {
     // First, before anything else: the settings this dictation uses, whatever changes meanwhile.
     const settings = this.deps.settings();
     this.dictationSettings = settings;
+    this.dictationPersonalization = this.deps.prompts.personalization;
     if (!settings.hasConsented) return this.fail("Finish setting up TabMail Voice from its menu to dictate.");
     if (!this.deps.account.isSignedIn) return this.fail("Sign in to TabMail in Settings to dictate.");
     if (this.deps.permissions.microphone !== "granted") return this.fail("Allow microphone access in TabMail Voice's menu to dictate.");
@@ -837,15 +850,16 @@ export class DictationController extends Observable {
         // or writes.
         this.setPhase({ kind: "running", tool: null });
         // Only the tools of apps switched on at key-down are offered, and only those run; with Answer off
-        // none is offered (`loopTools`), and none runs: the backend passes on whatever the model calls.
+        // none is offered (`requestTools`), and none runs: the backend passes on whatever the model calls.
         const connectorTools = offered.includes("answer") ? this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector)) : [];
         // This request's searches, for their later pages.
         const memoryTools = new MemoryTools(this.deps.memory);
+        const personalization = this.dictationPersonalization;
         // What the tools work with, from the settings read at key-down: a change meanwhile applies next time.
         const toolSettings: ToolSettings = { eventDuration: settings.eventDuration };
         const registry = this.requestTools(offered, connectorTools, memoryTools, toolSettings, windowRead, context, email.app, transcript, targetApp, isCurrent, signal);
         const { tool, text } = await DesktopAgent.run(
-          transcript, context, screenHidden, conversation, settings.userName, registry,
+          transcript, context, screenHidden, conversation, settings.userName, personalization, registry,
           client, account, userID, (event) => registry.serverEvent(event), signal,
         );
         if (!isCurrent()) return;
@@ -1104,10 +1118,12 @@ export class DictationController extends Observable {
       ...(connectorTools.length === 0 ? [] : [{ name: config.confirmationTool, terminal: false, preservesConfirmation: true, run: (call: ToolCall, round: number) => this.runConfirmationTool(call, round, (tool, args) => registry.perform(tool.name, () => this.runTool(tool, args, settings, signal), tool.progressLabelFor?.(args))) }]),
       ...connectorTools.map((tool) => ({ name: tool.name, terminal: tool.terminal ?? false, bubble: tool.connector, progressLabel: tool.progressLabel, deferredActivity: true, run: (call: ToolCall, round: number) => this.runConnectorTool(tool, call, round, settings, isCurrent, signal, (args) => registry.perform(tool.name, () => this.runTool(tool, args, settings, signal), tool.progressLabelFor?.(args))) })),
       ...MemoryTools.names.map((name) => ({ name, terminal: false, bubble: memoryBubble, progressLabel: config.memoryToolProgressLabel, run: (call: ToolCall) => this.runMemoryTool(call, memory) })),
+      ...KBTools.names.map((name) => ({ name, terminal: false, bubble: memoryBubble, run: async (call: ToolCall) => this.runKBTool(call) })),
       ...(windowRead !== null && context !== null ? [{ name: config.screenReadTool, terminal: false, bubble: screenReadBubble, progressLabel: config.screenReadProgressLabel, run: () => this.runScreenRead(windowRead) }] : []),
       ...offered.map((name) => {
         const definition = agentTools[name];
         return { name, terminal: definition.terminal, bubble: name, chatCaption: definition.chatCaption, response: definition.response, advertise: !definition.response,
+          check: (call: ToolCall) => void definition.text(parsedJSON(call.function.arguments), context),
           run: async (call: ToolCall) => {
             const text = definition.text(parsedJSON(call.function.arguments), context);
             log.content(`DesktopAgent: ${name} wrote`, text);
@@ -1234,6 +1250,19 @@ export class DictationController extends Observable {
     if (screen === null) return config.screenReadUnavailable;
     log.debug(() => `DictationController: ${config.screenReadTool} gave ${charCount(screen.renderedText)} chars`);
     return screen.renderedText;
+  }
+
+  /** Runs a knowledge-base tool: it edits only the user's own knowledge base, so it asks nothing.
+   * Memory's bubble runs for it (`requestTools`); it runs at once, so the chat window shows no activity
+   * for it, and Settings shows the change. */
+  private runKBTool(call: ToolCall): string {
+    const args = parsedJSON(call.function.arguments);
+    if (!isJSONObject(args)) {
+      log.error(`DictationController: ${call.function.name} called with arguments that aren't a JSON object`);
+      return "Error: the arguments were not a JSON object.";
+    }
+    log.debug(`DictationController: running ${call.function.name}`);
+    return new KBTools(this.deps.prompts).run(call.function.name, args);
   }
 
   /** Keeps an agent-mode request and what came of it (`agent`) in memory, within `maxBytes`, the size
@@ -1764,17 +1793,36 @@ export class DictationController extends Observable {
     this.closeChat();
   }
 
-  /** The conversation and any request under way end: the chat window closes. */
-  private endConversation(): void {
+  /** The conversation and any request under way end: the chat window closes, and what it taught is
+   * learned into the knowledge base unless it is the account's end (`refines`). */
+  private endConversation(refines = true): void {
     // A failure still showing goes too: the pill it shows is where the conversation started.
     if (this.currentPhase.kind !== "idle") this.discard();
-    this.dropChat();
+    this.dropChat(refines);
   }
 
-  private dropChat(): void {
+  /** The chat window closes; its conversation, unless `refines` is false, goes to the knowledge
+   * base's refine (`KBRefiner`, which passes over a short one). */
+  private dropChat(refines = true): void {
     cancelTimer(this.chatCloseTimer);
     this.chatCloseTimer = null;
+    const turns = this.currentChat?.turns ?? [];
     this.setChat(null);
+    if (refines && turns.length > 0) this.refine(turns);
+  }
+
+  /** Refines the knowledge base with a closed chat's `turns`, under the account signed in now and the
+   * settings read now, its first step: nothing is sent once consent is withdrawn, and nothing waits
+   * for it (ADR-DESK-063). */
+  private refine(turns: readonly ChatTurn[]): void {
+    const settings = this.deps.settings();
+    if (!settings.hasConsented) {
+      log.debug("DictationController: consent withdrawn; chat not refined");
+      return;
+    }
+    const account = this.deps.account;
+    const client = this.deps.makeCompletionsClient(settings.backendURL);
+    void this.refiner.refine(turns, client, account, account.session?.userID ?? null);
   }
 
   /** Signing out, or into another account, ends the conversation and any agent request under way,
@@ -1785,7 +1833,8 @@ export class DictationController extends Observable {
     // in at the upload.
     if (this.currentMode !== "agent") return;
     log.debug("DictationController: account changed; conversation ended");
-    this.endConversation();
+    // The conversation was the last account's: it teaches the knowledge base nothing.
+    this.endConversation(false);
   }
 
   /** Changes the open chat window's `change` fields; nothing while it is closed. */

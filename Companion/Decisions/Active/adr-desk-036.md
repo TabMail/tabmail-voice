@@ -193,18 +193,20 @@ Answer, which also circled, went on behind it.
 
 > **Amended (owner, 2026-10-19): memory has a bubble.** The owner: *"for the memory tool … we don't
 > seem to have a memory tool icon, like the bubble, like the other tools"*. The memory tools
-> (ADR-DESK-061) ran under no bubble. They now have one, `memoryBubble` ("Memory", with Settings'
-> memory icon, a clock with an arrow going back, in the bubbles' accent; its tooltip
-> `memoryBubbleDescription`). It shows whenever a tool's bubble does (`shownBubbles`), since the
-> memory tools come with every request that offers one (`loopTools`), and has no switch in Settings.
-> It runs as an app's does while a memory tool runs, at the front of the row, and stops with it; the
-> chat window's label for a memory search is unchanged.
+> (ADR-DESK-061) and the knowledge base's (ADR-DESK-063) ran under no bubble. They now share one,
+> `memoryBubble` ("Memory", with Settings' memory icon, a clock with an arrow going back, in the
+> bubbles' accent; its tooltip `memoryBubbleDescription`). It shows whenever a tool's bubble does
+> (`shownBubbles`), since their tools come with every request that offers one (`requestTools`), and has
+> no switch in Settings. It runs as an app's does while one of its tools runs, at the front of the
+> row, and stops with it; the chat window's label for a memory search is unchanged. A knowledge-base
+> tool runs at once, so like any tool shorter than a frame its bubble moves to the front without
+> visibly circling (the 2026-10-05 amendment). One bubble for both: to the user both are what agent
+> mode remembers, as the what's-new tip says.
 >
 > Tests: `bubbleOrder.test.ts` (memory's name and description; it shows with the tools' bubbles and
-> never alone; it sorts with them), `controller.test.ts` (it runs while `memory_search` does, moving to
-> the front, and stops before Answer's bubble runs for the reply), `overlay/index.test.ts` (its icon and
-> tooltip; it circles alone at the front while running; none without tools), each red-verified against
-> the bubble left out.
+> never alone; it sorts with them), `controller.test.ts` (it runs while `memory_search` does and for
+> `kb_add`, moving to the front, and stops before Answer's bubble runs for the reply), `overlay/index.test.ts` (its icon and tooltip; it circles alone at
+> the front while running; none without tools), each red-verified against the bubble left out.
 
 
 > **Amended (owner, 2026-10-25): the chat window can be dragged (issue #249).** The owner: *"if I were
