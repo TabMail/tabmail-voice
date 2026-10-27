@@ -161,7 +161,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
             .ok_or(1u32)?;
         let finished = call(
             crate::context::process,
-            &json!({"blocks": input["blocks"], "caret": sent}),
+            &json!({"blocks": input["blocks"], "caret": sent,
+                "caretSelectionOnly":input.get("caretSelectionOnly").cloned().unwrap_or(json!(false))}),
         )?;
         let caret = finished["caret"]
             .as_array()

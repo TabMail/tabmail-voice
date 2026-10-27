@@ -72,3 +72,8 @@ ADR-DESK-050). On Linux apt updates the package from the signed repository at `c
 whose source and keys the package installs (ADR-DESK-058).
 
 Captured-window identities, helper methods and GNOME integration: [the target-window flow](Companion/Memory/Current/003-captured-windows.md).
+
+Private screen-source transport: `caretSelectionOnly` follows an approved non-field caret source
+through native reservation and shared Rust finalization, where only its selected part is shown.
+Windows `native/windows/src/page_selection.h` admits that source domain before any text read;
+`tests/page-selection.cpp` pins its metadata and projection effects without an OS provider.

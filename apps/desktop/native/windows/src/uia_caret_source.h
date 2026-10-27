@@ -30,12 +30,18 @@ public:
     // Asked with the selection and the stretch around it to look in: from `low`'s start to `high`'s
     // end, the core's `paragraphStartUnits` on each side, as on the Mac.
     using LayoutRead = std::function<std::optional<Layout>(IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)>;
-    static CaretSource read(IUIAutomationTextPattern* pattern, const LayoutRead& layout = {}) {
+    static CaretSource read(IUIAutomationTextPattern* pattern, const LayoutRead& layout = {},
+                            IUIAutomationTextRange* approvedDocument = nullptr) {
         UiaCaretSource reader;
         auto selected = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> document;
         require(pattern->get_DocumentRange(&document));
         if (!selected || !document || !reader.containSelection(selected.Get(), document.Get())) return CaretSource::unread(true);
+        if (approvedDocument) {
+            BOOL same = FALSE;
+            require(document->Compare(approvedDocument, &same));
+            if (!same) return CaretSource::unread(true);
+        }
         const auto limits = core::request({{"limits", true}}, voice_core_context_json);
         const auto selectionLimit = limits.at("selectionSourceBytes").get<size_t>();
         const auto sourceLimit = limits.at("sourceWindowBytes").get<size_t>();
@@ -370,29 +376,6 @@ public:
         if (reader.text(target.Get(), limit) != std::optional<std::string>(value)) throw std::runtime_error("caption changed");
         return core::request({{"blockWindow", {{"text", value}, {"startKnown", true}, {"endKnown", complete}}}},
             voice_core_context_json).at("text").get<std::string>();
-    }
-    // The caller has approved only this selection's enclosing subtree. Never
-    // read adjacent document text here or replace the approved range silently.
-    static std::optional<std::string> selectedText(IUIAutomationTextPattern* pattern,
-        IUIAutomationTextRange* approved, IUIAutomationTextRange* document) {
-        UiaCaretSource reader;
-        if (!approved || !document || reader.compare(approved, TextPatternRangeEndpoint_Start, document, TextPatternRangeEndpoint_Start) < 0 ||
-            reader.compare(approved, TextPatternRangeEndpoint_End, document, TextPatternRangeEndpoint_End) > 0) return std::nullopt;
-        const auto unchanged = [&]() {
-            auto current = reader.selection(pattern);
-            ComPtr<IUIAutomationTextRange> currentDocument;
-            require(pattern->get_DocumentRange(&currentDocument));
-            if (!current || !currentDocument) return false;
-            BOOL same = FALSE, sameDocument = FALSE;
-            require(approved->Compare(current.Get(), &same));
-            require(document->Compare(currentDocument.Get(), &sameDocument));
-            return same && sameDocument;
-        };
-        if (!unchanged()) return std::nullopt;
-        const auto limit = core::request({{"limits", true}}, voice_core_context_json).at("selectionSourceBytes").get<size_t>();
-        const auto value = reader.text(approved, limit);
-        if (!value || !unchanged() || reader.text(approved, limit) != value || !unchanged()) return std::nullopt;
-        return value;
     }
 private:
     int compare(IUIAutomationTextRange* a, TextPatternRangeEndpoint ae, IUIAutomationTextRange* b, TextPatternRangeEndpoint be) const {

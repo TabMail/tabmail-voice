@@ -395,3 +395,12 @@ give no text around it, `MarkerCaretSource.read` now reads the field as an ordin
 that gives nothing either, a selection still withheld. A field that changed while its markers were
 read is unread, as before, and not read again. Only the Mac reads by markers.
 
+
+
+**Amendment 2026-10-26 — non-field selections keep private recognition context (#263).** A
+shown read retains the approved bounded source before and after a selection in a focused page,
+list or row until the same combined redaction pass used for fields. `caretSelectionOnly` marks
+those sides as recognition-only: they consume source allowance, reserve no presentation space,
+and appear in no reply field, rendered block, summary or content log. The selected bytes have
+no new source edge where the hidden neighbors meet them. A whole-window read still carries no
+independent caret source or selection.

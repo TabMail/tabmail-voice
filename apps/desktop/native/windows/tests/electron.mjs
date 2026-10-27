@@ -249,10 +249,35 @@ async function main() {
     assert.equal(selectedPage.focusedRole, "control", "a page in focus is no field");
     assert.equal(selectedPage.host, "data", "a page in focus reports its host");
     assert.deepEqual([selectedPage.textBeforeCaret, selectedPage.selectedText, selectedPage.textAfterCaret],
-      ["", "Unrelated heading outside focused field", ""], "a page in focus keeps its selection and no text around a caret");
-    assert.ok(selectedPage.renderedText.includes("‸Unrelated heading outside focused field‸"), "the selection is marked in the read");
+      ["", "", ""], "a page with an unapproved neighboring password withholds its independent selection");
+    assert.equal(selectedPage.selectionRedacted, true, "withheld recognition source disables Edit");
     assert.ok(selectedPage.renderedText.includes("Unrelated footer outside focused field") && !selectedPage.renderedText.includes("synthetic-secret"),
       "a page in focus is still walked, without its password field");
+    // Keep the same warmed document/provider, but give the independent selection an approved
+    // source domain. Restore the original nodes afterward so later field tests keep their state.
+    await window.webContents.executeJavaScript("globalThis.selectionOriginalNodes = [...document.body.childNodes]");
+    for (const kind of ["benign", "plain", "styled"]) {
+      await window.webContents.executeJavaScript(`(() => {
+        const paragraph = document.createElement('p');
+        const tag = ${JSON.stringify(kind)} === 'styled' ? 'b' : 'span';
+        const selected = ${JSON.stringify(kind)} === 'benign' ? 'ordinary words' : 'syntheticPrivate123';
+        const prefix = ${JSON.stringify(kind)} === 'benign' ? 'Read ' : 'token=';
+        paragraph.innerHTML = 'Draft. ' + prefix + '<' + tag + ' id="pageValue">' + selected + '</' + tag + '>. More.';
+        document.body.replaceChildren(paragraph);
+        getSelection().selectAllChildren(document.getElementById('pageValue'));
+      })()`);
+      await delay(300);
+      const selected = await request("readScreen");
+      const secret = kind !== "benign";
+      assert.deepEqual([selected.textBeforeCaret, selected.selectedText, selected.textAfterCaret],
+        ["", secret ? "[redacted]" : "ordinary words", ""], "approved source presents only its redacted or benign selection");
+      assert.equal(selected.selectionRedacted, secret);
+      assert.ok(!JSON.stringify(selected).includes("syntheticPrivate123"), "selected named value is absent from every reply field");
+    }
+    await window.webContents.executeJavaScript(`(() => {
+      document.body.replaceChildren(...selectionOriginalNodes);
+      delete globalThis.selectionOriginalNodes;
+    })()`);
     await window.webContents.executeJavaScript("getSelection().removeAllRanges()");
     await delay(150);
     const plainPage = await request("readScreen");

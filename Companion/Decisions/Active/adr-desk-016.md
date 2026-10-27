@@ -169,3 +169,13 @@ Windows native documents with a TextPattern (including Notepad) use the bounded 
 when the walk reaches them, including without focus. Web documents retain the page walk and
 host checks; documents without a TextPattern retain their children walk. The existing aggregate
 privacy preflight and shown/whole field limits apply before reading native document text.
+
+
+**Amendment 2026-10-26 — a page selection is redacted with its neighbors (#263).** Selection-only
+presentation no longer discards its bounded recognition context before shared finalization.
+Native collectors approve that entire source domain before a text-bearing call. On Windows the
+TextPattern document's enclosing subtree must pass the bounded page/password census, and the
+document range must still equal the approved range before text is acquired. An unapproved or
+incomplete source withholds the independent selection while the ordinary safe tree walk remains
+available. This can withhold an ordinary selection when the document includes an unrelated
+password field. macOS and Linux likewise admit non-field aggregate source before reading it.

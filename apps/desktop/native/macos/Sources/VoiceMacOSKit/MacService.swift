@@ -334,6 +334,7 @@ extension ScreenContext {
             var stopped: String?
             var blocks: [SharedContext.Block]?
             var caret: [String]?
+            var caretSelectionOnly: Bool?
             var selectionUnavailable: Bool?
             var viewport: JSON?
         }
@@ -348,6 +349,7 @@ extension ScreenContext {
         } else {
             request.blocks = blocks.map(SharedContext.Block.init)
             request.caret = [textBeforeCaret, selectedText, textAfterCaret]
+            request.caretSelectionOnly = caretSelectionOnly
             request.selectionUnavailable = selectionUnavailable
         }
         do {

@@ -90,22 +90,29 @@ enum ScreenContextReader {
         }
         var context = start
         if let focused {
-            readCaret(of: focused, in: tree, into: &context)
             // A focused element that is no field (a page clicked on, a list, a row) is read by the
-            // walk like any element: the text around its caret is its own, which the walk reads as
-            // it is laid out (Safari and Chrome give none there at all): only what is selected in it
-            // is kept. Reading the whole window, nothing of the caret's text is: the walk reads the
-            // field whole (the core's `around`).
+            // walk like any element. Only its selection is presented, but the bounded sides stay
+            // private until the core redacts that selection with its source. The whole-window
+            // read carries no independent caret text: the walk reads the field whole.
             let keep: SharedWalk.Around
             do { keep = try SharedWalk.around(focusedField: isFieldInFocus(focused, in: tree), wholeWindow: context.wholeWindow) } catch {
                 keep = SharedWalk.Around(around: false, selection: false)
                 context.coreFailed = true
             }
-            if !keep.around {
+            context.caretSelectionOnly = keep.selection && !keep.around
+            if keep.selection {
+                // A non-field source can span descendants outside the selected subtree. Approve
+                // that domain before requesting any text, including recognition-only neighbors.
+                if keep.around || lookForExcludedPage(in: focused, tree, excluding: exclusions, protect: true,
+                                                      valid: { !asked() }) == .none {
+                    readCaret(of: focused, in: tree, into: &context)
+                } else {
+                    context.textBeforeCaret = ""; context.selectedText = ""; context.textAfterCaret = ""
+                    context.selectionUnavailable = true
+                }
+            } else {
                 context.textBeforeCaret = ""
                 context.textAfterCaret = ""
-            }
-            if !keep.selection {
                 context.selectedText = ""
                 context.selectionUnavailable = false
             }

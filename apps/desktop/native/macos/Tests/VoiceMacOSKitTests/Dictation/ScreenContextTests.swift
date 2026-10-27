@@ -51,6 +51,25 @@ struct ScreenContextTests {
         #expect(try context.renderedText() == "» ‸")
     }
 
+    @Test func privateNeighborsDoNotDisplaceLateVisibleContext() throws {
+        let limits = try SharedContext.sourceLimits()
+        let screenBytes = limits.selectionSourceBytes + 6
+        var context = ScreenContext(appName: "Synthetic page")
+        context.textBeforeCaret = "private prefix. " + String(repeating: "a ", count: 3000)
+        context.selectedText = "chosen"
+        context.textAfterCaret = String(repeating: " b", count: 3000) + ". private suffix"
+        context.caretSelectionOnly = true
+        context.append(.text, String(repeating: "z", count: screenBytes - 100))
+        #expect(!context.textBudgetFull)
+        context.append(.text, "visible-tail-marker")
+        #expect(context.blocks.count == 2)
+        let reply = context.json(ScreenExclusions())
+        #expect(reply["selectedText"]?.string == "chosen")
+        #expect(reply["renderedText"]?.string?.contains("visible-tail-marker") == true)
+        #expect(reply["textBeforeCaret"]?.string == "")
+        #expect(reply["textAfterCaret"]?.string == "")
+    }
+
     @Test func selectionIsBracketedByCaretMarkers() throws {
         var context = ScreenContext(appName: "Example")
         context.textBeforeCaret = "a "
@@ -636,6 +655,46 @@ struct ScreenContextTests {
         #expect(reply["selectionRedacted"] == .bool(!whole))
     }
 
+    /// The label outside a non-field selection still participates in the one shared redaction
+    /// pass. Its neighboring text is private recognition context, not presented caret text.
+    @Test(arguments: ["AXWebArea", "AXList", "AXRow"], [false, true])
+    func aNonFieldSelectionIsRedactedWithItsPrivateContext(role: String, secret: Bool) throws {
+        let selected = secret ? "synthetic" + "Private123" : "ordinary chosen words"
+        let text = "Draft. " + (secret ? "token=" : "Read ") + selected + ". More."
+        let native = text as NSString
+        let caret = try BoundedCaretSource.read(count: native.length, selection: native.range(of: selected)) { native.substring(with: $0) as NSString }
+        let frame = CGRect(x: 0, y: 0, width: 300, height: 100)
+        let focus = FakeElement(role, ["host": "example.com", "caretBefore": caret.parts[0],
+                                       "caretSelected": caret.parts[1], "caretAfter": caret.parts[2]],
+                                frame: frame, children: [FakeElement("AXStaticText", [kAXValueAttribute: text], frame: frame)])
+        let window = FakeElement("AXWindow", frame: frame, children: [focus])
+        let context = try #require(ScreenContextReader.gather(window: window, focused: focus, focusPath: [window], in: FakeScreenTree(),
+                                                              excluding: ScreenExclusions(), from: ScreenContext(appName: "Synthetic page")))
+        let reply = context.json(ScreenExclusions())
+        let rendered = try #require(reply["renderedText"]?.string)
+        #expect(rendered.contains("Draft.") && rendered.contains("More."))
+        #expect(reply["textBeforeCaret"]?.string == "" && reply["textAfterCaret"]?.string == "")
+        #expect(reply["selectedText"]?.string == (secret ? "[redacted]" : selected))
+        #expect(reply["selectionRedacted"] == .bool(secret))
+        if secret {
+            #expect(!String(decoding: try JSONEncoder().encode(reply), as: UTF8.self).contains(selected))
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func aNonFieldPrivateSourceNeedsCompletePasswordAdmission(stopped: Bool) throws {
+        let frame = CGRect(x: 0, y: 0, width: 300, height: 100)
+        let password = FakeElement("AXTextField", [kAXSubroleAttribute: kAXSecureTextFieldSubrole, kAXValueAttribute: "synthetic protected value"], frame: frame)
+        let focus = FakeElement("AXWebArea", ["host": "example.com", "caretBefore": "token=", "caretSelected": "syntheticPrivate123", "caretAfter": ""],
+                                frame: frame, children: stopped ? [] : [password])
+        let window = FakeElement("AXWindow", frame: frame, children: [focus])
+        let context = try #require(ScreenContextReader.gather(window: window, focused: focus, focusPath: [window], in: FakeScreenTree(),
+            excluding: ScreenExclusions(), from: ScreenContext(appName: "Synthetic page"), asked: { stopped }))
+        #expect(focus.caretReads == 0 && password.textReads == 0)
+        let reply = context.json
+        #expect(reply["selectedText"]?.string == "" && reply["selectionRedacted"] == .bool(true))
+    }
+
     /// In a row a titled control is read once, not again from its child text, and a thin field is
     /// left out beside a shown one; read beside it when the whole window is.
     @Test func rowTextReadsATitledControlOnceAndOnlyShownFields() throws {
@@ -876,6 +935,7 @@ final class FakeElement {
     let frame: CGRect?
     let children: [FakeElement]
     var textReads = 0
+    var caretReads = 0
     /// The boxes of its text's first and last characters, as the app gives them.
     var ends: [CGRect]?
 
@@ -910,6 +970,7 @@ struct FakeScreenTree: ScreenTree {
         return element.attributes[kAXValueAttribute].map { [element.attributes["fieldBefore"] ?? "", $0, element.attributes["fieldAfter"] ?? ""] }
     }
     func caretWindow(of element: FakeElement) -> SharedContext.CaretWindow? {
+        element.caretReads += 1
         guard let before = element.attributes["caretBefore"], let selected = element.attributes["caretSelected"],
               let after = element.attributes["caretAfter"] else { return nil }
         return SharedContext.CaretWindow(parts: [before, selected, after], selectionUnavailable: element.attributes["selectionUnavailable"] != nil)
