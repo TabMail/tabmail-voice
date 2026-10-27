@@ -21,7 +21,7 @@ assert.ok(process.argv[2], "pass the voice-linux executable path");
 // The reader names the app in front by its desktop file, as GNOME launches it.
 if (!process.env.GIO_LAUNCHED_DESKTOP_FILE) {
   const desktopFile = join(mkdtempSync(join(tmpdir(), "voice-electron-")), "ai.tabmail.voice.electron-fixture.desktop");
-  writeFileSync(desktopFile, "[Desktop Entry]\nType=Application\nName=Synthetic Electron fixture\nExec=electron\n");
+  writeFileSync(desktopFile, `[Desktop Entry]\nType=Application\nName=Synthetic Electron fixture\nExec="${process.execPath}"\n`);
   const child = spawn(process.execPath, process.argv.slice(1), { stdio: "inherit", env: { ...process.env, ACCESSIBILITY_ENABLED: "1", GIO_LAUNCHED_DESKTOP_FILE: desktopFile } });
   child.on("exit", (code) => process.exit(code ?? 1));
 } else {
@@ -143,18 +143,30 @@ async function main() {
     await expectRead("Gmail-shaped, before a bold word", "Synthetic opening line\n\nSynthetic ",
                      "line to dictate under.\n\n\n--\nSynthetic signature");
 
-    for (const styled of [false, true]) {
-      const tag = styled ? "b" : "span";
-      await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<p>Draft. token=<${tag} id="selected">syntheticPrivate123</${tag}>. More.</p>`)}`);
+    // A flat, read-only document owns the actual selected text. A container's embedded-object
+    // placeholder is not the selected child's text and cannot prove selection redaction.
+    for (const [index, kind] of ["benign", "plain", "styled"].entries()) {
+      const secret = kind !== "benign";
+      const selected = secret ? "syntheticPrivate123" : "ordinary words";
+      const prefix = secret ? "Draft. token=" : "Draft. Read ";
+      await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<body tabindex="0" style="font-weight:${kind === "styled" ? "bold" : "normal"}">${prefix}${selected}. More.</body>`)}`);
       await delay(500);
-      await window.webContents.executeJavaScript("getSelection().selectAllChildren(document.getElementById('selected'))");
+      await window.webContents.executeJavaScript(`(() => {
+        document.body.focus();
+        const range = document.createRange();
+        const from = document.body.textContent.indexOf(${JSON.stringify(selected)});
+        range.setStart(document.body.firstChild, from);
+        range.setEnd(document.body.firstChild, from + ${selected.length});
+        getSelection().removeAllRanges(); getSelection().addRange(range);
+      })()`);
       await delay(150);
-      const shown = await request("readScreen", { read: styled ? 3 : 1 });
-      assert.deepEqual([shown.textBeforeCaret, shown.selectedText, shown.textAfterCaret], ["", "[redacted]", ""],
-        "a non-field selected value is recognized with its private label, including styled text");
-      assert.equal(shown.selectionRedacted, true);
+      const read = index * 2 + 1;
+      const shown = await request("readScreen", { excludedAppIDs: [], excludedHosts: [], read });
+      assert.deepEqual([shown.textBeforeCaret, shown.selectedText, shown.textAfterCaret], ["", secret ? "[redacted]" : selected, ""],
+        "a non-field selection keeps its approved context private and redacts named values");
+      assert.equal(shown.selectionRedacted, secret);
       assert.ok(!JSON.stringify(shown).includes("syntheticPrivate123"));
-      const whole = await request("readScreen", { read: styled ? 4 : 2, sameWindowAs: styled ? 3 : 1, wholeWindow: true });
+      const whole = await request("readScreen", { excludedAppIDs: [], excludedHosts: [], read: read + 1, sameWindowAs: read, wholeWindow: true });
       assert.equal(whole.selectedText, "");
       assert.equal(whole.selectionRedacted, false);
       assert.ok(!JSON.stringify(whole).includes("syntheticPrivate123"));
