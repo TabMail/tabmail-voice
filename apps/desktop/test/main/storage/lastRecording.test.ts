@@ -52,6 +52,17 @@ describe("LastRecording", () => {
     expect(existsSync(recording.path)).toBe(false);
   });
 
+  /** Debug mode being told "on" again (any settings or account change, or a launch with it on) leaves
+   * the kept recording alone. */
+  test("on again keeps the file already there", async () => {
+    const recording = new LastRecording(join(scratch(), "last.wav"));
+    recording.follow(true);
+    recording.keep(Uint8Array.from([1, 2]));
+    recording.follow(true);
+    await recording.flush();
+    expect([...readFileSync(recording.path)]).toEqual([1, 2]);
+  });
+
   /** The invariant: with debug mode off no recording is on disk, also for a dictation that started
    * with it on and ends after it went off. */
   test("a recording that ends after debug mode went off is not kept", async () => {

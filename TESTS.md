@@ -168,7 +168,7 @@ going off after each dictation (the engine's release has no automated test, by t
 - In debug mode, start dictation from the menu, then untick the agreement in Welcome Guide…: the
   menu's Stop Dictation is still enabled and stops the recording; Start Dictation is then disabled.
   Switching debug mode off while recording from the menu leaves Stop Dictation in the menu.
-- Screen reading off (wizard or Settings): the menu's Show Last Screen Context (unpackaged build with debug mode on) stays unchanged
+- Screen reading off (wizard or Settings): the menu's Show Last Screen Context (any build with debug mode on) stays unchanged
   after a dictation.
 - Overlay appears just below the text cursor (TextEdit, Mail, Safari); below the focused field
   where the app exposes no caret; at the mouse pointer only when neither is available. It never

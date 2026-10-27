@@ -1409,6 +1409,17 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(existsSync(lastRecording())).toBe(false);
     });
 
+    test("on at launch, and an unrelated settings change while on, keep the file", async () => {
+      writeFileSync(lastRecording(), "audio");
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      expect(await send({ type: "setSmartDictation", value: true })).toEqual({ error: null });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(readFileSync(lastRecording(), "utf8")).toBe("audio");
+      expect(app.trayActions?.debug.hasLastRecording()).toBe(true);
+    });
+
     test("signing out deletes the file: no account is allowed debug mode", async () => {
       app.stored.set("debugMode", true);
       signIn("tester@tabmail.ai");
