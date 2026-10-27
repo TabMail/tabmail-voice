@@ -64,14 +64,14 @@ export class ToolRegistry {
   }
 
   /** The same lifecycle for an already-confirmed effect, without asking the tool's question again. */
-  async perform(name: string, effect: () => Promise<string>): Promise<string> {
+  async perform(name: string, effect: () => Promise<string>, label?: string): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool?.run) throw new Error(`No local tool: ${name}`);
-    this.activity(tool, true);
+    this.activity(tool, true, label);
     try {
       return await effect();
     } finally {
-      this.activity(tool, false);
+      this.activity(tool, false, label);
     }
   }
 

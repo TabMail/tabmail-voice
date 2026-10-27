@@ -59,6 +59,21 @@ beforeEach(() => {
 });
 
 describe("files_search", () => {
+  test.each([
+    ["any", "files and emails"], ["document", "documents"], ["pdf", "PDFs"], ["image", "images"],
+    ["presentation", "presentations"], ["spreadsheet", "spreadsheets"], ["folder", "folders"], ["email", "emails"],
+  ])("describes a %s search in the chat", (kind, target) => {
+    const tool = new FilesSearchTool(store, home);
+    expect(tool.progressLabelFor({ query: "  project\n budget  ", kind })).toBe(`Searching ${target} for “project budget”`);
+    expect(store.queries).toEqual([]);
+  });
+
+  test("search descriptions fall back without claiming a specific kind", () => {
+    const tool = new FilesSearchTool(store, home);
+    expect(tool.progressLabelFor({ query: "invoice" })).toBe("Searching files and emails for “invoice”");
+    expect(tool.progressLabelFor({ query: null, kind: "unknown" })).toBe(tool.progressLabel);
+  });
+
   /** The words, kind and dates as asked, a day for `changed_before` reading through its end; the items
    * newest first with their kind, change and a `~` path, an email by subject and sender. */
   test("the matches are read with their paths", async () => {
