@@ -87,6 +87,20 @@ describe("the paste history window's place", () => {
     expect(historyWindowFrame(pill, size, workArea, bubblesUnder)).toEqual(answerBox(pill, size.height, bubblesUnder));
   });
 
+  test.each([325, 1440])("matches chat in a %s-point work area on a negative-origin display", (width) => {
+    const area = { x: -1500, y: -200, width, height: 900 };
+    for (const x of [area.x, area.x + area.width]) {
+      const pill = { x, y: 400 };
+      const side = chatSide(pill.y, true, area);
+      const chat = chatWindowFrame(pill, size.height, area, side, true);
+      const history = historyWindowFrame(pill, size, area, true);
+      expect(history.x).toBe(chat.x + config.chatShadowMargin);
+      expect(history.width).toBe(chat.width - 2 * config.chatShadowMargin);
+      expect(history.x).toBeGreaterThanOrEqual(area.x + config.overlayEdgeInset);
+      expect(history.x + history.width).toBeLessThanOrEqual(area.x + area.width - config.overlayEdgeInset);
+    }
+  });
+
   test("its edge by the pill stays put as its list measures itself", () => {
     const pill = { x: 700, y: 600 };
     const tall = historyWindowFrame(pill, size, workArea, true);

@@ -39,7 +39,7 @@ it("keeps shared pill and chat content inside a narrow side strip", async () => 
   expect(pill.x).toBe(162.5);
   const side = chatSide(pill.y, true, area);
   const frame = chatWindowFrame(pill, 320, area, side, true);
-  expect(frame.x + config.chatShadowMargin).toBeGreaterThanOrEqual(area.x);
-  expect(frame.x + frame.width - config.chatShadowMargin).toBeLessThanOrEqual(area.x + area.width);
-  expect(frame.width - 2 * config.chatShadowMargin).toBe(325);
+  expect(frame.x + config.chatShadowMargin).toBeGreaterThanOrEqual(area.x + config.overlayEdgeInset);
+  expect(frame.x + frame.width - config.chatShadowMargin).toBeLessThanOrEqual(area.x + area.width - config.overlayEdgeInset);
+  expect(frame.width - 2 * config.chatShadowMargin).toBe(area.width - 2 * config.overlayEdgeInset);
 });

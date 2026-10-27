@@ -218,6 +218,7 @@ export function historyWindowFrame(pill: Point, size: Size, workArea: Rect, bubb
   const height = Math.min(size.height, side.maxHeight);
   const stripTop = chatStripTop(pill.y, bubblesUnder);
   const y = side.below ? stripTop + config.chatStripHeight + config.chatPillGap : stripTop - config.chatPillGap - height;
-  const x = Math.min(Math.max(pill.x - size.width / 2, workArea.x), maxX(workArea) - size.width);
-  return { x, y, width: size.width, height };
+  const width = Math.min(size.width, Math.max(0, workArea.width - 2 * config.overlayEdgeInset));
+  const x = Math.min(Math.max(pill.x - width / 2, workArea.x + config.overlayEdgeInset), maxX(workArea) - config.overlayEdgeInset - width);
+  return { x, y, width, height };
 }
