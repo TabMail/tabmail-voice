@@ -62,6 +62,7 @@ import { TargetWindows } from "./native/targetWindow.js";
 import { ScreenReader } from "./native/screenReader.js";
 import { NativeMicrophone } from "./native/microphone.js";
 import { KeychainSessionStore } from "./storage/keychainSessionStore.js";
+import { LastRecording } from "./storage/lastRecording.js";
 import { LogFile } from "./storage/logFile.js";
 import { type EmailAppInfo, MacSystem } from "./native/macos/system.js";
 import { OverlayWindowController } from "./overlayWindow.js";
@@ -135,7 +136,7 @@ function launch(): void {
   app.dock?.hide();
   if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
 
-  const lastRecordingPath = join(tmpdir(), config.debugLastRecordingFileName);
+  const lastRecording = new LastRecording(join(tmpdir(), config.debugLastRecordingFileName));
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
   // Native Thunderbird integration on Windows/Linux is deferred by the owner.
   const hasTabMail = (): boolean => process.platform === "darwin" && EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
@@ -292,13 +293,7 @@ function launch(): void {
     corrections: nativeAudio ? new CorrectionWatch(fieldReader, (words) => settings.learnWords(words)) : undefined,
     useWords: (texts) => settings.useWords(texts),
     memory,
-    keepRecording: isDebugBuild
-      ? (wav) => {
-          writeFile(lastRecordingPath, wav).catch((error: unknown) => {
-            log.error(`main: couldn't keep the last recording: ${errorName(error)}`);
-          });
-        }
-      : undefined,
+    keepRecording: (wav) => lastRecording.keep(wav),
   });
   controller.captureContext = (exclusions, target) => probe.capture(exclusions, target);
   controller.stopContext = (read) => probe.stop(read);
@@ -361,16 +356,14 @@ function launch(): void {
     quit: () => app.quit(),
     checkForUpdates: () => updater?.checkNow(),
     installUpdate: () => updater?.install(),
-    debug: isDebugBuild
-      ? {
-          hasLastRecording: () => existsSync(lastRecordingPath),
-          playLastRecording: () => void shell.openPath(lastRecordingPath),
-          showLastScreenContext: () => windows.showContextDebug(),
-          showsSmokeTip: () => showsSmokeTip,
-          toggleSmokeTip: () => { showsSmokeTip = !showsSmokeTip; windows.push("overlay"); tray.update(); },
-          showLogFile: () => shell.showItemInFolder(logPath),
-        }
-      : null,
+    debug: {
+      hasLastRecording: () => lastRecording.exists,
+      playLastRecording: () => void shell.openPath(lastRecording.path),
+      showLastScreenContext: () => windows.showContextDebug(),
+      showsSmokeTip: () => showsSmokeTip,
+      toggleSmokeTip: () => { showsSmokeTip = !showsSmokeTip; windows.push("overlay"); tray.update(); },
+      showLogFile: () => shell.showItemInFolder(logPath),
+    },
   });
 
   function stateOf<Name extends WindowName>(name: Name): WindowStates[Name] {
@@ -795,7 +788,16 @@ function launch(): void {
   account.observe(pushSettingsWindows);
   // A packaged build writes the debug log while debug mode is on: switched on, or the account it is
   // allowed for signing in (ADR-DESK-015).
-  const followDebugMode = () => setDebugMode(settings.isDebugMode(account.email));
+  const followDebugMode = () => {
+    const on = settings.isDebugMode(account.email);
+    setDebugMode(on);
+    // The last recording and screen context live only while debug mode is on: switched off, or the
+    // account no longer allowed it, they are dropped (also at launch, after a switch changed while the app was closed).
+    if (!on) {
+      lastRecording.discard();
+      probe.lastContext = null;
+    }
+  };
   followDebugMode();
   settings.observe(followDebugMode);
   account.observe(followDebugMode);

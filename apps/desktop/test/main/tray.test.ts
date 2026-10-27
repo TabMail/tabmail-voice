@@ -48,7 +48,7 @@ function actionsFrom(clicked: string[]): TrayActions {
     quit: action("quit"),
     checkForUpdates: action("checkForUpdates"),
     installUpdate: action("installUpdate"),
-    debug: null,
+    debug: { hasLastRecording: () => false, playLastRecording: () => {}, showLastScreenContext: () => {}, showsSmokeTip: () => false, toggleSmokeTip: () => {}, showLogFile: () => {} },
   };
 }
 
@@ -77,6 +77,34 @@ test("the menu's window items open the window each names", () => {
   expect(smokeTip).toMatchObject({ type: "checkbox", checked: true });
   smokeTip?.click?.();
   expect(opened).toEqual(["contextDebug", "smokeTip"]);
+});
+
+/** The debug items (Play Last Recording, Show Last Screen Context, Show Smoke Test Tip, Show Log File)
+ * show in any build while debug mode is on (ADR-DESK-018, amended 2026-10-27), and in none while off. */
+describe("TrayMenu's debug items", () => {
+  const debugLabels = ["Play Last Recording", "Show Last Screen Context", "Show Smoke Test Tip", "Show Log File"];
+
+  test("debug mode off has none", () => {
+    const { labels } = menu(null, () => ({ ...ready, debugMode: false }));
+    for (const label of debugLabels) expect(labels).not.toContain(label);
+  });
+
+  test("debug mode on has all four", () => {
+    const { labels } = menu(null, () => ({ ...ready, debugMode: true }));
+    for (const label of debugLabels) expect(labels).toContain(label);
+  });
+
+  test("Play Last Recording is dimmed with no recording, and Show Log File opens the log", () => {
+    const played: string[] = [];
+    const actions = { ...actionsFrom([]), debug: { ...actionsFrom([]).debug, hasLastRecording: () => true, playLastRecording: () => void played.push("play"), showLogFile: () => void played.push("log") } };
+    new TrayMenu("/nonexistent", () => ({ ...ready, debugMode: true }), actions);
+    const item = (label: string) => tray.items.find((entry) => entry.label === label);
+    expect(item("Play Last Recording")?.enabled).toBe(true);
+    item("Play Last Recording")?.click?.();
+    item("Show Log File")?.click?.();
+    expect(played).toEqual(["play", "log"]);
+    expect(menu(null, () => ({ ...ready, debugMode: true })).item("Play Last Recording")?.enabled).toBe(false);
+  });
 });
 
 /** The menu's update item (ADR-DESK-041): packaged builds only, just above Quit, and it does what it

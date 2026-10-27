@@ -56,8 +56,8 @@ export const releaseTailDuration = 150;
 /** The debug log file (`isDebugLogging`) moves aside past this size, keeping one earlier file. Sized for
  * full content logging (ADR-DESK-015): a dictation logs its screen read several times. */
 export const logFileMaxBytes = 50_000_000;
-/** Debug builds only: the latest recording's file name in the temporary directory, overwritten each
- * time ("Play Last Recording"). */
+/** The latest recording's file name in the temporary directory, overwritten each time ("Play Last
+ * Recording"), kept only for dictations made in debug mode and deleted when it goes off. */
 export const debugLastRecordingFileName = "TabMail-last-dictation.wav";
 /** Recording stops and is sent automatically at this length (10 minutes). A recording longer than
  * the backend transcribes at once is sent in chunks (ADR-DESK-049). */

@@ -17,7 +17,7 @@ export interface TrayActions {
   quit(): void;
   checkForUpdates(): void;
   installUpdate(): void;
-  /** Debug builds with debug mode on only; null otherwise. */
+  /** Shown only while debug mode is on (`MenuState.debugMode`), in every build. */
   debug: {
     hasLastRecording(): boolean;
     playLastRecording(): void;
@@ -25,7 +25,7 @@ export interface TrayActions {
     showsSmokeTip(): boolean;
     toggleSmokeTip(): void;
     showLogFile(): void;
-  } | null;
+  };
 }
 
 /** The menu-bar icon and its menu (`MenuContent` in the Swift app), rebuilt whenever its state
@@ -88,7 +88,7 @@ export class TrayMenu {
       );
     }
 
-    if (actions.debug && state.debugMode) {
+    if (state.debugMode) {
       const debug = actions.debug;
       items.push(
         { type: "separator" },

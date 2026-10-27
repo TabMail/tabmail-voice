@@ -43,6 +43,9 @@ export interface DictationSettings {
   /** The key held to dictate, which the double-tap tip names. */
   hotkey: DictationHotkey;
   backendURL: string;
+  /** Whether debug mode was on (`isDebugMode`): the dictation's audio is kept for Play Last Recording
+   * only then (ADR-DESK-018). */
+  keepsRecording: boolean;
   readsScreen: boolean;
   /** The bundle identifiers of the apps the screen is never read in: the built-in password managers
    * and those the user excludes (`ExcludedApp`). */
@@ -469,6 +472,7 @@ export class AppSettings extends Observable {
       hasConsented: this.hasConsented,
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),
+      keepsRecording: this.isDebugMode(email),
       readsScreen: this.readsScreen,
       excludedApps: [...this.builtInExcludedApps, ...this.excludedApps].map((app) => app.bundleIdentifier),
       excludedSites: [...config.builtInExcludedSites, ...this.excludedSites],
