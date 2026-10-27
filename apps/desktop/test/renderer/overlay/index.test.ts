@@ -66,6 +66,18 @@ const note = { kind: "notPasted", message: "Switched apps. Click to copy.", text
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent", runningBubble: "answer" };
 
+/** A bubble's center in the pill layer, including any unanimated positioning parents.
+ * happy-dom has no layout, so sum the positioned offsets as the browser lays them out. */
+function bubbleCenter(bubble: Element): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  for (let element = bubble.closest<HTMLElement>(".centered"); element !== null && !element.classList.contains("layer"); element = element.parentElement) {
+    x += parseFloat(element.style.left) || 0;
+    y += parseFloat(element.style.top) || 0;
+  }
+  return { x, y };
+}
+
 /** The overlay page, mounted afresh; `show` pushes it a state as the main process does. */
 async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>; tipFrame(): { top: number; bottom: number } | null; pillFrame(): { top: number; bottom: number }; commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -322,7 +334,7 @@ describe("overlay page", () => {
     const page = await overlayPage();
     await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], tip: "handsFree", opensUpward: true });
 
-    const bubbleTops = [...document.querySelectorAll(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    const bubbleTops = [...document.querySelectorAll(".bubble")].map((bubble) => bubbleCenter(bubble).y - config.agentBubbleDiameter / 2);
     // The two tools' and memory's.
     expect(bubbleTops).toHaveLength(3);
     const tipFrame = page.tipFrame();
@@ -345,12 +357,12 @@ describe("overlay page", () => {
     const opacities = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat(bubble.style.opacity));
     expect(labels()).toEqual(alphabetical([...tools, ...apps]).slice(0, showing));
     expect(labels()).toEqual(["answer", "calendar", "compose", "contacts"]);
-    const lefts = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.left));
+    const lefts = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubbleCenter(bubble).x);
     expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
     expect(opacities().slice(0, config.agentBubbleRowVisibleCount)).toEqual([1, 1, 1]);
     expect(opacities().at(-1)).toBeGreaterThan(0);
     expect(opacities().at(-1)).toBeLessThan(1);
-    const tops = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    const tops = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubbleCenter(bubble).y - config.agentBubbleDiameter / 2);
     const pill = page.pillFrame();
     for (const top of tops) {
       if (bubblesFitUnder) expect(top).toBeGreaterThanOrEqual(pill.bottom);
@@ -483,7 +495,7 @@ describe("overlay page", () => {
     // The tooltip's bottom, and the top of `label`'s bubble grown to `scale`, which it clears.
     const tooltipBottom = () => parseFloat(tooltip()?.style.top ?? "") + tooltipSize.height / 2;
     // Grown about its center, where its `.centered` wrapper is placed.
-    const grownTop = (label: string, scale: number) => parseFloat(bubble(label).closest<HTMLElement>(".centered")?.style.top ?? "") - (config.agentBubbleDiameter * scale) / 2;
+    const grownTop = (label: string, scale: number) => bubbleCenter(bubble(label)).y - (config.agentBubbleDiameter * scale) / 2;
     expect(tooltip()).toBeNull();
 
     await pointer("compose", "pointerover");
@@ -492,7 +504,7 @@ describe("overlay page", () => {
     expect(tooltip()?.style.visibility).toBe("visible");
     // Over the bubble as it has grown, clear of it.
     expect(tooltipBottom()).toBeCloseTo(grownTop("compose", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
-    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(parseFloat(bubble("compose").closest<HTMLElement>(".centered")?.style.left ?? ""));
+    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(bubbleCenter(bubble("compose")).x);
 
     await pointer("compose", "pointerout");
     expect(tooltip()).toBeNull();
@@ -509,7 +521,7 @@ describe("overlay page", () => {
     expect(bubble("compose").style.transform).toBe("scale(1)");
 
     // Each bubble's tooltip over that bubble: centered on it, clear of it.
-    const left = (label: string) => parseFloat(bubble(label).closest<HTMLElement>(".centered")?.style.left ?? "");
+    const left = (label: string) => bubbleCenter(bubble(label)).x;
     await pointer("calendar", "pointerover");
     expect(said()).toEqual([connectorByID.calendar.displayName, connectorByID.calendar.settingsDescription]);
     expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("calendar"));
@@ -586,7 +598,7 @@ describe("overlay page", () => {
     const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
     const center = parseFloat(tooltip?.style.left ?? "");
     expect(center + tooltipSize.width / 2).toBeLessThanOrEqual(width);
-    expect(Math.abs(center - parseFloat((bubble.closest(".centered") as HTMLElement).style.left))).toBeGreaterThan(1);
+    expect(Math.abs(center - bubbleCenter(bubble).x)).toBeGreaterThan(1);
   });
 
   /** In dictation mode, and in agent mode before the tools are known, no app's bubble shows. */

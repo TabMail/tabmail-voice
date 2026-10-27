@@ -300,26 +300,30 @@ function PillLayout({
       <div ref={pillRef} className="pill-anchor" style={{ left: anchor.x, top: anchor.y }}>
         <Pill mode={mode} level={state.level} hasVoice={state.hasVoice} isRetrying={state.isRetrying} language={state.language} isAgent={state.mode === "agent" || keepsBubbles} maxWidth={canvas.width - 2 * config.pillGlowReach} />
       </div>
-      {bubbles.map((item, index) => {
-        const center = centers[index];
-        if (!center) return null;
-        const move = `${config.agentBubbleMoveDurationSeconds}s ${config.pillSpringEasing}`;
-        return (
-          // Keyed by bubble, so one that moves along the row as another runs slides there.
-          <div key={item.key} className="centered" style={{ left: center.x, top: center.y, transition: `left ${move}, top ${move}` }}>
-            <Bubble
-              label={item.key}
-              isRunning={item.isRunning}
-              isDimmed={item.isDimmed}
-              opacity={item.opacity}
-              isHovered={hovered === item.key}
-              onHover={(isHovered) => setHovered(isHovered ? item.key : null)}
-            >
-              {item.icon}
-            </Bubble>
-          </div>
-        );
-      })}
+      {/* Move the row's origin with the pill immediately. Only positions within the row animate:
+          opening the chat changes the layer's coordinates, not the bubbles' places by the pill. */}
+      <div className="bubble-row" style={{ position: "absolute", left: anchor.x, top: anchor.y }}>
+        {bubbles.map((item, index) => {
+          const center = centers[index];
+          if (!center) return null;
+          const move = `${config.agentBubbleMoveDurationSeconds}s ${config.pillSpringEasing}`;
+          return (
+            // Keyed by bubble, so one that moves along the row as another runs slides there.
+            <div key={item.key} className="centered" style={{ left: center.x - anchor.x, top: center.y - anchor.y, transition: `left ${move}, top ${move}` }}>
+              <Bubble
+                label={item.key}
+                isRunning={item.isRunning}
+                isDimmed={item.isDimmed}
+                opacity={item.opacity}
+                isHovered={hovered === item.key}
+                onHover={(isHovered) => setHovered(isHovered ? item.key : null)}
+              >
+                {item.icon}
+              </Bubble>
+            </div>
+          );
+        })}
+      </div>
       <TipSlot gnomeRecordingKeys={state.gnomeRecordingKeys === true} tip={tip} hotkey={state.hotkey} pill={pill} bubbles={frames} opensUpward={state.opensUpward} />
       {hoveredBubble && hoveredFrame && (
         // Keyed by bubble, so the next bubble's tooltip is measured afresh (hidden until then), not
