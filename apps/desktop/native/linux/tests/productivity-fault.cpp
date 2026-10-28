@@ -27,7 +27,8 @@ extern "C" gboolean e_cal_client_get_objects_for_uid_sync(ECalClient* client, co
     return real(client, id, result, cancel, error);
 }
 // A change notice on a view as it starts: `changed-first` on the first view the process opens (a
-// change saved just before the read), `changed` on every one (a source that keeps changing).
+// change saved just before the read), `changed` on every one (a source that keeps changing);
+// `removed-first` and `removed` the same with a removal.
 extern "C" void e_cal_client_view_start(ECalClientView* view, GError** error) {
     auto real = reinterpret_cast<decltype(&e_cal_client_view_start)>(dlsym(RTLD_NEXT, "e_cal_client_view_start"));
     if (!real) std::abort();
@@ -35,8 +36,9 @@ extern "C" void e_cal_client_view_start(ECalClientView* view, GError** error) {
     static unsigned views = 0;
     const char* requested = std::getenv("VOICE_PRODUCTIVITY_FAULT");
     const bool always = requested && !std::strcmp(requested, "changed");
-    const bool first = requested && !std::strcmp(requested, "changed-first") && views++ == 0;
-    const bool removed = requested && !std::strcmp(requested, "removed");
+    const bool opening = views++ == 0;
+    const bool first = requested && !std::strcmp(requested, "changed-first") && opening;
+    const bool removed = requested && (!std::strcmp(requested, "removed") || (!std::strcmp(requested, "removed-first") && opening));
     if ((!error || !*error) && (always || first)) g_signal_emit_by_name(view, "objects-modified", static_cast<GSList*>(nullptr));
     if ((!error || !*error) && removed) g_signal_emit_by_name(view, "objects-removed", static_cast<GSList*>(nullptr));
 }

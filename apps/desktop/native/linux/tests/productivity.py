@@ -259,8 +259,9 @@ def faulted(method, params, fault):
 for method, params in [('calendarEvents', {'start':start_dst, 'end':start_dst+86400000}), ('reminders', {'dueBefore':None}), ('notesSearch', {'query':'Synthetic memo'})]:
     quiet = call(method, params)
     assert quiet, method
-    again = faulted(method, params, 'changed-first')
-    assert again.returncode == 0 and json.loads(again.stdout) == quiet, (method, again.stderr)
+    for fault in ['changed-first', 'removed-first']:
+        again = faulted(method, params, fault)
+        assert again.returncode == 0 and json.loads(again.stdout) == quiet, (method, fault, again.stderr)
     for fault in ['changed', 'removed']:
         changing = faulted(method, params, fault)
         assert changing.returncode != 0 and changing.stdout == '' and changing.stderr.strip() == 'productivity request failed', (method, fault, changing.stdout)
@@ -634,7 +635,21 @@ assert [row['start'] for row in floating_rows] == [week(k) for k in range(30)], 
 call('calendarEdit', {'id':floating_rows[0]['id'], 'occurrence':week(3), 'scope':'all', 'start':at(3, 0, 30), 'end':at(3, 0, 90), **unchanged})
 assert [row['start'] for row in rows('Floating series')] == [at(k, 0, 30) for k in range(30)]
 assert call('calendarDelete', {'id':floating_rows[0]['id']}) == {}
-print('EDS a floating series moved keeps its local time of day, passed')
+# Changed from its first occurrence on, a floating series changes as a whole, as EDS decides it
+# from the recurrence id it parses; from a later one it is split there, at the same local time.
+floating_first = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:floating-first\r\nSUMMARY:Floating first\r\nDTSTART:{floating_start}\r\nDURATION:PT1H\r\nRRULE:FREQ=WEEKLY;COUNT=4\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(floating_first, ECal.OperationFlags.NONE, None)[0]
+first_rows = rows('Floating first')
+call('calendarEdit', {'id':first_rows[0]['id'], 'occurrence':week(0), 'scope':'thisAndFollowing', 'title':'Floating renamed', **unchanged})
+assert [row['start'] for row in rows('Floating renamed')] == [week(k) for k in range(4)] and rows('Floating first') == []
+assert {row['id'] for row in rows('Floating renamed')} == {first_rows[0]['id']}
+renamed = rows('Floating renamed')
+call('calendarEdit', {'id':renamed[0]['id'], 'occurrence':week(2), 'scope':'thisAndFollowing', 'title':'Floating later', **unchanged})
+assert [row['start'] for row in rows('Floating renamed')] == [week(0), week(1)]
+assert [row['start'] for row in rows('Floating later')] == [week(2), week(3)]
+for title in ['Floating renamed', 'Floating later']:
+    assert call('calendarDelete', {'id':rows(title)[0]['id']}) == {}
+print('EDS a floating series moved keeps its local time of day, changed from its first occurrence as a whole, passed')
 
 # An occurrence another app changed alone, under its own zoned recurrence id, is deleted as itself.
 new_york = ZoneInfo('America/New_York')

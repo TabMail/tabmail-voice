@@ -173,9 +173,10 @@ without an editor (voice #229: its app calendar is invisible to the user and has
 - `thisOnly` stores a detached occurrence (the master's copy with its rules removed, under the
   occurrence's recurrence id); `thisAndFollowing` is EDS's THIS_AND_FUTURE, which ends the series and
   starts a new one under a new uid; on the first occurrence, and for `all`, the whole series changes.
-  The first occurrence is EDS's own (`e_cal_util_is_first_instance`, which skips excluded dates), so
-  a split from the first occurrence left after an excluded start changes the whole series, as EDS
-  does, and the confirmation and the store agree. The split's recurrence id is written in the
+  The first occurrence is EDS's own (`e_cal_util_is_first_instance`, which skips excluded dates),
+  asked with the split's recurrence id as the backend parses it off the wire, so a split from the
+  first occurrence left after an excluded start, or from a floating series' first occurrence, changes
+  the whole series, as EDS does, and the confirmation and the store agree. The split's recurrence id is written in the
   series' zone with its TZID: EDS's server backends start the new series there as it is, without the
   conversion its local backend makes. A series with a floating start is read in the user's zone, as
   EDS reads it, so moving it keeps its local time of day.

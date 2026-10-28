@@ -870,10 +870,9 @@ struct Found {
     // The occurrence changed on its own, or the event (the series) itself.
     ICalComponent* stored = nullptr;
     JSON row;
-    // An occurrence the series' rule makes (not one changed on its own); whether it is the first, as
-    // EDS counts it (an excluded start doesn't count), and whether it is at the series' own start.
+    // An occurrence the series' rule makes (not one changed on its own), and whether it is at the
+    // series' own start.
     bool generated = false;
-    bool first = false;
     bool atStart = false;
     int64_t occurrence = 0;
 };
@@ -955,11 +954,6 @@ Found find(ESourceRegistry* registry, const std::string& id, const JSON& occurre
     } else {
         found.generated = true;
         found.atStart = found.occurrence == seriesStart;
-        // EDS changes the whole series for a split at its first occurrence: asked as EDS decides it.
-        Object<ECalComponent> component(e_cal_component_new_from_icalcomponent(i_cal_component_clone(found.master)), g_object_unref);
-        if (!component) throw std::runtime_error("invalid series");
-        auto rid = dateFromWire(found.occurrence, !found.row["isAllDay"].get<bool>());
-        found.first = e_cal_util_is_first_instance(component.get(), rid.get(), e_cal_client_tzlookup_cb, client);
     }
     return found;
 }
@@ -1160,6 +1154,27 @@ void requireEditableSeries(const Found& found) {
 bool floating(ICalComponent* component) {
     Object<ICalTime> start(i_cal_component_get_dtstart(component), g_object_unref);
     return start && !i_cal_time_is_null_time(start.get()) && !i_cal_time_is_date(start.get()) && !i_cal_time_is_utc(start.get()) && !i_cal_time_get_timezone(start.get());
+}
+// A split's recurrence id: the occurrence named, in the series' own zone. EDS's server backends make
+// that the new series' start as it is, without the conversion its local one makes.
+Object<ICalProperty> splitRecurrenceID(int64_t occurrence, bool allDay, ICalTimezone* zone) {
+    auto rid = dateFromWire(occurrence, !allDay);
+    if (!zone || allDay) return Object<ICalProperty>(i_cal_property_new_recurrenceid(rid.get()), g_object_unref);
+    rid.reset(i_cal_time_new_from_timet_with_zone(occurrence / 1000, FALSE, zone));
+    i_cal_time_set_timezone(rid.get(), zone);
+    Object<ICalProperty> property(i_cal_property_new_recurrenceid(rid.get()), g_object_unref);
+    i_cal_property_take_parameter(property.get(), i_cal_parameter_new_tzid(i_cal_timezone_get_tzid(zone)));
+    return property;
+}
+// EDS changes the whole series for a split at its first occurrence (an excluded start doesn't
+// count). Asked as EDS decides it: from the recurrence id as its backend parses it off the wire.
+bool firstInstance(const Found& found, ICalProperty* rid) {
+    String text(i_cal_property_as_ical_string(rid), g_free);
+    Object<ICalComponent> parsed(i_cal_component_new_from_string(("BEGIN:VEVENT\r\n" + std::string(text.get()) + "END:VEVENT\r\n").c_str()), g_object_unref);
+    Object<ICalTime> time(parsed ? i_cal_component_get_recurrenceid(parsed.get()) : nullptr, g_object_unref);
+    Object<ECalComponent> series(e_cal_component_new_from_icalcomponent(i_cal_component_clone(found.master)), g_object_unref);
+    if (!time || i_cal_time_is_null_time(time.get()) || !series) throw std::runtime_error("invalid series");
+    return e_cal_util_is_first_instance(series.get(), time.get(), e_cal_client_tzlookup_cb, found.client.get());
 }
 // Invitations need a calendar whose server sends them (Google, Nextcloud), and the user's address
 // on it: a calendar on this computer has neither.
@@ -1366,27 +1381,19 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     const bool detached = !found.rid.empty();
     const auto rowStart = found.row["start"].get<int64_t>(), rowEnd = found.row["end"].get<int64_t>();
     const bool rowAllDay = found.row["isAllDay"].get<bool>();
-    // Changed for every following occurrence from the first, the whole series changes.
-    const bool alone = found.generated && (scope == "thisOnly" || (scope == "thisAndFollowing" && !found.first));
-    ECalObjModType mod = detached || (alone && scope == "thisOnly") ? E_CAL_OBJ_MOD_THIS : alone ? E_CAL_OBJ_MOD_THIS_AND_FUTURE : E_CAL_OBJ_MOD_ALL;
-    Object<ICalComponent> edited(i_cal_component_clone(found.stored), g_object_unref);
     auto zone = startZone(found.stored, client);
     // Times written for a floating start are written in the user's zone, as they were read.
     if (!zone && floating(found.stored)) zone = localZone();
+    Object<ICalProperty> split(found.generated && scope == "thisAndFollowing" ? splitRecurrenceID(found.occurrence, rowAllDay, zone) : Object<ICalProperty>(nullptr, g_object_unref));
+    // Changed for every following occurrence from the first, the whole series changes.
+    const bool alone = found.generated && (scope == "thisOnly" || (split && !firstInstance(found, split.get())));
+    ECalObjModType mod = detached || (alone && scope == "thisOnly") ? E_CAL_OBJ_MOD_THIS : alone ? E_CAL_OBJ_MOD_THIS_AND_FUTURE : E_CAL_OBJ_MOD_ALL;
+    Object<ICalComponent> edited(i_cal_component_clone(found.stored), g_object_unref);
     if (alone) {
-        // The occurrence named, as it is. A split names it in the series' own zone: EDS's server
-        // backends make that the new series' start as it is, without the conversion its local one makes.
-        auto rid = dateFromWire(found.occurrence, !rowAllDay);
+        // The occurrence named, as it is.
         removeAll(edited.get(), I_CAL_RECURRENCEID_PROPERTY);
-        if (mod == E_CAL_OBJ_MOD_THIS_AND_FUTURE && zone && !rowAllDay) {
-            rid.reset(i_cal_time_new_from_timet_with_zone(found.occurrence / 1000, FALSE, zone));
-            i_cal_time_set_timezone(rid.get(), zone);
-            auto property = i_cal_property_new_recurrenceid(rid.get());
-            i_cal_property_take_parameter(property, i_cal_parameter_new_tzid(i_cal_timezone_get_tzid(zone)));
-            i_cal_component_take_property(edited.get(), property);
-        } else {
-            i_cal_component_set_recurrenceid(edited.get(), rid.get());
-        }
+        if (split) i_cal_component_take_property(edited.get(), i_cal_property_clone(split.get()));
+        else i_cal_component_set_recurrenceid(edited.get(), dateFromWire(found.occurrence, !rowAllDay).get());
         setTimes(edited.get(), rowStart, rowEnd, rowAllDay, zone);
     }
     if (mod == E_CAL_OBJ_MOD_THIS_AND_FUTURE) {
