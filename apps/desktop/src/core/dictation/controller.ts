@@ -1526,6 +1526,8 @@ export class DictationController extends Observable {
    * hold still shows; then the second tap's hands-free dictation, which has heard nothing yet, goes
    * unseen. */
   private showHistory(): void {
+    // The whole app is off while the settings file can't be read, the paste history included.
+    if (this.deps.settings().isOff) return;
     log.debug("DictationController: triple tap; showing the paste history");
     this.deps.tips.markLearned("agentAndHistory");
     this.onShowHistory?.();

@@ -734,6 +734,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(completions.requests).toHaveLength(0);
     expect(pastes).toEqual([]);
     expect(watches).toEqual([]);
+    expect(warmUps.requests).toHaveLength(0);
+    expect(memory.prepared).toBe(0);
+
+    // Nor does a triple tap open the paste history.
+    let histories = 0;
+    controller.onShowHistory = () => {
+      histories += 1;
+    };
+    controller.handle("showHistory");
+    expect(histories).toBe(0);
   });
 
   /** With screen reading off, the screen is not read, so no terms are sent from it. */

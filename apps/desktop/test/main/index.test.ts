@@ -2433,7 +2433,13 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     }
     await launch("darwin");
     await send({ type: "sendCode", email: "user@example.com" });
-    expect(app.requests).toHaveLength(1);
+    // Every client reaches it: the warm-up, transcription and completions too.
+    const backend = app.backend;
+    if (backend === null) throw new Error("no controller");
+    await backend.warmUp("https://api.example.com", "token").catch(() => {});
+    await backend.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token").catch(() => {});
+    await backend.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token").catch(() => {});
+    expect(app.requests).toHaveLength(4);
   });
 
   /** Settings › Memory starts memory's helper, whose first start fetches its model from TabMail: while
@@ -2457,6 +2463,23 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // The size limit is kept in the settings file: it says how to fix it, as every such command does.
     expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
     for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("a knowledge base file that can't be read leaves Settings › Memory reaching memory", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const stats = vi.spyOn(memory, "stats");
+
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    expect(stats).toHaveBeenCalled();
   });
 
   /** Only the settings file keeps the wizard closed: with the knowledge base's file unreadable alone,
@@ -2802,6 +2825,23 @@ test("the real capture pipeline reads the delayed captured identity in both scop
         expect(app.autoUpdater?.checks ?? 0).toBe(0);
         // No update item in the menu either.
         expect(app.trayState?.().update).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("a packaged build whose knowledge base file alone can't be read looks for updates as ever", async () => {
+      vi.useFakeTimers();
+      try {
+        const path = join(app.userData, "userPrompts.json");
+        app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+        app.dialogResponse = 1;
+        let launched = false;
+        void launchPackaged().then(() => (launched = true));
+        while (!launched) await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
+        expect(app.autoUpdater?.checks).toBe(1);
+        expect(app.trayState?.().update).not.toBeNull();
       } finally {
         vi.useRealTimers();
       }

@@ -121,7 +121,7 @@ if (needsX11Relaunch(appImage, process.argv)) {
   app.quit();
 }
 
-/** Settings › Memory's commands, which start memory's helper (its first start fetches its model from
+/** Settings › Memory's commands, which ask memory (its helper's first start fetches its model from
  * TabMail): refused while the settings file can't be read, as the whole app is off then (owner,
  * 2026-10-27). */
 const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
