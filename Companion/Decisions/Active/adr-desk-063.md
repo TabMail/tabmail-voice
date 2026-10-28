@@ -302,4 +302,5 @@ stay centered beside it), and the "General writing style" section is shown as "G
 writing style for emails and formal replies" (`writingStyleSectionLabels` in the Settings page).
 Display only: the section's heading in the style document, shared with Thunderbird and iOS and read
 by Device Sync, and the section an edit names stay exactly as they were. Tested in
-`renderer/settings/index.test.ts` ("the general section's label is display only").
+`renderer/settings/index.test.ts` ("the general section's label is display only") and
+`core/personalization/prompts.test.ts` ("an edit saves the style document's headings as they are").
