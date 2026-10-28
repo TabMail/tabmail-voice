@@ -294,8 +294,8 @@ previews (`npm run preview`), which check each tab's caption as laid out (a sent
 centered beside it, its question under it) and press a real Tab key from an empty History's tab.
 
 **Amendment, 2026-10-28 (#301, owner):** the writing style is learned from the user's email and sent
-with every request that may write: one offering Compose or Edit, which, Compose being offered with
-no selection, is every request while either is on, a chat answer included. Settings says so. Its intro
+with every request that may write: one offering Compose or Edit (Compose when nothing is selected, Edit
+when text is): with both on, the default, every request, a chat answer included. Settings says so. Its intro
 reads "How agent mode writes emails and formal replies for you. / Sent with requests that may write;
 TabMail doesn’t keep it." (not "only": it goes with chat answers too; and short enough for Reset to
 stay centered beside it), and the "General writing style" section is shown as "General
