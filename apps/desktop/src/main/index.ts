@@ -203,11 +203,11 @@ function launch(): void {
   });
   // A menu-bar app: no Dock icon (packaged builds say so in Info.plist as well), but for while Settings,
   // the welcome wizard or the last screen context is open (`Windows`, ADR-DESK-065). In the Dock the app
-  // has the menu bar: its own menu (About, Hide, Quit), Edit (copy and paste in the fields) and Window,
-  // in place of Electron's default, whose View and Help menus (reload, developer tools, Electron's
-  // website) are not the app's.
+  // has the menu bar: its own menu (About, Hide, Quit), File (Close Window, Cmd-W), Edit (copy and paste
+  // in the fields) and Window, in place of Electron's default, whose View and Help menus (reload,
+  // developer tools, Electron's website) are not the app's.
   app.dock?.hide();
-  if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
+  if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
 
   const lastRecording = new LastRecording(join(tmpdir(), config.debugLastRecordingFileName));
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
@@ -762,7 +762,7 @@ function launch(): void {
    * its list has measured itself (`historyHeight`, `Windows.fitHistory`). */
   function showHistory(): void {
     historyPlace = overlay.pillPlace;
-    windows.showHistory(historyBounds(historyHeight), () => windows.close("history"));
+    windows.showHistory(historyBounds(historyHeight), () => windows.close("history"), historyClosed);
     // Its page measures its list again, which may have changed.
     windows.push("history");
   }
@@ -788,13 +788,15 @@ function launch(): void {
     }
   }
 
-  /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
-   * another of this app's windows is open, or the chat is: hiding the app would hide the chat too,
-   * with nothing to show it again while the next holds talk to it. */
-  function closeHistory(): void {
-    windows.close("history");
+  /** The paste history closed. Closed with the focus (Escape, a click on an entry, Cmd-W), on macOS it
+   * gives the app the user was in back its focus, unless another of this app's windows is open, or
+   * the chat is: hiding the app would hide the chat too, with nothing to show it again while the next
+   * holds talk to it. Closed as it lost the focus (a click elsewhere), the focus is already there.
+   * (Quitting with it focused hides the app too, on the way out.) */
+  function historyClosed(focused: boolean): void {
+    if (!focused || process.platform !== "darwin") return;
     const othersOpen = (["settings", "welcome", "contextDebug"] as const).some((name) => windows.isOpen(name)) || controller.chat !== null;
-    if (process.platform === "darwin" && !othersOpen) app.hide();
+    if (!othersOpen) app.hide();
   }
 
   /** The Thunderbird bubble shows the email app's icon: read once per app. */
@@ -1208,11 +1210,11 @@ function launch(): void {
       case "copyHistoryEntry": {
         const text = history.text(command.id);
         if (text !== null) void copyText(text);
-        closeHistory();
+        windows.close("history");
         return;
       }
       case "closeHistory":
-        closeHistory();
+        windows.close("history");
         return;
       case "historyHeight":
         historyHeight = command.height;

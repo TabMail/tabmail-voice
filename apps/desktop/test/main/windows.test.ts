@@ -51,7 +51,15 @@ const electron = vi.hoisted(() => {
       this.destroyed = true;
       this.emit("closed");
     }
+    /** Whether it has the focus: what the test says. Destroyed (by `closed`), it throws, as Electron's does. */
+    focused = false;
+    isFocused(): boolean {
+      if (this.destroyed) throw new TypeError("Object has been destroyed");
+      return this.focused;
+    }
+    /** `close` first, then `closed`, as Electron emits them. */
     close(): void {
+      this.emit("close");
       this.destroy();
     }
     loadFile(): Promise<void> {
@@ -135,12 +143,14 @@ describe("Windows", () => {
   /** The paste history (ADR-DESK-043): a frameless panel over every other window, shown with the
    * focus (the list takes clicks and Escape) only once its list has measured itself, at that height,
    * never first at another; closed by the caller when it loses it; a second triple tap moves the open
-   * one to the new place and focuses it, rather than opening another. */
+   * one to the new place and focuses it, rather than opening another. Closing it, however (Escape, a
+   * click on an entry, Cmd-W), tells the caller whether it still had the focus. */
   test("the paste history shows focused once measured, and a second opening moves it", () => {
     const windows = new Windows(() => null as never);
     let blurs = 0;
+    const closes: boolean[] = [];
     const first = { x: 10, y: 20, width: config.pasteHistoryWindowWidth, height: 200 };
-    windows.showHistory(first, () => (blurs += 1));
+    windows.showHistory(first, () => (blurs += 1), (focused) => closes.push(focused));
     // Transparent on every platform, without the system's shadow: its page draws the glass card and its glow.
     expect(electron.BrowserWindow.made).toEqual([expect.objectContaining({ ...first, type: "panel", frame: false, alwaysOnTop: true, show: false, transparent: true, hasShadow: false })]);
     const window = electron.BrowserWindow.instances[0];
@@ -157,7 +167,7 @@ describe("Windows", () => {
     expect(blurs).toBe(1);
 
     const second = { ...first, x: 300 };
-    windows.showHistory(second, () => (blurs += 1));
+    windows.showHistory(second, () => (blurs += 1), (focused) => closes.push(focused));
     expect(electron.BrowserWindow.made).toHaveLength(1);
     expect(window.calls.slice(2)).toEqual([second, "focus"]);
     expect(electron.app.focuses).toHaveLength(2);
@@ -166,6 +176,43 @@ describe("Windows", () => {
     windows.fitHistory({ ...second, height: 90 });
     expect(window.calls.slice(4)).toEqual([{ ...second, height: 90 }]);
     expect(electron.app.focuses).toHaveLength(2);
+
+    // Closed with the focus (Cmd-W, Escape): the caller hears it had it.
+    expect(closes).toEqual([]);
+    window.focused = true;
+    window.close();
+    expect(closes).toEqual([true]);
+    // Closed after losing it (a click elsewhere): the caller hears it had not.
+    windows.showHistory(first, () => {}, (focused) => closes.push(focused));
+    const again = electron.BrowserWindow.instances[1];
+    if (!again) throw new Error("no window");
+    again.close();
+    expect(closes).toEqual([true, false]);
+  });
+
+  /** The app closes the history through `Windows.close` (Escape, an entry clicked, a click
+   * elsewhere): the window closes, the caller hears whether it had the focus, it is no longer open,
+   * and the next opening makes a new one. */
+  test("closing the paste history through Windows closes it and tells the caller", () => {
+    const windows = new Windows(() => null as never);
+    const closes: boolean[] = [];
+    const bounds = { x: 10, y: 20, width: config.pasteHistoryWindowWidth, height: 200 };
+    windows.showHistory(bounds, () => windows.close("history"), (focused) => closes.push(focused));
+    const first = electron.BrowserWindow.instances[0];
+    if (!first) throw new Error("no window");
+    first.focused = true;
+    windows.close("history");
+    expect(closes).toEqual([true]);
+    expect(first.isDestroyed()).toBe(true);
+    expect(windows.isOpen("history")).toBe(false);
+
+    // Reopened, then closed by its blur (a click elsewhere), the focus already gone.
+    windows.showHistory(bounds, () => windows.close("history"), (focused) => closes.push(focused));
+    const second = electron.BrowserWindow.instances[1];
+    if (!second || second === first) throw new Error("no new window");
+    second.emit("blur");
+    expect(closes).toEqual([true, false]);
+    expect(windows.isOpen("history")).toBe(false);
   });
 
   /** On macOS the sidebar shows the frosted material through a clear window, under inset traffic
@@ -424,7 +471,7 @@ describe("Windows", () => {
     Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
     const mac = new Windows(() => null as never);
     mac.overlay();
-    mac.showHistory({ x: 0, y: 0, width: config.pasteHistoryWindowWidth, height: 100 }, () => {});
+    mac.showHistory({ x: 0, y: 0, width: config.pasteHistoryWindowWidth, height: 100 }, () => {}, () => {});
     expect(electron.app.dock.calls).toEqual([]);
 
     for (const platform of ["win32", "linux"] as const) {

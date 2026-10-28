@@ -63,6 +63,11 @@ const app = vi.hoisted(() => ({
   openWindows: [] as string[],
   /** What the history window does when it loses the focus. */
   historyBlur: null as (() => void) | null,
+  /** The paste history as the app made it: whether it is open and has the focus, and what it calls as
+   * it closes (Electron's `close` event). */
+  historyOpen: false,
+  historyFocused: false,
+  historyClosed: null as ((focused: boolean) => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
   overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; drags: unknown[]; isTakingClicks: boolean; hitTest?: string } | null,
@@ -575,15 +580,22 @@ vi.mock("../../src/main/windows.js", () => ({
     showContextDebug() {
       app.presented.push("contextDebug");
     }
-    showHistory(bounds: { x: number; y: number; width: number; height: number }, onBlur: () => void) {
+    showHistory(bounds: { x: number; y: number; width: number; height: number }, onBlur: () => void, onClose: (focused: boolean) => void) {
       app.historyBlur = onBlur;
+      app.historyClosed = onClose;
+      app.historyOpen = true;
+      app.historyFocused = true;
       app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
     }
     fitHistory(bounds: { height: number }) {
       app.historyWindow.push(`history height ${bounds.height}`);
     }
     close(name: string) {
-      if (name === "history") app.historyWindow.push("close");
+      if (name !== "history") return;
+      app.historyWindow.push("close");
+      if (!app.historyOpen) return;
+      app.historyOpen = false;
+      app.historyClosed?.(app.historyFocused);
     }
   },
 }));
@@ -623,6 +635,9 @@ afterEach(() => {
   app.hides = 0;
   app.openWindows = [];
   app.historyBlur = null;
+  app.historyOpen = false;
+  app.historyFocused = false;
+  app.historyClosed = null;
   app.audioCommands = [];
   app.placementAreas = [];
   app.overlay = null;
@@ -733,12 +748,13 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   });
 
   /** In the Dock while Settings is open (ADR-DESK-065), the Mac app has the menu bar: its own menu,
-   * Edit (copy and paste in the fields) and Window, never Electron's default with its View (reload,
-   * developer tools) and Help (Electron's website). Windows and Linux are left as they were. */
+   * File (Close Window, so Cmd-W closes the window in front, #298), Edit (copy and paste in the fields)
+   * and Window, never Electron's default with its View (reload, developer tools) and Help (Electron's
+   * website). Windows and Linux are left as they were. */
   test.each(["darwin", "win32", "linux"] as const)("the application menu on %s", async (platform) => {
     app.applicationMenu = null;
     await launch(platform);
-    expect(app.applicationMenu).toEqual(platform === "darwin" ? [{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }] : null);
+    expect(app.applicationMenu).toEqual(platform === "darwin" ? [{ role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" }, { role: "windowMenu" }] : null);
   });
 
   /** A `voice-microphone` that (re)starts, as it does after each dictation, gets the
@@ -981,9 +997,17 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.historyWindow.at(-1)).toBe("close");
     expect(app.hides).toBe(1);
 
+    app.controller?.onShowHistory?.();
     await send({ type: "closeHistory" });
     expect(app.clipboard).toEqual(["Hello there."]);
     expect(app.hides).toBe(2);
+
+    // Cmd-W (the menu's Close Window, #298) closes it as Escape does, giving the focus back too: the
+    // window closes itself, with the focus, with no message from its page.
+    app.controller?.onShowHistory?.();
+    app.historyOpen = false;
+    app.historyClosed?.(true);
+    expect(app.hides).toBe(3);
 
     // Opened again while open, its list measures itself again, so it takes that height once more.
     app.controller?.onShowHistory?.();
@@ -1004,9 +1028,10 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
     // A click elsewhere closes it, the focus already gone where the user clicked.
     app.controller?.onShowHistory?.();
+    app.historyFocused = false;
     app.historyBlur?.();
     expect(app.historyWindow.at(-1)).toBe("close");
-    expect(app.hides).toBe(2);
+    expect(app.hides).toBe(3);
   });
 
   /** Closing the history hides the app, to give the user's app its focus back, only on macOS and only
@@ -1016,26 +1041,33 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await launch("darwin");
     for (const window of ["settings", "welcome", "contextDebug"]) {
       app.openWindows = [window];
+      app.controller?.onShowHistory?.();
       await send({ type: "closeHistory" });
     }
     app.openWindows = [];
     const controller = app.controller;
     if (!controller) throw new Error("no controller");
     controller.chat = {};
+    app.controller?.onShowHistory?.();
     await send({ type: "closeHistory" });
     expect(app.hides).toBe(0);
     controller.chat = null;
+    app.controller?.onShowHistory?.();
     await send({ type: "copyHistoryEntry", id: 999 });
     expect(app.hides).toBe(1);
     expect(app.clipboard).toEqual([]);
-    expect(app.historyWindow).toEqual(["close", "close", "close", "close", "close"]);
+    expect(app.historyWindow.filter((entry) => entry === "close")).toEqual(["close", "close", "close", "close", "close"]);
   });
 
-  test("closing the paste history elsewhere leaves the app shown", async () => {
-    await launch("linux");
+  test.each(["win32", "linux"] as const)("closing the paste history on %s leaves the app shown", async (platform) => {
+    await launch(platform);
+    app.controller?.onShowHistory?.();
     await send({ type: "closeHistory" });
+    app.controller?.onShowHistory?.();
+    app.historyOpen = false;
+    app.historyClosed?.(true);
     expect(app.hides).toBe(0);
-    expect(app.historyWindow).toEqual(["close"]);
+    expect(app.historyWindow.filter((entry) => entry === "close")).toEqual(["close"]);
   });
 
   /** Placing the overlay pushes its view the direction it opened in, which the hands-free tip is
