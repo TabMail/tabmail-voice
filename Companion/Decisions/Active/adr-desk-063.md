@@ -199,7 +199,7 @@ launch and from the menu.
 *Widened the same day (owner): "we don't know if consented, nor if AI disabled now", so while the
 settings file can't be read its AI features are off, dictation included. "The thing to turn off is
 AI": everything that isn't AI keeps working.* Off: every dictation and agent hold, refused at its start
-by `DictationSettings.isAIOff` before consent is even looked at, with `aiOffLine` ("AI features are off
+by `DictationSettings.isAIOff` (since 2026-10-28 `aiOffLine`, shared with Opt Out of AI; ADR-DESK-010) before consent is even looked at, with `aiOffLine` ("AI features are off
 until your settings file is fixed"), so no audio, transcription, warm-up, cleanup or completion and no
 read of the screen, a field or another app; the transcription, warm-up and completions requests also go through one transport that refuses them
 while the file can't be read, whatever asks (the web fetch and other tools run only in agent mode,

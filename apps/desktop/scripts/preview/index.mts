@@ -87,6 +87,7 @@ const settings = {
   dictionary: [],
   learnsWords: true,
   smartDictation: false,
+  optsOutOfAI: false,
   closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,

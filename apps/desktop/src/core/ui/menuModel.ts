@@ -15,6 +15,8 @@ export interface MenuState {
   /** The app's files that couldn't be read at launch, each with its Fix item until it is fixed and the
    * app relaunches, or the user resets it. */
   fileProblems: readonly StoredFile[];
+  /** The user opted out of AI (`AppSettings.optsOutOfAI`): no dictation starts. */
+  optsOutOfAI: boolean;
   hotkey: DictationHotkey;
   debugMode: boolean;
   phase: Phase;
@@ -28,13 +30,14 @@ export function showsDictationButton(debugMode: boolean, phase: Phase): boolean 
   return debugMode || phase.kind === "listening";
 }
 
-/** Everything dictation needs: consent, an account and both grants. */
+/** Everything dictation needs: consent, an account, both grants, and AI not opted out of. */
 export function isReady(state: MenuState): boolean {
-  return state.hasConsented && state.isSignedIn && state.microphoneGranted && state.accessibilityTrusted;
+  return state.hasConsented && state.isSignedIn && state.microphoneGranted && state.accessibilityTrusted && !state.optsOutOfAI;
 }
 
 /** The menu's first line. */
 export function statusLine(state: MenuState): string {
+  if (state.optsOutOfAI) return "AI features are off";
   if (!state.hasConsented) return "Setup needed";
   if (!state.isSignedIn) return "Sign in to start dictating";
   if (!state.microphoneGranted || !state.accessibilityTrusted) return "Setup needed";

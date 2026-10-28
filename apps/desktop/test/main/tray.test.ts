@@ -36,7 +36,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
+const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], optsOutOfAI: false, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
 
 function actionsFrom(clicked: string[]): TrayActions {
   const action = (name: string) => () => void clicked.push(name);

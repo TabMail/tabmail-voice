@@ -331,8 +331,9 @@ function ExcludedSites({ state }: { state: SettingsState }) {
   );
 }
 
-/** The apps the screen is never read in (owner, 2026-09-30): the password managers excluded in every
- * installation, named, and the apps the user adds, each with a remove button. */
+/** Opt Out of AI first (device-only, #289), then the apps the screen is never read in (owner,
+ * 2026-09-30): the password managers excluded in every installation, named, and the apps the user
+ * adds, each with a remove button. */
 function PrivacyPane({ state }: { state: SettingsState }) {
   const [problem, setProblem] = useState<string | null>(null);
   const run = async (command: Command) => {
@@ -342,6 +343,11 @@ function PrivacyPane({ state }: { state: SettingsState }) {
   };
   return (
     <>
+      <Group>
+        <Toggle label="Opt Out of AI" checked={state.optsOutOfAI} onChange={(value) => send({ type: "setOptsOutOfAI", value })}>
+          Turns off dictation, agent mode and memory, so nothing you say or have on screen is sent to AI. Signing in and updates still work. On this computer only.
+        </Toggle>
+      </Group>
       <Group
         captions={[
           "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",

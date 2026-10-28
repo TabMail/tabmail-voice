@@ -30,6 +30,7 @@ const signedIn: SettingsState = {
   dictionary: [],
   learnsWords: true,
   smartDictation: false,
+  optsOutOfAI: false,
   closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,
@@ -1066,19 +1067,21 @@ describe("Settings page", () => {
 
   /** Each switch sends its own setting with the value it was switched to. */
   test("each switch sends its setting", async () => {
-    const shown = { ...signedIn, readsScreen: false, openAtLogin: true, debugAllowed: true, debugMode: false };
+    const shown = { ...signedIn, readsScreen: false, openAtLogin: true, debugAllowed: true, debugMode: false, optsOutOfAI: true };
     const page = await settingsPage({ error: null }, shown, shown);
 
     await act(async () => toggle("Smart dictation").click());
     await act(async () => toggle("Read the screen while dictating").click());
     await act(async () => toggle("Open at login").click());
     await act(async () => toggle("Debug mode").click());
+    await act(async () => toggle("Opt Out of AI").click());
 
     expect(page.commands).toEqual([
       { type: "setSmartDictation", value: true },
       { type: "setReadsScreen", value: true },
       { type: "setOpenAtLogin", value: false },
       { type: "setDebugMode", value: true },
+      { type: "setOptsOutOfAI", value: false },
     ]);
   });
 
@@ -1269,8 +1272,8 @@ describe("Settings page", () => {
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
     // Smart dictation, screen reading, learning the user's corrections, debug mode, the two agent
-    // tools with a switch and closing the chat window on a click elsewhere.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(7);
+    // tools with a switch, closing the chat window on a click elsewhere, and Opt Out of AI.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(8);
     expect(page.commands).toEqual([]);
   });
 
@@ -1404,7 +1407,8 @@ describe("Settings page", () => {
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
       `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,
-      // Privacy's, which the Swift app never had (owner, 2026-09-30).
+      // Privacy's, which the Swift app never had (owner, 2026-09-30); Opt Out of AI as Thunderbird's and iOS's (owner, 2026-10-28).
+      "Turns off dictation, agent mode and memory, so nothing you say or have on screen is sent to AI. Signing in and updates still work. On this computer only.",
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
       `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,
       "No apps added yet.",

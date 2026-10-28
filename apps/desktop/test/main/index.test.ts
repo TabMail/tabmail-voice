@@ -13,6 +13,7 @@ import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import { aiOffLine, resetCopyPath, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
+import { optedOutOfAILine } from "../../src/core/settings.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
@@ -102,7 +103,7 @@ const app = vi.hoisted(() => ({
     makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient;
     makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
   } | null,
-  trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown }) | null,
+  trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
@@ -2151,6 +2152,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       { type: "removeDictionaryWord", word: "Xyvora" },
       { type: "setLearnsWords", value: false },
       { type: "setSmartDictation", value: false },
+      { type: "setOptsOutOfAI", value: true },
       { type: "setClosesChatElsewhere", value: false },
       { type: "setEventDuration", value: 30 },
       { type: "excludeApp" },
@@ -2451,8 +2453,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
   /** Only the settings file turns the network off: with the knowledge base file alone unreadable,
    * requests go out as ever. */
-  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
-    if (unreadable !== null) {
+  // Opt Out of AI is read once at a hold's start (ADR-DESK-010 amendment 2026-10-28): the transport leaves
+  // a request a hold already made to finish.
+  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"], ["Opt Out of AI on", "optsOutOfAI"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
+    if (unreadable === "optsOutOfAI") app.stored.set("optsOutOfAI", true);
+    else if (unreadable !== null) {
       const path = join(app.userData, unreadable);
       app.problems.set(path, { kind: "damaged", path, code: "invalid" });
       app.dialogResponse = 2;
@@ -2489,6 +2494,39 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // The size limit is kept in the settings file: it says how to fix it, as every such command does.
     expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
     for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+  });
+
+  /** Opt Out of AI (owner, 2026-10-28): Settings › Memory never reaches memory, and says how to turn AI
+   * back on; signing in, Settings and the menu work as ever, and switching it off again lets memory be
+   * reached. */
+  test("Opt Out of AI keeps Settings › Memory from reaching memory, and is kept", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const asked = (["prepare", "index", "search", "read", "stats", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
+    const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
+    expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI]).toEqual([false, false]);
+
+    expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+    expect(app.stored.get("optsOutOfAI")).toBe(true);
+    expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI]).toEqual([true, true]);
+    const limit = config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0;
+    for (const command of [{ type: "loadMemory" }, { type: "searchMemory", query: "friday" }, { type: "setMemorySizeLimit", value: limit }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
+      expect(await send(command)).toEqual({ error: `${optedOutOfAILine}.` });
+    }
+    expect(app.stored.has("memorySizeLimit")).toBe(false);
+    for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+    // Signing in still reaches TabMail.
+    await send({ type: "sendCode", email: "user@example.com" });
+    expect(app.requests).toHaveLength(1);
+
+    expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    expect(asked.some((spy) => spy.mock.calls.length > 0)).toBe(true);
   });
 
   test("a knowledge base file that can't be read leaves Settings › Memory reaching memory", async () => {
@@ -3058,6 +3096,17 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    /** Opt Out of AI turns AI off, not the app (owner, 2026-10-28): updates as ever, on their own and
+     * when asked. */
+    test("a packaged build with Opt Out of AI on updates as ever, when asked too", async () => {
+      app.stored.set("optsOutOfAI", true);
+      await launchPackaged();
+      expect(app.trayState?.().update).toEqual({ kind: "idle" });
+      expect(await send({ type: "checkForUpdates" })).toEqual({ error: null });
+      expect(app.autoUpdater?.checks).toBe(1);
+      expect(app.trayState?.().update).toEqual({ kind: "checking" });
     });
 
     test("a download is not ready until macOS accepts it", async () => {

@@ -39,7 +39,6 @@ import { charCount, trimWhitespace } from "../util/text.js";
 import { type DictationTip, type TipBook, tipDetails } from "../onboarding/tips.js";
 import { CancellationError, sleep, TimeoutError, withTimeout } from "../util/timeout.js";
 import { PasteTargetError } from "./targetWindow.js";
-import { aiOffLine } from "../ui/fileProblems.js";
 import { encodeWAV } from "../audio/wav.js";
 
 export type Phase =
@@ -472,7 +471,7 @@ export class DictationController extends Observable {
     const settings = this.deps.settings();
     this.dictationSettings = settings;
     this.dictationPersonalization = this.deps.prompts.personalization;
-    if (settings.isAIOff) return this.fail(`${aiOffLine}.`);
+    if (settings.aiOffLine !== null) return this.fail(`${settings.aiOffLine}.`);
     if (!settings.hasConsented) return this.fail("Finish setting up TabMail Voice from its menu to dictate.");
     if (!this.deps.account.isSignedIn) return this.fail("Sign in to TabMail in Settings to dictate.");
     if (this.deps.permissions.microphone !== "granted") return this.fail("Allow microphone access in TabMail Voice's menu to dictate.");

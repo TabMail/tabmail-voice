@@ -7,7 +7,7 @@ Routed verbatim from `PROJECT_STRUCTURE.md` (lines 121-182 at 45d9c585).
 `voice-hotkey` (`HotkeyMonitor` → `PushToTalkGesture`) sends each gesture action to the main
 process, which hands it to `DictationController` (`src/core/dictation/controller.ts`):
 
-1. **start** (key-down; the settings file read at launch, else AI features are off (ADR-DESK-063, #285); consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
+1. **start** (key-down; AI features on, as `DictationSettings.aiOffLine` says: the settings file read at launch (ADR-DESK-063, #285) and Opt Out of AI off (ADR-DESK-010, #289), else the hold fails with that line; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
    The microphone starts (`SessionAudioCapture` → `voice-microphone`'s `MicrophoneCapture`, its engine
    prepared ahead) and streams samples into `AudioRecorder`; `voice-macos` finds the caret; the
    keyboard's language is read once, for the overlay's badge and the transcription request; the app in
