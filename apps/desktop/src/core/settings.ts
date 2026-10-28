@@ -128,6 +128,15 @@ export class AppSettings extends Observable {
     return this.store.problem;
   }
 
+  /** The user's factory reset of the settings file (`moveAside`, which throws, changing nothing, when
+   * the file can't be moved): every setting reads its default from here on. */
+  resetFile(moveAside: () => void): void {
+    const before = this.hotkey;
+    moveAside();
+    this.changed();
+    if (this.hotkey !== before) this.onHotkeyChange?.(this.hotkey);
+  }
+
   /** The keys Settings offers; the first is the default. */
   get availableHotkeys(): readonly [DictationHotkey, ...DictationHotkey[]] {
     return this.offered;

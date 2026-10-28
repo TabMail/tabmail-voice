@@ -116,6 +116,13 @@ export class UserPrompts extends Observable {
     return this.store.problem;
   }
 
+  /** The user's factory reset of the texts' file (`moveAside`, which throws, changing nothing, when the
+   * file can't be moved): both texts and their history read their defaults from here on. */
+  resetFile(moveAside: () => void): void {
+    moveAside();
+    this.changed();
+  }
+
   /** The writing style's markdown (`user_prompts:user_composition.md`). */
   get composition(): string {
     return storedString(this.store, Key.composition) ?? defaultComposition;

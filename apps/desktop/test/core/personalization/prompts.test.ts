@@ -77,6 +77,35 @@ afterEach(() => {
 });
 
 describe("UserPrompts", () => {
+  /** The user's factory reset (ADR-DESK-063): both texts read their defaults from then on, the change
+   * is told, and edits are saved again; a reset that fails changes nothing. */
+  test("a reset texts file reads its defaults, is told, and saves again", () => {
+    const store = new (class extends FailingStore {
+      problem: { kind: "damaged"; path: string; code: string } | undefined = { kind: "damaged", path: "/example/userPrompts.json", code: "invalid" };
+      moveAside(): void {
+        this.values.clear();
+        this.problem = undefined;
+        this.failing = false;
+      }
+    })({ [kbKey]: "- Held this session." });
+    store.failing = true;
+    const prompts = new UserPrompts(store);
+    let changes = 0;
+    prompts.observe(() => {
+      changes += 1;
+    });
+    expect(() =>
+      prompts.resetFile(() => {
+        throw new Error("not moved");
+      }),
+    ).toThrow("not moved");
+    expect([changes, prompts.fileProblem?.kind, prompts.knowledgeBase]).toEqual([0, "damaged", "- Held this session."]);
+
+    prompts.resetFile(() => store.moveAside());
+    expect([changes, prompts.fileProblem, prompts.knowledgeBase, prompts.composition]).toEqual([1, undefined, defaultKnowledgeBase, defaultComposition]);
+    expect(prompts.resetKnowledgeBase()).toBe(true);
+  });
+
   /** A text never written is its default, and reading it stores nothing: a later default stays the
    * user's until they edit it. */
   test("the defaults are read, never stored", () => {

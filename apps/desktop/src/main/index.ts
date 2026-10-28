@@ -30,7 +30,7 @@ import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
-import { aiOffLine, fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
+import { aiOffLine, fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
@@ -280,7 +280,8 @@ function launch(): void {
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
   // The writing style and knowledge base, in a file of their own: per user of this computer, as
   // memory is (ADR-DESK-063).
-  const prompts = new UserPrompts(new JSONFileStore(join(app.getPath("userData"), "userPrompts.json")));
+  const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));
+  const prompts = new UserPrompts(promptsStore);
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
 
   let wizard: WelcomeWizard | null = null;
@@ -658,16 +659,50 @@ function launch(): void {
     return storedFiles.filter((file) => fileProblem(file) !== undefined);
   }
 
-  /** Tells why `file` couldn't be read and how to fix it by hand; the app never resets, moves or
-   * writes over it. The next launch reads it again. */
+  /** Tells why `file` couldn't be read and how to fix it by hand, else with the factory reset; the app
+   * never resets, moves or writes over it on its own. The next launch reads it again. */
   function showFileProblem(file: StoredFile): void {
     const problem = fileProblem(file);
     if (problem === undefined) return;
     const { message, detail } = fileProblemNotice(file, problem, process.platform);
     app.focus({ steal: true });
-    void dialog.showMessageBox({ type: "warning", message, detail, buttons: ["Show File", "Close"], defaultId: 1, cancelId: 1 }).then(({ response }) => {
+    void dialog.showMessageBox({ type: "warning", message, detail, buttons: ["Show File", resetButton, "Close"], defaultId: 2, cancelId: 2 }).then(({ response }) => {
       if (response === 0) shell.showItemInFolder(problem.path);
+      if (response === 1) void resetFile(file);
     });
+  }
+
+  /** The user's factory reset of `file` (owner, 2026-10-27), asked only from its fix dialog: one
+   * confirmation saying what this computer loses and where the file is kept, then the file is moved
+   * aside to a dated copy, never deleted, and what it held reads its defaults. The settings file's
+   * reset then opens the welcome wizard, as at a first launch. */
+  async function resetFile(file: StoredFile): Promise<void> {
+    const problem = fileProblem(file);
+    if (problem === undefined) return;
+    const copy = resetCopyPath(problem.path, new Date());
+    const { message, detail } = resetConfirmation(file, copy);
+    const { response } = await dialog.showMessageBox({ type: "warning", message, detail, buttons: ["Reset", "Cancel"], defaultId: 1, cancelId: 1 });
+    if (response !== 0) return;
+    try {
+      if (file === "settings") settings.resetFile(() => store.moveAside(copy));
+      else prompts.resetFile(() => promptsStore.moveAside(copy));
+    } catch (error) {
+      log.error(`main: the ${file} file couldn't be reset: ${errorName(error)}`);
+      void dialog.showMessageBox({ type: "warning", ...resetFailed(file), buttons: ["OK"] });
+      return;
+    }
+    log.debug(`main: the ${file} file was reset`);
+    tray.update();
+    if (file === "settings") welcomeIfSetUpNever();
+  }
+
+  /** Opens the welcome wizard, as at a first launch, while setup was never done and the settings file
+   * reads (one that can't be read is not setup never done: its fix is told instead). Its consent page
+   * says what's new, so the tip that tells a user who set the app up before never shows to this one. */
+  function welcomeIfSetUpNever(): void {
+    if (settings.hasFinishedWelcome || settings.fileProblem !== undefined) return;
+    tips.markLearned("agentKnowledgeBase");
+    showWelcome();
   }
 
   /** Opens the welcome wizard at its first step; brings the open one forward instead. While the
@@ -1200,13 +1235,8 @@ function launch(): void {
   permissions.startPollingAccessibility();
   updater?.start();
 
-  // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
-  // says what's new, so the tip that tells a user who set the app up before never shows to this one.
-  // A settings file that can't be read is not setup never done: the fix below is told instead.
-  if (!settings.hasFinishedWelcome && settings.fileProblem === undefined) {
-    tips.markLearned("agentKnowledgeBase");
-    showWelcome();
-  }
+  // The welcome wizard asks for consent and the permissions; it opens until finished.
+  welcomeIfSetUpNever();
   // A file that couldn't be read is told of once launch is done, the windows' commands wired; its Fix
   // item stays in the menu.
   for (const file of unreadableFiles()) showFileProblem(file);
