@@ -157,7 +157,8 @@ export type EventStoreErrorKind =
   | "calendarReadOnly"
   | "calendarNoInvitations"
   | "invitationsUnavailable"
-  | "notOrganizer";
+  | "notOrganizer"
+  | "unsupportedRecurrence";
 
 const eventStoreFailureMessages: Record<EventStoreErrorKind, string> = {
   calendarNoAccess: "TabMail Voice can't use Calendar. Allow it in System Settings › Privacy & Security › Calendars.",
@@ -170,6 +171,7 @@ const eventStoreFailureMessages: Record<EventStoreErrorKind, string> = {
   calendarNoInvitations: "That calendar is on this computer only, so it can't send invitations. Use an iCloud, Google or Exchange calendar to invite people.",
   invitationsUnavailable: "This version of macOS doesn't let TabMail Voice invite people. The user can add them in Calendar.",
   notOrganizer: "The user was invited to this event by its organizer, so only the organizer can change it.",
+  unsupportedRecurrence: "This event repeats in a way TabMail Voice can't change. The user can change or delete it in their calendar app.",
 };
 
 export class EventStoreError extends Error {

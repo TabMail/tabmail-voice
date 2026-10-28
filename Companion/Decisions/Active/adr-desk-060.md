@@ -157,7 +157,11 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   is built editable (Linux); the tools are the Mac's, unchanged.
 - A refusal is a reply `{"refused": kind}` with the Mac's kinds (`noSuchEvent`, `noSuchCalendar`,
   `calendarReadOnly`, `noDefaultCalendar`, `notOrganizer`, `calendarNoInvitations`), which the app
-  turns into `EventStoreError`; any other failure is a helper error, as before.
+  turns into `EventStoreError`; any other failure is a helper error, as before. Linux adds
+  `unsupportedRecurrence`: a series repeating by a rule the app can't be told (by the hour or finer,
+  by time of day, by RDATE alone, or a key libical doesn't know) reads with no rule, so the app would
+  confirm a change to one event and EDS would change every occurrence. Such a series is changed and
+  deleted in the user's calendar app; an occurrence of it changed on its own is still edited alone.
 - An event's id is its source's uid and the component's uid, `|`-separated (each with `%` and `|`
   escaped), plus the recurrence id of a detached occurrence. An occurrence is found as on the Mac:
   within `eventOccurrenceToleranceMs` of the start asked, searched over
@@ -170,8 +174,8 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   length; one that repeats is written in the local zone with its TZID, so its wall time holds across
   daylight saving.
 - Invitations need a calendar whose backend sends them (`save-schedules`) and knows the user's own
-  address; otherwise adding or changing people is refused as `calendarNoInvitations` (a local
-  calendar). An event is an invitation when it has attendees and an organizer other than the user;
+  address; otherwise adding or removing people is refused as `calendarNoInvitations` (a local
+  calendar): removing someone tells them, as adding does. An event is an invitation when it has attendees and an organizer other than the user;
   changing one is refused (`notOrganizer`), deleting it is not.
 - A read of calendars, memos or tasks that a change interrupts is made again from the start, up to
   `calendarReadAttempts` times: EDS can tell a new view of a change saved just before it (a write of

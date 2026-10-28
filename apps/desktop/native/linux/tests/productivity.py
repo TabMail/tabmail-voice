@@ -413,3 +413,76 @@ assert invited['end'] - invited['start'] == 3600000
 assert refused('calendarEdit', {'id':invited['id'], 'occurrence':None, 'scope':'all', 'title':'Mine now', **unchanged}) == 'notOrganizer'
 assert call('calendarDelete', {'id':invited['id']}) == {} and rows('Invited') == []
 print('EDS invitations refused without a server, attendee checks, and an invitation read and kept as it is passed')
+attended = ICalGLib.Component.new_from_string('BEGIN:VEVENT\r\nUID:attended-event\r\nSUMMARY:Attended\r\nDTSTART:' +
+    datetime.datetime.fromtimestamp(week(9)/1000, datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '\r\nDURATION:PT1H\r\n' +
+    'ATTENDEE:mailto:guest@example.com\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(attended, ECal.OperationFlags.NONE, None)[0]
+[guests] = rows('Attended')
+assert not guests['isInvitation'] and [person['email'] for person in guests['attendees']] == ['guest@example.com'], guests
+# Removing someone tells them, as adding does: refused where nothing is sent, and they stay.
+assert refused('calendarEdit', {'id':guests['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'uninvite':['guest@example.com']}}) == 'calendarNoInvitations'
+assert [person['email'] for person in rows('Attended')[0]['attendees']] == ['guest@example.com']
+assert call('calendarDelete', {'id':guests['id']}) == {}
+print('EDS removing someone refused without a server, and they stay invited, passed')
+
+# Rules the app can't be told read as one event at each occurrence: the series is changed and deleted
+# in the calendar app, one occurrence changed on its own here.
+utc = lambda value: datetime.datetime.fromtimestamp(value/1000, datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+for uid, repeat in [('hourly-series', 'RRULE:FREQ=HOURLY;COUNT=3'), ('by-hour-series', 'RRULE:FREQ=DAILY;COUNT=3;BYHOUR=9,10'),
+                    ('dated-series', 'RDATE:' + utc(week(10)+86400000))]:
+    seeded = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:{uid}\r\nSUMMARY:{uid}\r\nDTSTART:{utc(week(10))}\r\nDURATION:PT30M\r\n{repeat}\r\nEND:VEVENT\r\n')
+    assert calendar_client.create_object_sync(seeded, ECal.OperationFlags.NONE, None)[0]
+    before = rows(uid)
+    assert len(before) > 1 and all(row['recurrence'] is None and row['occurrence'] is not None for row in before), before
+    assert refused('calendarEdit', {'id':before[0]['id'], 'occurrence':None, 'scope':'all', 'title':'Renamed', **unchanged}) == 'unsupportedRecurrence'
+    assert refused('calendarEdit', {'id':before[0]['id'], 'occurrence':before[1]['start'], 'scope':'all', 'title':'Renamed', **unchanged}) == 'unsupportedRecurrence'
+    assert refused('calendarDelete', {'id':before[0]['id']}) == 'unsupportedRecurrence'
+    assert rows(uid) == before and rows('Renamed') == []
+    alone = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:{uid}\r\nSUMMARY:{uid} moved\r\nRECURRENCE-ID:{utc(before[1]["start"])}\r\nDTSTART:{utc(before[1]["start"]+3600000)}\r\nDURATION:PT30M\r\nEND:VEVENT\r\n')
+    assert calendar_client.modify_object_sync(alone, ECal.ObjModType.THIS, ECal.OperationFlags.NONE, None)
+    [detached] = rows(uid + ' moved')
+    assert call('calendarEdit', {'id':detached['id'], 'occurrence':None, 'scope':'thisOnly', 'title':uid + ' alone', **unchanged})['title'] == uid + ' alone'
+    assert call('calendarDelete', {'id':detached['id']}) == {} and rows(uid + ' alone') == [] and len(rows(uid)) == len(before) - 1
+    assert calendar_client.remove_object_sync(uid, None, ECal.ObjModType.ALL, ECal.OperationFlags.NONE, None)
+print('EDS series repeating by an hour, by hours or by dates refused as a whole, an occurrence changed alone kept editable, passed')
+
+excluding = call('calendarAdd', event(title='Exclude and rename', start=week(10), end=week(10)+3600000, recurrence=rule(count=6)))
+call('calendarEdit', {'id':excluding['id'], 'occurrence':None, 'scope':'all', 'title':'Renamed series', **{**unchanged, 'exclude':[week(11), week(12)]}})
+assert [row['start'] for row in rows('Renamed series')] == [week(k) for k in range(10, 16) if k not in (11, 12)] and rows('Exclude and rename') == []
+assert call('calendarDelete', {'id':excluding['id']}) == {}
+print('EDS occurrences deleted together with another change stay deleted, passed')
+
+whole = call('calendarAdd', event(title='Whole from first', start=week(16), end=week(16)+3600000, recurrence=rule(count=4)))
+renamed = call('calendarEdit', {'id':whole['id'], 'occurrence':week(16), 'scope':'thisAndFollowing', 'title':'Whole renamed', **unchanged})
+assert renamed['id'] == whole['id'] and renamed['recurrence'] == rule(count=4), renamed
+assert [row['start'] for row in rows('Whole renamed')] == [week(k) for k in range(16, 20)] and rows('Whole from first') == []
+assert call('calendarDelete', {'id':whole['id']}) == {}
+print('EDS this and following from the first occurrence changes the series without splitting it, passed')
+
+day_weeks = lambda k: ms(first_day + datetime.timedelta(weeks=k))
+weekly_days = call('calendarAdd', event(title='Day weekly', start=day_weeks(17), end=day_weeks(17), isAllDay=True, recurrence=rule(count=3)))
+alone_day = call('calendarEdit', {'id':weekly_days['id'], 'occurrence':day_weeks(18), 'scope':'thisOnly', 'title':'Day moved alone', **unchanged})
+assert alone_day['isDetached'] and alone_day['isAllDay'] and alone_day['occurrence'] == day_weeks(18), alone_day
+assert [row['start'] for row in rows('Day weekly')] == [day_weeks(17), day_weeks(19)]
+assert [(row['start'], row['isAllDay']) for row in rows('Day moved alone')] == [(day_weeks(18), True)]
+assert call('calendarDelete', {'id':weekly_days['id']}) == {} and rows('Day moved alone') == []
+print('EDS one day of an all-day series changed alone, without a second copy, passed')
+
+ruled = call('calendarAdd', event(title='Rule split', start=week(20), end=week(20)+3600000, recurrence=rule(count=6)))
+later_rule = rule(frequency='DAILY', until=at(23, 2, 60))
+split = call('calendarEdit', {'id':ruled['id'], 'occurrence':week(23), 'scope':'thisAndFollowing', 'recurrence':later_rule, **unchanged})
+assert split['id'] != ruled['id'] and split['recurrence'] == later_rule, split
+assert call('calendarEvent', {'id':ruled['id'], 'occurrence':None})['recurrence'] == rule(count=3)
+assert [row['start'] for row in rows('Rule split')] == [week(20), week(21), week(22), week(23), at(23, 1), at(23, 2)]
+assert call('calendarDelete', {'id':ruled['id']}) == {} and call('calendarDelete', {'id':split['id']}) == {}
+print('EDS a new rule from one occurrence on leaves the ones before it as they were, passed')
+
+# A single event saved in UTC, made to repeat weekly: its occurrences keep the time of day in the
+# user's zone across a daylight-saving change, as one created repeating does.
+made = call('calendarAdd', event(title='Made weekly'))
+assert made['timeZone'] == 'UTC', made
+weekly = call('calendarEdit', {'id':made['id'], 'occurrence':None, 'scope':'all', 'recurrence':rule(count=30), **unchanged})
+assert weekly['timeZone'] == ('UTC' if zone in ('UTC', 'Etc/UTC') else zone), (weekly, zone)
+assert [row['start'] for row in rows('Made weekly')] == [week(k) for k in range(30)]
+assert call('calendarDelete', {'id':made['id']}) == {}
+print('EDS a single event made to repeat keeps its local time of day, passed')

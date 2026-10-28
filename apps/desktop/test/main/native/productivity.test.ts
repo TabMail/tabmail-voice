@@ -110,6 +110,25 @@ describe("Native event editor boundary (Linux)", () => {
     expect((await store.editor?.event(row.id, new Date(start)))?.recurrence?.until).toEqual(new Date(until));
     expect(run).toHaveBeenLastCalledWith("calendarEvent", { id: row.id, occurrence: start });
   });
+  it("reads a single event on this computer: no id, occurrence, organizer, rule or zone", async () => {
+    const single = { ...row, id: null, occurrence: null, organizer: null, recurrence: null, timeZone: null, calendarId: null, attendees: [] };
+    const read = await new NativeEventStore(vi.fn().mockResolvedValue([single]), undefined, true).events(new Date(start - 1), new Date(start + 1));
+    expect(read).toEqual([{ ...converted, id: null, occurrence: null, organizer: null, recurrence: null, timeZone: null, calendarId: null, attendees: [] }]);
+  });
+  it("reads up to 1000 people on an event, and refuses a row with more", async () => {
+    const people = (count: number) => Array.from({ length: count }, (_, index) => ({ email: `person${index}@example.com`, name: null, status: "pending" }));
+    const many = new NativeEventStore(vi.fn().mockResolvedValue([{ ...row, attendees: people(1000) }]), undefined, true);
+    expect((await many.events(new Date(start - 1), new Date(start + 1)))[0]?.attendees).toHaveLength(1000);
+    const tooMany = new NativeEventStore(vi.fn().mockResolvedValue([{ ...row, attendees: people(1001) }]), undefined, true);
+    await expect(tooMany.events(new Date(start - 1), new Date(start + 1))).rejects.toThrow();
+  });
+  it("adds a single event to the default calendar with no rule and no people", async () => {
+    const run = vi.fn().mockResolvedValue({ ...row, recurrence: null, occurrence: null, attendees: [] });
+    await new NativeEventStore(run, undefined, true).addEvent({ ...converted, calendarId: null, recurrence: null, attendees: [] });
+    expect(run).toHaveBeenCalledWith("calendarAdd", {
+      title: "Sync", start, end: start + 3_600_000, isAllDay: false, location: null, notes: null, calendarId: null, availability: "free", recurrence: null, attendees: [],
+    });
+  });
   it.each([
     { availability: "tentative" }, { attendees: [{ email: "a@example.com", name: null, status: "maybe" }] }, { organizer: { email: 4 } },
     { recurrence: { ...weekly, frequency: "HOURLY" } }, { recurrence: { ...weekly, count: 0 } }, { recurrence: { ...weekly, days: [{ weekday: 8, week: 0 }] } },
@@ -120,6 +139,8 @@ describe("Native event editor boundary (Linux)", () => {
   it("turns a helper's refusal into the store's error, and nothing else", async () => {
     const editor = new NativeEventStore(vi.fn().mockResolvedValue({ refused: "notOrganizer" }), undefined, true).editor;
     await expect(editor?.edit(row.id, null, "all", { title: "New", invite: [], uninvite: [], exclude: [] })).rejects.toThrow(new EventStoreError("notOrganizer"));
+    const unsupported = new NativeEventStore(vi.fn().mockResolvedValue({ refused: "unsupportedRecurrence" }), undefined, true).editor;
+    await expect(unsupported?.delete(row.id)).rejects.toThrow(new EventStoreError("unsupportedRecurrence"));
     const unknown = new NativeEventStore(vi.fn().mockResolvedValue({ refused: "somethingElse" }), undefined, true);
     await expect(unknown.editor?.delete(row.id)).rejects.toThrow(/native data service/u);
     await expect(unknown.addEvent({ ...converted })).rejects.not.toBeInstanceOf(EventStoreError);

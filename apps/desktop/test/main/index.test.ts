@@ -1897,7 +1897,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   test.each(["win32", "linux"] as const)("shared Answer tools and switches work on %s", async (platform) => {
     await launch(platform);
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open", "change_setting"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["calendar_event_read", "calendar_event_edit", "calendar_event_delete", "reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open", "change_setting"]);
     if (platform === "win32") {
       const create = app.connectorTools.find((tool) => tool.name === "calendar_event_create");
       const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" }, signal, toolSettings);

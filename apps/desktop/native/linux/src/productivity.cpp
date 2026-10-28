@@ -1128,6 +1128,13 @@ void setAvailability(ICalComponent* component, const std::string& availability) 
 void requireWritable(ECalClient* client) {
     if (e_client_is_readonly(E_CLIENT(client))) refuse("calendarReadOnly");
 }
+// A series repeating by a rule the app can't be told (by the hour, by RDATE alone, or a key libical
+// doesn't know) reads as a single event, so the user would confirm a change to one event and change
+// every occurrence. It is changed and deleted in the user's calendar app instead; an occurrence changed
+// on its own is changed and deleted alone, so it can be here.
+void requireDescribedRule(const Found& found) {
+    if (found.rid.empty() && repeating(found.master) && recurrence(found.master, found.client.get()).is_null()) refuse("unsupportedRecurrence");
+}
 // Invitations need a calendar whose server sends them (Google, Nextcloud), and the user's address
 // on it: a calendar on this computer has neither.
 void requireInvitations(ECalClient* client, const Calendar& calendar) {
@@ -1297,7 +1304,9 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     auto found = find(registry, id, occurrence);
     requireWritable(found.client.get());
     if (found.row["isInvitation"].get<bool>()) refuse("notOrganizer");
-    if (!invited.empty()) requireInvitations(found.client.get(), found.calendar);
+    requireDescribedRule(found);
+    // Removing someone tells them too, so it needs a calendar that sends invitations as adding does.
+    if (!invited.empty() || !uninvited.empty()) requireInvitations(found.client.get(), found.calendar);
     // One occurrence can't repeat on its own: the app never asks it.
     if (ruleChanges && (!found.rid.empty() || (found.generated && scope == "thisOnly"))) throw std::runtime_error("invalid rule change");
     // Each still an occurrence of this series, all found before any is deleted: a refusal deletes none.
@@ -1403,6 +1412,7 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
 JSON calendarDelete(ESourceRegistry* registry, const JSON& input) {
     const auto found = find(registry, text(input, "id"), nullptr);
     requireWritable(found.client.get());
+    requireDescribedRule(found);
     if (found.rid.empty()) removeOccurrence(found.client.get(), found.uid, nullptr, E_CAL_OBJ_MOD_ALL);
     else removeOccurrence(found.client.get(), found.uid, found.rid.c_str(), E_CAL_OBJ_MOD_THIS);
     return JSON::object();
