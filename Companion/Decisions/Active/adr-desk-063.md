@@ -224,8 +224,7 @@ on its own. The dialog (at launch, from Fix Settings File… / Fix Knowledge Bas
 this computer loses (for the settings file its settings, the dictionary and the excluded apps and
 websites among them, and the welcome guide opens again; memory's size limit goes back to the default,
 so the oldest requests past it are removed, as the limit was unknown and memory untrimmed while the file
-couldn't be read; for the knowledge base file the knowledge base, writing style and their history), what
-stays (sign-in, and the other file), and the path the unreadable file is kept at. Cancel is its default. On Reset the file is renamed beside itself to
+couldn't be read; for the knowledge base file the knowledge base, writing style and their history), what stays (sign-in and the other file's contents; for the knowledge base file, settings and memory), and the path the unreadable file is kept at. Cancel is its default. On Reset the file is renamed beside itself to
 `<name> (before reset YYYY-MM-DD HH.MM.SS).json` (local time, `resetCopyPath`), never deleted and never
 written over (`JSONFileStore.moveAside` refuses a taken name, and a store with no problem), and the
 store starts empty at the defaults, written to a new file from its next change. What the session held
@@ -240,7 +239,7 @@ launch (consent not given, so nothing is read or sent until the user gives it th
 fails changes nothing and says so (`resetFailed`); the steps by hand still apply. Device Sync (PR 3)
 adds one sentence to the confirmation, that sync can restore the knowledge base and writing style from
 the user's other devices and doesn't reset them there, and its test. Tests:
-`main/storage/jsonFileStore.test.ts` (damaged and unreadable files kept byte for byte as the copy, the
+`main/storage/jsonFileStore.test.ts` (a damaged file kept byte for byte as the copy and an unreadable one moved there, the
 store saving afresh; refused with no problem, a taken name or a failed rename, changing nothing),
 `core/ui/fileProblems.test.ts`, `settings.test.ts`, `personalization/prompts.test.ts`,
 `main/index.test.ts` (nothing moved at launch, on Close or on Cancel; a confirmed settings reset keeps

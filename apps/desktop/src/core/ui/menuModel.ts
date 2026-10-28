@@ -12,7 +12,8 @@ export interface MenuState {
   isSignedIn: boolean;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
-  /** The app's files that couldn't be read at launch, each with its Fix item until the app relaunches. */
+  /** The app's files that couldn't be read at launch, each with its Fix item until it is fixed and the
+   * app relaunches, or the user resets it. */
   fileProblems: readonly StoredFile[];
   hotkey: DictationHotkey;
   debugMode: boolean;

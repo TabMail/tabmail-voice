@@ -121,7 +121,8 @@ const app = vi.hoisted(() => ({
   dialogsAfterLaunch: [] as boolean[],
   dialogResponse: 1,
   /** Answers for the next dialogs, in order, before `dialogResponse`. */
-  dialogResponses: [] as number[],
+  /** Answers held back until a test resolves them, as a dialog left open. */
+  dialogResponses: [] as (number | Promise<number>)[],
   /** The files the factory reset moved aside, and where. */
   movedAside: [] as { path: string; aside: string }[],
   moveAsideFails: false,
@@ -192,7 +193,7 @@ vi.mock("electron", async () => {
       showMessageBox: async (options: Record<string, unknown>) => {
         app.dialogs.push(options);
         app.dialogsAfterLaunch.push(app.handlers.has(channels.command));
-        return { response: app.dialogResponses.shift() ?? app.dialogResponse };
+        return { response: await (app.dialogResponses.shift() ?? app.dialogResponse) };
       },
       showOpenDialog: async (options: Record<string, unknown>) => {
         app.openDialogs.push(options);
@@ -2580,6 +2581,24 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.stored.get("learnsWords")).toBe(false);
   });
 
+  /** Only the settings file's reset is a first launch: a knowledge base reset leaves setup not yet
+   * finished as it was, the wizard not opened again. */
+  test("a knowledge base reset opens no wizard, setup finished or not", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.stored.set("hasFinishedWelcome", false);
+    app.dialogResponse = 2;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1 && app.presented.includes("welcome"))).toBe(true);
+    const presented = app.presented.length;
+
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("knowledgeBase");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.presented).toHaveLength(presented);
+  });
+
   test("a confirmed reset of the knowledge base file keeps it as a dated copy, and opens no wizard", async () => {
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
@@ -2644,6 +2663,27 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       "Reset your settings to the defaults?",
       "Reset your settings to the defaults?",
     ]);
+  });
+
+  /** A fix dialog left open while another reset the file: its Reset to Defaults… finds nothing to
+   * reset, and asks nothing. */
+  test("a fix dialog answered after the reset asks nothing and changes nothing", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("linux");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    let answer: (response: number) => void = () => {};
+    const held = new Promise<number>((resolve) => (answer = resolve));
+    app.dialogResponses = [1, held, 0];
+    app.trayActions?.showFileProblem("settings");
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    answer(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.movedAside).toHaveLength(1);
+    expect(app.dialogs).toHaveLength(4);
   });
 
   /** fn as the hotkey holds the Globe key at Do Nothing, the user's own action kept in the settings
