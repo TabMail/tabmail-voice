@@ -2565,6 +2565,49 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.requests).toHaveLength(1);
   });
 
+  /** A removal while AI features are off, in either state, answers and reads the list again only once
+   * memory has removed the request: the list shown then no longer holds it, and nothing is sent. */
+  test.each(["Opt Out of AI on", "the settings file can't be read"] as const)("with %s, a removal reads the list again only once memory has removed it", async (mode) => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "settings.json");
+    if (mode === "the settings file can't be read") {
+      app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+      app.dialogResponse = 2;
+    }
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    memory.rows.push(memoryRow("first request", "first reply", Date.now() - 1000, "first"), memoryRow("second request", "second reply", Date.now(), "second"));
+    if (mode === "Opt Out of AI on") expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    const search = vi.spyOn(memory, "search");
+    // Memory's removal held until released, as a busy helper would.
+    const remove = memory.remove.bind(memory);
+    let release = () => {};
+    const removing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(memory, "remove").mockImplementation(async (ids) => {
+      await removing;
+      return remove(ids);
+    });
+    let answered = false;
+    const pending = send({ type: "removeMemory", memId: "turn:first" }).then((result) => {
+      answered = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([answered, search.mock.calls.length, memory.rows.map((row) => row.memId)]).toEqual([false, 0, ["turn:first", "turn:second"]]);
+    release();
+    expect(await pending).toEqual({ error: null });
+    const shown = app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
+    expect([memory.rows.map((row) => row.memId), shown.memory.entries.map((row) => row.memId)]).toEqual([["turn:second"], ["turn:second"]]);
+    expect([search.mock.calls.map(([asked]) => asked.query), app.requests.length]).toEqual([[""], 0]);
+  });
+
   /** What applies is what is saved (owner, 2026-10-28): Opt Out of AI that couldn't be written says so,
    * on or off, and Settings, the menu and AI features are as they were. */
   test("Opt Out of AI that couldn't be saved says so, and the switch shows what is saved", async () => {
