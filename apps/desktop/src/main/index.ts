@@ -28,9 +28,9 @@ import { personalizationState } from "../core/personalization/page.js";
 import { UserPrompts } from "../core/personalization/prompts.js";
 import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
-import { liveTransport } from "../core/backend/http.js";
+import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
-import { fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
+import { appOffLine, fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
@@ -219,7 +219,10 @@ function launch(): void {
   const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
   const portalHotkeys = ["F8", "F9"] as const;
   const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
-  const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
+  // While the settings file can't be read the whole app is off (owner, 2026-10-27): no request of any
+  // kind reaches TabMail, signing in included, whatever asks for it.
+  const transport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${appOffLine}.`)));
+  const account = new AccountModel(new AuthClient(transport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
   const hotkeyHelper = new HelperClient({ name: "voice-hotkey", executable: join(helpers, process.platform === "win32" ? "voice-hotkey.exe" : "voice-hotkey") });
@@ -338,9 +341,9 @@ function launch(): void {
     frontmostApp: () => targetWindows.capture(),
     keyboardLanguage: () => system.keyboardLanguage(),
     systemEmailApp: () => process.platform === "darwin" ? mac.systemEmailApp() : Promise.resolve(null),
-    makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
-    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport).warmUp(accessToken),
-    makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
+    makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), transport),
+    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), transport).warmUp(accessToken),
+    makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), transport),
     // Native connectors require a platform implementation; shared web/email tools use Electron.
     connectorTools: platformConnectors.flatMap((connector) =>
       connector.tools({

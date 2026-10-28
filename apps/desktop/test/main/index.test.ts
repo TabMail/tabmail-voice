@@ -12,7 +12,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
-import { unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
+import { appOffLine, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
@@ -94,6 +94,10 @@ const app = vi.hoisted(() => ({
   trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
+  /** Every request that reached the network (`liveTransport`), by URL. */
+  requests: [] as string[],
+  /** The backend clients the app gives the dictation controller. */
+  backend: null as { warmUp: (baseURL: string, accessToken: string) => Promise<void> } | null,
   trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
@@ -275,8 +279,10 @@ vi.mock("@napi-rs/keyring", () => ({
     }
   },
 }));
-vi.mock("../../src/core/backend/http.js", () => ({
-  liveTransport: async () => {
+vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/core/backend/http.js")>()),
+  liveTransport: async (request: { url: string }) => {
+    app.requests.push(request.url);
     throw new Error("no network in tests");
   },
 }));
@@ -412,8 +418,9 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
+    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
       app.dictationSettings = dependencies.settings;
+      app.backend = dependencies;
       app.keepRecording = dependencies.keepRecording;
       app.capture = dependencies.capture;
       app.prompts = dependencies.prompts;
@@ -598,6 +605,7 @@ afterEach(() => {
   app.problems.clear();
   app.shownFiles = [];
   app.opened = [];
+  app.requests = [];
   app.openFailure = null;
   app.connectorTools = [];
   app.scripts = [];
@@ -2391,6 +2399,27 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(await eventually(() => app.dialogs.length === 2)).toBe(true);
     expect(app.dialogs[1]).toEqual(fix);
     expect(app.presented).toEqual([]);
+  });
+
+  /** While the settings file can't be read the whole app is off (owner, 2026-10-27): no request of
+   * any kind reaches the network, signing in included; with it read, the same request goes out. */
+  test("a settings file that can't be read lets no request reach TabMail", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    expect(await send({ type: "sendCode", email: "user@example.com" })).toEqual({ error: `${appOffLine}.` });
+    expect(await send({ type: "verify", email: "user@example.com", code: "123456" })).toEqual({ error: `${appOffLine}.` });
+    await expect(app.backend?.warmUp("https://api.example.com", "token")).rejects.toThrow(appOffLine);
+    expect(app.requests).toEqual([]);
+  });
+
+  test("a settings file that reads lets a request reach TabMail", async () => {
+    await launch("darwin");
+    await send({ type: "sendCode", email: "user@example.com" });
+    expect(app.requests).toHaveLength(1);
   });
 
   /** Only the settings file keeps the wizard closed: with the knowledge base's file unreadable alone,

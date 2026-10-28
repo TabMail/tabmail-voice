@@ -11,12 +11,14 @@ export type StoredFile = "settings" | "knowledgeBase";
 /** Every file a problem can be told for, in the menu's order. */
 export const storedFiles: readonly StoredFile[] = ["settings", "knowledgeBase"];
 
-const names: Record<StoredFile, { title: string; held: string; meanwhile: string }> = {
-  // The settings hold what the user excludes from screen reading and the apps they switched off, so
-  // neither the screen nor those apps are read without them.
-  settings: { title: "Settings", held: "your settings", meanwhile: "saves no change to them, doesn't read anything on screen or in your other apps" },
-  knowledgeBase: { title: "Knowledge Base", held: "your knowledge base, writing style and their history", meanwhile: "saves no change to them" },
+const names: Record<StoredFile, { title: string; held: string }> = {
+  settings: { title: "Settings", held: "your settings" },
+  knowledgeBase: { title: "Knowledge Base", held: "your knowledge base, writing style and their history" },
 };
+
+/** While the settings file can't be read the whole app is off (owner, 2026-10-27: "since we don't
+ * know if consented, nor if ai disabled now"): the menu says so, and a dictation is refused with it. */
+export const appOffLine = "TabMail Voice is off until its settings file is fixed";
 
 /** The menu item that tells how to fix `file`, shown while it can't be read. */
 export function fixFileLabel(file: StoredFile): string {
@@ -30,19 +32,16 @@ export function unsavedBecauseOf(file: StoredFile): string {
 
 /** Said at the top of Settings while `file` can't be read. */
 export function fileProblemLine(file: StoredFile): string {
-  const changes = file === "settings" ? "changes to settings aren't saved and nothing on screen or in your other apps is read" : "changes to your knowledge base and writing style aren't saved";
+  const changes = file === "settings" ? "it is off until the file is fixed" : "changes to your knowledge base and writing style aren't saved";
   return `TabMail Voice can't read its ${names[file].title.toLowerCase()} file, so ${changes}. Choose ${fixFileLabel(file)} in TabMail Voice's menu to fix it.`;
 }
-
-/** The menu's line while the settings file can't be read. */
-export const screenNotReadLine = "Not reading the screen or other apps until the settings file is fixed";
 
 /** What the user is told when `file` can't be read, and how to fix it on `platform` (`process.platform`).
  * The app never resets, moves or writes over the file itself: the user does, by hand. */
 export function fileProblemNotice(file: StoredFile, problem: StoreProblem, platform: string): { message: string; detail: string } {
-  const { title, held, meanwhile: also } = names[file];
+  const { title, held } = names[file];
   const name = title.toLowerCase();
-  const meanwhile = `Until it is fixed, TabMail Voice uses the defaults for ${held}, ${also}, and leaves the file as it is.`;
+  const meanwhile = file === "settings" ? `${appOffLine}: it doesn't dictate, read or send anything, and leaves the file as it is.` : `Until it is fixed, TabMail Voice uses the defaults for ${held}, saves no change to them, and leaves the file as it is.`;
   switch (problem.kind) {
     case "permission":
       return {

@@ -214,6 +214,7 @@ describe("AppSettings", () => {
     expect(app.setEventDuration(20)).toBe(true);
 
     expect(snapshot).toEqual({
+      isOff: false,
       hasConsented: true,
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,

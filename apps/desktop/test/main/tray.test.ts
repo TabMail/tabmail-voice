@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { screenNotReadLine } from "../../src/core/ui/fileProblems.js";
+import { appOffLine } from "../../src/core/ui/fileProblems.js";
 import type { MenuState, UpdateState } from "../../src/core/ui/menuModel.js";
 import { type TrayActions, TrayMenu } from "../../src/main/tray.js";
 
@@ -237,15 +237,15 @@ describe("TrayMenu's permission mark", () => {
     expect(tray.toolTip).toBe("TabMail Voice can't read one of its files");
     expect(labels).toContain("Fix Settings File…");
     expect(labels).toContain("Fix Knowledge Base File…");
-    // The settings file holds the user's exclusions: the menu says the screen isn't read meanwhile.
-    expect(labels.indexOf(screenNotReadLine)).toBe(labels.indexOf("Fix Settings File…") - 1);
-    expect(item(screenNotReadLine)?.enabled).toBe(false);
+    // Without the settings file the whole app is off: the menu says so above its Fix item.
+    expect(labels.indexOf(appOffLine)).toBe(labels.indexOf("Fix Settings File…") - 1);
+    expect(item(appOffLine)?.enabled).toBe(false);
 
     item("Fix Knowledge Base File…")?.click?.();
     item("Fix Settings File…")?.click?.();
     expect(clicked).toEqual(["showFileProblem:knowledgeBase", "showFileProblem:settings"]);
  
-    expect(menu(null, () => ({ ...ready, fileProblems: ["knowledgeBase"] })).labels).not.toContain(screenNotReadLine);
+    expect(menu(null, () => ({ ...ready, fileProblems: ["knowledgeBase"] })).labels).not.toContain(appOffLine);
   });
 
   test("an unchanged state leaves the icon alone", () => {
