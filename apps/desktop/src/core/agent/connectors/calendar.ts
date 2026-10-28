@@ -10,8 +10,8 @@ import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector,
 import { isAddress } from "./email.js";
 
 /** An event in the user's calendars, as the calendar tools read and create them. The fields after
- * `notes` are read and written only by a store with an `editor` (Apple Calendar); other stores leave
- * them out. */
+ * `notes` are read and written only by a store with an `editor` (Apple Calendar, and Evolution Data
+ * Server on Linux); other stores leave them out. */
 export interface CalendarEvent {
   title: string;
   start: Date;
@@ -102,8 +102,9 @@ export interface EventChanges {
 }
 
 /** Single events read, changed and deleted by id, where the store can (Apple Calendar through
- * EventKit, ADR-DESK-060). Attendees are invited, updated and told of a cancellation by the
- * calendar's server (iCloud, Google, Exchange) once a change is saved. */
+ * EventKit, and Evolution Data Server through `voice-productivity` on Linux, ADR-DESK-060).
+ * Attendees are invited, updated and told of a cancellation by the calendar's server (iCloud,
+ * Google, Exchange) once a change is saved. */
 export interface EventEditor {
   /** The event `id` names; of a repeating one, the occurrence that started at `occurrence`, or the
    * first without it. */
@@ -156,7 +157,8 @@ export type EventStoreErrorKind =
   | "calendarReadOnly"
   | "calendarNoInvitations"
   | "invitationsUnavailable"
-  | "notOrganizer";
+  | "notOrganizer"
+  | "unsupportedRecurrence";
 
 const eventStoreFailureMessages: Record<EventStoreErrorKind, string> = {
   calendarNoAccess: "TabMail Voice can't use Calendar. Allow it in System Settings › Privacy & Security › Calendars.",
@@ -169,6 +171,7 @@ const eventStoreFailureMessages: Record<EventStoreErrorKind, string> = {
   calendarNoInvitations: "That calendar is on this computer only, so it can't send invitations. Use an iCloud, Google or Exchange calendar to invite people.",
   invitationsUnavailable: "This version of macOS doesn't let TabMail Voice invite people. The user can add them in Calendar.",
   notOrganizer: "The user was invited to this event by its organizer, so only the organizer can change it.",
+  unsupportedRecurrence: "This event repeats in a way TabMail Voice can't change. The user can change or delete it in their calendar app.",
 };
 
 export class EventStoreError extends Error {

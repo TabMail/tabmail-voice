@@ -95,7 +95,8 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   event that is gone, read-only or not the user's when it saves. (Amended 2026-10-18: edit and delete
   read the event again when they ran, so a duration changed meanwhile moved the end past the one
   confirmed, and a person named but absent when asked was removed once added.)
-- **Without an editor** (Windows and Linux, which have no event store), the read, edit and delete
+- **Without an editor** (Windows, which has no event store; Linux has one from 2026-10-27, amendment
+  below), the read, edit and delete
   tools aren't offered, and a create with `calendar_id`, `transparency` free, `attendees` or
   `recurrence` is refused (busy, the default, goes ahead: 2026-10-18). `calendar_read` pages at `config.calendarReadPageSize` and lists the calendars on page 1.
   The backend's schemas for this are `v0.2.5` (its ADR-017 amendment): an older app is never offered
@@ -147,3 +148,63 @@ five candidates on a page, "Date tile looks awesome".
   …"), and "New: …" on any other new line (a new repetition), with removed text in `<del>` and a
   new title or time in `<ins>`; nothing changes on screen.
 
+**Amendment 2026-10-27: Linux edits events through Evolution Data Server (voice #230).**
+Owner: "linux now can be implemented safely … all we need is integrating properly". Windows stays
+without an editor (voice #229: its app calendar is invisible to the user and has no invitations).
+- `voice-productivity` answers `calendarEvent`, `calendars`, `calendarEdit` and `calendarDelete`
+  with the Mac helper's parameters and replies, and `calendarAdd` takes the same extended fields
+  (calendar, availability, recurrence, attendees). `NativeEventStore` has its `editor` only where it
+  is built editable (Linux); the tools are the Mac's, unchanged.
+- A refusal is a reply `{"refused": kind}` with the Mac's kinds (`noSuchEvent`, `noSuchCalendar`,
+  `calendarReadOnly`, `noDefaultCalendar`, `notOrganizer`, `calendarNoInvitations`), which the app
+  turns into `EventStoreError`; any other failure is a helper error, as before. Linux adds
+  `unsupportedRecurrence`: a series repeating by a rule the app can't be told (by the hour or finer,
+  by time of day, by RDATE alone, or a key libical doesn't know) reads with no rule, so the app would
+  confirm a change to one event and EDS would change every occurrence. Such a series is changed and
+  deleted in the user's calendar app; an occurrence of it changed on its own is still edited alone.
+  A series the app reads only in part is refused for changes too (deleting it is allowed): dates
+  added by RDATE or removed by EXRULE, which a change would leave behind, and a series with an
+  occurrence another app changed with all after it (a RANGE recurrence id). A split ("this and
+  following" from a later occurrence) is refused the same way, before anything is written, while an
+  occurrence at or after it was changed on its own and isn't dropped in the same change: EDS doesn't
+  carry it into the new series (its local backend deletes it, its server backends leave it to the old
+  series past its new end), where EventKit keeps it. From the series' own start, and for `all`, the
+  whole series changes and keeps such an occurrence, as before.
+- An event's id is its source's uid and the component's uid, `|`-separated (each with `%` and `|`
+  escaped), plus the recurrence id of a detached occurrence. An occurrence is found as on the Mac:
+  within `eventOccurrenceToleranceMs` of the start asked, searched over
+  `eventOccurrenceSearchSpanMs`, through the same expansion `calendarEvents` reads, so a detached or
+  RANGE-moved occurrence is the one shown.
+- `thisOnly` stores a detached occurrence (the master's copy with its rules removed, under the
+  occurrence's recurrence id); `thisAndFollowing` is EDS's THIS_AND_FUTURE, which ends the series and
+  starts a new one under a new uid; on the first occurrence, and for `all`, the whole series changes.
+  The first occurrence is EDS's own (`e_cal_util_is_first_instance`, which skips excluded dates but
+  looks only within a day of the series' start), asked with the split's recurrence id as the backend
+  parses it off the wire, so the helper and EDS agree on it: a split from the first occurrence left
+  after an excluded start a day before, or from a floating series' first occurrence, changes the whole
+  series; one further from the start is a split, as EDS makes it. The split's recurrence id is written in the
+  series' zone with its TZID: EDS's server backends start the new series there as it is, without the
+  conversion its local backend makes. A series with a floating start is read in the user's zone, as
+  EDS reads it, so moving it keeps its local time of day.
+  The split is made with the series as it is, and the change then goes to the new series (the one
+  starting there that wasn't before) as an `all` change: EDS counts a split's COUNT from the series it
+  ends and puts back a start that still falls on one of its occurrences, so a split carrying the
+  change stored a new counted rule shortened or unbounded and a start moved back by whole repeats not
+  at all. A series moved with `all` keeps its days apart and its length; an event made to repeat is
+  written in the local zone with its TZID, so its wall time holds across daylight saving, and a
+  series another app stored in UTC stays in UTC when its rule changes. A series with an end made all
+  day, or timed, has only its UNTIL rewritten, as a date or a time to match (RFC 5545 3.3.10); a rule
+  written anew keeps the stored week start (WKST), which the app doesn't read and which weekly rules
+  every other week and week numbers count from.
+- Invitations need a calendar whose backend sends them (`save-schedules`) and knows the user's own
+  address; otherwise adding or removing people is refused as `calendarNoInvitations` (a local
+  calendar): removing someone tells them, as adding does. An event is an invitation when it has attendees and an organizer other than the user;
+  changing one is refused (`notOrganizer`), deleting it is not.
+- A read of calendars, memos or tasks that a change interrupts is made again from the start, up to
+  `calendarReadAttempts` times: EDS can tell a new view of a change saved just before it (a write of
+  Voice's own included), and a read is still never a mix of versions; a removal counts as a change.
+  Writes are never repeated. An attendee's DECLINED reads `declined`, as on the Mac.
+- A repeating event's times are stored in the local zone with its TZID set explicitly: libical 3.0
+  labels a time converted to a zone as UTC, which stored 09:00 in Toronto as 09:00 UTC.
+- Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
+  (`tests/productivity.py`); a server-backed calendar (Google) by hand (TESTS.md).
