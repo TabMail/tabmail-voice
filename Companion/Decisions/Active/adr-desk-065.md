@@ -26,7 +26,9 @@ hidden audio window and the paste history skip it).
   *Amended 2026-10-28 (#298): it also has File, Electron's `fileMenu` role, whose one item on macOS is
   Close Window (Cmd-W): Electron's Window menu on macOS has no Close, so Cmd-W did nothing. It closes
   the focused window (Settings, the welcome guide, the last screen context, the paste history); the
-  overlay is never focused, so it is never closed this way, and the app keeps running in the menu bar.*
+  overlay is never focused, so it is never closed this way, and the app keeps running in the menu bar.
+  Closing the paste history this way gives the focus back to the user's app, as Escape does
+  (ADR-DESK-043's amendment).*
 
 **Consequences:**
 - Clicking the Dock icon activates the app, which brings its open window forward (macOS does this).

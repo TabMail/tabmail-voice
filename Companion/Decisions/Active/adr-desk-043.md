@@ -27,7 +27,10 @@ to enter agent mode or triple tap to see history tooltip".
   closes it; Escape or a click elsewhere closes it. On macOS the app then hides, so focus returns to
   the app the user was in, unless Settings, the welcome window, the context debug window or the chat
   window is open (hiding the app would hide the chat, with nothing to show it again while the next
-  holds talk to it).
+  holds talk to it). *Amended 2026-10-28 (#298): Cmd-W (File › Close Window, ADR-DESK-065) closes it
+  too. The hide now follows the window's own close (`historyClosed`, from its `close` event): closed
+  while it still has the focus (a click on an entry, Escape, Cmd-W) the app hides; closed as it lost
+  the focus (a click elsewhere) it doesn't, the focus being already where the user clicked.*
 - The Space tip becomes `agentAndHistoryTip` ("Press [space] for agent mode, / triple-tap [hotkey]
   for history", 4 s, at most 10 holds); opening the history learns it. Using Space no longer does,
   as the tip still teaches the history. Its new id restarts its counts.

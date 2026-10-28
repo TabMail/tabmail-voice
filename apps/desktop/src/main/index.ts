@@ -762,7 +762,7 @@ function launch(): void {
    * its list has measured itself (`historyHeight`, `Windows.fitHistory`). */
   function showHistory(): void {
     historyPlace = overlay.pillPlace;
-    windows.showHistory(historyBounds(historyHeight), () => windows.close("history"));
+    windows.showHistory(historyBounds(historyHeight), () => windows.close("history"), historyClosed);
     // Its page measures its list again, which may have changed.
     windows.push("history");
   }
@@ -788,13 +788,14 @@ function launch(): void {
     }
   }
 
-  /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
-   * another of this app's windows is open, or the chat is: hiding the app would hide the chat too,
-   * with nothing to show it again while the next holds talk to it. */
-  function closeHistory(): void {
-    windows.close("history");
+  /** The paste history closed. Closed with the focus (Escape, a click on an entry, Cmd-W), on macOS it
+   * gives the app the user was in back its focus, unless another of this app's windows is open, or
+   * the chat is: hiding the app would hide the chat too, with nothing to show it again while the next
+   * holds talk to it. Closed as it lost the focus (a click elsewhere), the focus is already there. */
+  function historyClosed(focused: boolean): void {
+    if (!focused || process.platform !== "darwin") return;
     const othersOpen = (["settings", "welcome", "contextDebug"] as const).some((name) => windows.isOpen(name)) || controller.chat !== null;
-    if (process.platform === "darwin" && !othersOpen) app.hide();
+    if (!othersOpen) app.hide();
   }
 
   /** The Thunderbird bubble shows the email app's icon: read once per app. */
@@ -1208,11 +1209,11 @@ function launch(): void {
       case "copyHistoryEntry": {
         const text = history.text(command.id);
         if (text !== null) void copyText(text);
-        closeHistory();
+        windows.close("history");
         return;
       }
       case "closeHistory":
-        closeHistory();
+        windows.close("history");
         return;
       case "historyHeight":
         historyHeight = command.height;

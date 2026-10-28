@@ -100,11 +100,12 @@ export class Windows {
 
   /** The paste history (ADR-DESK-043) at `bounds`: a small frameless window over every other, on
    * the Space in front, brought forward with the app so Escape reaches it; `onBlur` as it loses
-   * focus (the user clicked elsewhere). Transparent, without the system's shadow, on every platform:
+   * focus (the user clicked elsewhere); `onClose` as it closes, however it is closed (Escape, a click
+   * on an entry, Cmd-W), with whether it still had the focus. Transparent, without the system's shadow, on every platform:
    * its page draws a card of the overlay's glass, with its glow, inside it. Made hidden: it shows once
    * its list has measured itself (`fitHistory`), so it never opens at another height. Open already, it
    * moves to `bounds`. */
-  showHistory(bounds: Rect, onBlur: () => void): void {
+  showHistory(bounds: Rect, onBlur: () => void, onClose: (focused: boolean) => void): void {
     const look: BrowserWindowConstructorOptions = { transparent: true, hasShadow: false, backgroundColor: "#00000000" };
     const existing = this.open.get("history");
     if (existing && !existing.isDestroyed()) {
@@ -129,6 +130,7 @@ export class Windows {
     }, (window) => {
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
       window.on("blur", onBlur);
+      window.on("close", () => onClose(window.isFocused()));
     });
   }
 
