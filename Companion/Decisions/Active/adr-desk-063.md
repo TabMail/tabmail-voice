@@ -152,7 +152,8 @@ working on defaults for that file, every save answers false, and `problem` says 
   showing the dialog again, as a missing permission keeps its Allow item.
 - Every change that can't be saved says so and names that item, each time. Settings and the welcome
   window say it above every section or step (`fileProblemLine`; the welcome window for the settings
-  file, which it writes), and every command that keeps a choice in the file answers with it: the IPC
+  file, which it writes; *superseded for the welcome window by the #285 amendment below, which never
+  opens it then*), and every command that keeps a choice in the file answers with it: the IPC
   command handler looks the command up in `commandWrites` (every command named, so a new one is
   decided) rather than each command checking. What such a command changed holds until quit (the store
   keeps it in memory), except an exclusion, a personalization edit, the event duration and the memory
@@ -165,7 +166,9 @@ working on defaults for that file, every save answers false, and `problem` says 
   dictation or agent mode. For the same reason nothing else of the user's is read either: word
   learning, which reads the field pasted into after the paste, is off (`learnsWords` false), and the
   Answer tool reaches none of the other apps (`enabledConnectors` empty), as the apps the user
-  switched off are in the file too. Dictation itself works. The menu says "Not reading the screen or
+  switched off are in the file too. Dictation itself works. *(Superseded by the #285 amendment below:
+  with the wizard closed consent can't be given, so dictation is refused until the file is fixed.)* The
+  menu says "Not reading the screen or
   other apps until the settings file is fixed" above its Fix Settings File… item, and Settings and the
   dialog say it too; it ends at the next launch that reads the file.
 - While the settings file can't be read, the user's memory limit is unknown, so an agent request is not
@@ -186,5 +189,9 @@ Welcome Guide. It never opens then: `showWelcome` tells how to fix the file inst
 at launch and the Fix Settings File… item), and launch opens no wizard, only that dialog. Consent stays
 not given inside, so nothing of the user's is read, as above. The welcome window's line about the
 settings file, which it could then never show, is gone (`WelcomeState.fileProblems` deleted); Settings
-still says it above every section. Test: `main/index.test.ts`, for each kind of read failure, at
+still says it above every section. Consent can then be given nowhere (only the wizard sends
+`setConsent`), so while the settings file can't be read every dictation is refused ("Finish setting up
+TabMail Voice from its menu", whose menu item shows the fix dialog) until a launch reads the file; before
+this, a user could consent again in the wizard, unsaved, and dictate that session. Only the settings
+file keeps the wizard closed: a knowledge base file that can't be read leaves it as ever. Test: `main/index.test.ts`, for each kind of read failure, at
 launch and from the menu.

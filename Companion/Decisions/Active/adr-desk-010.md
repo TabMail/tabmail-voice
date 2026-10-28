@@ -28,7 +28,9 @@ grants. The privacy policy tells users they can switch screen reading off.
   discloses it. It is read at every key-down with the other settings (ADR-DESK-017), so a change
   applies from the next dictation. It can also be switched in Settings.
 - **When the wizard opens.** It opens at every launch until the user presses Finish; closing the
-  window doesn't count. It can be reopened from the menu (Welcome Guide…).
+  window doesn't count. It can be reopened from the menu (Welcome Guide…). *(Amended 2026-10-27,
+  issue #285: never while the settings file can't be read; the file's fix dialog shows instead,
+  ADR-DESK-063.)*
 - **Replaces the launch-time permission prompts.** The app no longer asks for permissions at
   launch; it only polls for the Accessibility grant, so a grant made in System Settings takes
   effect without a relaunch.

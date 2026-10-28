@@ -2393,6 +2393,26 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.presented).toEqual([]);
   });
 
+  /** Only the settings file keeps the wizard closed: with the knowledge base's file unreadable alone,
+   * setup not yet finished opens the wizard at launch and from the menu, and that file's own dialog is
+   * the only one shown. */
+  test("a knowledge base file that can't be read leaves the welcome wizard as ever", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.stored.set("hasFinishedWelcome", false);
+    app.dialogResponse = 1;
+    await launch("darwin");
+
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    expect(app.presented).toEqual(["welcome"]);
+    app.presented = [];
+    app.trayActions?.showWelcome();
+    expect(app.presented).toEqual(["welcome"]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.dialogs).toHaveLength(1);
+    expect(app.dialogs[0]?.message).toContain("knowledge base");
+  });
+
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {
     /** A packaged build, launched with its resources where Electron puts them. */
     async function launchPackaged(platform: NodeJS.Platform = "darwin", resources = "/nonexistent", linuxExecutable?: string): Promise<void> {

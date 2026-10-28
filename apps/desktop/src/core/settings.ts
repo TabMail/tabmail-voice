@@ -180,7 +180,8 @@ export class AppSettings extends Observable {
     this.write(Key.hasConsented, value);
   }
 
-  /** The welcome wizard was finished; until then it opens at every launch. */
+  /** The welcome wizard was finished; until then it opens at every launch, unless this file can't be
+   * read (then the file's fix dialog shows instead). */
   get hasFinishedWelcome(): boolean {
     return storedBool(this.store, Key.hasFinishedWelcome) ?? false;
   }
