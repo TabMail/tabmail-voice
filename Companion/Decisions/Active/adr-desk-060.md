@@ -173,5 +173,10 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   address; otherwise adding or changing people is refused as `calendarNoInvitations` (a local
   calendar). An event is an invitation when it has attendees and an organizer other than the user;
   changing one is refused (`notOrganizer`), deleting it is not.
+- A read of calendars, memos or tasks that a change interrupts is made again from the start, up to
+  `calendarReadAttempts` times: EDS can tell a new view of a change saved just before it (a write of
+  Voice's own included), and a read is still never a mix of versions. Writes are never repeated.
+- A repeating event's times are stored in the local zone with its TZID set explicitly: libical 3.0
+  labels a time converted to a zone as UTC, which stored 09:00 in Toronto as 09:00 UTC.
 - Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
   (`tests/productivity.py`); a server-backed calendar (Google) by hand (TESTS.md).
