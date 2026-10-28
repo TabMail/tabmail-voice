@@ -39,6 +39,9 @@ const Key = {
  * the rest of it: a change in Settings meanwhile applies from the next dictation (owner,
  * 2026-09-26). */
 export interface DictationSettings {
+  /** The settings file can't be read: its AI features are off, and no dictation starts (owner,
+   * 2026-10-27). */
+  isAIOff: boolean;
   hasConsented: boolean;
   /** The key held to dictate, which the double-tap tip names. */
   hotkey: DictationHotkey;
@@ -180,7 +183,8 @@ export class AppSettings extends Observable {
     this.write(Key.hasConsented, value);
   }
 
-  /** The welcome wizard was finished; until then it opens at every launch. */
+  /** The welcome wizard was finished; until then it opens at every launch, unless this file can't be
+   * read (then the file's fix dialog shows instead). */
   get hasFinishedWelcome(): boolean {
     return storedBool(this.store, Key.hasFinishedWelcome) ?? false;
   }
@@ -483,6 +487,7 @@ export class AppSettings extends Observable {
     // learning), not the apps the Answer tool reaches.
     const readable = this.store.problem === undefined;
     return {
+      isAIOff: !readable,
       hasConsented: this.hasConsented,
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),

@@ -28,9 +28,9 @@ import { personalizationState } from "../core/personalization/page.js";
 import { UserPrompts } from "../core/personalization/prompts.js";
 import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
-import { liveTransport } from "../core/backend/http.js";
+import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
-import { fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
+import { aiOffLine, fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
@@ -120,6 +120,11 @@ if (needsX11Relaunch(appImage, process.argv)) {
 } else {
   app.quit();
 }
+
+/** Settings › Memory's commands: refused while the settings file can't be read, as its AI features
+ * are off then and memory is one (its helper runs a model over what the user asked; owner,
+ * 2026-10-27). */
+const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
 
 /** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
  * the command says so (ADR-DESK-063 amendment). Every command is named, so a new one is decided. */
@@ -219,6 +224,11 @@ function launch(): void {
   const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
   const portalHotkeys = ["F8", "F9"] as const;
   const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
+  // While the settings file can't be read its AI features are off (owner, 2026-10-27): transcription,
+  // its warm-up and completions are refused, whatever asks for them (dictation and agent mode, which
+  // the rest goes through, are refused at their start). Signing in and updates work as ever;
+  // Settings › Memory is refused (below).
+  const aiTransport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${aiOffLine}.`)));
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
@@ -338,9 +348,9 @@ function launch(): void {
     frontmostApp: () => targetWindows.capture(),
     keyboardLanguage: () => system.keyboardLanguage(),
     systemEmailApp: () => process.platform === "darwin" ? mac.systemEmailApp() : Promise.resolve(null),
-    makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
-    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport).warmUp(accessToken),
-    makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
+    makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), aiTransport),
+    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), aiTransport).warmUp(accessToken),
+    makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), aiTransport),
     // Native connectors require a platform implementation; shared web/email tools use Electron.
     connectorTools: platformConnectors.flatMap((connector) =>
       connector.tools({
@@ -538,7 +548,6 @@ function launch(): void {
   function welcomeState(): WelcomeState {
     const current = wizard ?? new WelcomeWizard(settings, () => suggestedName);
     return {
-      fileProblems: unreadableFiles(),
       step: current.step,
       index: current.index,
       categoryIndex: current.categoryIndex,
@@ -661,8 +670,11 @@ function launch(): void {
     });
   }
 
-  /** Opens the welcome wizard at its first step; brings the open one forward instead. */
+  /** Opens the welcome wizard at its first step; brings the open one forward instead. While the
+   * settings file can't be read, which reads as setup never done, it tells how to fix the file instead,
+   * and the wizard never opens (owner, 2026-10-27). */
   function showWelcome(): void {
+    if (settings.fileProblem !== undefined) return showFileProblem("settings");
     if (!windows.isOpen("welcome")) {
       stopObservingWizard?.();
       const fresh = new WelcomeWizard(settings, () => suggestedName);
@@ -926,12 +938,17 @@ function launch(): void {
   session.defaultSession.setPermissionCheckHandler((contents, permission) => permission === "media" && contents !== null && windows.isAudioWindow(contents));
 
   ipcMain.handle(channels.getState, (_event, name: unknown) => (isWindowName(name) ? stateOf(name) : null));
+  /** Says how to fix the file `command` writes, while that file couldn't be read at launch. */
+  function unsavedFor(command: Command): string | null {
+    const file = commandWrites[command.type];
+    return file !== null && fileProblem(file) !== undefined ? unsavedBecauseOf(file) : null;
+  }
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
+    if (settings.fileProblem !== undefined && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${aiOffLine}.` };
     // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
     // this session, and says how to fix the file, every time.
-    const file = commandWrites[command.type];
-    const unsaved = file !== null && fileProblem(file) !== undefined ? unsavedBecauseOf(file) : null;
+    const unsaved = unsavedFor(command);
     try {
       await run(command);
       return { error: unsaved };
@@ -1185,7 +1202,8 @@ function launch(): void {
 
   // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
   // says what's new, so the tip that tells a user who set the app up before never shows to this one.
-  if (!settings.hasFinishedWelcome) {
+  // A settings file that can't be read is not setup never done: the fix below is told instead.
+  if (!settings.hasFinishedWelcome && settings.fileProblem === undefined) {
     tips.markLearned("agentKnowledgeBase");
     showWelcome();
   }

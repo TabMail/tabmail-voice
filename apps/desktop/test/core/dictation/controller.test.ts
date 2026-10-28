@@ -10,6 +10,7 @@ import { type AgentChat, emptyChat, type EventQuestion } from "../../../src/core
 import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import type { ConnectorTool, ToolQuestion, ToolSettings } from "../../../src/core/agent/connectors/contract.js";
 import { AgentError, type AgentToolID, agentToolIDs, screenHiddenNote } from "../../../src/core/agent/tools.js";
+import { aiOffLine } from "../../../src/core/ui/fileProblems.js";
 import { AudioRecorder } from "../../../src/core/audio/recorder.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
@@ -69,7 +70,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const switchedOnTools: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
+  return { isAIOff: false, hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -687,20 +688,31 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(reads).toBe(0);
   });
 
-  /** While the settings file can't be read, the user's exclusions are unknown: a dictation from
-   * its settings reads neither the screen nor, to learn words, the field it pasted into. */
-  test("with the settings file unreadable neither the screen nor the field pasted into is read", async () => {
+  /** While the settings file can't be read its AI features are off (owner, 2026-10-27): whether the user
+   * consented, and what they excluded, are unknown. A hold, in dictation or agent mode, is refused
+   * with the line that says so: the microphone never starts, nothing is read (the screen, the window,
+   * the field pasted into), nothing is sent and nothing is pasted, consent stored or not. */
+  // Consent as this session holds it, and as the file left unread holds it (not given): the app is
+  // off either way, and says so before anything else.
+  test.each([
+    ["dictation", true],
+    ["agent", true],
+    ["dictation", false],
+    ["agent", false],
+  ] as const)("with the settings file unreadable a %s hold (consent %s) does nothing but say AI features are off", async (mode, hasConsented) => {
     const store = new (class extends MemoryStore {
       readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
     })();
     const app = new AppSettings(store, () => true);
     app.readsScreen = true;
     app.learnsWords = true;
-    // Consent and the server aren't what is checked: they are the test's.
-    prefs.value = { ...app.dictation(null), hasConsented: true, backendURL: defaultSettings().backendURL };
+    // The server isn't what is checked: it is the test's.
+    prefs.value = { ...app.dictation(null), hasConsented, backendURL: defaultSettings().backendURL };
     transcription.enqueue(200, cleanedReply);
+    completions.enqueue(200, writes("compose", "Written."));
+    const capture = new CountingCapture(true);
     const watches: number[] = [];
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections: { watch: (target) => watches.push(target), stop: () => {} } });
+    const { controller, pastes } = makeController({ capture, corrections: { watch: (target) => watches.push(target), stop: () => {} } });
     let reads = 0;
     controller.captureContext = async () => {
       reads += 1;
@@ -711,11 +723,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return blankScreen({ appName: "Example Mail" });
     };
 
-    await holdAndRelease(controller);
+    controller.handle(mode === "agent" ? "startAgent" : "start");
+    controller.handle("finish");
+    await sleep(100);
 
-    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(controller.phase).toEqual(failed(`${aiOffLine}.`));
+    expect(capture.starts).toBe(0);
     expect(reads).toBe(0);
+    expect(transcription.requests).toHaveLength(0);
+    expect(completions.requests).toHaveLength(0);
+    expect(pastes).toEqual([]);
     expect(watches).toEqual([]);
+    expect(warmUps.requests).toHaveLength(0);
+    expect(memory.prepared).toBe(0);
   });
 
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
@@ -3228,7 +3248,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
+          prefs.value = { isAIOff: false, hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions, target) => {

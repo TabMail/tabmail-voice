@@ -12,13 +12,13 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
-import { unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
+import { aiOffLine, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
 import { memoryRow } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
-import { channels, type SettingsState, type WelcomeState } from "../../src/shared/ipc.js";
+import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
 /** The signal a tool runs with: a request never canceled. */
@@ -94,7 +94,15 @@ const app = vi.hoisted(() => ({
   trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
-  trayState: null as (() => { update: unknown; fileProblems?: unknown }) | null,
+  /** Every request that reached the network (`liveTransport`), by URL. */
+  requests: [] as string[],
+  /** The backend clients the app gives the dictation controller. */
+  backend: null as {
+    warmUp: (baseURL: string, accessToken: string) => Promise<void>;
+    makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient;
+    makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
+  } | null,
+  trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
@@ -275,8 +283,10 @@ vi.mock("@napi-rs/keyring", () => ({
     }
   },
 }));
-vi.mock("../../src/core/backend/http.js", () => ({
-  liveTransport: async () => {
+vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/core/backend/http.js")>()),
+  liveTransport: async (request: { url: string }) => {
+    app.requests.push(request.url);
     throw new Error("no network in tests");
   },
 }));
@@ -412,8 +422,9 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
+    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient; makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
       app.dictationSettings = dependencies.settings;
+      app.backend = dependencies;
       app.keepRecording = dependencies.keepRecording;
       app.capture = dependencies.capture;
       app.prompts = dependencies.prompts;
@@ -598,6 +609,7 @@ afterEach(() => {
   app.problems.clear();
   app.shownFiles = [];
   app.opened = [];
+  app.requests = [];
   app.openFailure = null;
   app.connectorTools = [];
   app.scripts = [];
@@ -2108,7 +2120,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.trayState?.().fileProblems).toEqual(["settings"]);
     const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
     expect(settingsState().fileProblems).toEqual(["settings"]);
-    expect((app.handlers.get(channels.getState)?.({}, "welcome") as WelcomeState).fileProblems).toEqual(["settings"]);
 
     for (const command of [
       { type: "setHotkey", hotkey: "rightOption" },
@@ -2369,6 +2380,130 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.trayActions?.debug.showLastScreenContext();
     app.appEvents.get("second-instance")?.();
     expect(app.presented).toEqual(["settings", "welcome", "contextDebug", "settings"]);
+  });
+
+  /** A settings file that can't be read reads as setup never done, but the welcome wizard never
+   * opens then (owner, 2026-10-27): at launch and from the menu (Finish Setting Up and Welcome Guide
+   * both call `showWelcome`), every way into it tells how to fix the file instead. */
+  test.each(["permission", "damaged", "unreadable"] as const)("a settings file that can't be read (%s) never opens the welcome wizard, and offers the fix steps instead", async (kind) => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind, path, code: kind === "damaged" ? "invalid" : "EIO" });
+    app.dialogResponse = 1;
+    await launch("darwin");
+
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.dialogs).toHaveLength(1);
+    const fix = app.dialogs[0];
+    expect(fix?.message).toContain("settings file");
+    expect(app.presented).toEqual([]);
+    expect(app.trayState?.().hasConsented).toBe(false);
+
+    app.trayActions?.showWelcome();
+    expect(await eventually(() => app.dialogs.length === 2)).toBe(true);
+    expect(app.dialogs[1]).toEqual(fix);
+    expect(app.presented).toEqual([]);
+  });
+
+  /** While the settings file can't be read its AI features are off (owner, 2026-10-27): no request
+   * that carries what the user said reaches the network, whatever asks; signing in still does. With
+   * the file read, the same requests go out. */
+  test("a settings file that can't be read lets no AI request reach TabMail, and signing in still works", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    await expect(app.backend?.warmUp("https://api.example.com", "token")).rejects.toThrow(aiOffLine);
+    // The two that carry what the user said, the audio and the text.
+    await expect(app.backend?.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token")).rejects.toThrow(aiOffLine);
+    await expect(app.backend?.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token")).rejects.toThrow(aiOffLine);
+    expect(app.requests).toEqual([]);
+
+    // Signing in isn't AI: it reaches TabMail as ever.
+    await send({ type: "sendCode", email: "user@example.com" });
+    await send({ type: "verify", email: "user@example.com", code: "123456" });
+    expect(app.requests).toHaveLength(2);
+  });
+
+  /** Only the settings file turns the network off: with the knowledge base file alone unreadable,
+   * requests go out as ever. */
+  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
+    if (unreadable !== null) {
+      const path = join(app.userData, unreadable);
+      app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+      app.dialogResponse = 1;
+    }
+    await launch("darwin");
+    await send({ type: "sendCode", email: "user@example.com" });
+    // Every client reaches it: the warm-up, transcription and completions too.
+    const backend = app.backend;
+    if (backend === null) throw new Error("no controller");
+    await backend.warmUp("https://api.example.com", "token").catch(() => {});
+    await backend.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token").catch(() => {});
+    await backend.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token").catch(() => {});
+    expect(app.requests).toHaveLength(4);
+  });
+
+  /** Settings › Memory starts memory's helper, whose first start fetches its model from TabMail: while
+   * the settings file can't be read, every one of its commands is refused and memory is never asked. */
+  test("a settings file that can't be read keeps Settings › Memory from reaching memory", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const asked = (["prepare", "index", "search", "read", "stats", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
+
+    for (const command of [{ type: "loadMemory" }, { type: "searchMemory", query: "friday" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
+      expect(await send(command)).toEqual({ error: `${aiOffLine}.` });
+    }
+    // The size limit is kept in the settings file: it says how to fix it, as every such command does.
+    expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
+    for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("a knowledge base file that can't be read leaves Settings › Memory reaching memory", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const stats = vi.spyOn(memory, "stats");
+
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    expect(stats).toHaveBeenCalled();
+  });
+
+  /** Only the settings file keeps the wizard closed: with the knowledge base's file unreadable alone,
+   * setup not yet finished opens the wizard at launch and from the menu, and that file's own dialog is
+   * the only one shown. */
+  test("a knowledge base file that can't be read leaves the welcome wizard as ever", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.stored.set("hasFinishedWelcome", false);
+    app.dialogResponse = 1;
+    await launch("darwin");
+
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    expect(app.presented).toEqual(["welcome"]);
+    app.presented = [];
+    app.trayActions?.showWelcome();
+    expect(app.presented).toEqual(["welcome"]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.dialogs).toHaveLength(1);
+    expect(app.dialogs[0]?.message).toContain("knowledge base");
   });
 
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {
@@ -2676,6 +2811,25 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
         await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
         expect(app.autoUpdater?.checks).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /** Updates aren't AI: a file that can't be read, the settings one included, leaves them as ever
+     * (owner, 2026-10-27). */
+    test.each(["settings.json", "userPrompts.json"])("a packaged build with %s unreadable looks for updates as ever", async (file) => {
+      vi.useFakeTimers();
+      try {
+        const path = join(app.userData, file);
+        app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+        app.dialogResponse = 1;
+        let launched = false;
+        void launchPackaged().then(() => (launched = true));
+        while (!launched) await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
+        expect(app.autoUpdater?.checks).toBe(1);
+        expect(app.trayState?.().update).not.toBeNull();
       } finally {
         vi.useRealTimers();
       }

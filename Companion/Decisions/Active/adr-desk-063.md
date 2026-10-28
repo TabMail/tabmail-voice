@@ -152,7 +152,8 @@ working on defaults for that file, every save answers false, and `problem` says 
   showing the dialog again, as a missing permission keeps its Allow item.
 - Every change that can't be saved says so and names that item, each time. Settings and the welcome
   window say it above every section or step (`fileProblemLine`; the welcome window for the settings
-  file, which it writes), and every command that keeps a choice in the file answers with it: the IPC
+  file, which it writes; *superseded for the welcome window by the #285 amendment below, which never
+  opens it then*), and every command that keeps a choice in the file answers with it: the IPC
   command handler looks the command up in `commandWrites` (every command named, so a new one is
   decided) rather than each command checking. What such a command changed holds until quit (the store
   keeps it in memory), except an exclusion, a personalization edit, the event duration and the memory
@@ -165,7 +166,9 @@ working on defaults for that file, every save answers false, and `problem` says 
   dictation or agent mode. For the same reason nothing else of the user's is read either: word
   learning, which reads the field pasted into after the paste, is off (`learnsWords` false), and the
   Answer tool reaches none of the other apps (`enabledConnectors` empty), as the apps the user
-  switched off are in the file too. Dictation itself works. The menu says "Not reading the screen or
+  switched off are in the file too. Dictation itself works. *(Superseded by the #285 amendment below:
+  with the wizard closed consent can't be given, so dictation is refused until the file is fixed.)* The
+  menu says "Not reading the screen or
   other apps until the settings file is fixed" above its Fix Settings File… item, and Settings and the
   dialog say it too; it ends at the next launch that reads the file.
 - While the settings file can't be read, the user's memory limit is unknown, so an agent request is not
@@ -178,3 +181,37 @@ Tests: `main/storage/jsonFileStore.test.ts`, `jsonFileStore.readErrors.test.ts`,
 `core/ui/fileProblems.test.ts`, `main/tray.test.ts`, `main/index.test.ts`, `kbTools.test.ts`,
 `settings.test.ts`, `dictation/controller.test.ts`, `renderer/settings/index.test.ts`,
 `renderer/welcome/index.test.ts`.
+
+**Amendment (2026-10-27, an unreadable settings file never opens the welcome wizard; owner, issue
+#285):** a settings file that can't be read reads as setup never done (consent and the finished
+wizard are in it), so the wizard opened at every launch, and from the menu's Finish Setting Up and
+Welcome Guide. It never opens then: `showWelcome` tells how to fix the file instead (the same dialog as
+at launch and the Fix Settings File… item), and launch opens no wizard, only that dialog. Consent stays
+not given inside, so nothing of the user's is read, as above. The welcome window's line about the
+settings file, which it could then never show, is gone (`WelcomeState.fileProblems` deleted); Settings
+still says it above every section. Consent can then be given nowhere (only the wizard sends
+`setConsent`), so while the settings file can't be read every dictation is refused (with the off line
+of the widening below) until a launch reads the file; before
+this, a user could consent again in the wizard, unsaved, and dictate that session. Only the settings
+file keeps the wizard closed: a knowledge base file that can't be read leaves it as ever. Test: `main/index.test.ts`, for each kind of read failure, at
+launch and from the menu.
+
+*Widened the same day (owner): "we don't know if consented, nor if AI disabled now", so while the
+settings file can't be read its AI features are off, dictation included. "The thing to turn off is
+AI": everything that isn't AI keeps working.* Off: every dictation and agent hold, refused at its start
+by `DictationSettings.isAIOff` before consent is even looked at, with `aiOffLine` ("AI features are off
+until your settings file is fixed"), so no audio, transcription, warm-up, cleanup or completion and no
+read of the screen, a field or another app; the transcription, warm-up and completions requests also go through one transport that refuses them
+while the file can't be read, whatever asks (the web fetch and other tools run only in agent mode,
+refused at its start); and memory, whose helper runs a model over what the user asked, so
+Settings › Memory's commands are refused. On, as ever: signing in and the account, updates, Settings,
+the menu and the fix dialog. A user switch kept in the settings file can't be read, so what it governs
+is off too; Device Sync, which comes later, follows that rule. The menu shows that line above Fix
+Settings File… (replacing "Not reading the screen or other apps until the settings file is fixed"),
+and the fix dialog and Settings say it. The reading gates above stay as they are. Tests:
+`dictation/controller.test.ts` (a dictation and an agent hold from those settings, consent given or
+not, start nothing, read nothing and send nothing), `main/index.test.ts` (the warm-up, transcription
+and completions reach no network while signing in does; with the file read, or only the knowledge base
+file unreadable, they do; updates as ever with either file unreadable; Settings › Memory never reaches
+memory, and does with only the knowledge base file unreadable), `tray.test.ts`,
+`core/ui/fileProblems.test.ts`.

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { fileProblemLine, fileProblemNotice, fixFileLabel, screenNotReadLine, storedFiles, unsavedBecauseOf } from "../../../src/core/ui/fileProblems.js";
+import { aiOffLine, fileProblemLine, fileProblemNotice, fixFileLabel, storedFiles, unsavedBecauseOf } from "../../../src/core/ui/fileProblems.js";
 import type { StoreProblem } from "../../../src/core/util/keyValueStore.js";
 
 const path = "/example/TabMail Voice/userPrompts.json";
@@ -22,7 +22,7 @@ describe("file problems", () => {
       const { message, detail } = fileProblemNotice(file, problem, platform);
       expect(message).toContain(file === "settings" ? "settings file" : "knowledge base file");
       expect(detail).toContain(path);
-      expect(detail).toContain(file === "settings" ? "saves no change to them, doesn't read anything on screen or in your other apps, and leaves the file as it is" : "saves no change to them, and leaves the file as it is");
+      expect(detail).toContain(file === "settings" ? "are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is" : "saves no change to them, and leaves the file as it is");
     },
   );
 
@@ -51,19 +51,19 @@ describe("file problems", () => {
     });
     expect(fileProblemNotice("settings", kinds[2]!, "linux")).toEqual({
       message: "TabMail Voice couldn't read its settings file (EIO).",
-      detail: `Until it is fixed, TabMail Voice uses the defaults for your settings, saves no change to them, doesn't read anything on screen or in your other apps, and leaves the file as it is.\n\nCheck that the disk holding it is connected and working, then quit TabMail Voice and open it again. The file:\n${path}`,
+      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nCheck that the disk holding it is connected and working, then quit TabMail Voice and open it again. The file:\n${path}`,
     });
     expect(fileProblemNotice("settings", kinds[0]!, "darwin")).toEqual({
       message: "TabMail Voice doesn't have permission to read its settings file.",
-      detail: `Until it is fixed, TabMail Voice uses the defaults for your settings, saves no change to them, doesn't read anything on screen or in your other apps, and leaves the file as it is.\n\nIn Finder, select the file, choose File > Get Info, and under Sharing & Permissions give your account Read & Write access. The file:\n${path}\n\nThen quit TabMail Voice and open it again.`,
+      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nIn Finder, select the file, choose File > Get Info, and under Sharing & Permissions give your account Read & Write access. The file:\n${path}\n\nThen quit TabMail Voice and open it again.`,
     });
   });
 
-  /** The line above Settings and the welcome window, and the menu's while the settings can't be read. */
-  test("the line shown while a file can't be read says what isn't saved and the Fix item", () => {
-    expect(fileProblemLine("settings")).toBe("TabMail Voice can't read its settings file, so changes to settings aren't saved and nothing on screen or in your other apps is read. Choose Fix Settings File… in TabMail Voice's menu to fix it.");
+  /** The line above Settings, and the menu's while the settings can't be read. */
+  test("the line shown while a file can't be read says what it costs and the Fix item", () => {
+    expect(fileProblemLine("settings")).toBe("TabMail Voice can't read its settings file, so its AI features are off until the file is fixed. Choose Fix Settings File… in TabMail Voice's menu to fix it.");
     expect(fileProblemLine("knowledgeBase")).toBe("TabMail Voice can't read its knowledge base file, so changes to your knowledge base and writing style aren't saved. Choose Fix Knowledge Base File… in TabMail Voice's menu to fix it.");
-    expect(screenNotReadLine).toBe("Not reading the screen or other apps until the settings file is fixed");
+    expect(aiOffLine).toBe("AI features are off until your settings file is fixed");
   });
 
   /** Each failed save points at the menu item as the menu names it. */
