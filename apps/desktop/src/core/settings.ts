@@ -12,6 +12,7 @@ import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dict
 import { type DictionaryEntry, dictionaryWord, isSameWord, leastRecentlyUsedLearned, nextUse, prioritizedWords, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { log } from "./log.js";
+import { aiOffLine } from "./ui/fileProblems.js";
 import { type KeyValueStore, type StoreProblem, storedBool, storedInteger, storedString } from "./util/keyValueStore.js";
 import { Observable } from "./util/observable.js";
 
@@ -33,15 +34,19 @@ const Key = {
   memorySizeLimit: "memorySizeLimit",
   eventDuration: "eventDurationMinutes",
   closesChatElsewhere: "closesChatElsewhere",
+  optsOutOfAI: "optsOutOfAI",
 } as const;
+
+/** Why a dictation is refused while the user opted out of AI (`AppSettings.optsOutOfAI`). */
+export const optedOutOfAILine = "AI features are off. To dictate, turn off Opt Out of AI in Settings";
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
  * the rest of it: a change in Settings meanwhile applies from the next dictation (owner,
  * 2026-09-26). */
 export interface DictationSettings {
-  /** The settings file can't be read: its AI features are off, and no dictation starts (owner,
-   * 2026-10-27). */
-  isAIOff: boolean;
+  /** Why AI features are off (`AppSettings.aiOffLine`), and no dictation starts; null while they're
+   * on. */
+  aiOffLine: string | null;
   hasConsented: boolean;
   /** The key held to dictate, which the double-tap tip names. */
   hotkey: DictationHotkey;
@@ -330,6 +335,27 @@ export class AppSettings extends Observable {
     this.write(Key.closesChatElsewhere, value);
   }
 
+  /** Opt Out of AI (owner, 2026-10-28; Thunderbird's and iOS's `privacy_opt_out_all_ai`): while on,
+   * nothing of the user's goes to the backend or a model. No dictation or agent hold starts, so nothing
+   * is recorded, transcribed, cleaned up, read from the screen, a field or another app, or learned,
+   * and Settings › Memory is refused. Signing in, updates and Settings work as ever. Kept on this
+   * computer only. Off unless the user switches it on. */
+  get optsOutOfAI(): boolean {
+    return storedBool(this.store, Key.optsOutOfAI) ?? false;
+  }
+
+  set optsOutOfAI(value: boolean) {
+    this.write(Key.optsOutOfAI, value);
+  }
+
+  /** Why AI features are off, said when a dictation, an agent hold or Settings › Memory is refused;
+   * null while they're on. A settings file that can't be read comes first (owner, 2026-10-27): whether
+   * the user opted out is in it, and fixing it is what they do. */
+  get aiOffLine(): string | null {
+    if (this.store.problem !== undefined) return aiOffLine;
+    return this.optsOutOfAI ? optedOutOfAILine : null;
+  }
+
   /** Smart dictation: the AI cleanup of each dictation, which adds a second or more. Off unless the
    * user switches it on (owner, 2026-10-05). */
   get smartDictation(): boolean {
@@ -497,7 +523,7 @@ export class AppSettings extends Observable {
     // learning), not the apps the Answer tool reaches.
     const readable = this.store.problem === undefined;
     return {
-      isAIOff: !readable,
+      aiOffLine: this.aiOffLine,
       hasConsented: this.hasConsented,
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),

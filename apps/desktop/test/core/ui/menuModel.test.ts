@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import type { Phase } from "../../../src/core/dictation/controller.js";
-import { type MenuState, showsDictationButton, statusLine, type UpdateState, updateItem } from "../../../src/core/ui/menuModel.js";
+import { isReady, type MenuState, showsDictationButton, statusLine, type UpdateState, updateItem } from "../../../src/core/ui/menuModel.js";
 
 describe("menu", () => {
   /** The menu's Start Dictation shows only in debug mode; a Stop for a recording in progress shows
@@ -22,8 +22,11 @@ describe("menu", () => {
   });
 
   test("the status line says what is missing, else how to dictate", () => {
-    const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
+    const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], optsOutOfAI: false, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
     expect(statusLine(ready)).toBe("Hold Fn / Globe (🌐) to dictate");
+    expect(statusLine({ ...ready, optsOutOfAI: true })).toBe("AI features are off");
+    expect(statusLine({ ...ready, optsOutOfAI: true, hasConsented: false })).toBe("AI features are off");
+    expect([isReady(ready), isReady({ ...ready, optsOutOfAI: true })]).toEqual([true, false]);
     expect(statusLine({ ...ready, hasConsented: false })).toBe("Setup needed");
     expect(statusLine({ ...ready, isSignedIn: false })).toBe("Sign in to start dictating");
     expect(statusLine({ ...ready, microphoneGranted: false })).toBe("Setup needed");

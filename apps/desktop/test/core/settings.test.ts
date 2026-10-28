@@ -12,7 +12,8 @@ import { agentToolIDs, offeredAgentToolIDs, switchableAgentToolIDs } from "../..
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
-import { AppSettings } from "../../src/core/settings.js";
+import { AppSettings, optedOutOfAILine } from "../../src/core/settings.js";
+import { aiOffLine } from "../../src/core/ui/fileProblems.js";
 import { JSONFileStore } from "../../src/main/storage/jsonFileStore.js";
 
 function settings(store = new MemoryStore(), hasTabMail = false): AppSettings {
@@ -214,7 +215,7 @@ describe("AppSettings", () => {
     expect(app.setEventDuration(20)).toBe(true);
 
     expect(snapshot).toEqual({
-      isAIOff: false,
+      aiOffLine: null,
       hasConsented: true,
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,
@@ -268,6 +269,28 @@ test("a dictation reads nothing of the user's while the settings file couldn't b
   expect([readable.readsScreen, readable.learnsWords, readable.enabledConnectors]).toEqual([true, true, [...connectorIDs]]);
 });
 
+/** Opt Out of AI (owner, 2026-10-28): off by default, kept, and the line a refused dictation says;
+ * a settings file that can't be read says its own line first, as fixing it is what the user does. */
+test("Opt Out of AI is off by default, kept, and says why AI is off", () => {
+  const store = new MemoryStore();
+  const app = settings(store);
+  let changes = 0;
+  app.observe(() => changes++);
+  expect([app.optsOutOfAI, app.aiOffLine, app.dictation(null).aiOffLine]).toEqual([false, null, null]);
+  app.optsOutOfAI = true;
+  expect([app.optsOutOfAI, app.aiOffLine, app.dictation(null).aiOffLine, changes]).toEqual([true, optedOutOfAILine, optedOutOfAILine, 1]);
+  expect(settings(store).optsOutOfAI).toBe(true);
+  app.optsOutOfAI = false;
+  expect([settings(store).optsOutOfAI, app.aiOffLine]).toEqual([false, null]);
+
+  const unreadable = new (class extends MemoryStore {
+    readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
+  })();
+  const held = settings(unreadable);
+  held.optsOutOfAI = true;
+  expect(held.aiOffLine).toBe(aiOffLine);
+});
+
 /** A store whose file couldn't be read, reset as `JSONFileStore.moveAside` does: what the session held
  * is cleared and the file reads as fine. */
 class UnreadStore extends MemoryStore {
@@ -288,14 +311,14 @@ test("a reset settings file reads its defaults, is told, and moves the hotkey ba
   app.hotkey = "rightControl";
   app.onHotkeyChange = (hotkey) => heard.push(hotkey);
   app.observe(() => changes++);
-  expect(app.dictation(null).isAIOff).toBe(true);
+  expect(app.dictation(null).aiOffLine).toBe(aiOffLine);
 
   app.resetFile(() => store.moveAside());
   expect(app.fileProblem).toBeUndefined();
   expect(app.hotkey).toBe("rightOption");
   expect(heard).toEqual(["rightOption"]);
   expect(changes).toBe(1);
-  expect(app.dictation(null).isAIOff).toBe(false);
+  expect(app.dictation(null).aiOffLine).toBeNull();
 });
 
 test("a reset that keeps the hotkey tells no hotkey change, and one that fails changes nothing", () => {

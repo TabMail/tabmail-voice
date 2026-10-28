@@ -114,6 +114,8 @@ export interface SettingsState {
   canLearnWords: boolean;
   /** Smart dictation: the AI cleanup of each dictation. */
   smartDictation: boolean;
+  /** Opt Out of AI (`AppSettings.optsOutOfAI`). */
+  optsOutOfAI: boolean;
   /** Whether a click elsewhere or another app in front closes the idle chat window. */
   closesChatElsewhere: boolean;
   /** How long a new event lasts when no end is given (minutes; `AppSettings.eventDuration`). */
@@ -214,6 +216,7 @@ export type Command =
   | { type: "removeDictionaryWord"; word: string }
   | { type: "setLearnsWords"; value: boolean }
   | { type: "setSmartDictation"; value: boolean }
+  | { type: "setOptsOutOfAI"; value: boolean }
   | { type: "setClosesChatElsewhere"; value: boolean }
   | { type: "setEventDuration"; value: number }
   /** Asks the user to pick an app, and excludes it from screen reading. */
@@ -368,6 +371,7 @@ export function isCommand(value: unknown): value is Command {
     case "setReadsScreen":
     case "setLearnsWords":
     case "setSmartDictation":
+    case "setOptsOutOfAI":
     case "setClosesChatElsewhere":
     case "setOpenAtLogin":
     case "setDebugMode":

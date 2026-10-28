@@ -29,7 +29,7 @@ import { defaultKnowledgeBase } from "../../../src/core/personalization/defaults
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { type MicrophoneStatus, PermissionsModel } from "../../../src/core/onboarding/permissions.js";
 import type { ScreenContext, ScreenRead } from "../../../src/core/dictation/screenContext.js";
-import { AppSettings, type DictationSettings } from "../../../src/core/settings.js";
+import { AppSettings, type DictationSettings, optedOutOfAILine } from "../../../src/core/settings.js";
 import { TipBook, tipDetails } from "../../../src/core/onboarding/tips.js";
 import { CancellationError, sleep } from "../../../src/core/util/timeout.js";
 import { type HTTPTransport, liveTransport, TransportError } from "../../../src/core/backend/http.js";
@@ -70,7 +70,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const switchedOnTools: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { isAIOff: false, hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
+  return { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -736,6 +736,41 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(watches).toEqual([]);
     expect(warmUps.requests).toHaveLength(0);
     expect(memory.prepared).toBe(0);
+  });
+
+  /** Opt Out of AI (owner, 2026-10-28): a hold, in dictation or agent mode, is refused with the line
+   * that says how to turn AI back on, before anything else: the microphone never starts, nothing is
+   * read, sent, warmed up, remembered or pasted. */
+  test.each(["dictation", "agent"] as const)("with Opt Out of AI on a %s hold does nothing but say AI features are off", async (mode) => {
+    const app = new AppSettings(new MemoryStore(), () => true);
+    app.hasConsented = true;
+    app.readsScreen = true;
+    app.learnsWords = true;
+    app.optsOutOfAI = true;
+    prefs.value = { ...app.dictation(null), backendURL: defaultSettings().backendURL };
+    transcription.enqueue(200, cleanedReply);
+    completions.enqueue(200, writes("compose", "Written."));
+    const capture = new CountingCapture(true);
+    const watches: number[] = [];
+    const { controller, pastes } = makeController({ capture, corrections: { watch: (target) => watches.push(target), stop: () => {} } });
+    let reads = 0;
+    controller.captureContext = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail" });
+    };
+    controller.captureWindow = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail" });
+    };
+
+    controller.handle(mode === "agent" ? "startAgent" : "start");
+    controller.handle("finish");
+    await sleep(100);
+
+    expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+    expect([capture.starts, reads, transcription.requests.length, completions.requests.length, warmUps.requests.length, memory.prepared]).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(pastes).toEqual([]);
+    expect(watches).toEqual([]);
   });
 
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
@@ -3248,7 +3283,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { isAIOff: false, hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
+          prefs.value = { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions, target) => {

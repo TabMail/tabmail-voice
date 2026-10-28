@@ -89,3 +89,36 @@ the knowledge base from chats, so the line becomes "Your past agent-mode request
 and what you ask it to remember, kept only on this computer so it can use them. Edit or remove them
 anytime in Settings, which keeps the last `promptHistoryMax` versions of your writing style and
 knowledge base." It says less is kept than before, so no one who consented is asked again.
+
+**Amendment 2026-10-28 — Opt Out of AI (owner, issue #289).** Settings › Privacy gains a switch,
+"Opt Out of AI", as Thunderbird's and iOS's `privacy_opt_out_all_ai`: "Turns off dictation, agent mode
+and memory, so nothing you say or have on screen is sent to AI. Signing in and updates still work. On
+this computer only." Off by default. It is kept in the settings file (`optsOutOfAI`), which is this
+computer's, and Device Sync never carries it.
+
+While it is on, AI features are off as when the settings file can't be read (ADR-DESK-063, #285),
+through the same gate. `AppSettings.aiOffLine` says why they are off; the unreadable file's line comes
+first, as the opt-out is kept in that file and fixing it is what the user does.
+- Every dictation and agent hold is refused at its start, before consent is looked at, with "AI
+  features are off. To dictate, turn off Opt Out of AI in Settings." So there is no audio, no
+  transcription, warm-up or cleanup, no completion, and no read of the screen, a field or another app.
+  Word learning runs only after a dictation's paste, so it doesn't run either.
+- Settings › Memory's commands are refused with the same line. Memory's helper runs a model, and its
+  first start fetches it from TabMail.
+- The menu's first line says "AI features are off", and its debug Start Dictation is disabled.
+
+Everything else works as ever: signing in and the account, updates, Settings, the menu, the welcome
+wizard, the fix dialog and the factory reset. Device Sync follows its own switch when it comes.
+
+The opt-out is read once at a hold's start, like every setting (snapshot rule, owner 2026-09-26). A
+switch made during a dictation applies from the next one; the dictation under way finishes. The
+transport that refuses AI requests while the settings file can't be read stays tied to that file only.
+Every AI request comes from a dictation or an agent hold, which is refused at its start.
+
+Tests:
+- `settings.test.ts`: the default, keeping it, and the line, with the unreadable file first.
+- `dictation/controller.test.ts`: a dictation and an agent hold start, read and send nothing.
+- `main/index.test.ts`: Settings › Memory never reaches memory and the size limit isn't kept, while
+  signing in still reaches TabMail; the switch is saved and shown in Settings and the menu; it is
+  unsaved while the settings file can't be read; turning it off reaches memory again.
+- `menuModel.test.ts`, `renderer/settings/index.test.ts`.

@@ -342,6 +342,11 @@ function PrivacyPane({ state }: { state: SettingsState }) {
   };
   return (
     <>
+      <Group>
+        <Toggle label="Opt Out of AI" checked={state.optsOutOfAI} onChange={(value) => send({ type: "setOptsOutOfAI", value })}>
+          Turns off dictation, agent mode and memory, so nothing you say or have on screen is sent to AI. Signing in and updates still work. On this computer only.
+        </Toggle>
+      </Group>
       <Group
         captions={[
           "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",

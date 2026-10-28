@@ -121,9 +121,9 @@ if (needsX11Relaunch(appImage, process.argv)) {
   app.quit();
 }
 
-/** Settings › Memory's commands: refused while the settings file can't be read, as its AI features
- * are off then and memory is one (its helper runs a model over what the user asked; owner,
- * 2026-10-27). */
+/** Settings › Memory's commands: refused while AI features are off (the settings file can't be read,
+ * or the user opted out of AI), as memory is one: its helper runs a model over what the user asked
+ * (owner, 2026-10-27). */
 const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
 
 /** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
@@ -139,6 +139,7 @@ const commandWrites: Record<Command["type"], StoredFile | null> = {
   removeDictionaryWord: "settings",
   setLearnsWords: "settings",
   setSmartDictation: "settings",
+  setOptsOutOfAI: "settings",
   setClosesChatElsewhere: "settings",
   setEventDuration: "settings",
   excludeApp: "settings",
@@ -505,6 +506,7 @@ function launch(): void {
       learnsWords: settings.learnsWords,
       canLearnWords: nativeAudio,
       smartDictation: settings.smartDictation,
+      optsOutOfAI: settings.optsOutOfAI,
       closesChatElsewhere: settings.closesChatElsewhere,
       eventDuration: settings.eventDuration,
       excludedApps: settings.excludedApps,
@@ -584,6 +586,7 @@ function launch(): void {
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       fileProblems: unreadableFiles(),
+      optsOutOfAI: settings.optsOutOfAI,
       hotkey: settings.hotkey,
       debugMode: settings.isDebugMode(account.email),
       phase: controller.phase,
@@ -989,7 +992,8 @@ function launch(): void {
   }
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
-    if (settings.fileProblem !== undefined && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${aiOffLine}.` };
+    const aiOff = settings.aiOffLine;
+    if (aiOff !== null && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${aiOff}.` };
     // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
     // this session, and says how to fix the file, every time.
     const unsaved = unsavedFor(command);
@@ -1061,6 +1065,9 @@ function launch(): void {
         return;
       case "setSmartDictation":
         settings.smartDictation = command.value;
+        return;
+      case "setOptsOutOfAI":
+        settings.optsOutOfAI = command.value;
         return;
       case "setClosesChatElsewhere":
         settings.closesChatElsewhere = command.value;
