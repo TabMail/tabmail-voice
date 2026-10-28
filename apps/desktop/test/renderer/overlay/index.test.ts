@@ -59,7 +59,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], readsWindow: false, connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
+const listening: OverlayState = { reveal: 1, phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], readsWindow: false, connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 /** The note for a text not pasted. */
 const note = { kind: "notPasted", message: "Couldn't paste. Click to copy.", text: "Move the review to Friday." } as const;
@@ -243,6 +243,39 @@ describe("overlay page", () => {
     await act(async () => close?.click());
     expect(page.commands).toContainEqual({ type: "dismissNotPasted" });
     expect(page.commands).not.toContainEqual({ type: "copyNotPasted" });
+  });
+
+  /** Shown afresh, the overlay stays transparent until its page says it has drawn the state it is shown
+   * for (#304): two frames after taking it, once the frame showing it has been drawn, and once per
+   * showing; a showing replaced before it was drawn is never said. */
+  test("the page says when it has drawn the state it is shown for", async () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const page = await overlayPage();
+      const drawn = () => page.commands.filter((command) => command.type === "overlayDrawn");
+      const frame = () => act(async () => void vi.advanceTimersToNextFrame());
+
+      await page.show({ ...listening, reveal: 3 });
+      expect(drawn()).toEqual([]);
+      await frame();
+      expect(drawn()).toEqual([]);
+      await frame();
+      expect(drawn()).toEqual([{ type: "overlayDrawn", reveal: 3 }]);
+
+      await page.show({ ...listening, level: 0.2, reveal: 3 });
+      await frame();
+      await frame();
+      expect(drawn()).toEqual([{ type: "overlayDrawn", reveal: 3 }]);
+
+      await page.show({ ...listening, reveal: 4 });
+      await frame();
+      await page.show({ ...listening, reveal: 5 });
+      await frame();
+      await frame();
+      expect(drawn()).toEqual([{ type: "overlayDrawn", reveal: 3 }, { type: "overlayDrawn", reveal: 5 }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /** The note's bar runs down its ten seconds (the owner's ask, held here rather than read from the

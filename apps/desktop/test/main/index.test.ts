@@ -520,6 +520,8 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
     readonly pointers: boolean[] = [];
+    reveal = 7;
+    readonly drawings: number[] = [];
     isTakingClicks = false;
     constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null, _fallback?: unknown, readonly hitTest?: string) {
       app.overlay = this;
@@ -532,6 +534,9 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     }
     fitChat(height: number) {
       this.heights.push(height);
+    }
+    drawn(reveal: number) {
+      this.drawings.push(reveal);
     }
     pointerOver(over: boolean) {
       this.pointers.push(over);
@@ -1078,8 +1083,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const pushed: unknown[] = [];
     app.listeners.set("voice:state", [
       (_event, name, state) => {
-        const overlayState = state as { opensUpward: boolean; bubblesFitUnder: boolean; connectors: string[] };
-        if (name === "overlay") pushed.push([overlayState.opensUpward, overlayState.bubblesFitUnder, overlayState.connectors]);
+        const overlayState = state as { opensUpward: boolean; bubblesFitUnder: boolean; connectors: string[]; reveal: number };
+        if (name === "overlay") pushed.push([overlayState.opensUpward, overlayState.bubblesFitUnder, overlayState.connectors, overlayState.reveal]);
       },
     ]);
     const overlay = app.overlay;
@@ -1094,9 +1099,9 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     overlay?.onPlace?.();
 
     expect(pushed).toEqual([
-      [true, false, ["calendar", "web"]],
-      [false, true, ["calendar", "web"]],
-      [false, false, ["calendar", "web"]],
+      [true, false, ["calendar", "web"], 7],
+      [false, true, ["calendar", "web"], 7],
+      [false, false, ["calendar", "web"], 7],
     ]);
   });
 
@@ -1292,6 +1297,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await send({ type: "answerConfirmation", confirmed: false });
     await send({ type: "chatHeight", height: 180 });
     expect(await send({ type: "chatHeight", height: -1 })).toEqual({ error: expect.any(String) });
+    await send({ type: "overlayDrawn", reveal: 7 });
+    expect(await send({ type: "overlayDrawn", reveal: -1 })).toEqual({ error: expect.any(String) });
     await send({ type: "pointerOver", over: true });
     await send({ type: "pointerOver", over: false });
     expect(await send({ type: "pointerOver", over: "yes" } as never)).toEqual({ error: expect.any(String) });
@@ -1310,6 +1317,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
     expect(controller?.calls).toEqual(["keepChatOpen", "closeChat", "answerConfirmation true", "answerConfirmation false"]);
     expect(app.overlay?.heights).toEqual([180]);
+    expect((app.overlay as unknown as { drawings: number[] } | null)?.drawings).toEqual([7]);
     expect(app.overlay?.pointers).toEqual([true, false]);
     // macOS forwards the pointer's moves through a click-through window; Linux can't (`ChatHitTest`).
     expect(app.overlay?.hitTest).toBe("pointer");
@@ -2235,6 +2243,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       { type: "openChatLink", url: "https://example.com" },
       { type: "answerConfirmation", confirmed: false },
       { type: "chatHeight", height: 100 },
+      { type: "overlayDrawn", reveal: 1 },
       { type: "pointerOver", over: false },
       { type: "chatDragStart" },
       { type: "dragChat", dx: 0, dy: 0 },

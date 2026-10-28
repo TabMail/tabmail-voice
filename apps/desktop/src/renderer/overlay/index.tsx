@@ -142,6 +142,20 @@ function Overlay() {
       swirlGone.current = setTimeout(() => setSwirl(null), config.pillSpringResponseSeconds * 1000);
     }
   }, [mode]);
+  // Shown afresh, the overlay stays transparent until this page says it has drawn the state it is
+  // shown for (`OverlayState.reveal`, #304): two frames on, the first of them showing it.
+  const reveal = state?.reveal;
+  useEffect(() => {
+    if (reveal === undefined) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => void send({ type: "overlayDrawn", reveal }));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [reveal]);
 
   if (!state) return null;
   // The overlay keeps the chat's place a moment after it closes, as it shrinks into its pill: the last

@@ -180,6 +180,7 @@ const commandWrites: Record<Command["type"], StoredFile | null> = {
   openChatLink: null,
   answerConfirmation: null,
   chatHeight: null,
+  overlayDrawn: null,
   pointerOver: null,
   chatDragStart: null,
   dragChat: null,
@@ -469,6 +470,7 @@ function launch(): void {
   function overlayState(): OverlayState {
     return {
       overlayPlacement: overlay.overlayPlacement,
+      reveal: overlay.reveal,
       phase: controller.phase,
       mode: controller.mode,
       level: controller.level,
@@ -1191,6 +1193,9 @@ function launch(): void {
         return;
       case "chatHeight":
         overlay.fitChat(command.height);
+        return;
+      case "overlayDrawn":
+        overlay.drawn(command.reveal);
         return;
       case "pointerOver":
         overlay.pointerOver(command.over);

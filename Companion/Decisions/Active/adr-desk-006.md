@@ -199,3 +199,21 @@ the range; and the bars stepped to each level as it arrived, about 12 times a se
   silence); `overlay/index.test.ts` › the waveform glides to each new level (up within a rise's time
   constants, down more slowly). Each was checked against a mutation of the rule it pins (no gate, no
   minimum range, no rest before the room, no easing, one time constant for both directions).
+
+**Amendment 2026-10-28 (#304, owner): the overlay shows only once its page has drawn what it shows.**
+After an agent request's answer showed and closed, the next hold showed that answer for a moment
+before its pill. A window shown again keeps its last frame until its page draws the next one, and
+the overlay was made opaque as it was shown, before its page had drawn the new hold. The October fix
+(the closed chat drawn away, transparent, before the overlay hides; ADR-DESK-036) narrowed this but
+still depended on the frame the window kept. Now every showing afresh (`OverlayWindowController.show`
+from hidden, from a closing chat, or placed again before it was drawn) numbers itself
+(`OverlayState.reveal`) and keeps the window transparent until the page says it has drawn that
+showing (`overlayDrawn`, two animation frames after it took the state, so the frame showing it has
+been drawn); a word for an earlier showing does nothing, and a chat window opened meanwhile still
+waits for its measurement (`fitChat`). The same rule as the chat window's (shown once measured),
+applied to every showing. Linux has no window opacity; there the page's own redraw does it, as before.
+Trade-off: the pill appears two frames later (about 33 ms at 60 Hz). Tests: `main/overlayWindow.test.ts`
+("a hold's pill shows only once its page has drawn it", after a chat window and after a pill; red on
+the previous controller; "a chat window opened as the pill shows still waits to be measured"),
+`renderer/overlay/index.test.ts` ("the page says when it has drawn the state it is shown for"),
+`shared/ipc.test.ts` and `main/index.test.ts` (the command checked and routed, the state carrying it).

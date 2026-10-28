@@ -65,6 +65,13 @@ export class OverlayWindowController {
   /** The chat window closed and its page shrinks it into its pill (`chatCloseDurationSeconds`): the
    * overlay keeps the chat's frame, letting clicks through, until it has, then follows `phase`. */
   private chatShrinkTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The overlay's latest showing afresh, which the page says it has drawn (`drawn`), and whether it
+   * is still waiting for that. A window shown again keeps its last frame until its page draws the
+   * next one, so a showing waits, transparent, until then: the overlay hidden after an answer showed
+   * that answer for a moment as the next hold's pill appeared (owner, 2026-10-28, #304). Linux has no
+   * window opacity; there the page's own redraw does it. */
+  private revealed = 0;
+  private awaitingDrawing = false;
   private phase: Phase = { kind: "idle" };
   /** The overlay takes clicks: the pointer is over the chat window, or the note (`ChatHitTest`
    * "pointer"); or either shows (`ChatHitTest` "frame"). */
@@ -94,6 +101,19 @@ export class OverlayWindowController {
 
   get opensUpward(): boolean {
     return this.placedUpward;
+  }
+
+  /** The overlay's latest showing afresh, for the page to say when it has drawn it. */
+  get reveal(): number {
+    return this.revealed;
+  }
+
+  /** The page drew the state of the showing `reveal`: the overlay shows, if that is the showing still
+   * waiting. The chat window waits for its measurement instead (`fitChat`). */
+  drawn(reveal: number): void {
+    if (!this.awaitingDrawing || reveal !== this.revealed || this.chat !== null) return;
+    this.awaitingDrawing = false;
+    this.window.setOpacity(1);
   }
 
   get bubblesFitUnder(): boolean {
@@ -290,6 +310,7 @@ export class OverlayWindowController {
     this.chat = { pill: { ...pill }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder, pillOffset: null };
     this.chatDragFrom = null;
     this.chatClosing = false;
+    this.awaitingDrawing = false;
     this.chatUnmeasured = true;
     this.window.setOpacity(0);
     // Clicks only once the pointer is over the chat, which the page says as it moves; or over the frame.
@@ -353,11 +374,15 @@ export class OverlayWindowController {
 
   private show(): void {
     if (!this.hasPlacementArea(this.anchor ?? this.pointer())) { this.window.hide(); return; }
-    this.position();
-    if (this.chatClosing) {
+    // Shown afresh, or placed again before the page drew it: transparent until the page has drawn
+    // this placing (`drawn`), so it never shows the last frame it held.
+    if (!this.window.isVisible() || this.chatClosing || this.awaitingDrawing) {
       this.chatClosing = false;
-      this.window.setOpacity(1);
+      this.revealed += 1;
+      this.awaitingDrawing = true;
+      this.window.setOpacity(0);
     }
+    this.position();
     this.window.showInactive();
   }
 
