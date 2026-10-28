@@ -275,7 +275,8 @@ is now a tab: Writing style, Knowledge base, History, in a segmented control und
 (equal segments, the chosen one raised as a control; the system's selection colors in a contrast
 theme; the arrow keys move between them; the scroll bar's room is kept, so nothing shifts as a tab
 that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
-opens with its caption and, for the two texts, its Reset; each writing style section is its own card
+opens with a short caption, a sentence to a line (owner, 2026-10-28), and, for the two texts, its
+Reset centered beside it; each writing style section is its own card
 under a heading with the section's name. Every tab stays rendered while hidden, so what is being typed
 in one is still there on coming back. A change that couldn't be saved is said under the tabs until the
 next change, whichever tab is chosen: a field left for another tab saves as it is left, and its failure

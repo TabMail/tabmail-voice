@@ -403,25 +403,28 @@ ul.dictionary {
   }
 }
 
+/* A tab's lines and its Reset, centered on each other; a sentence to a line, and one too long for
+ * its line wraps evenly. */
 .tab-intro {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
+  gap: 12px;
   margin: 0 14px 14px;
 }
 
-.tab-intro > div {
-  flex: 1 1 260px;
-}
-
 .tab-intro p {
+  flex: 1;
   margin: 0;
 }
 
-.tab-intro p + p {
-  margin-top: 4px;
+.tab-intro p > span {
+  display: block;
+  text-wrap: balance;
+}
+
+.tab-intro button {
+  flex: none;
 }
 
 .section-heading {

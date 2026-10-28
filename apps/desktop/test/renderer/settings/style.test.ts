@@ -163,6 +163,14 @@ describe("Settings stylesheet", () => {
     expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover", ".tabs", ".tabs button.tab:not(.selected):hover"]);
   });
 
+  /** Each Personalization tab opens with a sentence to a line, its Reset centered on them (owner,
+   * 2026-10-28: the lines broke oddly and the button sat off center). */
+  test("a tab's lines and its Reset sit centered, a sentence to a line", () => {
+    expect(value(css, ".tab-intro", "align-items")).toBe("center");
+    expect(value(css, ".tab-intro p > span", "display")).toBe("block");
+    expect(value(css, ".tab-intro button", "flex")).toBe("none");
+  });
+
   /** Personalization's lists sit in their own cards: no line above a list that opens its card, and
    * a line between a bullet list's items and its add field only when there are items. */
   test("the lists' lines fall between rows, not at a card's edge", () => {
@@ -185,6 +193,8 @@ describe("Settings stylesheet", () => {
     expect(css.lastIndexOf("@media (forced-colors: active)")).toBeGreaterThan(css.indexOf(".tabs button.tab.selected {"));
     expect(value(forced, ".tabs button.tab.selected", "background")).toBe("SelectedItem");
     expect(value(forced, ".tabs button.tab.selected", "color")).toBe("SelectedItemText");
+    // Its own colors, not the system's backplate behind its label.
+    expect(value(forced, ".tabs button.tab.selected", "forced-color-adjust")).toBe("none");
   });
 
   /** An off switch's white thumb stands out 3:1 from its track (a control's state, WCAG 1.4.11), on

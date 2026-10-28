@@ -694,7 +694,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       {panel(
         "Writing style",
         <>
-          <TabIntro captions={["How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it."]}>
+          <TabIntro lines={["How agent mode writes for you.", "Sent with its requests; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
           {personalization.writingStyle.map(({ section, bullets }) => (
@@ -710,7 +710,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       {panel(
         "Knowledge base",
         <>
-          <TabIntro captions={["What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.", "Agent mode adds to it when you ask it to remember something."]}>
+          <TabIntro lines={["What agent mode knows and remembers about you.", "Sent with each request; TabMail doesn’t keep it."]}>
             <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
           </TabIntro>
           <Group>
@@ -721,7 +721,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       {panel(
         "History",
         <>
-          <TabIntro captions={[`Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`]} />
+          <TabIntro lines={[`Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`]} />
           <Group>
             {personalization.history.length === 0 ? (
               <div className="row">
@@ -749,8 +749,8 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
 }
 
 /** A row of tabs, one chosen, as a segmented control: a click or the arrow keys choose another,
- * and Tab moves on to the chosen tab's panel (`id` names the panels by place, `<id>-<index>`: an id
- * holds no spaces). */
+ * and Tab moves on into the chosen tab's panel, to its first control (`id` names the panels by
+ * place, `<id>-<index>`: an id holds no spaces). */
 function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { label: string; id: string; tabs: readonly Name[]; chosen: Name; onChoose: (tab: Name) => void }) {
   const list = useRef<HTMLDivElement>(null);
   const move = (by: number) => {
@@ -780,17 +780,17 @@ function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { labe
   );
 }
 
-/** What a tab holds, said at its top, with the tab's own action (Reset) beside it. */
-function TabIntro({ captions, children }: { captions: string[]; children?: ReactNode }) {
+/** What a tab holds, said at its top a sentence to a line, with the tab's own action (Reset) beside
+ * it. */
+function TabIntro({ lines, children }: { lines: string[]; children?: ReactNode }) {
   return (
     <div className="tab-intro">
-      <div>
-        {captions.map((caption) => (
-          <p key={caption} className="caption">
-            {caption}
-          </p>
+      <p className="caption">
+        {lines.map((line, index) => (
+          // Read as one text: a space between lines, which a line's start drops.
+          <span key={line}>{index === 0 ? line : ` ${line}`}</span>
         ))}
-      </div>
+      </p>
       {children}
     </div>
   );

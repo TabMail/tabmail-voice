@@ -505,7 +505,7 @@ describe("Settings page", () => {
       const resets = (name: string) => [...panel(name).querySelectorAll("button")].filter((element) => element.textContent === "Reset…");
       expect([...panel("Writing style").querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual(["General writing style", "Language", "Useful links to personal website and other resources"]);
       expect(panel("Writing style").textContent).toContain("How agent mode writes for you");
-      expect(panel("Knowledge base").textContent).toContain("What agent mode knows about you");
+      expect(panel("Knowledge base").textContent).toContain("What agent mode knows and remembers about you");
       expect(panel("Knowledge base").querySelector('ul[aria-label="Knowledge base"]')).not.toBeNull();
       expect(panel("History").textContent).toContain(`Your last ${config.promptHistoryMax} changes`);
       expect(panel("History").textContent).toContain("No changes yet.");
@@ -1544,10 +1544,10 @@ describe("Settings page", () => {
       "When memory reaches the limit, the oldest requests are removed first.",
       "No requests kept yet.",
       // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
-      "How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it.",
-      "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
-      "Agent mode adds to it when you ask it to remember something.",
-      `Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`,
+      // One short line each (owner, 2026-10-28).
+      "How agent mode writes for you. Sent with its requests; TabMail doesn’t keep it.",
+      "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
+      `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,
       "No changes yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
