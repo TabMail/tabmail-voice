@@ -561,6 +561,29 @@ describe("Settings page", () => {
       expect(commands).toEqual([]);
     });
 
+    /** An item being edited when another tab is chosen is saved as focus moves to that tab, in
+     * either text, and shows as edited on coming back. */
+    test("an item being edited is saved as another tab is chosen", async () => {
+      const { commands } = await open();
+      const leaveFor = async (item: HTMLInputElement, name: string) => {
+        await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: tab(name) })));
+        await act(async () => tab(name).click());
+      };
+      await act(async () => tab("Knowledge base").click());
+      const kbItem = field("Knowledge base, item 1");
+      await act(async () => type(kbItem, "Prefers afternoon meetings."));
+      await leaveFor(kbItem, "Writing style");
+      const languageItem = field("Language, item 1");
+      await act(async () => type(languageItem, "I write in English and French."));
+      await leaveFor(languageItem, "History");
+      expect(commands).toEqual([
+        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] },
+        { type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English and French."] },
+      ]);
+      await act(async () => tab("Knowledge base").click());
+      expect(field("Knowledge base, item 1").value).toBe("Prefers afternoon meetings.");
+    });
+
     /** A change that couldn't be saved is said until the next change, whichever tab is chosen: a
      * save as a field is left for another tab can fail as that tab is chosen, and must still be said. */
     test("a failure is still said after a change of tab", async () => {
