@@ -2525,7 +2525,14 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const queries = () => search?.mock.calls.map(([asked]) => (asked as { query: string }).query);
     const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
     expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI]).toEqual([false, false]);
+    // With AI on, the list keeps the search typed: after a removal, Clear All and a reload.
     expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: null });
+    for (const command of [{ type: "removeMemory", memId: "turn:2" }, { type: "clearMemory" }, { type: "loadMemory" }] as const) {
+      expect(await send(command)).toEqual({ error: null });
+    }
+    expect([queries(), remove?.mock.calls, clear?.mock.calls.length]).toEqual([["friday", "friday", "friday", "friday"], [[["turn:2"]]], 1]);
+    remove?.mockClear();
+    clear?.mockClear();
 
     expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
     expect(app.stored.get("optsOutOfAI")).toBe(true);
@@ -2597,8 +2604,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     if (memory === null) throw new Error("no memory");
     const trim = vi.spyOn(memory, "trim");
     const sizeLimit = () => (app.handlers.get(channels.getState)?.({}, "settings") as SettingsState).memory.sizeLimit;
+    const shown = expected === null ? null : config.memorySizeLimitDefault;
+    // Shown from the start, before Settings › Memory reads memory.
+    expect(sizeLimit()).toBe(shown);
     expect(await send({ type: "loadMemory" })).toEqual({ error: null });
-    expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([expected, expected === null ? null : config.memorySizeLimitDefault, 0]);
+    expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([expected, shown, 0]);
   });
 
   /** The size limit the user chose was in the settings file that couldn't be read: the reset leaves it
@@ -2626,6 +2636,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([null, null, 0]);
 
     const choice = config.memorySizeLimitChoices[0] ?? 0;
+    // A first pick that couldn't be saved leaves it not set: nothing is trimmed, now or later.
+    app.savesFail = true;
+    expect(await send({ type: "setMemorySizeLimit", value: choice })).toEqual({ error: "That size limit couldn't be saved. Try again." });
+    expect([app.stored.has("memorySizeLimit"), app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([true, null, null, 0]);
+    app.savesFail = false;
     expect(await send({ type: "setMemorySizeLimit", value: choice })).toEqual({ error: null });
     expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls]).toEqual([choice, choice, [[choice]]]);
   });

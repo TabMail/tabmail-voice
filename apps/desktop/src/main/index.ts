@@ -277,13 +277,14 @@ function launch(): void {
   // user of this computer, whoever is signed in (ADR-DESK-061).
   const memoryDirectory = join(app.getPath("userData"), "memory");
   const memory = new MemoryHelper({ executable: join(helpers, process.platform === "win32" ? "voice-memory.exe" : "voice-memory"), directory: memoryDirectory });
+  // No settings file while memory's database is there: the file was removed by hand, the fix
+  // dialog's first way (ADR-DESK-063), and the size limit the user chose went with it. Unknown, as
+  // after the factory reset, so memory is never trimmed to the default. Before Settings › Memory
+  // first reads the limit.
+  if (store.isNew && existsSync(memoryFolders(memoryDirectory).databaseFile)) settings.unsetMemorySizeLimit();
   // Settings › Memory reads nothing until memory's database exists: the helper creates it at its
   // first start, when agent mode is first chosen.
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
-  // No settings file while memory's database is there: the file was removed by hand, the fix
-  // dialog's first way (ADR-DESK-063), and the size limit the user chose went with it. Unknown, as
-  // after the factory reset, so memory is never trimmed to the default.
-  if (store.isNew && existsSync(memoryFolders(memoryDirectory).databaseFile)) settings.unsetMemorySizeLimit();
   // The writing style and knowledge base, in a file of their own: per user of this computer, as
   // memory is (ADR-DESK-063).
   const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));

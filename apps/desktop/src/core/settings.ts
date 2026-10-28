@@ -384,7 +384,8 @@ export class AppSettings extends Observable {
   /** The most memory may take on this computer (bytes): one of `config.memorySizeLimitChoices`,
    * `config.memorySizeLimitDefault` until the user picks another. When memory reaches it, the oldest
    * exchanges are removed first (ADR-DESK-061). Null, "Not set", while the user's limit is unknown:
-   * the settings file couldn't be read, or was reset (stored as null), until the user picks one. */
+   * the settings file couldn't be read, or was reset or removed by hand (stored as null; see
+   * `unsetMemorySizeLimit`), until the user picks one. */
   get memorySizeLimit(): number | null {
     if (this.store.problem !== undefined || this.store.get(Key.memorySizeLimit) === null) return null;
     const stored = storedInteger(this.store, Key.memorySizeLimit);
