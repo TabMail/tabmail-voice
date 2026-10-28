@@ -117,6 +117,24 @@ describe("UserPrompts", () => {
     expect(store.snapshot()).toEqual({});
   });
 
+  /** The style document is shared with Thunderbird, iOS and Device Sync, which find its sections by
+   * these exact headings: an edit saves them as they are, never the name Settings shows (#301). */
+  test("an edit saves the style document's headings as they are", () => {
+    const { store, prompts } = setup();
+    const [general, language, links] = compositionSections as [string, string, string];
+    expect(prompts.editCompositionSection(general, extractBullets(extractSection(defaultComposition, general)), ["Keep it short."])).toBe(true);
+    const saved = String(Object.values(store.snapshot())[0]);
+    expect(saved.split("\n").filter((line) => line.startsWith("# "))).toEqual([
+      "# User provided composition instructions",
+      "# General writing style (DO NOT EDIT/DELETE THIS SECTION HEADER)",
+      "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)",
+      "# Useful links to personal website and other resources (DO NOT EDIT/DELETE THIS SECTION HEADER)",
+    ]);
+    expect(saved).not.toContain("for emails and formal replies");
+    expect(extractBullets(extractSection(saved, general))).toEqual(["Keep it short."]);
+    for (const section of [language, links]) expect(extractSection(saved, section)).toBe(extractSection(defaultComposition, section));
+  });
+
   /** A request is sent the writing style's sections, each under a plain heading, and none of
    * Thunderbird's wrapper around them: its "Strictly follow these
    * instructions in future responses" would govern chat replies too. A section holding nothing is left

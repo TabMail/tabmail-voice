@@ -662,6 +662,11 @@ function MemoryPane({ state }: { state: SettingsState }) {
   );
 }
 
+/** How a writing style section is shown, where its stored heading would mislead: the style is learned
+ * from the user's email and sent with every request offering Compose or Edit (#301). Display only: the heading
+ * in the style document, shared with the other TabMail apps, stays as it is. */
+const writingStyleSectionLabels: Readonly<Record<string, string>> = { "General writing style": "General writing style for emails and formal replies" };
+
 /** Personalization's tabs, in order. */
 const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
 type PersonalizationTab = (typeof personalizationTabs)[number];
@@ -696,14 +701,14 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       {panel(
         "Writing style",
         <>
-          <TabIntro lines={["How agent mode writes for you.", "Sent with its requests; TabMail doesn’t keep it."]}>
+          <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent with requests that may write; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
           {personalization.writingStyle.map(({ section, bullets }) => (
             <section key={section} className="card-section">
-              <h2 className="section-heading">{section}</h2>
+              <h2 className="section-heading">{writingStyleSectionLabels[section] ?? section}</h2>
               <div className="group">
-                <BulletEditor title={section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
+                <BulletEditor title={writingStyleSectionLabels[section] ?? section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
               </div>
             </section>
           ))}
