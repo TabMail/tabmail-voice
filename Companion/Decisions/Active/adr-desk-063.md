@@ -276,7 +276,7 @@ is now a tab: Writing style, Knowledge base, History, in a segmented control und
 theme; the arrow keys move between them; the scroll bar's room is kept, so nothing shifts as a tab
 that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
 opens with a short caption, a sentence to a line (owner, 2026-10-28): Writing style "How agent mode
-writes for you. / Sent with its requests; TabMail doesn’t keep it.", Knowledge base "What agent mode
+writes for you. / Sent with its requests; TabMail doesn’t keep it." (replaced by #301, below), Knowledge base "What agent mode
 knows and remembers about you. / Sent with each request; TabMail doesn’t keep it.", History "Your last
 `promptHistoryMax` changes, kept on this computer so you can put one back."; and, for the two texts, its
 Reset centered beside it; Reset's question, too wide to share the caption's line, goes under it
@@ -295,8 +295,8 @@ centered beside it, its question under it) and press a real Tab key from an empt
 
 **Amendment, 2026-10-28 (#301, owner):** the writing style is learned from the user's email and sent
 only when agent mode may write or edit text (Compose or Edit offered), so Settings says so. Its intro
-reads "How agent mode writes emails and formal replies for you. / Sent only when agent mode may write
-or edit text; TabMail doesn’t keep it.", and the "General writing style" section is shown as "General
+reads "How agent mode writes emails and formal replies for you. / Sent only to write or edit text;
+TabMail doesn’t keep it." (short enough for Reset to stay centered beside it), and the "General writing style" section is shown as "General
 writing style for emails and formal replies" (`writingStyleSectionLabels` in the Settings page).
 Display only: the section's heading in the style document, shared with Thunderbird and iOS and read
 by Device Sync, and the section an edit names stay exactly as they were. Tested in

@@ -701,7 +701,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       {panel(
         "Writing style",
         <>
-          <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent only when agent mode may write or edit text; TabMail doesn’t keep it."]}>
+          <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent only to write or edit text; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
           {personalization.writingStyle.map(({ section, bullets }) => (
