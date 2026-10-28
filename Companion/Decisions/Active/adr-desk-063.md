@@ -294,9 +294,11 @@ previews (`npm run preview`), which check each tab's caption as laid out (a sent
 centered beside it, its question under it) and press a real Tab key from an empty History's tab.
 
 **Amendment, 2026-10-28 (#301, owner):** the writing style is learned from the user's email and sent
-only when agent mode may write or edit text (Compose or Edit offered), so Settings says so. Its intro
-reads "How agent mode writes emails and formal replies for you. / Sent only to write or edit text;
-TabMail doesn’t keep it." (short enough for Reset to stay centered beside it), and the "General writing style" section is shown as "General
+with every request that may write: one offering Compose or Edit, which, Compose being offered with
+no selection, is every request while either is on, a chat answer included. Settings says so. Its intro
+reads "How agent mode writes emails and formal replies for you. / Sent with requests that may write;
+TabMail doesn’t keep it." (not "only": it goes with chat answers too; and short enough for Reset to
+stay centered beside it), and the "General writing style" section is shown as "General
 writing style for emails and formal replies" (`writingStyleSectionLabels` in the Settings page).
 Display only: the section's heading in the style document, shared with Thunderbird and iOS and read
 by Device Sync, and the section an edit names stay exactly as they were. Tested in

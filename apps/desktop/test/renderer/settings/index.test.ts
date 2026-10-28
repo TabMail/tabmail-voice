@@ -1602,7 +1602,7 @@ describe("Settings page", () => {
       "No requests kept yet.",
       // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
       // One short line each (owner, 2026-10-28).
-      "How agent mode writes emails and formal replies for you. Sent only to write or edit text; TabMail doesn’t keep it.",
+      "How agent mode writes emails and formal replies for you. Sent with requests that may write; TabMail doesn’t keep it.",
       "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
       `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,
       "No changes yet.",

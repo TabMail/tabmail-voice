@@ -663,7 +663,7 @@ function MemoryPane({ state }: { state: SettingsState }) {
 }
 
 /** How a writing style section is shown, where its stored heading would mislead: the style is learned
- * from the user's email and sent only with Compose and Edit requests (#301). Display only: the heading
+ * from the user's email and sent with every request offering Compose or Edit (#301). Display only: the heading
  * in the style document, shared with the other TabMail apps, stays as it is. */
 const writingStyleSectionLabels: Readonly<Record<string, string>> = { "General writing style": "General writing style for emails and formal replies" };
 
@@ -701,7 +701,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       {panel(
         "Writing style",
         <>
-          <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent only to write or edit text; TabMail doesn’t keep it."]}>
+          <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent with requests that may write; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
           {personalization.writingStyle.map(({ section, bullets }) => (
