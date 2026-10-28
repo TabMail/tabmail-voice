@@ -3,12 +3,16 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../../config.js";
+import { unsavedBecauseOf } from "../../ui/fileProblems.js";
+import type { StoreProblem } from "../../util/keyValueStore.js";
 import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** The settings agent mode can change, as Settings stores them. */
 export interface SettingsWriter {
   /** Stores how long a new event lasts (minutes); false when it is out of range or couldn't be saved. */
   setEventDuration(minutes: number): boolean;
+  /** Why the settings file couldn't be read at launch, when it couldn't: nothing is saved to it. */
+  readonly fileProblem?: StoreProblem;
 }
 
 /** The key `change_setting` names the default event duration by, as Thunderbird's and iOS's. */
@@ -59,7 +63,7 @@ export class ChangeSettingTool implements ConnectorTool {
     const value = args.value;
     const minutes = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
     if (!isEventDuration(minutes)) throw new ToolArgumentError(`value must be a whole number of minutes from ${config.eventDurationMin} to ${config.eventDurationMax}.`);
-    if (!this.settings.setEventDuration(minutes)) throw new Error("The setting couldn't be saved. Nothing was changed.");
+    if (!this.settings.setEventDuration(minutes)) throw new Error(this.settings.fileProblem === undefined ? "The setting couldn't be saved. Nothing was changed." : unsavedBecauseOf("settings"));
     return `The default event duration is now ${eventDurationLabel(minutes)}, from the next request: a new event with no end time lasts that long.`;
   }
 }

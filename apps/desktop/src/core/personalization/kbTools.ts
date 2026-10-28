@@ -6,6 +6,7 @@ import * as config from "../config.js";
 import { log } from "../log.js";
 import { applyKBPatch, normalizeUnicode } from "./patchApplier.js";
 import type { UserPrompts } from "./prompts.js";
+import { unsavedBecauseOf } from "../ui/fileProblems.js";
 
 /**
  * The agent loop's knowledge-base tools, run on this computer (ADR-DESK-063): `kb_add` keeps a
@@ -46,7 +47,7 @@ export class KBTools {
     });
     log.debug(`KBTools: ${config.kbAddTool} ${failed ? "failed" : outcome}`);
     if (failed) return { error: "failed to update knowledge base" };
-    if (outcome === "unsaved") return { error: "failed to persist knowledge base" };
+    if (outcome === "unsaved") return { error: this.unsaved() };
     return outcome === "unchanged" ? "No change (duplicate or unchanged)." : "Added to knowledge base.";
   }
 
@@ -63,7 +64,13 @@ export class KBTools {
     });
     log.debug(`KBTools: ${config.kbDelTool} ${failed ? "found nothing" : outcome}`);
     if (failed) return { error: "failed to delete from knowledge base (statement not found)" };
-    if (outcome === "unsaved") return { error: "failed to persist knowledge base" };
+    if (outcome === "unsaved") return { error: this.unsaved() };
     return outcome === "unchanged" ? { error: "statement not found in knowledge base" } : "Removed from knowledge base.";
+  }
+
+  /** A knowledge base that couldn't be saved: how to fix its file when it couldn't be read, for the
+   * model to tell the user. */
+  private unsaved(): string {
+    return this.prompts.fileProblem === undefined ? "failed to persist knowledge base" : unsavedBecauseOf("knowledgeBase");
   }
 }

@@ -237,6 +237,35 @@ describe("AppSettings", () => {
   });
 });
 
+/** While the settings file couldn't be read, the user's memory limit is unknown: a dictation keeps
+ * no request rather than trim memory to the default (ADR-DESK-063). */
+test("a dictation has no memory limit while the settings file couldn't be read", () => {
+  const store = new (class extends MemoryStore {
+    readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
+  })();
+  expect(settings(store).fileProblem).toEqual(store.problem);
+  expect(settings(store).dictation(null).memorySizeLimit).toBeNull();
+  expect(settings().dictation(null).memorySizeLimit).toBe(config.memorySizeLimitDefault);
+});
+
+/** While the settings file couldn't be read, the user's own excluded apps and websites are unknown:
+ * no dictation reads the screen, even with screen reading switched on this session (owner, 2026-10-27). */
+/** The file holds the user's exclusions and switched-off apps: while it can't be read, a dictation
+ * reads nothing of theirs, whatever the switches say for the session. */
+test("a dictation reads nothing of the user's while the settings file couldn't be read", () => {
+  const store = new (class extends MemoryStore {
+    readonly problem = { kind: "permission" as const, path: "/example/settings.json", code: "EACCES" };
+  })();
+  const unreadable = settings(store);
+  unreadable.readsScreen = true;
+  unreadable.learnsWords = true;
+  expect([unreadable.readsScreen, unreadable.learnsWords, unreadable.enabledConnectors]).toEqual([true, true, [...connectorIDs]]);
+  const dictation = unreadable.dictation(null);
+  expect([dictation.readsScreen, dictation.learnsWords, dictation.enabledConnectors, dictation.memorySizeLimit]).toEqual([false, false, [], null]);
+  const readable = settings().dictation(null);
+  expect([readable.readsScreen, readable.learnsWords, readable.enabledConnectors]).toEqual([true, true, [...connectorIDs]]);
+});
+
 /** Memory's size limit: 1 GB until the user picks another of the choices, which is kept; any other
  * value is refused and leaves the limit as it was, and a stored value no longer among the choices
  * reads as the default. */

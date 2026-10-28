@@ -859,7 +859,7 @@ export class DictationController extends Observable {
           client, account, userID, (event) => registry.serverEvent(event), signal,
         );
         if (!isCurrent()) return;
-        this.remember(transcript, agentPart(text, registry.get(tool)?.chatCaption ?? null, context?.appName ?? null), settings.memorySizeLimit);
+        if (settings.memorySizeLimit !== null) this.remember(transcript, agentPart(text, registry.get(tool)?.chatCaption ?? null, context?.appName ?? null), settings.memorySizeLimit);
       }
       if (this.generation !== generation) return;
       this.teardown();

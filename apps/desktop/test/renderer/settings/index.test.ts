@@ -13,6 +13,7 @@ import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
 
@@ -59,7 +60,17 @@ const signedIn: SettingsState = {
     knowledgeBase: ["Prefers morning meetings.", "Works with Sam."],
     history: [],
   },
+  fileProblems: [],
 };
+
+/** A file that couldn't be read at launch is said above every section, with how to fix it; none is
+ * said while both read (ADR-DESK-063). */
+test("a file that couldn't be read is said above every section", async () => {
+  await settingsPage({ error: null }, signedIn, signedIn);
+  expect(document.querySelectorAll(".file-problem")).toHaveLength(0);
+  await settingsPage({ error: null }, signedIn, { ...signedIn, fileProblems: ["settings", "knowledgeBase"] });
+  expect([...document.querySelectorAll(".file-problem")].map((line) => line.textContent)).toEqual([fileProblemLine("settings"), fileProblemLine("knowledgeBase")]);
+});
 
 /** What the stand-in main process answers: one reply for every command, or one per command. */
 type Reply = CommandResult | Promise<CommandResult> | ((command: Command) => CommandResult | Promise<CommandResult>);

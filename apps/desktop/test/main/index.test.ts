@@ -12,12 +12,13 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
+import { unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
 import { memoryRow } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
-import { channels } from "../../src/shared/ipc.js";
+import { channels, type SettingsState, type WelcomeState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
 /** The signal a tool runs with: a request never canceled. */
@@ -70,6 +71,10 @@ const app = vi.hoisted(() => ({
   files: new Map<string, Map<string, unknown>>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
   savesFail: false,
+  /** Why a file couldn't be read at launch, by its path: none is saved to (`JSONFileStore.problem`). */
+  problems: new Map<string, import("../../src/core/util/keyValueStore.js").StoreProblem>(),
+  /** The files shown in Finder. */
+  shownFiles: [] as string[],
   opened: [] as string[],
   openFailure: null as Error | null,
   emailHandler: "",
@@ -86,10 +91,10 @@ const app = vi.hoisted(() => ({
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; showSettings: () => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
-  trayState: null as (() => { update: unknown }) | null,
+  trayState: null as (() => { update: unknown; fileProblems?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
@@ -104,6 +109,8 @@ const app = vi.hoisted(() => ({
   applicationMenu: null as unknown[] | null,
   /** The message boxes shown, and the button each is answered with. */
   dialogs: [] as Record<string, unknown>[],
+  /** For each message box, whether the app's commands were wired by then: launch was done. */
+  dialogsAfterLaunch: [] as boolean[],
   dialogResponse: 1,
   /** The open dialogs shown, and what the user picks in the next one (null: canceled). */
   openDialogs: [] as Record<string, unknown>[],
@@ -161,6 +168,7 @@ vi.mock("electron", async () => {
     screen: { screenToDipRect: (_window: unknown, rect: Rect) => rect, getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
     shell: {
+      showItemInFolder: (path: string) => void app.shownFiles.push(path),
       openExternal: async (url: string) => {
         if (app.openFailure) throw app.openFailure;
         app.opened.push(url);
@@ -170,6 +178,7 @@ vi.mock("electron", async () => {
     dialog: {
       showMessageBox: async (options: Record<string, unknown>) => {
         app.dialogs.push(options);
+        app.dialogsAfterLaunch.push(app.handlers.has(channels.command));
         return { response: app.dialogResponse };
       },
       showOpenDialog: async (options: Record<string, unknown>) => {
@@ -275,12 +284,16 @@ vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
   const { join } = await import("node:path");
   return {
     /** Each file its own values, kept across launches: the app folder's preferences file is
-     * `app.stored`, any other is in `app.files` by its path. */
+     * `app.stored`, any other is in `app.files` by its path. As the real store, one that couldn't be
+     * read (`app.problems`) starts at the defaults and keeps what is set for this launch only. */
     JSONFileStore: class {
       private readonly values: Map<string, unknown>;
+      readonly problem: import("../../src/core/util/keyValueStore.js").StoreProblem | undefined;
       constructor(path: string) {
-        this.values = path === join(app.userData, "settings.json") ? app.stored : (app.files.get(path) ?? new Map<string, unknown>());
-        app.files.set(path, this.values);
+        const file = path === join(app.userData, "settings.json") ? app.stored : (app.files.get(path) ?? new Map<string, unknown>());
+        app.files.set(path, file);
+        this.problem = app.problems.get(path);
+        this.values = this.problem === undefined ? file : new Map<string, unknown>();
       }
       get(key: string) {
         // Set up, unless a test stores otherwise.
@@ -289,14 +302,14 @@ vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
       }
       set(key: string, value: unknown) {
         this.values.set(key, value);
-        return !app.savesFail;
+        return this.problem === undefined && !app.savesFail;
       }
       setAll(values: Record<string, unknown>) {
         for (const [key, value] of Object.entries(values)) {
           if (value === undefined) this.values.delete(key);
           else this.values.set(key, value);
         }
-        return !app.savesFail;
+        return this.problem === undefined && !app.savesFail;
       }
       remove(key: string) {
         this.values.delete(key);
@@ -494,7 +507,7 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
 }));
 vi.mock("../../src/main/tray.js", () => ({
   TrayMenu: class {
-    constructor(_resources: string, state: () => { update: unknown }, actions: NonNullable<typeof app.trayActions>) {
+    constructor(_resources: string, state: () => { update: unknown; fileProblems?: unknown }, actions: NonNullable<typeof app.trayActions>) {
       app.trayActions = actions;
       app.trayState = state;
     }
@@ -582,6 +595,8 @@ afterEach(() => {
   app.stored.clear();
   app.files.clear();
   app.savesFail = false;
+  app.problems.clear();
+  app.shownFiles = [];
   app.opened = [];
   app.openFailure = null;
   app.connectorTools = [];
@@ -605,6 +620,7 @@ afterEach(() => {
   app.squirrel = null;
   app.trayUpdates = 0;
   app.dialogs = [];
+  app.dialogsAfterLaunch = [];
   app.dialogResponse = 1;
   app.exits = [];
   app.quits = 0;
@@ -2031,6 +2047,138 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(await send({ type: "setEventDuration", value: 30 })).toEqual({ error: "The default event duration couldn't be saved. Check the disk and try again." });
     await expect(change?.run({ setting: "calendar.default_event_duration_minutes", value: 30 }, signal, toolSettings)).rejects.toThrow("The setting couldn't be saved. Nothing was changed.");
     expect(state().eventDuration).toBe(50);
+  });
+
+  /** A file there at launch that couldn't be read (ADR-DESK-063) is never saved to: the user is told
+   * at once how to fix it by hand, its Fix item stays in the menu, and every change it would have kept
+   * says how to fix it. The app itself never resets, moves or writes over it. */
+  test("a knowledge base file that couldn't be read is told of at launch, and nothing is saved to it", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    await launch("darwin");
+
+    // Told once launch is done, on a task of its own.
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    expect(app.dialogsAfterLaunch).toEqual([true]);
+    expect(app.dialogs[0]).toMatchObject({ type: "warning", message: "TabMail Voice's knowledge base file is damaged.", buttons: ["Show File", "Close"], cancelId: 1 });
+    expect(app.dialogs[0]?.detail).toContain(path);
+    expect(app.trayState?.().fileProblems).toEqual(["knowledgeBase"]);
+    expect((app.handlers.get(channels.getState)?.({}, "settings") as SettingsState).fileProblems).toEqual(["knowledgeBase"]);
+
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
+    const defaults = page().knowledgeBase;
+    for (const command of [
+      { type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] },
+      { type: "editWritingStyle", section: "Language", shown: ["I write in English Only."], bullets: ["I write in German."] },
+      { type: "resetKnowledgeBase" },
+      { type: "resetWritingStyle" },
+      { type: "restorePromptHistory", id: "no-such-entry" },
+    ]) {
+      expect(await send(command), command.type).toEqual({ error: unsavedBecauseOf("knowledgeBase") });
+    }
+    // The settings file read, so a setting is saved as ever.
+    expect(await send({ type: "setSmartDictation", value: false })).toEqual({ error: null });
+    expect(app.files.get(path)?.size).toBe(0);
+    expect(page().knowledgeBase).toEqual(defaults);
+
+    // The menu's Fix item tells it again, and Show File shows it; Close does nothing more.
+    app.dialogResponse = 0;
+    app.trayActions?.showFileProblem("knowledgeBase");
+    expect(await eventually(() => app.shownFiles.length > 0)).toBe(true);
+    expect(app.shownFiles).toEqual([path]);
+    expect(app.dialogs).toHaveLength(2);
+  });
+
+  /** Every command that keeps a choice in the settings file says, each time, that it wasn't saved and
+   * how to fix the file; what it changed holds until quit, and the file is never written. */
+  test("a settings file that couldn't be read is told of at launch, and every setting changed says how to fix it", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "permission", path, code: "EACCES" });
+    app.stored.set("readsScreen", false);
+    app.dialogResponse = 1;
+    await launch("darwin");
+
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    expect(app.dialogs[0]).toMatchObject({ message: "TabMail Voice doesn't have permission to read its settings file." });
+    expect(app.trayState?.().fileProblems).toEqual(["settings"]);
+    const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
+    expect(settingsState().fileProblems).toEqual(["settings"]);
+    expect((app.handlers.get(channels.getState)?.({}, "welcome") as WelcomeState).fileProblems).toEqual(["settings"]);
+
+    for (const command of [
+      { type: "setHotkey", hotkey: "rightOption" },
+      { type: "setReadsScreen", value: false },
+      { type: "setUserName", value: "Sam Example" },
+      { type: "addDictionaryWord", word: "Xyvora" },
+      { type: "removeDictionaryWord", word: "Xyvora" },
+      { type: "setLearnsWords", value: false },
+      { type: "setSmartDictation", value: false },
+      { type: "setClosesChatElsewhere", value: false },
+      { type: "setEventDuration", value: 30 },
+      { type: "excludeApp" },
+      { type: "removeExcludedApp", bundleIdentifier: "com.example.app" },
+      { type: "excludeSite", site: "example.com" },
+      { type: "removeExcludedSite", host: "example.com" },
+      { type: "setEmailClient", bundleIdentifier: null },
+      { type: "setAgentToolEnabled", tool: "compose", value: false },
+      { type: "setConnectorEnabled", connector: "notes", value: false },
+      { type: "setDebugMode", value: true },
+      { type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 },
+      { type: "setConsent", value: true },
+      { type: "welcomeNext" },
+    ]) {
+      expect(await send(command), command.type).toEqual({ error: unsavedBecauseOf("settings") });
+    }
+    // What a command changed holds until quit; the file is as it was.
+    expect(settingsState().smartDictation).toBe(false);
+    expect([...app.stored.entries()]).toEqual([["readsScreen", false]]);
+    // A command that keeps nothing in it answers as ever, never with the fix.
+    expect(await send({ type: "keepChatOpen" })).toEqual({ error: null });
+    // Every one `commandWrites` gives no file: signing in, above all, must still work.
+    for (const command of [
+      { type: "sendCode", email: "user@example.com" },
+      { type: "verify", email: "user@example.com", code: "123456" },
+      { type: "signOut" },
+      { type: "setOpenAtLogin", value: true },
+      { type: "loadMemory" },
+      { type: "searchMemory", query: "example" },
+      { type: "removeMemory", memId: "example" },
+      { type: "clearMemory" },
+      { type: "requestMicrophone" },
+      { type: "requestAccessibility" },
+      { type: "enableGnomeIntegration" },
+      { type: "checkForUpdates" },
+      { type: "installUpdate" },
+      { type: "welcomeBack" },
+      { type: "welcomeGoTo", index: 0 },
+      { type: "fixVSCodeSettings" },
+      { type: "openURL", url: "https://example.com" },
+      { type: "keepChatOpen" },
+      { type: "closeChat" },
+      { type: "openChatLink", url: "https://example.com" },
+      { type: "answerConfirmation", confirmed: false },
+      { type: "chatHeight", height: 100 },
+      { type: "pointerOver", over: false },
+      { type: "chatDragStart" },
+      { type: "dragChat", dx: 0, dy: 0 },
+      { type: "copyNotPasted" },
+      { type: "dismissNotPasted" },
+      { type: "copyHistoryEntry", id: 0 },
+      { type: "closeHistory" },
+      { type: "historyHeight", height: 100 },
+    ]) {
+      expect(await send(command), command.type).not.toEqual({ error: unsavedBecauseOf("settings") });
+    }
+
+    const change = app.connectorTools.find((tool) => tool.name === "change_setting");
+    await expect(change?.run({ setting: "calendar.default_event_duration_minutes", value: 30 }, signal, toolSettings)).rejects.toThrow(unsavedBecauseOf("settings"));
+  });
+
+  test("files that read show no notice and no Fix item", async () => {
+    await launch("darwin");
+    expect(app.dialogs).toEqual([]);
+    expect(app.trayState?.().fileProblems).toEqual([]);
   });
 
   /** Settings › Personalization's commands (ADR-DESK-063): each changes the stored texts and the

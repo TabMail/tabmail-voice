@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, nativeTheme } from "electron";
+import type { StoredFile } from "../../src/core/ui/fileProblems.js";
 import type { SettingsState } from "../../src/shared/ipc.js";
 
 const root = join(import.meta.dirname, "../..");
@@ -107,6 +108,7 @@ const settings = {
     knowledgeBase: ["User is using TabMail as their AI assistant for emails.", "[Pinned] Prefers meetings in the morning.", "Works with Sam on the launch review."],
     history: [],
   },
+  fileProblems: [],
 } satisfies SettingsState;
 /** Settings › Personalization with a history: an edit, then a reset. */
 const personalization = {
@@ -130,7 +132,7 @@ const memory = {
   searchFailed: null,
   status: null,
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
+const welcome = { fileProblems: [] as StoredFile[], step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
 
 /** The paste history: a short entry, a long one clipped to its lines, and an older one. */
 const history = {
@@ -283,6 +285,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-permissions-vscode", page: "settings/index.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   { name: "settings-general", page: "settings/index.html", size: settingsWindowSize, section: "General", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, debugAllowed: true } },
   // Personalization: the writing style's sections, the knowledge base and the history.
+  // A settings file that couldn't be read at launch, said above the section.
+  { name: "settings-file-problem", page: "settings/index.html", size: settingsWindowSize, section: "Dictation", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, fileProblems: ["settings", "knowledgeBase"] } },
   { name: "settings-personalization", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   // The whole page, down to the history, in a window tall enough to hold it.
   { name: "settings-personalization-whole", page: "settings/index.html", size: { width: settingsWindowSize.width, height: settingsWindowSize.height * 3 }, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
@@ -302,6 +306,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
   { name: "welcome-features", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 4, categoryIndex: 3, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },
   { name: "welcome-consent", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: welcome },
+  { name: "welcome-consent-file-problem", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, fileProblems: ["settings"] } },
   { name: "welcome-name", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "name", index: 1, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
   { name: "welcome-accessibility", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true } },
   { name: "welcome-accessibility-vscode", page: "welcome/index.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true, vscodeFix: "needed" } },

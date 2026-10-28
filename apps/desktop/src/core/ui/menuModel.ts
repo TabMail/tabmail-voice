@@ -4,6 +4,7 @@
 
 import type { Phase } from "../dictation/controller.js";
 import { type DictationHotkey, hotkeyNames } from "../hotkey/bindings.js";
+import type { StoredFile } from "./fileProblems.js";
 
 /** What the tray menu shows, from the app's state. */
 export interface MenuState {
@@ -11,6 +12,8 @@ export interface MenuState {
   isSignedIn: boolean;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
+  /** The app's files that couldn't be read at launch, each with its Fix item until the app relaunches. */
+  fileProblems: readonly StoredFile[];
   hotkey: DictationHotkey;
   debugMode: boolean;
   phase: Phase;

@@ -5,7 +5,7 @@
 import type { Personalization } from "../agent/requests.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
-import { type KeyValueStore, storedString } from "../util/keyValueStore.js";
+import { type KeyValueStore, type StoreProblem, storedString } from "../util/keyValueStore.js";
 import { Observable } from "../util/observable.js";
 import { compositionSections, extractBullets, extractSection, mergeFlatField, replaceSection } from "./bulletMerge.js";
 import { defaultComposition, defaultKnowledgeBase } from "./defaults.js";
@@ -109,6 +109,11 @@ export class UserPrompts extends Observable {
 
   constructor(private readonly store: KeyValueStore) {
     super();
+  }
+
+  /** Why the texts' file couldn't be read at launch, when it couldn't: nothing is saved to it. */
+  get fileProblem(): StoreProblem | undefined {
+    return this.store.problem;
   }
 
   /** The writing style's markdown (`user_prompts:user_composition.md`). */

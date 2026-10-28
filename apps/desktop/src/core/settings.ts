@@ -12,7 +12,7 @@ import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dict
 import { type DictionaryEntry, dictionaryWord, isSameWord, leastRecentlyUsedLearned, nextUse, prioritizedWords, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { log } from "./log.js";
-import { type KeyValueStore, storedBool, storedInteger, storedString } from "./util/keyValueStore.js";
+import { type KeyValueStore, type StoreProblem, storedBool, storedInteger, storedString } from "./util/keyValueStore.js";
 import { Observable } from "./util/observable.js";
 
 const Key = {
@@ -74,8 +74,10 @@ export interface DictationSettings {
   /** Whether the dictation asks for the backend's cleanup (and a long dictation for its final polish);
    * off, the transcript is pasted as heard. */
   smartDictation: boolean;
-  /** The most memory may take (bytes; `memorySizeLimit`): the request is kept within it. */
-  memorySizeLimit: number;
+  /** The most memory may take (bytes; `memorySizeLimit`): the request is kept within it. Null while
+   * the settings file couldn't be read: the user's limit is unknown, so the request isn't kept, as
+   * keeping it within the default would remove what a larger limit kept (ADR-DESK-063). */
+  memorySizeLimit: number | null;
   /** How long a new event lasts when the user gave no end (minutes; `eventDuration`). */
   eventDuration: number;
 }
@@ -116,6 +118,11 @@ export class AppSettings extends Observable {
     readonly builtInExcludedApps: readonly ExcludedApp[] = config.builtInExcludedApps,
   ) {
     super();
+  }
+
+  /** Why the settings file couldn't be read at launch, when it couldn't: nothing is saved to it. */
+  get fileProblem(): StoreProblem | undefined {
+    return this.store.problem;
   }
 
   /** The keys Settings offers; the first is the default. */
@@ -468,23 +475,27 @@ export class AppSettings extends Observable {
 
   /** What a dictation by the account signed in (`email`) uses, read once as it starts. */
   dictation(email: string | null): DictationSettings {
+    // While the file can't be read, the user's own exclusions and switched-off apps, which it holds,
+    // are unknown: nothing of theirs is read then, not the screen, not the field pasted into (word
+    // learning), not the apps the Answer tool reaches.
+    const readable = this.store.problem === undefined;
     return {
       hasConsented: this.hasConsented,
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),
       keepsRecording: this.isDebugMode(email),
-      readsScreen: this.readsScreen,
+      readsScreen: readable && this.readsScreen,
       excludedApps: [...this.builtInExcludedApps, ...this.excludedApps].map((app) => app.bundleIdentifier),
       excludedSites: [...config.builtInExcludedSites, ...this.excludedSites],
       enabledTools: this.enabledTools,
-      enabledConnectors: this.enabledConnectors,
+      enabledConnectors: readable ? this.enabledConnectors : [],
       emailClient: this.emailClient,
       hasTabMail: this.hasTabMail(),
       userName: this.sentUserName,
       dictionary: prioritizedWords(this.dictionary),
-      learnsWords: this.learnsWords,
+      learnsWords: readable && this.learnsWords,
       smartDictation: this.smartDictation,
-      memorySizeLimit: this.memorySizeLimit,
+      memorySizeLimit: readable ? this.memorySizeLimit : null,
       eventDuration: this.eventDuration,
     };
   }

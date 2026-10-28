@@ -9,6 +9,7 @@ import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { WelcomeWizard } from "../../core/onboarding/welcomeWizard.js";
+import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import type { WelcomeState } from "../../shared/ipc.js";
 import icon from "../../../resources/icon.png";
 import { send, useWindowState } from "../shared/bridge.js";
@@ -27,6 +28,11 @@ function Welcome() {
     <div className="welcome" style={{ width: config.welcomeWindowSize.width, height: config.welcomeWindowSize.height }}>
       <Rail state={state} />
       <main className="page">
+        {state.fileProblems.includes("settings") && (
+          <p className="error file-problem" role="alert">
+            {fileProblemLine("settings")}
+          </p>
+        )}
         <Page state={state} />
       </main>
       <footer className="buttons footer">

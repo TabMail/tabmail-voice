@@ -22,7 +22,7 @@ describe("menu", () => {
   });
 
   test("the status line says what is missing, else how to dictate", () => {
-    const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
+    const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
     expect(statusLine(ready)).toBe("Hold Fn / Globe (🌐) to dictate");
     expect(statusLine({ ...ready, hasConsented: false })).toBe("Setup needed");
     expect(statusLine({ ...ready, isSignedIn: false })).toBe("Sign in to start dictating");

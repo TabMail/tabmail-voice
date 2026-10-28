@@ -135,3 +135,46 @@ memory anyways and [it'll] search for it." Memory (ADR-DESK-061) keeps every age
   tests that also checked the refine keep their account half: "signing out ends the conversation
   before the next account" and "signing into another account ends the conversation" (a direct switch,
   no sign-out: the chat closes and the next request carries no conversation).
+
+**Amendment (2026-10-27, a file that can't be read is never written over; owner):** `JSONFileStore`,
+which holds `userPrompts.json` and the settings file, used to start empty on any read or parse failure,
+and its next save replaced the whole file with defaults: one passing read error at launch would have
+cost the user's knowledge base, writing style and history, and once Device Sync carries them, could
+spread that loss to the user's other apps. Now only a file that isn't there yet (`ENOENT`) starts
+empty. One that is there but can't be read, for want of permission (`EACCES`, `EPERM`), because it is
+damaged (not a JSON object), or for any other read error (`EIO`, `EBUSY`, `EMFILE`), is never written
+over, reset or moved by the app (owner: no automatic reset, and no tool to clear it). The app keeps
+working on defaults for that file, every save answers false, and `problem` says why:
+- Once launch is done (the windows' commands wired), a dialog says which file, where it is, that the app leaves it as it is, and what to do by
+  hand: give the account read and write permission (per platform), or, for a damaged file, quit, move
+  it to the Trash (Recycle Bin) and reopen, which resets what it held. Show File and Close; no Relaunch button, as the app never relaunches itself through Electron (ADR-DESK-050).
+- The tray icon is marked and the menu keeps "Fix Settings File…" / "Fix Knowledge Base File…",
+  showing the dialog again, as a missing permission keeps its Allow item.
+- Every change that can't be saved says so and names that item, each time. Settings and the welcome
+  window say it above every section or step (`fileProblemLine`; the welcome window for the settings
+  file, which it writes), and every command that keeps a choice in the file answers with it: the IPC
+  command handler looks the command up in `commandWrites` (every command named, so a new one is
+  decided) rather than each command checking. What such a command changed holds until quit (the store
+  keeps it in memory), except an exclusion, a personalization edit, the event duration and the memory
+  limit, which are put back (`saveOrPutBack`). `kb_add` /
+  `kb_del` (the model is told, to tell the user) say it too. (`change_setting` would as well, but while
+  the settings file can't be read the agent reaches no other app, its Settings among them; see below.)
+- While the settings file can't be read, no screen is read (owner, 2026-10-27, issue #282: the user's
+  own excluded apps and websites are in it): `DictationSettings.readsScreen` is false at every key-down,
+  even with screen reading switched on this session, so neither the field nor the window is read, in
+  dictation or agent mode. For the same reason nothing else of the user's is read either: word
+  learning, which reads the field pasted into after the paste, is off (`learnsWords` false), and the
+  Answer tool reaches none of the other apps (`enabledConnectors` empty), as the apps the user
+  switched off are in the file too. Dictation itself works. The menu says "Not reading the screen or
+  other apps until the settings file is fixed" above its Fix Settings File… item, and Settings and the
+  dialog say it too; it ends at the next launch that reads the file.
+- While the settings file can't be read, the user's memory limit is unknown, so an agent request is not
+  kept in memory (`DictationSettings.memorySizeLimit` null): keeping it within the default would
+  remove what a larger limit kept.
+Device Sync (PR 3): a damaged file is first restored from the user's other apps; a default never
+written carries Thunderbird's epoch-zero timestamp so joining sync never overwrites a peer; nothing is
+sent from a store that couldn't be read.
+Tests: `main/storage/jsonFileStore.test.ts`, `jsonFileStore.readErrors.test.ts`,
+`core/ui/fileProblems.test.ts`, `main/tray.test.ts`, `main/index.test.ts`, `kbTools.test.ts`,
+`settings.test.ts`, `dictation/controller.test.ts`, `renderer/settings/index.test.ts`,
+`renderer/welcome/index.test.ts`.

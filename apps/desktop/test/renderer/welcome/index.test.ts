@@ -7,6 +7,7 @@
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
+import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import type { Command, WelcomeState } from "../../../src/shared/ipc.js";
 
 const features: WelcomeState = {
@@ -27,6 +28,7 @@ const features: WelcomeState = {
   microphoneGranted: true,
   accessibilityTrusted: true,
   vscodeFix: "notNeeded",
+  fileProblems: [],
 };
 
 const accessibility: WelcomeState = { ...features, step: "accessibility", index: 2 };
@@ -95,6 +97,15 @@ describe("welcome wizard", () => {
     expect(button).toBeDefined();
     await act(async () => button?.click());
     expect(commands).toContainEqual({ type: "requestAccessibility" });
+  });
+
+  /** The wizard writes the settings file: while it couldn't be read, every step says so, and how to
+   * fix it. The knowledge base's file is Settings' to tell of. */
+  test("a settings file that couldn't be read is said above every step", async () => {
+    await welcomePage({ ...features, fileProblems: ["knowledgeBase"] });
+    expect(document.querySelectorAll(".file-problem")).toHaveLength(0);
+    await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false, fileProblems: ["settings", "knowledgeBase"] });
+    expect([...document.querySelectorAll(".file-problem")].map((line) => line.textContent)).toEqual([fileProblemLine("settings")]);
   });
 
   test("the consent step says what dictation may use", async () => {
