@@ -224,9 +224,10 @@ function launch(): void {
   const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
   const portalHotkeys = ["F8", "F9"] as const;
   const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
-  // While the settings file can't be read its AI features are off (owner, 2026-10-27): no request
-  // that carries what the user said (audio or text) goes out, whatever asks for it. Signing in and
-  // updates work as ever; Settings › Memory is refused (below).
+  // While the settings file can't be read its AI features are off (owner, 2026-10-27): transcription,
+  // its warm-up and completions are refused, whatever asks for them (dictation and agent mode, which
+  // the rest goes through, are refused at their start). Signing in and updates work as ever;
+  // Settings › Memory is refused (below).
   const aiTransport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${aiOffLine}.`)));
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 

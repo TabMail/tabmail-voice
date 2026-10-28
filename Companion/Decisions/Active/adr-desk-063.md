@@ -201,9 +201,9 @@ settings file can't be read its AI features are off, dictation included. "The th
 AI": everything that isn't AI keeps working.* Off: every dictation and agent hold, refused at its start
 by `DictationSettings.isAIOff` before consent is even looked at, with `aiOffLine` ("AI features are off
 until your settings file is fixed"), so no audio, transcription, warm-up, cleanup or completion and no
-read of the screen, a field or another app; every request that carries what the user said
-(transcription, warm-up, completions) also goes through one transport that refuses it while the file
-can't be read, whatever asks; and memory, whose helper runs a model over what the user asked, so
+read of the screen, a field or another app; the transcription, warm-up and completions requests also go through one transport that refuses them
+while the file can't be read, whatever asks (the web fetch and other tools run only in agent mode,
+refused at its start); and memory, whose helper runs a model over what the user asked, so
 Settings › Memory's commands are refused. On, as ever: signing in and the account, updates, Settings,
 the menu and the fix dialog. A user switch kept in the settings file can't be read, so what it governs
 is off too; Device Sync, which comes later, follows that rule. The menu shows that line above Fix

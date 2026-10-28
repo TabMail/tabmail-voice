@@ -42,7 +42,7 @@ export function fileProblemLine(file: StoredFile): string {
 export function fileProblemNotice(file: StoredFile, problem: StoreProblem, platform: string): { message: string; detail: string } {
   const { title, held } = names[file];
   const name = title.toLowerCase();
-  const meanwhile = file === "settings" ? `${aiOffLine}: TabMail Voice doesn't dictate or read anything, and leaves the file as it is.` : `Until it is fixed, TabMail Voice uses the defaults for ${held}, saves no change to them, and leaves the file as it is.`;
+  const meanwhile = file === "settings" ? `${aiOffLine}: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.` : `Until it is fixed, TabMail Voice uses the defaults for ${held}, saves no change to them, and leaves the file as it is.`;
   switch (problem.kind) {
     case "permission":
       return {

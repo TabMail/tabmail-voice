@@ -22,7 +22,7 @@ describe("file problems", () => {
       const { message, detail } = fileProblemNotice(file, problem, platform);
       expect(message).toContain(file === "settings" ? "settings file" : "knowledge base file");
       expect(detail).toContain(path);
-      expect(detail).toContain(file === "settings" ? "are off until your settings file is fixed: TabMail Voice doesn't dictate or read anything, and leaves the file as it is" : "saves no change to them, and leaves the file as it is");
+      expect(detail).toContain(file === "settings" ? "are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is" : "saves no change to them, and leaves the file as it is");
     },
   );
 
@@ -51,11 +51,11 @@ describe("file problems", () => {
     });
     expect(fileProblemNotice("settings", kinds[2]!, "linux")).toEqual({
       message: "TabMail Voice couldn't read its settings file (EIO).",
-      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read anything, and leaves the file as it is.\n\nCheck that the disk holding it is connected and working, then quit TabMail Voice and open it again. The file:\n${path}`,
+      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nCheck that the disk holding it is connected and working, then quit TabMail Voice and open it again. The file:\n${path}`,
     });
     expect(fileProblemNotice("settings", kinds[0]!, "darwin")).toEqual({
       message: "TabMail Voice doesn't have permission to read its settings file.",
-      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read anything, and leaves the file as it is.\n\nIn Finder, select the file, choose File > Get Info, and under Sharing & Permissions give your account Read & Write access. The file:\n${path}\n\nThen quit TabMail Voice and open it again.`,
+      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nIn Finder, select the file, choose File > Get Info, and under Sharing & Permissions give your account Read & Write access. The file:\n${path}\n\nThen quit TabMail Voice and open it again.`,
     });
   });
 
