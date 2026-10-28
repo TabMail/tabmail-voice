@@ -287,7 +287,7 @@ print('EDS writable calendar list, a chosen calendar and an unknown one passed')
 
 zone = ECal.util_get_system_timezone_location()
 series = call('calendarAdd', event(availability='free', recurrence=rule(count=30)))
-assert series['occurrence'] == week(0) and series['availability'] == 'free' and series['calendarId'] == default[0]['id']
+assert series['occurrence'] == week(0) and series['availability'] == 'free' and series['calendarId'] == default[0]['id'], (series, week(0), zone)
 assert series['recurrence'] == rule(count=30) and not series['isDetached'] and not series['isInvitation'], series
 assert series['timeZone'] == ('UTC' if zone in ('UTC', 'Etc/UTC') else zone), series
 stored = calendar_client.get_object_sync(series['id'].split('|')[1], None, None)[1]

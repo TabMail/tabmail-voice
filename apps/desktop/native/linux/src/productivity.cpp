@@ -1027,6 +1027,10 @@ void setTimes(ICalComponent* component, int64_t start, int64_t end, bool allDay,
     else if (zone) {
         first.reset(i_cal_time_new_from_timet_with_zone(start / 1000, FALSE, zone));
         last.reset(i_cal_time_new_from_timet_with_zone(end / 1000, FALSE, zone));
+        // libical 3.0 converts to the zone's wall time but labels the result UTC: without the zone
+        // set again, 09:00 in Toronto would be stored as 09:00 UTC.
+        i_cal_time_set_timezone(first.get(), zone);
+        i_cal_time_set_timezone(last.get(), zone);
     }
     i_cal_component_set_dtstart(component, first.get());
     i_cal_component_set_dtend(component, last.get());
