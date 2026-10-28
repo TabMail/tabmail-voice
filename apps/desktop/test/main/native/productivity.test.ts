@@ -113,6 +113,11 @@ describe("Native event editor boundary (Linux)", () => {
     // The helper reads `occurrence` as a key that is there: null, never left out.
     expect(run.mock.lastCall?.[1]).toStrictEqual({ id: row.id, occurrence: null });
   });
+  it.each(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const)("reads a %s rule with every field, a detached invitation as one", async (frequency) => {
+    const rule = { frequency, interval: 2, count: null, until: null, days: [{ weekday: 3, week: -1 }], monthDays: [15], months: [3], positions: [-1], yearWeeks: [10], yearDays: [100] };
+    const read = await new NativeEventStore(vi.fn().mockResolvedValue([{ ...row, recurrence: rule, isDetached: true, isInvitation: true }]), undefined, true).events(new Date(start - 1), new Date(start + 1));
+    expect(read).toEqual([{ ...converted, recurrence: rule, isDetached: true, isInvitation: true }]);
+  });
   it("reads a single event on this computer: no id, occurrence, organizer, rule or zone", async () => {
     const single = { ...row, id: null, occurrence: null, organizer: null, recurrence: null, timeZone: null, calendarId: null, attendees: [] };
     const read = await new NativeEventStore(vi.fn().mockResolvedValue([single]), undefined, true).events(new Date(start - 1), new Date(start + 1));

@@ -765,3 +765,11 @@ rule_value = lambda text: text.split(':', 1)[1]
 assert rule_value(rule_text(counted_rows[0])) == rule_value(counted_rule) and dates('Week counted') == counted_dates, (counted_rule, rule_text(counted_rows[0]))
 assert call('calendarDelete', {'id':counted_rows[0]['id']}) == {}
 print('EDS a rule with its own week start keeps it made all day and with its rule changed, and an endless one is left as stored, passed')
+
+# Requests the app never sends are refused and change nothing: the helper checks its input behind the app.
+checked = call('calendarAdd', event(title='Checked fields', start=at(33, 1), end=at(33, 1, 60)))
+for change in [{'scope':'some'}, {'title':''}, {'availability':'maybe'}, {'isAllDay':'yes'}, {'recurrence':rule(interval=0)}, {'recurrence':rule(count=0)}]:
+    call('calendarEdit', {'id':checked['id'], 'occurrence':None, 'scope':'all', 'title':'Checked renamed', **unchanged, **change}, succeeds=False)
+assert [row['title'] for row in rows('Checked fields')] == ['Checked fields'] and rows('Checked renamed') == []
+assert call('calendarDelete', {'id':checked['id']}) == {}
+print('EDS requests the app never sends refused, changing nothing, passed')
