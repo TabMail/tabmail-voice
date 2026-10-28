@@ -229,7 +229,7 @@ function launch(): void {
   // While the settings file can't be read its AI features are off (owner, 2026-10-27): transcription,
   // its warm-up and completions are refused, whatever asks for them (dictation and agent mode, which
   // the rest goes through, are refused at their start). Signing in and updates work as ever;
-  // Settings › Memory is refused (below).
+  // Settings › Memory searches nothing and sets no size limit (below).
   const aiTransport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${aiOffLine}.`)));
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
@@ -280,6 +280,10 @@ function launch(): void {
   // Settings › Memory reads nothing until memory's database exists: the helper creates it at its
   // first start, when agent mode is first chosen.
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
+  // No settings file while memory's database is there: the file was removed by hand, the fix
+  // dialog's first way (ADR-DESK-063), and the size limit the user chose went with it. Unknown, as
+  // after the factory reset, so memory is never trimmed to the default.
+  if (store.isNew && existsSync(memoryFolders(memoryDirectory).databaseFile)) settings.unsetMemorySizeLimit();
   // The writing style and knowledge base, in a file of their own: per user of this computer, as
   // memory is (ADR-DESK-063).
   const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));
@@ -986,6 +990,11 @@ function launch(): void {
   session.defaultSession.setPermissionCheckHandler((contents, permission) => permission === "media" && contents !== null && windows.isAudioWindow(contents));
 
   ipcMain.handle(channels.getState, (_event, name: unknown) => (isWindowName(name) ? stateOf(name) : null));
+  /** The search Settings › Memory's list is read for: the one shown, but while AI features are off
+   * the newest only, so a search typed before isn't run again (owner, 2026-10-28). */
+  function memoryListQuery(): string | undefined {
+    return settings.memoryOffLine === null ? undefined : "";
+  }
   /** Says how to fix the file `command` writes, while that file couldn't be read at launch. */
   function unsavedFor(command: Command): string | null {
     const file = commandWrites[command.type];
@@ -1077,16 +1086,15 @@ function launch(): void {
         if (!settings.setEventDuration(command.value)) throw new Error("The default event duration couldn't be saved. Check the disk and try again.");
         return;
       case "loadMemory":
-        // While AI features are off, the newest only: a search typed before isn't run again.
-        return memoryPage.load(settings.memoryOffLine === null ? undefined : "");
+        return memoryPage.load(memoryListQuery());
       case "searchMemory":
         return memoryPage.load(command.query);
       case "setMemorySizeLimit":
         return memoryPage.setSizeLimit(command.value);
       case "removeMemory":
-        return memoryPage.remove(command.memId);
+        return memoryPage.remove(command.memId, memoryListQuery());
       case "clearMemory":
-        return memoryPage.clear();
+        return memoryPage.clear(memoryListQuery());
       case "editWritingStyle":
         if (!prompts.editCompositionSection(command.section, command.shown, command.bullets)) throw new Error(personalizationUnsaved);
         return;

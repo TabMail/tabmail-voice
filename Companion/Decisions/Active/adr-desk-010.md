@@ -130,7 +130,7 @@ Tests:
 - Only a typed search and the size limit are refused. A typed search runs memory's helper model over
   what the user typed; the size limit trims memory. Listing the newest, removing one request and Clear
   All work: they are local and send nothing, so the user can always delete what memory holds. The list
-  is read with no search, so a search typed before isn't run again. Both states where AI features are
+  is read with no search, after a removal or Clear All too, so a search typed before isn't run again. Both states where AI features are
   off behave the same here: the opt-out, and a settings file that can't be read (ADR-DESK-063).
   This supersedes "Settings › Memory's commands are refused with the same line" above.
 - A choice of the switch that couldn't be written is put back (`AppSettings.setOptsOutOfAI`, as an

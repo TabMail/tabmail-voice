@@ -74,6 +74,8 @@ const app = vi.hoisted(() => ({
   savesFail: false,
   /** Why a file couldn't be read at launch, by its path: none is saved to (`JSONFileStore.problem`). */
   problems: new Map<string, import("../../src/core/util/keyValueStore.js").StoreProblem>(),
+  /** The files not there at launch, by path (`JSONFileStore.isNew`). */
+  missingFiles: new Set<string>(),
   /** The files shown in Finder. */
   shownFiles: [] as string[],
   opened: [] as string[],
@@ -308,7 +310,9 @@ vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
       private readonly file: Map<string, unknown>;
       private wasReset = false;
       problem: import("../../src/core/util/keyValueStore.js").StoreProblem | undefined;
+      readonly isNew: boolean;
       constructor(private readonly path: string) {
+        this.isNew = app.missingFiles.has(path);
         const file = path === join(app.userData, "settings.json") ? app.stored : (app.files.get(path) ?? new Map<string, unknown>());
         app.files.set(path, file);
         this.file = file;
@@ -627,6 +631,7 @@ afterEach(() => {
   app.files.clear();
   app.savesFail = false;
   app.problems.clear();
+  app.missingFiles.clear();
   app.shownFiles = [];
   app.opened = [];
   app.requests = [];
@@ -2531,10 +2536,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(await send(command)).toEqual({ error: `${optedOutOfAIMemoryLine}.` });
     }
     expect([app.stored.has("memorySizeLimit"), queries(), trim?.mock.calls.length]).toEqual([false, [], 0]);
-    for (const command of [{ type: "loadMemory" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
+    // Removing reads the list again with no search either, before any load.
+    for (const command of [{ type: "removeMemory", memId: "turn:1" }, { type: "loadMemory" }] as const) {
       expect(await send(command)).toEqual({ error: null });
     }
-    expect([queries(), remove?.mock.calls, clear?.mock.calls.length, trim?.mock.calls.length]).toEqual([["", "", ""], [[["turn:1"]]], 1, 0]);
+    expect([queries(), remove?.mock.calls, trim?.mock.calls.length]).toEqual([["", ""], [[["turn:1"]]], 0]);
     // Signing in still reaches TabMail; memory sent nothing.
     expect(app.requests).toHaveLength(0);
     await send({ type: "sendCode", email: "user@example.com" });
@@ -2543,6 +2549,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
     expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: null });
     expect(queries()?.at(-1)).toBe("friday");
+
+    // So does Clear All, right after a search typed while AI was on.
+    expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+    expect(await send({ type: "clearMemory" })).toEqual({ error: null });
+    expect([clear?.mock.calls.length, queries()?.at(-1), trim?.mock.calls.length]).toEqual([1, "", 0]);
   });
 
   /** What applies is what is saved (owner, 2026-10-28): Opt Out of AI that couldn't be written says so,
@@ -2564,6 +2575,30 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual(unsaved);
     expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI, app.stored.get("optsOutOfAI")]).toEqual([true, true, true]);
     expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: `${optedOutOfAIMemoryLine}.` });
+  });
+
+  /** A settings file removed by hand (the fix dialog's first way) took the user's size limit with it: at
+   * the next launch, with memory's database there, the limit is "Not set", as after the reset, and
+   * memory is never trimmed to the default. Without memory, or with the file there, nothing changes. */
+  test.each([
+    ["removed by hand, memory kept", true, true, null],
+    ["not there, and no memory yet", true, false, undefined],
+    ["there, with memory", false, true, undefined],
+  ])("a settings file %s: the size limit stored is %s", async (_, missing, hasMemory, expected) => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    if (missing) app.missingFiles.add(join(app.userData, "settings.json"));
+    if (hasMemory) {
+      const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+      mkdirSync(dirname(database), { recursive: true });
+      writeFileSync(database, "");
+    }
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const trim = vi.spyOn(memory, "trim");
+    const sizeLimit = () => (app.handlers.get(channels.getState)?.({}, "settings") as SettingsState).memory.sizeLimit;
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([expected, expected === null ? null : config.memorySizeLimitDefault, 0]);
   });
 
   /** The size limit the user chose was in the settings file that couldn't be read: the reset leaves it

@@ -115,26 +115,28 @@ export class MemoryPage extends Observable {
     await this.load();
   }
 
-  async remove(memID: string): Promise<void> {
+  /** Removes one exchange, then reads the list for `query` (the one shown when omitted). */
+  async remove(memID: string, query?: string): Promise<void> {
     await this.store.remove([memID]);
     this.update({ status: null });
-    await this.load();
+    await this.load(query);
   }
 
   /** Removes everything memory holds; says so only once it is done. Asked of memory whether or not
    * its database exists: a clear cut short can have deleted the database file and left its
-   * write-ahead log, which holds the latest exchanges, and the next Clear All must remove it. */
-  async clear(): Promise<void> {
+   * write-ahead log, which holds the latest exchanges, and the next Clear All must remove it. The list
+   * is read again for `query` (the one shown when omitted). */
+  async clear(query?: string): Promise<void> {
     try {
       await this.store.clear();
     } catch (error) {
       log.error(`MemoryPage: memory couldn't be cleared: ${errorName(error)}`);
       this.update({ status: null });
-      await this.load();
+      await this.load(query);
       throw new Error("Memory couldn't be cleared. Try again.", { cause: error });
     }
     this.update({ status: "Memory cleared." });
-    await this.load();
+    await this.load(query);
   }
 
   private update(change: Partial<MemoryPageState>): void {

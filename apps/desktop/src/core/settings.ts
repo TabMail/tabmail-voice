@@ -40,7 +40,8 @@ const Key = {
 /** Why a dictation is refused while the user opted out of AI (`AppSettings.optsOutOfAI`). */
 export const optedOutOfAILine = "AI features are off. To dictate, turn off Opt Out of AI in Settings";
 
-/** Why Settings › Memory is refused while the user opted out of AI (owner, 2026-10-28). */
+/** Why Settings › Memory refuses a search or a size limit while the user opted out of AI (owner,
+ * 2026-10-28). */
 export const optedOutOfAIMemoryLine = "AI features are off. Turn off Opt Out of AI in Settings to use memory";
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -142,9 +143,7 @@ export class AppSettings extends Observable {
   resetFile(moveAside: () => void): void {
     const before = this.hotkey;
     moveAside();
-    // The size limit the user chose was in the file: unknown still, so memory is never trimmed to a
-    // guess, until the user picks one (owner, 2026-10-28).
-    this.store.set(Key.memorySizeLimit, null);
+    this.unsetMemorySizeLimit();
     this.changed();
     if (this.hotkey !== before) this.onHotkeyChange?.(this.hotkey);
   }
@@ -344,7 +343,8 @@ export class AppSettings extends Observable {
   /** Opt Out of AI (owner, 2026-10-28; Thunderbird's and iOS's `privacy_opt_out_all_ai`): while on,
    * nothing of the user's goes to the backend or a model. No dictation or agent hold starts, so nothing
    * is recorded, transcribed, cleaned up, read from the screen, a field or another app, or learned,
-   * and Settings › Memory is refused. Signing in, updates and Settings work as ever. Kept on this
+   * and Settings › Memory neither searches nor sets the size limit. Signing in, updates and Settings
+   * work as ever, and memory can still be listed and deleted. Kept on this
    * computer only. Off unless the user switches it on. */
   get optsOutOfAI(): boolean {
     return storedBool(this.store, Key.optsOutOfAI) ?? false;
@@ -356,7 +356,7 @@ export class AppSettings extends Observable {
     return this.saveOrPutBack(Key.optsOutOfAI, value);
   }
 
-  /** Why AI features are off, said when a dictation, an agent hold or Settings › Memory is refused;
+  /** Why AI features are off, said when a dictation or an agent hold is refused;
    * null while they're on. A settings file that can't be read comes first (owner, 2026-10-27): whether
    * the user opted out is in it, and fixing it is what they do. */
   get aiOffLine(): string | null {
@@ -364,7 +364,8 @@ export class AppSettings extends Observable {
     return this.optsOutOfAI ? optedOutOfAILine : null;
   }
 
-  /** Why Settings › Memory is refused, as `aiOffLine`, but naming memory when the user opted out. */
+  /** Why Settings › Memory refuses a search or a size limit, as `aiOffLine`, but naming memory when
+   * the user opted out. */
   get memoryOffLine(): string | null {
     if (this.store.problem !== undefined) return aiOffLine;
     return this.optsOutOfAI ? optedOutOfAIMemoryLine : null;
@@ -388,6 +389,13 @@ export class AppSettings extends Observable {
     if (this.store.problem !== undefined || this.store.get(Key.memorySizeLimit) === null) return null;
     const stored = storedInteger(this.store, Key.memorySizeLimit);
     return stored !== null && config.memorySizeLimitChoices.includes(stored) ? stored : config.memorySizeLimitDefault;
+  }
+
+  /** The size limit the user chose was in a settings file that is gone (reset, or removed by hand):
+   * unknown, "Not set", so memory is never trimmed to a guess until the user picks one (owner,
+   * 2026-10-28). */
+  unsetMemorySizeLimit(): void {
+    this.store.set(Key.memorySizeLimit, null);
   }
 
   /** Stores `value` if Settings offers it; false (nothing stored) otherwise. */

@@ -111,7 +111,7 @@ describe("JSONFileStore", () => {
     configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
 
     const store = new JSONFileStore(path);
-    expect(store.problem).toEqual({ kind: "unreadable", path, code: "EISDIR" });
+    expect([store.problem, store.isNew]).toEqual([{ kind: "unreadable", path, code: "EISDIR" }, false]);
     expect(store.set("readsScreen", false)).toBe(false);
     expect(readdirSync(path)).toEqual([]);
   });
@@ -141,7 +141,7 @@ describe("JSONFileStore", () => {
     configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
 
     const store = new JSONFileStore(path);
-    expect(store.problem?.kind).toBe("damaged");
+    expect([store.problem?.kind, store.isNew]).toEqual(["damaged", false]);
     expect(store.setAll({ "user_prompts:user_kb.md": "- Default." })).toBe(false);
     expect(readFileSync(path).equals(bytes)).toBe(true);
   });
@@ -152,10 +152,11 @@ describe("JSONFileStore", () => {
     configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
     const store = new JSONFileStore(path);
     expect(store.snapshot()).toEqual({});
-    expect(store.problem).toBeUndefined();
+    expect([store.problem, store.isNew]).toEqual([undefined, true]);
     expect(store.set("readsScreen", true)).toBe(true);
     expect(errors).toEqual([]);
-    expect(new JSONFileStore(path).get("readsScreen")).toBe(true);
+    const relaunched = new JSONFileStore(path);
+    expect([relaunched.get("readsScreen"), relaunched.isNew]).toEqual([true, false]);
   });
   /** The user's factory reset (ADR-DESK-063): the file that couldn't be read is renamed aside, byte
    * for byte, never deleted, and the store starts again empty and saves from then on. */
