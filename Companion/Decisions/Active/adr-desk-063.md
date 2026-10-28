@@ -190,8 +190,8 @@ at launch and the Fix Settings File… item), and launch opens no wizard, only t
 not given inside, so nothing of the user's is read, as above. The welcome window's line about the
 settings file, which it could then never show, is gone (`WelcomeState.fileProblems` deleted); Settings
 still says it above every section. Consent can then be given nowhere (only the wizard sends
-`setConsent`), so while the settings file can't be read every dictation is refused ("Finish setting up
-TabMail Voice from its menu", whose menu item shows the fix dialog) until a launch reads the file; before
+`setConsent`), so while the settings file can't be read every dictation is refused (with the off line
+of the widening below) until a launch reads the file; before
 this, a user could consent again in the wizard, unsaved, and dictate that session. Only the settings
 file keeps the wizard closed: a knowledge base file that can't be read leaves it as ever. Test: `main/index.test.ts`, for each kind of read failure, at
 launch and from the menu.
@@ -200,10 +200,14 @@ launch and from the menu.
 app is off while the settings file can't be read, dictation included.* `DictationSettings.isOff`
 refuses every dictation and agent hold at its start, before consent is even looked at, with
 `appOffLine` ("TabMail Voice is off until its settings file is fixed"); and every request the app
-makes, signing in included, goes through one transport that refuses it while the file can't be read,
-so nothing reaches TabMail whatever asks. The menu shows that line above Fix Settings File… (replacing
+makes to TabMail's backend, signing in included, goes through one transport that refuses it while the
+file can't be read, whatever asks. Nothing else reaches TabMail either: the updater isn't built (no
+update check, no update item in the menu, until a launch reads the file), and Settings › Memory's
+commands are refused, as memory's helper they start fetches its model from TabMail at its first start. The menu shows that line above Fix Settings File… (replacing
 "Not reading the screen or other apps until the settings file is fixed"), and the fix dialog and
 Settings say it. The reading gates above stay as they are. Tests: `dictation/controller.test.ts` (a
 dictation and an agent hold from those settings start nothing, read nothing and send nothing),
-`main/index.test.ts` (sign-in, its code and the warm-up reach no network; with the file read, the
-same request does), `tray.test.ts`, `core/ui/fileProblems.test.ts`.
+`main/index.test.ts` (sign-in, its code, the warm-up, transcription and completions reach no network;
+with the file read, or only the knowledge base file unreadable, the same request does; no update
+check and no update item; Settings › Memory never reaches memory), `tray.test.ts`,
+`core/ui/fileProblems.test.ts`.

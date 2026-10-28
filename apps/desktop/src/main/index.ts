@@ -121,6 +121,11 @@ if (needsX11Relaunch(appImage, process.argv)) {
   app.quit();
 }
 
+/** Settings › Memory's commands, which start memory's helper (its first start fetches its model from
+ * TabMail): refused while the settings file can't be read, as the whole app is off then (owner,
+ * 2026-10-27). */
+const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
+
 /** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
  * the command says so (ADR-DESK-063 amendment). Every command is named, so a new one is decided. */
 const commandWrites: Record<Command["type"], StoredFile | null> = {
@@ -219,8 +224,9 @@ function launch(): void {
   const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
   const portalHotkeys = ["F8", "F9"] as const;
   const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
-  // While the settings file can't be read the whole app is off (owner, 2026-10-27): no request of any
-  // kind reaches TabMail, signing in included, whatever asks for it.
+  // While the settings file can't be read the whole app is off (owner, 2026-10-27): no request to
+  // TabMail's backend goes out, signing in included, whatever asks for it. Nor does anything else reach
+  // TabMail: the updater isn't built, and Settings › Memory doesn't start memory's helper (below).
   const transport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${appOffLine}.`)));
   const account = new AccountModel(new AuthClient(transport), new KeychainSessionStore());
 
@@ -414,8 +420,8 @@ function launch(): void {
   }
 
   // Packaged macOS and Windows builds update from their platform's feed (ADR-DESK-041, ADR-DESK-050);
-  // apt updates Linux (ADR-DESK-058).
-  const updatePlatform = isDebugBuild ? null : makeUpdatePlatform();
+  // apt updates Linux (ADR-DESK-058). Not while the settings file can't be read: the app is off then.
+  const updatePlatform = isDebugBuild || settings.fileProblem !== undefined ? null : makeUpdatePlatform();
   const updater = updatePlatform === null ? null : makeUpdater(updatePlatform);
 
   let showsSmokeTip = false;
@@ -931,12 +937,17 @@ function launch(): void {
   session.defaultSession.setPermissionCheckHandler((contents, permission) => permission === "media" && contents !== null && windows.isAudioWindow(contents));
 
   ipcMain.handle(channels.getState, (_event, name: unknown) => (isWindowName(name) ? stateOf(name) : null));
+  /** Says how to fix the file `command` writes, while that file couldn't be read at launch. */
+  function unsavedFor(command: Command): string | null {
+    const file = commandWrites[command.type];
+    return file !== null && fileProblem(file) !== undefined ? unsavedBecauseOf(file) : null;
+  }
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
+    if (settings.fileProblem !== undefined && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${appOffLine}.` };
     // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
     // this session, and says how to fix the file, every time.
-    const file = commandWrites[command.type];
-    const unsaved = file !== null && fileProblem(file) !== undefined ? unsavedBecauseOf(file) : null;
+    const unsaved = unsavedFor(command);
     try {
       await run(command);
       return { error: unsaved };

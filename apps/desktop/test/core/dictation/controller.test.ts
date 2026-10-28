@@ -692,15 +692,22 @@ describe("DictationController", { timeout: 20_000 }, () => {
    * consented, and what they excluded, are unknown. A hold, in dictation or agent mode, is refused
    * with the line that says so: the microphone never starts, nothing is read (the screen, the window,
    * the field pasted into), nothing is sent and nothing is pasted, consent stored or not. */
-  test.each(["dictation", "agent"] as const)("with the settings file unreadable a %s hold does nothing but say the app is off", async (mode) => {
+  // Consent as this session holds it, and as the file left unread holds it (not given): the app is
+  // off either way, and says so before anything else.
+  test.each([
+    ["dictation", true],
+    ["agent", true],
+    ["dictation", false],
+    ["agent", false],
+  ] as const)("with the settings file unreadable a %s hold (consent %s) does nothing but say the app is off", async (mode, hasConsented) => {
     const store = new (class extends MemoryStore {
       readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
     })();
     const app = new AppSettings(store, () => true);
     app.readsScreen = true;
     app.learnsWords = true;
-    // Consent and the server aren't what is checked: they are the test's.
-    prefs.value = { ...app.dictation(null), hasConsented: true, backendURL: defaultSettings().backendURL };
+    // The server isn't what is checked: it is the test's.
+    prefs.value = { ...app.dictation(null), hasConsented, backendURL: defaultSettings().backendURL };
     transcription.enqueue(200, cleanedReply);
     completions.enqueue(200, writes("compose", "Written."));
     const capture = new CountingCapture(true);

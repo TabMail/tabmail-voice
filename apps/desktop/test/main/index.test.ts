@@ -97,7 +97,11 @@ const app = vi.hoisted(() => ({
   /** Every request that reached the network (`liveTransport`), by URL. */
   requests: [] as string[],
   /** The backend clients the app gives the dictation controller. */
-  backend: null as { warmUp: (baseURL: string, accessToken: string) => Promise<void> } | null,
+  backend: null as {
+    warmUp: (baseURL: string, accessToken: string) => Promise<void>;
+    makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient;
+    makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
+  } | null,
   trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
@@ -418,7 +422,7 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
+    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient; makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
       app.dictationSettings = dependencies.settings;
       app.backend = dependencies;
       app.keepRecording = dependencies.keepRecording;
@@ -2413,13 +2417,46 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(await send({ type: "sendCode", email: "user@example.com" })).toEqual({ error: `${appOffLine}.` });
     expect(await send({ type: "verify", email: "user@example.com", code: "123456" })).toEqual({ error: `${appOffLine}.` });
     await expect(app.backend?.warmUp("https://api.example.com", "token")).rejects.toThrow(appOffLine);
+    // The two that carry what the user said, the audio and the text.
+    await expect(app.backend?.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token")).rejects.toThrow(appOffLine);
+    await expect(app.backend?.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token")).rejects.toThrow(appOffLine);
     expect(app.requests).toEqual([]);
   });
 
-  test("a settings file that reads lets a request reach TabMail", async () => {
+  /** Only the settings file turns the network off: with the knowledge base file alone unreadable,
+   * requests go out as ever. */
+  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
+    if (unreadable !== null) {
+      const path = join(app.userData, unreadable);
+      app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+      app.dialogResponse = 1;
+    }
     await launch("darwin");
     await send({ type: "sendCode", email: "user@example.com" });
     expect(app.requests).toHaveLength(1);
+  });
+
+  /** Settings › Memory starts memory's helper, whose first start fetches its model from TabMail: while
+   * the settings file can't be read, every one of its commands is refused and memory is never asked. */
+  test("a settings file that can't be read keeps Settings › Memory from reaching memory", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 1;
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const asked = (["prepare", "index", "search", "read", "stats", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
+
+    for (const command of [{ type: "loadMemory" }, { type: "searchMemory", query: "friday" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
+      expect(await send(command)).toEqual({ error: `${appOffLine}.` });
+    }
+    // The size limit is kept in the settings file: it says how to fix it, as every such command does.
+    expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
+    for (const spy of asked) expect(spy).not.toHaveBeenCalled();
   });
 
   /** Only the settings file keeps the wizard closed: with the knowledge base's file unreadable alone,
@@ -2747,6 +2784,24 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
         await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
         expect(app.autoUpdater?.checks).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("a packaged build whose settings file can't be read never looks for an update, as the app is off", async () => {
+      vi.useFakeTimers();
+      try {
+        const path = join(app.userData, "settings.json");
+        app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+        app.dialogResponse = 1;
+        let launched = false;
+        void launchPackaged().then(() => (launched = true));
+        while (!launched) await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
+        expect(app.autoUpdater?.checks ?? 0).toBe(0);
+        // No update item in the menu either.
+        expect(app.trayState?.().update).toBeNull();
       } finally {
         vi.useRealTimers();
       }
