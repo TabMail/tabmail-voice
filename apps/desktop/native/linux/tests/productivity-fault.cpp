@@ -37,3 +37,33 @@ extern "C" void e_cal_client_view_start(ECalClientView* view, GError** error) {
     const bool first = requested && !std::strcmp(requested, "changed-first") && views++ == 0;
     if ((!error || !*error) && (always || first)) g_signal_emit_by_name(view, "objects-modified", static_cast<GSList*>(nullptr));
 }
+namespace {
+bool mode(const char* name) {
+    const char* requested = std::getenv("VOICE_PRODUCTIVITY_FAULT");
+    return requested && !std::strcmp(requested, name);
+}
+template <typename Function> Function next(const char* name) {
+    auto real = reinterpret_cast<Function>(dlsym(RTLD_NEXT, name));
+    if (!real) std::abort();
+    return real;
+}
+}
+// `server`: every calendar acts as one on a server that sends invitations, for the user me@example.com.
+extern "C" gboolean e_client_check_capability(EClient* client, const gchar* capability) {
+    if (mode("server") && !std::strcmp(capability, E_CAL_STATIC_CAPABILITY_SAVE_SCHEDULES)) return TRUE;
+    return next<decltype(&e_client_check_capability)>("e_client_check_capability")(client, capability);
+}
+extern "C" gboolean e_client_get_backend_property_sync(EClient* client, const gchar* name, gchar** value, GCancellable* cancel, GError** error) {
+    if (mode("server") && !std::strcmp(name, E_CAL_BACKEND_PROPERTY_CAL_EMAIL_ADDRESS)) { *value = g_strdup("me@example.com"); return TRUE; }
+    return next<decltype(&e_client_get_backend_property_sync)>("e_client_get_backend_property_sync")(client, name, value, cancel, error);
+}
+// `readonly`: every calendar refuses writes.
+extern "C" gboolean e_client_is_readonly(EClient* client) {
+    if (mode("readonly")) return TRUE;
+    return next<decltype(&e_client_is_readonly)>("e_client_is_readonly")(client);
+}
+// `nodefault`: there is no default calendar.
+extern "C" ESource* e_source_registry_ref_default_calendar(ESourceRegistry* registry) {
+    if (mode("nodefault")) return nullptr;
+    return next<decltype(&e_source_registry_ref_default_calendar)>("e_source_registry_ref_default_calendar")(registry);
+}

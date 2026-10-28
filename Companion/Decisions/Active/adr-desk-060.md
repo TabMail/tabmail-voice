@@ -169,10 +169,14 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   RANGE-moved occurrence is the one shown.
 - `thisOnly` stores a detached occurrence (the master's copy with its rules removed, under the
   occurrence's recurrence id); `thisAndFollowing` is EDS's THIS_AND_FUTURE, which ends the series and
-  starts a new one under a new uid (found again by its start and title); on the first occurrence, and
-  for `all`, the whole series changes. A series moved with `all` keeps its days apart and its
-  length; one that repeats is written in the local zone with its TZID, so its wall time holds across
-  daylight saving.
+  starts a new one under a new uid; on the first occurrence, and for `all`, the whole series changes.
+  The split is made with the series as it is, and the change then goes to the new series (the one
+  starting there that wasn't before) as an `all` change: EDS counts a split's COUNT from the series it
+  ends and puts back a start that still falls on one of its occurrences, so a split carrying the
+  change stored a new counted rule shortened or unbounded and a start moved back by whole repeats not
+  at all. A series moved with `all` keeps its days apart and its length; an event made to repeat is
+  written in the local zone with its TZID, so its wall time holds across daylight saving, and a
+  series another app stored in UTC stays in UTC when its rule changes.
 - Invitations need a calendar whose backend sends them (`save-schedules`) and knows the user's own
   address; otherwise adding or removing people is refused as `calendarNoInvitations` (a local
   calendar): removing someone tells them, as adding does. An event is an invitation when it has attendees and an organizer other than the user;

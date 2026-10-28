@@ -486,3 +486,89 @@ assert weekly['timeZone'] == ('UTC' if zone in ('UTC', 'Etc/UTC') else zone), (w
 assert [row['start'] for row in rows('Made weekly')] == [week(k) for k in range(30)]
 assert call('calendarDelete', {'id':made['id']}) == {}
 print('EDS a single event made to repeat keeps its local time of day, passed')
+
+# A change from one occurrence on is made to the new series as confirmed: EDS counts a split's
+# COUNT from the series it ends, and puts back a start that still falls on one of its occurrences.
+counted = call('calendarAdd', event(title='Counted split', start=week(24), end=week(24)+3600000, recurrence=rule(count=6)))
+# Another event already starting there is not the new series.
+same_time = call('calendarAdd', event(title='Same time', start=week(27), end=week(27)+1800000))
+counted_new = call('calendarEdit', {'id':counted['id'], 'occurrence':week(27), 'scope':'thisAndFollowing',
+    'recurrence':rule(frequency='DAILY', count=5), **unchanged})
+assert counted_new['id'] not in (None, counted['id']) and counted_new['recurrence'] == rule(frequency='DAILY', count=5), counted_new
+assert [row['start'] for row in rows('Counted split')] == [week(24), week(25), week(26)] + [at(27, day) for day in range(5)]
+assert [row['start'] for row in rows('Same time')] == [week(27)]
+assert call('calendarDelete', {'id':counted['id']}) == {} and call('calendarDelete', {'id':counted_new['id']}) == {} and call('calendarDelete', {'id':same_time['id']}) == {}
+daily_split = call('calendarAdd', event(title='Daily split', start=week(28), end=week(28)+3600000, recurrence=rule(frequency='DAILY', count=6)))
+earlier = call('calendarEdit', {'id':daily_split['id'], 'occurrence':at(28, 3), 'scope':'thisAndFollowing', 'title':'Daily earlier',
+    'start':at(28, 2), 'end':at(28, 2)+3600000, **unchanged})
+assert earlier['id'] not in (None, daily_split['id']) and earlier['start'] == at(28, 2) and earlier['recurrence'] == rule(frequency='DAILY', count=3), earlier
+assert [row['start'] for row in rows('Daily split')] == [at(28, day) for day in range(3)]
+assert [row['start'] for row in rows('Daily earlier')] == [at(28, day) for day in range(2, 5)]
+assert call('calendarDelete', {'id':daily_split['id']}) == {} and call('calendarDelete', {'id':earlier['id']}) == {}
+print('EDS this and following saves a new counted rule and a start moved back by whole days as confirmed, passed')
+
+# A series another app stored in UTC keeps its instants when only its rule changes.
+utc_series = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:utc-series\r\nSUMMARY:UTC series\r\nDTSTART:{utc(week(0))}\r\nDURATION:PT1H\r\nRRULE:FREQ=WEEKLY;COUNT=30\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(utc_series, ECal.OperationFlags.NONE, None)[0]
+utc_starts = [row['start'] for row in rows('UTC series')]
+assert len(utc_starts) == 30
+utc_first = rows('UTC series')[0]
+ended = call('calendarEdit', {'id':utc_first['id'], 'occurrence':None, 'scope':'all', 'recurrence':rule(count=20), **unchanged})
+assert ended['timeZone'] == 'UTC' and ended['recurrence'] == rule(count=20), ended
+assert [row['start'] for row in rows('UTC series')] == utc_starts[:20]
+assert call('calendarDelete', {'id':utc_first['id']}) == {}
+print('EDS a rule changed on a series stored in UTC leaves its instants as they were, passed')
+
+# Every rule field the app writes reads back as written, and is stored as RFC 5545 says it.
+weekday = lambda code, week=0: {'weekday':['SU','MO','TU','WE','TH','FR','SA'].index(code)+1, 'week':week}
+for repeat, stored_rule in [
+    (rule(interval=2, days=[weekday('TU'), weekday('FR')], count=4), 'FREQ=WEEKLY;COUNT=4;INTERVAL=2;BYDAY=TU,FR'),
+    (rule(frequency='MONTHLY', days=[weekday('MO', -1)], count=3), 'FREQ=MONTHLY;COUNT=3;BYDAY=-1MO'),
+    (rule(frequency='MONTHLY', monthDays=[1, -1], count=3), 'FREQ=MONTHLY;COUNT=3;BYMONTHDAY=1,-1'),
+    (rule(frequency='YEARLY', months=[3], count=2), 'FREQ=YEARLY;COUNT=2;BYMONTH=3'),
+    (rule(frequency='YEARLY', yearWeeks=[10], days=[weekday('MO')], count=2), 'FREQ=YEARLY;COUNT=2;BYDAY=MO;BYWEEKNO=10'),
+    (rule(frequency='YEARLY', yearDays=[100], count=2), 'FREQ=YEARLY;COUNT=2;BYYEARDAY=100'),
+    (rule(frequency='MONTHLY', days=[weekday(code) for code in ['MO','TU','WE','TH','FR']], positions=[-1], count=2), 'FREQ=MONTHLY;COUNT=2;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1'),
+]:
+    saved_rule = call('calendarAdd', event(title='Rule fields', start=week(31), end=week(31)+3600000, recurrence=repeat))
+    assert saved_rule['recurrence'] == repeat, (saved_rule['recurrence'], repeat)
+    assert call('calendarEvent', {'id':saved_rule['id'], 'occurrence':None})['recurrence'] == repeat
+    component = calendar_client.get_object_sync(saved_rule['id'].split('|')[1], None, None)[1]
+    written = component.get_first_property(ICalGLib.PropertyKind.RRULE_PROPERTY).get_rrule().to_string()
+    assert set(written.split(';')) - {'INTERVAL=1'} == set(stored_rule.split(';')), (written, stored_rule)
+    assert call('calendarDelete', {'id':saved_rule['id']}) == {}
+print('EDS every rule field written and read back: interval, weekdays, nth weekday, month days, months, weeks, year days, positions, passed')
+
+# On a calendar whose server sends invitations (the provider's answers injected), the user is the
+# organizer, each person is invited once, and the organizer is never removed.
+def served(method, params):
+    result = faulted(method, params, 'server')
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+people = lambda row: [person['email'] for person in row['attendees']]
+shared = served('calendarAdd', event(title='Shared event', start=week(32), end=week(32)+3600000, attendees=[{'email':'a@example.com', 'name':'A'}]))
+assert people(shared) == ['a@example.com'] and shared['organizer']['email'] == 'me@example.com' and not shared['isInvitation'], shared
+again = served('calendarEdit', {'id':shared['id'], 'occurrence':None, 'scope':'all',
+    **{**unchanged, 'invite':[{'email':'A@example.com', 'name':None}, {'email':'b@example.com', 'name':None}, {'email':'me@example.com', 'name':None}]}})
+assert people(again) == ['a@example.com', 'b@example.com', 'me@example.com'] and again['organizer']['email'] == 'me@example.com', again
+fewer = served('calendarEdit', {'id':shared['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'uninvite':['A@example.com', 'me@example.com']}})
+assert people(fewer) == ['b@example.com', 'me@example.com'] and fewer['organizer']['email'] == 'me@example.com', fewer
+organized = served('calendarEdit', {'id':shared['id'], 'occurrence':None, 'scope':'all', 'title':'Still mine', **unchanged})
+assert organized['title'] == 'Still mine' and people(organized) == ['b@example.com', 'me@example.com']
+assert call('calendarDelete', {'id':shared['id']}) == {}
+print('EDS invitations through a calendar that sends them: the user organizes, each person once, the organizer kept, passed')
+
+# A calendar that can't be written, and no default calendar, refuse before anything is saved.
+def answered(method, params, fault):
+    result = faulted(method, params, fault)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+writable = call('calendarAdd', event(title='Writable event', start=week(33), end=week(33)+3600000))
+assert answered('calendars', {}, 'readonly') == []
+assert answered('calendarAdd', event(title='Read only event'), 'readonly') == {'refused':'calendarReadOnly'}
+assert answered('calendarEdit', {'id':writable['id'], 'occurrence':None, 'scope':'all', 'title':'Read only event', **unchanged}, 'readonly') == {'refused':'calendarReadOnly'}
+assert answered('calendarDelete', {'id':writable['id']}, 'readonly') == {'refused':'calendarReadOnly'}
+assert answered('calendarAdd', event(title='No default event'), 'nodefault') == {'refused':'noDefaultCalendar'}
+assert rows('Read only event') == [] and rows('No default event') == [] and len(rows('Writable event')) == 1
+assert call('calendarDelete', {'id':writable['id']}) == {}
+print('EDS a read-only calendar and a missing default calendar refuse without saving, passed')

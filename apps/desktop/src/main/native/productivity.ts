@@ -107,7 +107,7 @@ function integers(value: unknown): number[] {
   return value as number[];
 }
 function recurrenceRow(value: unknown): EventRecurrence {
-  if (!value || typeof value !== "object") throw failure();
+  // Never null (the caller reads that as no rule); anything else not a rule fails on its frequency.
   const row = value as Record<string, unknown>;
   const positive = (item: unknown): item is number => Number.isSafeInteger(item) && (item as number) >= 1;
   if (row.frequency !== "DAILY" && row.frequency !== "WEEKLY" && row.frequency !== "MONTHLY" && row.frequency !== "YEARLY") throw failure();

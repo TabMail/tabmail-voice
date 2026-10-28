@@ -104,11 +104,14 @@ describe("Native event editor boundary (Linux)", () => {
   });
   it("reads rows with the fields the editor uses, dates converted", async () => {
     const until = start + 30 * 86_400_000;
-    const run = vi.fn().mockResolvedValueOnce([row]).mockResolvedValueOnce({ ...row, recurrence: { ...weekly, count: null, until } });
+    const run = vi.fn().mockResolvedValueOnce([row]).mockResolvedValueOnce({ ...row, recurrence: { ...weekly, count: null, until } }).mockResolvedValueOnce(row);
     const store = new NativeEventStore(run, undefined, true);
     expect(await store.events(new Date(start - 1), new Date(start + 1))).toEqual([converted]);
     expect((await store.editor?.event(row.id, new Date(start)))?.recurrence?.until).toEqual(new Date(until));
     expect(run).toHaveBeenLastCalledWith("calendarEvent", { id: row.id, occurrence: start });
+    await store.editor?.event(row.id, null);
+    // The helper reads `occurrence` as a key that is there: null, never left out.
+    expect(run.mock.lastCall?.[1]).toStrictEqual({ id: row.id, occurrence: null });
   });
   it("reads a single event on this computer: no id, occurrence, organizer, rule or zone", async () => {
     const single = { ...row, id: null, occurrence: null, organizer: null, recurrence: null, timeZone: null, calendarId: null, attendees: [] };
@@ -129,12 +132,21 @@ describe("Native event editor boundary (Linux)", () => {
       title: "Sync", start, end: start + 3_600_000, isAllDay: false, location: null, notes: null, calendarId: null, availability: "free", recurrence: null, attendees: [],
     });
   });
+  it("adds an event the create tool drafted with the base fields only, as busy, with no rule or people", async () => {
+    const run = vi.fn().mockResolvedValue({ ...row, availability: "busy", recurrence: null, occurrence: null, attendees: [] });
+    const { title, calendar, isAllDay, location, notes } = converted;
+    await new NativeEventStore(run, undefined, true).addEvent({ title, calendar, start: converted.start, end: converted.end, isAllDay, location, notes });
+    expect(run).toHaveBeenCalledWith("calendarAdd", {
+      title: "Sync", start, end: start + 3_600_000, isAllDay: false, location: null, notes: null, calendarId: null, availability: "busy", recurrence: null, attendees: [],
+    });
+  });
   it.each([
+    { attendees: [null] }, { organizer: "me@example.com" }, { recurrence: 5 }, { recurrence: { ...weekly, days: [null] } },
     { availability: "tentative" }, { attendees: [{ email: "a@example.com", name: null, status: "maybe" }] }, { organizer: { email: 4 } },
     { recurrence: { ...weekly, frequency: "HOURLY" } }, { recurrence: { ...weekly, count: 0 } }, { recurrence: { ...weekly, days: [{ weekday: 8, week: 0 }] } },
     { recurrence: { ...weekly, monthDays: [1.5] } }, { isDetached: "no" }, { id: "x\0y" }, { occurrence: "soon" }, { timeZone: 5 },
   ])("refuses a malformed editor row", async (change) => {
-    await expect(new NativeEventStore(vi.fn().mockResolvedValue([{ ...row, ...change }]), undefined, true).events(new Date(start - 1), new Date(start + 1))).rejects.toThrow();
+    await expect(new NativeEventStore(vi.fn().mockResolvedValue([{ ...row, ...change }]), undefined, true).events(new Date(start - 1), new Date(start + 1))).rejects.toThrow(/native data service/u);
   });
   it("turns a helper's refusal into the store's error, and nothing else", async () => {
     const editor = new NativeEventStore(vi.fn().mockResolvedValue({ refused: "notOrganizer" }), undefined, true).editor;
@@ -174,11 +186,12 @@ describe("Native event editor boundary (Linux)", () => {
   });
   it("lists calendars and deletes by id", async () => {
     const calendars = [{ id: "system-calendar", title: "Personal", account: "On This Computer", isDefault: true }];
-    const run = vi.fn().mockResolvedValueOnce(calendars).mockResolvedValueOnce({}).mockResolvedValueOnce([{ ...calendars[0], isDefault: "yes" }]);
+    const run = vi.fn().mockResolvedValueOnce(calendars).mockResolvedValueOnce({}).mockResolvedValueOnce([{ ...calendars[0], isDefault: "yes" }]).mockResolvedValueOnce([null]);
     const editor = new NativeEventStore(run, undefined, true).editor;
     expect(await editor?.calendars()).toEqual(calendars);
     await editor?.delete(row.id);
     expect(run).toHaveBeenLastCalledWith("calendarDelete", { id: row.id });
-    await expect(editor?.calendars()).rejects.toThrow();
+    await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
+    await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
   });
 });

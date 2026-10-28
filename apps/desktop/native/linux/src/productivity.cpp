@@ -1234,9 +1234,9 @@ void removeOccurrence(ECalClient* client, const std::string& uid, const char* ri
     error.check(ok);
 }
 
-// The series a change to an occurrence and every one after it split off: EDS gives it a uid of its
-// own. Found by its start and title; null when that doesn't name one.
-JSON splitSeries(const Found& before, ICalComponent* edited, int64_t start) {
+// The series in `before`'s calendar, other than its own, that start at `start`: the one a change to
+// an occurrence and every one after it splits off is among them, under a uid EDS gives it.
+std::set<std::string> seriesStarting(const Found& before, int64_t start) {
     const auto client = before.client.get();
     auto from = dateFromWire(start - 1000, true), to = dateFromWire(start + 1000, true);
     String fromText(i_cal_time_as_ical_string(from.get()), g_free), toText(i_cal_time_as_ical_string(to.get()), g_free);
@@ -1253,18 +1253,29 @@ JSON splitSeries(const Found& before, ICalComponent* edited, int64_t start) {
     const auto ok = e_cal_client_get_object_list_sync(client, query.c_str(), &raw, nullptr, &error.value);
     std::unique_ptr<GSList, void(*)(GSList*)> objects(raw, [](GSList* list) { g_slist_free_full(list, g_object_unref); });
     error.check(ok);
-    const auto title = bounded(i_cal_component_get_summary(edited));
     const auto local = localZone();
-    std::vector<std::string> matches;
+    std::set<std::string> result;
     for (auto node = objects.get(); node; node = node->next) {
         const auto component = I_CAL_COMPONENT(node->data);
         const auto uid = bounded(i_cal_component_get_uid(component));
-        if (uid == before.uid || i_cal_component_count_properties(component, I_CAL_RECURRENCEID_PROPERTY) || bounded(i_cal_component_get_summary(component)) != title) continue;
+        if (uid == before.uid || i_cal_component_count_properties(component, I_CAL_RECURRENCEID_PROPERTY)) continue;
         auto startTime = calendarTime(component, I_CAL_DTSTART_PROPERTY, client, local);
-        if (instant(startTime.get(), local) == start) matches.push_back(uid);
-        if (matches.size() > 1) return nullptr;
+        if (instant(startTime.get(), local) == start) result.insert(uid);
     }
-    return matches.size() == 1 ? JSON(eventID(before.calendar.id, matches.front())) : JSON(nullptr);
+    return result;
+}
+
+// Saves `edited` over the occurrences `mod` covers, with a higher sequence: attendees' calendars
+// take a change by it.
+void save(const Found& found, ICalComponent* edited, ECalObjModType mod, ICalTimezone* zone) {
+    i_cal_component_set_sequence(edited, i_cal_component_get_sequence(edited) + 1);
+    Object<ICalTime> now(i_cal_time_new_current_with_zone(i_cal_timezone_get_utc_timezone()), g_object_unref);
+    i_cal_component_set_dtstamp(edited, now.get());
+    addZone(edited, found.client.get(), zone);
+    Error error;
+    const auto ok = e_cal_client_modify_object_sync(found.client.get(), edited, mod, E_CAL_OPERATION_FLAG_NONE, nullptr, &error.value);
+    if (!ok && g_error_matches(error.value, E_CAL_CLIENT_ERROR, E_CAL_CLIENT_ERROR_OBJECT_NOT_FOUND)) refuse("noSuchEvent");
+    error.check(ok);
 }
 
 // Changes the event `id` names (the occurrence at `occurrence` of a repeating one) over the
@@ -1333,20 +1344,37 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     Object<ICalComponent> edited(i_cal_component_clone(found.stored), g_object_unref);
     auto zone = startZone(found.stored, client);
     if (alone) {
-        if (mod == E_CAL_OBJ_MOD_THIS) clearRule(edited.get());
+        // The occurrence named, as it is.
         auto rid = dateFromWire(found.occurrence, !rowAllDay);
         removeAll(edited.get(), I_CAL_RECURRENCEID_PROPERTY);
         i_cal_component_set_recurrenceid(edited.get(), rid.get());
         setTimes(edited.get(), rowStart, rowEnd, rowAllDay, zone);
     }
+    if (mod == E_CAL_OBJ_MOD_THIS_AND_FUTURE) {
+        // EDS counts the new series' COUNT from the series it ends, and puts back a start that still
+        // falls on one of its occurrences: so the series is split as it is, and the change is then made
+        // to the new series, the one starting there that wasn't before.
+        const auto existing = seriesStarting(found, rowStart);
+        save(found, edited.get(), mod, zone);
+        auto split = seriesStarting(found, rowStart);
+        for (const auto& uid : existing) split.erase(uid);
+        if (split.size() != 1) throw std::runtime_error("split series not found");
+        auto change = input;
+        change["id"] = eventID(found.calendar.id, *split.begin());
+        change["occurrence"] = nullptr;
+        change["scope"] = "all";
+        change["exclude"] = JSON::array();
+        return calendarEdit(registry, change);
+    }
+    if (alone) clearRule(edited.get());
     const bool isAllDay = allDay.value_or(rowAllDay);
     if (ruleChanges) {
         if (rule) setRule(edited.get(), *rule, isAllDay);
         else clearRule(edited.get());
     }
-    // A timed event made to repeat keeps its time of day in the user's zone across a daylight-saving
-    // change; a series stored in UTC is left as it is.
-    const bool rezone = !zone && !isAllDay && mod != E_CAL_OBJ_MOD_THIS && repeating(edited.get()) && (rule || rowAllDay);
+    // A timed event made to repeat (or a day made timed) keeps its time of day in the user's zone across
+    // a daylight-saving change; a series stored in UTC is left as it is.
+    const bool rezone = !zone && !isAllDay && mod != E_CAL_OBJ_MOD_THIS && repeating(edited.get()) && ((rule && !repeating(found.stored)) || rowAllDay);
     if (rezone) zone = localZone();
     if (start || allDay || rezone) {
         const auto newStart = start.value_or(rowStart), newEnd = end.value_or(rowEnd);
@@ -1387,24 +1415,9 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
         for (const auto& property : removed) i_cal_component_remove_property(edited.get(), property.get());
     }
     invite(edited.get(), invited, found.calendar);
-    // Attendees' calendars take a change with a higher sequence.
-    i_cal_component_set_sequence(edited.get(), i_cal_component_get_sequence(edited.get()) + 1);
-    Object<ICalTime> now(i_cal_time_new_current_with_zone(i_cal_timezone_get_utc_timezone()), g_object_unref);
-    i_cal_component_set_dtstamp(edited.get(), now.get());
-    addZone(edited.get(), client, zone);
-    Error error;
-    const auto ok = e_cal_client_modify_object_sync(client, edited.get(), mod, E_CAL_OPERATION_FLAG_NONE, nullptr, &error.value);
-    if (!ok && g_error_matches(error.value, E_CAL_CLIENT_ERROR, E_CAL_CLIENT_ERROR_OBJECT_NOT_FOUND)) refuse("noSuchEvent");
-    error.check(ok);
+    save(found, edited.get(), mod, zone);
     if (mod == E_CAL_OBJ_MOD_THIS) return find(registry, eventID(found.calendar.id, found.uid, detached ? found.rid : recurrenceIDText(edited.get())), nullptr).row;
-    if (mod == E_CAL_OBJ_MOD_ALL) return find(registry, eventID(found.calendar.id, found.uid), nullptr).row;
-    const auto local = localZone();
-    auto newStart = calendarTime(edited.get(), I_CAL_DTSTART_PROPERTY, client, local);
-    const auto split = splitSeries(found, edited.get(), instant(newStart.get(), local));
-    if (!split.is_null()) return find(registry, split.get<std::string>(), nullptr).row;
-    // Saved, though the new series can't be named: the app reads the calendar again for its id.
-    auto view = shown(edited.get(), client, local);
-    return eventRow(view.get(), edited.get(), edited.get(), client, found.calendar, nullptr, nullptr, false);
+    return find(registry, eventID(found.calendar.id, found.uid), nullptr).row;
 }
 
 // Deletes the event `id` names, every occurrence of a repeating one; the calendar's server tells
