@@ -6,7 +6,7 @@ import type { AgentChat } from "../core/agent/chat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
 import { type ConnectorID, isConnectorID } from "../core/agent/connectors/index.js";
 import { isEventDuration } from "../core/agent/connectors/settings.js";
-import { type AgentToolID, isAgentToolID } from "../core/agent/tools.js";
+import { type AgentToolID, switchableAgentToolIDs } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictation/controller.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/bindings.js";
 import * as config from "../core/config.js";
@@ -391,7 +391,8 @@ export function isCommand(value: unknown): value is Command {
     case "answerConfirmation":
       return typeof command.confirmed === "boolean";
     case "setAgentToolEnabled":
-      return isAgentToolID(command.tool) && typeof command.value === "boolean";
+      // Answer has no switch.
+      return (switchableAgentToolIDs as readonly unknown[]).includes(command.tool) && typeof command.value === "boolean";
     case "setConnectorEnabled":
       return isConnectorID(command.connector) && typeof command.value === "boolean";
     case "pointerOver":

@@ -120,3 +120,8 @@ text too. On the flat tool registry the loop knows no tool by name: what it hold
 terminal call made beside non-terminal ones, checked by its tool's `check` (for Compose and Edit, the
 text they would paste), and a round of terminal calls alone runs its first one. Rejected: running the round's other calls and ending at once (no extra round, but the model
 never hears what its other calls did).
+
+**Amendment 2026-10-27:** Answer is always offered (ADR-DESK-022 amendment of that date). The
+`available_tools` are always the "with Answer on" list above; the "with Answer off" cases (the writing
+tool alone, a reply with nowhere to go) no longer arise. The app is still the only gate on a
+connector's tool: one whose app is switched off is not offered and does not run when called anyway.

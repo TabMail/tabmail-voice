@@ -8,7 +8,7 @@ import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { eventDurationLabel } from "../../core/agent/connectors/settings.js";
-import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
+import { offeredAgentToolIDs, switchableAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
@@ -404,7 +404,7 @@ function AgentPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
-        {alphabetical([...offeredAgentToolIDs, ...state.connectors]).map((key) =>
+        {alphabetical([...switchableAgentToolIDs, ...state.connectors]).map((key) =>
           isConnectorID(key) ? (
             <Toggle
               key={key}

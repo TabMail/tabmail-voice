@@ -22,7 +22,7 @@ const signedIn: SettingsState = {
   hotkey: "rightOption",
   availableHotkeys: ["rightOption", "function"],
   readsScreen: true,
-  enabledTools: ["edit", "compose", "thunderbird", "answer"],
+  enabledTools: ["edit", "compose"],
   connectors: [],
   enabledConnectors: [],
   userName: "Alex Example",
@@ -960,7 +960,7 @@ describe("Settings page", () => {
       Account: ["Sign Out"],
       Dictation: ["Hold to dictate", "Smart dictation", "Read the screen while dictating"],
       Dictionary: ["No words yet.", "Learn from my corrections"],
-      "Agent mode": ["Your name", "Edit", "Compose", "Answer", "Close the chat when I click elsewhere"],
+      "Agent mode": ["Your name", "Edit", "Compose", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
       Personalization: ["Writing style", "General writing style", "Knowledge base", "No changes yet."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
@@ -1268,29 +1268,29 @@ describe("Settings page", () => {
 
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
-    // Smart dictation, screen reading, learning the user's corrections, debug mode, the three agent
-    // tools and closing the chat window on a click elsewhere.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(8);
+    // Smart dictation, screen reading, learning the user's corrections, debug mode, the two agent
+    // tools with a switch and closing the chat window on a click elsewhere.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(7);
     expect(page.commands).toEqual([]);
   });
 
-  /** Each agent tool offered has a switch in Agent mode, on as the state says, which turns it on or
-   * off. Thunderbird's has none, nor has the email app it sends to, until its native connector
-   * (ADR-DESK-037). */
-  test("each agent tool has a switch", async () => {
-    const shown: SettingsState = { ...signedIn, enabledTools: ["edit", "answer"] };
+  /** Edit and Compose have a switch in Agent mode, on as the state says, which turns it on or off.
+   * Answer has none: it is always on (owner, 2026-10-27). Thunderbird's has none, nor has the email
+   * app it sends to, until its native connector (ADR-DESK-037). */
+  test("each agent tool but Answer has a switch", async () => {
+    const shown: SettingsState = { ...signedIn, enabledTools: ["edit"] };
     const page = await settingsPage({ error: null }, shown, shown);
     await act(async () => button("Agent mode").click());
 
-    const labels = ["Edit", "Compose", "Answer"];
-    expect(labels.map((label) => toggle(label).checked)).toEqual([true, false, true]);
+    const labels = ["Edit", "Compose"];
+    expect(labels.map((label) => toggle(label).checked)).toEqual([true, false]);
     for (const label of labels) await act(async () => toggle(label).click());
 
     expect(page.commands).toEqual([
       { type: "setAgentToolEnabled", tool: "edit", value: false },
       { type: "setAgentToolEnabled", tool: "compose", value: true },
-      { type: "setAgentToolEnabled", tool: "answer", value: false },
     ]);
+    expect([...document.querySelectorAll(".toggle label")].map((label) => label.textContent)).not.toContain("Answer");
     expect(document.body.textContent).not.toContain("Thunderbird");
     expect(document.body.textContent).not.toContain("Email app");
   });
@@ -1305,7 +1305,7 @@ describe("Settings page", () => {
 
     // The switches with an icon: the agent pane's.
     const labels = [...document.querySelectorAll(".toggle")].filter((row) => row.querySelector("svg")).map((row) => row.querySelector("label")?.textContent);
-    expect(labels).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders"]);
+    expect(labels).toEqual(["Calendar", "Compose", "Edit", "Reminders"]);
     expect(["Calendar", "Reminders"].map((label) => toggle(label).checked)).toEqual([false, true]);
     for (const label of ["Calendar", "Reminders"]) await act(async () => toggle(label).click());
 
@@ -1398,7 +1398,6 @@ describe("Settings page", () => {
       "Uses the development server and shows debug items in the menu.",
       "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
-      "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up: your earlier requests and its replies go with the follow-up.",
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       // Closing the chat window on a click elsewhere, which the Swift app never had (owner, 2026-10-25).
       "It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.",

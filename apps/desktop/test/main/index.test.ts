@@ -1277,24 +1277,26 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   });
 
   /** An agent tool's switch is stored and shows in the Settings and welcome windows; a name that is
-   * no agent tool, or a value that is no boolean (even one that reads as on or off), is refused and
-   * changes nothing. */
+   * no switchable agent tool (Answer has none), or a value that is no boolean (even one that reads as
+   * on or off), is refused and changes nothing. */
   test("an agent tool's switch", async () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { enabledTools: string[] };
 
-    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: null });
+    expect(await send({ type: "setAgentToolEnabled", tool: "compose", value: false })).toEqual({ error: null });
     for (const value of ["false", "true", 1, null]) {
-      expect(await send({ type: "setAgentToolEnabled", tool: "answer", value })).toEqual({ error: expect.any(String) });
+      expect(await send({ type: "setAgentToolEnabled", tool: "compose", value })).toEqual({ error: expect.any(String) });
     }
+    expect(state("settings").enabledTools).toEqual(["edit"]);
+    expect(await send({ type: "setAgentToolEnabled", tool: "compose", value: true })).toEqual({ error: null });
     expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
-    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: true })).toEqual({ error: null });
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "answer"]);
-    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: null });
+    expect(await send({ type: "setAgentToolEnabled", tool: "compose", value: false })).toEqual({ error: null });
     expect(await send({ type: "setAgentToolEnabled", tool: "retired-tool", value: false })).toEqual({ error: expect.any(String) });
+    // Answer has no switch: one sent anyway is refused and changes nothing.
+    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: expect.any(String) });
 
-    expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
-    expect(state("welcome").enabledTools).toEqual(["edit", "compose"]);
+    expect(state("settings").enabledTools).toEqual(["edit"]);
+    expect(state("welcome").enabledTools).toEqual(["edit"]);
   });
 
   /** On macOS the Answer tool reaches Calendar, Reminders, Contacts and Files through `voice-macos`,

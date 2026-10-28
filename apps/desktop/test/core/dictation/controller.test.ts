@@ -65,12 +65,11 @@ const failed = (message: string): Phase => ({ kind: "failed", message });
 const notPasted = (text: string): Phase => ({ kind: "notPasted", message: notPastedMessage, text });
 const microphoneFailed = failed("Couldn't start the microphone.");
 
-/** Without Answer: most agent tests are about the writing tools and Thunderbird, and Answer would
- * make every request a choice. The chat window's tests switch it on (`withAnswer`). */
-const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
+/** Every tool with a switch on, as by default. Answer has no switch: it is always offered. */
+const switchedOnTools: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -2572,7 +2571,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
       const tool = selection ? "edit" : "compose";
       expect(await eventually(() => controller.tools.includes(tool))).toBe(true);
-      expect(controller.tools).toEqual([tool]);
+      expect(controller.tools).toEqual([tool, "answer"]);
       expect(transcription.requests).toHaveLength(0);
       expect(completions.requests).toHaveLength(0);
       controller.handle("toggleMode");
@@ -2580,7 +2579,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual([]);
       controller.handle("toggleMode");
       expect(controller.mode).toBe("agent");
-      expect(controller.tools).toEqual([tool]);
+      expect(controller.tools).toEqual([tool, "answer"]);
       controller.handle("finish");
       expect(await eventually(() => settled(controller) && pastes.length === 1)).toBe(true);
       expect(controller.phase).toEqual(idle);
@@ -2660,7 +2659,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         if (!hidden) controller.captureContext = async () => null;
       });
 
-      expect(controller.tools).toEqual(["compose"]);
+      expect(controller.tools).toEqual(["compose", "answer"]);
       expect(pastes).toEqual(["We ship on Friday."]);
       expect(completions.requests).toHaveLength(1);
       expect(completionsVars(0)?.screen_text).toBe(hidden ? screenHiddenNote : "");
@@ -2668,7 +2667,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.body(0).vocabulary).toBeUndefined();
     });
 
-    /** With Answer off, the loop is offered the selection's writing tool alone, and pastes with it. */
+    /** The loop is offered the selection's writing tool beside Answer, and pastes with it. */
     test("agent mode edits the selection in place", async () => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
@@ -2679,18 +2678,18 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual(["Could we ship on Friday?\n"]);
       expect(controller.phase).toEqual(idle);
       expect(controller.mode).toBe("agent");
-      expect(controller.tools).toEqual(["edit"]);
+      expect(controller.tools).toEqual(["edit", "answer"]);
       expect(phases).toContainEqual(running("edit"));
       expect(completions.requests).toHaveLength(1);
       expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
-      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", "edit"]);
+      expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read", "kb_add", "kb_del", "edit"]);
       expect(completionsVars(0)?.user_request).toBe(request);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
     });
 
-    /** With Answer off the writing tool may read the whole window too (`screen_read`): an Edit or a
-     * Compose may need more of the window than it shows. */
-    test("agent mode offers the whole window with Answer off too", async () => {
+    /** The writing tool may read the whole window too (`screen_read`): an Edit or a Compose may need
+     * more of the window than it shows. */
+    test("agent mode offers the whole window", async () => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
 
@@ -2698,7 +2697,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.captureWindow = async () => selectionScreen("Ship it Friday or else.");
       });
 
-      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", "screen_read", "edit"]);
+      expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read", "kb_add", "kb_del", "screen_read", "edit"]);
     });
 
     /** Agent mode logs the request, the text its tool wrote (fitted to the selection) and the paste. */
@@ -2730,7 +2729,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       // The debug log file gets the request, the text Compose wrote and the paste (ADR-DESK-015).
       expect(entries.map((entry) => entry.label)).toEqual(["Transcript (agent)", "DesktopAgent: compose wrote", "DictationController: pasting"]);
       expect(entries.map((entry) => entry.text)).toEqual(["write that we ship on Friday", "We ship on Friday.", "We ship on Friday."]);
-      expect(controller.tools).toEqual(["compose"]);
+      expect(controller.tools).toEqual(["compose", "answer"]);
       expect(phases).toContainEqual(running("compose"));
       expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
       // The spoken request was transcribed with the dictionary too: its words count as used.
@@ -2772,9 +2771,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(memory.limits).toEqual([]);
       });
 
-      /** Compose and Edit look up memory too, with Answer off: what they write can reuse an earlier
-       * exchange. */
-      test.each([["compose", ""], ["edit", "old selection"]] as const)("%s recalls earlier exchanges with Answer off", async (tool, selected) => {
+      /** Compose and Edit look up memory too: what they write can reuse an earlier exchange. */
+      test.each([["compose", ""], ["edit", "old selection"]] as const)("%s recalls earlier exchanges", async (tool, selected) => {
         prefs.value = { ...prefs.value, enabledTools: [tool] };
         const at = Date.now() - 24 * 60 * 60 * 1_000;
         const earlier = memoryRow("launch budget", "The earlier budget was 500.", at, "earlier");
@@ -2785,7 +2783,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         completions.enqueue(200, writes(tool, "The launch budget is 500."));
         const { pastes } = await carryOut(selectionScreen(selected));
         expect(pastes).toEqual(["The launch budget is 500."]);
-        expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", tool]);
+        expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read", "kb_add", "kb_del", tool]);
         const toolResults = (i: number) =>
           (completions.body(i).conversation_state as { harmony_messages: { role: string; content: string }[] }).harmony_messages.filter((m) => m.role === "tool").map((m) => m.content);
         const searched = JSON.parse(toolResults(1)[0] ?? "{}") as Record<string, unknown>;
@@ -2799,7 +2797,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
       });
 
       test("keeps an answer with its reply", async () => {
-        prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs] };
         transcription.enqueue(200, { text: "what does this error mean" });
         completions.enqueue(200, reply("It means the function is not defined yet."));
         const { controller } = await carryOut(selectionScreen(""));
@@ -2897,8 +2894,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       const { controller, pastes } = await carryOut(selectionScreen(selected), new FakeThunderbird());
 
-      expect(controller.tools).toEqual([tool]);
-      expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", tool]);
+      expect(controller.tools).toEqual([tool, "answer"]);
+      expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "memory_search", "memory_read", "kb_add", "kb_del", tool]);
       expect(completions.requests).toHaveLength(2);
       expect(JSON.stringify(completions.body(1).conversation_state)).toContain(`there is no tool named ${other}`);
       expect(pastes).toEqual(["Here."]);
@@ -2921,8 +2918,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** Whatever goes wrong, agent mode pastes nothing: the spoken request is not text for the document. */
     test.each<[[number, string][], string]>([
-      // With Answer off, a reply has nowhere to go.
-      [[[200, "Could we ship on Friday?"]], new AgentError("noText").message],
       [[[200, ""]], new AgentError("noText").message],
       [[[500, ""]], new BackendError("failed", 500).message],
     ])("agent mode pastes nothing when it cannot carry out the request (%j)", async (replies, message) => {
@@ -2962,7 +2957,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       read.resolve(selectionScreen("Ship it Friday or else."));
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
-      expect(controller.tools).toEqual(["edit"]);
+      expect(controller.tools).toEqual(["edit", "answer"]);
       expect(pastes).toEqual(["Could we ship on Friday?"]);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.");
     });
@@ -3025,7 +3020,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(stops).toEqual([read.promise]);
-      expect(controller.tools).toEqual(["edit"]);
+      expect(controller.tools).toEqual(["edit", "answer"]);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.");
     });
 
@@ -3041,8 +3036,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual([]);
       controller.handle("toggleMode");
       expect(controller.mode).toBe("agent");
-      expect(await eventually(() => controller.tools.length === 1)).toBe(true);
-      expect(controller.tools).toEqual(["compose"]);
+      expect(await eventually(() => controller.tools.length === 2)).toBe(true);
+      expect(controller.tools).toEqual(["compose", "answer"]);
       controller.handle("toggleMode");
       expect(controller.mode).toBe("dictation");
       expect(controller.tools).toEqual([]);
@@ -3053,12 +3048,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Beside the tools' bubbles, one for each app switched on at key-down whose tools this computer
-     * has (Notes switched off, Contacts with no tools here), only while Answer is offered: its loop
-     * runs their tools. A switch changed during the hold changes none of them (the settings are
-     * snapshotted at key-down). */
-    test.each([true, false])("the apps switched on show beside Answer (Answer on: %s)", async (answerOn) => {
+     * has (Notes switched off, Contacts with no tools here): Answer, always offered, runs their tools
+     * in its loop, with Edit and Compose switched off too. A switch changed during the hold changes
+     * none of them (the settings are snapshotted at key-down). */
+    test("the apps switched on show beside Answer", async () => {
       const tool = (connector: ConnectorID): ConnectorTool => ({ name: `${connector}_example`, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
-      prefs.value = { ...prefs.value, enabledTools: answerOn ? [...agentToolIDs] : toolsWithoutAnswer, enabledConnectors: connectorIDs.filter((connector) => connector !== "notes") };
+      prefs.value = { ...prefs.value, enabledTools: [], enabledConnectors: connectorIDs.filter((connector) => connector !== "notes") };
       const { controller } = makeController({ capture: new CountingCapture(true), thunderbird: new FakeThunderbird(), connectorTools: [tool("web"), tool("calendar"), tool("notes"), tool("calendar")] });
       controller.captureContext = async () => selectionScreen("");
 
@@ -3069,8 +3064,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.tools.length > 0)).toBe(true);
       prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs], enabledConnectors: [...connectorIDs] };
 
-      expect(controller.tools.includes("answer")).toBe(answerOn);
-      expect(controller.connectors).toEqual(answerOn ? ["calendar", "web"] : []);
+      expect(controller.tools).toEqual(["answer"]);
+      expect(controller.connectors).toEqual(["calendar", "web"]);
       controller.handle("toggleMode");
       expect(controller.connectors).toEqual([]);
       controller.handle("cancel");
@@ -3227,7 +3222,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions, target) => {
@@ -3331,7 +3326,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         };
       });
 
-      expect(shown).toEqual([["compose"], ["compose"]]);
+      expect(shown).toEqual([["compose", "answer"], ["compose", "answer"]]);
       expect(pastes).toEqual(["We ship on Friday."]);
     });
 
@@ -3422,8 +3417,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       prefs.value = { ...prefs.value, emailClient: changedTo };
       controller.handle("toggleMode");
 
-      expect(await eventually(() => controller.tools.length === 1)).toBe(true);
-      expect(controller.tools).toEqual(["compose"]);
+      expect(await eventually(() => controller.tools.length === 2)).toBe(true);
+      expect(controller.tools).toEqual(["compose", "answer"]);
       expect(controller.emailAppPath).toBe(atKeyDown === null ? null : FakeThunderbird.path);
       controller.handle("cancel");
       expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
@@ -3518,11 +3513,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.captureContext = async () => selectionScreen("");
       controller.handle("start");
       controller.handle("toggleMode");
-      expect(await eventually(() => controller.tools.length === 1 && controller.tools[0] === "compose")).toBe(true);
+      expect(await eventually(() => controller.tools[0] === "compose")).toBe(true);
       first.resolve(selectionScreen("Ship it Friday or else."));
       await sleep(200);
 
-      expect(controller.tools).toEqual(["compose"]);
+      expect(controller.tools).toEqual(["compose", "answer"]);
       controller.handle("cancel");
     });
 
@@ -3554,11 +3549,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
         for (const controller of opened.splice(0)) controller.closeChat();
       });
 
-      /** Every agent tool on, as they are by default. */
-      function allToolsOn(): void {
-        prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs] };
-      }
-
       function setTools(tools: AgentToolID[]): void {
         prefs.value = { ...prefs.value, enabledTools: tools };
       }
@@ -3576,7 +3566,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
         thunderbird?: FakeThunderbird,
         options: Parameters<typeof carryOut>[3] = {},
       ): Promise<{ controller: DictationController; pastes: string[]; chatChanges: boolean[] }> {
-        allToolsOn();
         queue(question, "answer", answer);
         const chatChanges: boolean[] = [];
         const { controller, pastes } = await carryOut(
@@ -4063,20 +4052,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual([question]);
       });
 
-      /** With every agent tool turned off in Settings, agent mode says so, and asks the backend
-       * nothing. */
-      test("with no tool enabled agent mode says so", async () => {
-        setTools([]);
-        transcription.enqueue(200, { text: request });
-
-        const { controller, pastes } = await carryOut(selectionScreen(""));
-
-        expect(controller.phase).toEqual(failed(new AgentError("noToolEnabled").message));
-        expect(controller.tools).toEqual([]);
-        expect(completions.requests).toHaveLength(0);
-        expect(pastes).toEqual([]);
-      });
-
       /** A question asked on a screen that is read, then one after moving to a screen hidden for
        * privacy: the second is told the screen is hidden, with nothing of the first screen but what
        * the conversation holds. */
@@ -4107,10 +4082,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       /** Tools switched off while the user speaks still apply to that request; the next request reads
        * the change. */
       test("a tool switched off after key-down applies from the next request", async () => {
-        setTools(["answer"]);
-        transcription.enqueue(200, { text: "first question" });
-        completions.enqueue(200, reply("first answer"));
-        const { controller } = makeController({ capture: new CountingCapture(true) });
+        setTools(["compose"]);
+        transcription.enqueue(200, { text: "first request" });
+        completions.enqueue(200, writes("compose", "First."));
+        const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
         opened.push(controller);
         controller.captureContext = async () => selectionScreen("");
 
@@ -4121,41 +4096,46 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.handle("finish");
         expect(await eventually(() => settled(controller))).toBe(true);
 
-        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["first answer"]);
+        expect(pastes).toEqual(["First."]);
         transcription.enqueue(200, { text: "next question" });
+        completions.enqueue(200, reply("next answer"));
         await holdAndRelease(controller, "agent");
-        expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
-        expect(controller.phase).toEqual(failed(new AgentError("noToolEnabled").message));
-        expect(completions.requests).toHaveLength(1);
+        expect(await eventually(() => settled(controller) && controller.chat !== null)).toBe(true);
+        expect(completions.body(0).available_tools).toContain("compose");
+        expect(completions.body(1).available_tools).not.toContain("compose");
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["next answer"]);
       });
 
       /** A tool switched on after key-down waits for the next request. */
       test("a tool switched on after key-down waits for the next request", async () => {
         setTools([]);
         transcription.enqueue(200, { text: "first request" });
+        completions.enqueue(200, reply("first answer"));
         let changed = false;
         transcription.gate = async () => {
           changed = true;
-          setTools(["answer"]);
+          setTools(["compose"]);
         };
 
-        const { controller } = await carryOut(selectionScreen(""));
+        const { controller, pastes } = await carryOut(selectionScreen(""));
         opened.push(controller);
 
         expect(changed).toBe(true);
-        expect(controller.phase).toEqual(failed(new AgentError("noToolEnabled").message));
-        expect(completions.requests).toHaveLength(0);
+        expect(completions.body(0).available_tools).not.toContain("compose");
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["first answer"]);
         transcription.gate = undefined;
         transcription.enqueue(200, { text: "next request" });
-        completions.enqueue(200, reply("next answer"));
+        completions.enqueue(200, writes("compose", "Next."));
         await holdAndRelease(controller, "agent");
-        expect(await eventually(() => controller.chat !== null)).toBe(true);
-        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["next answer"]);
+        expect(await eventually(() => settled(controller) && pastes.length === 1)).toBe(true);
+        expect(completions.body(1).available_tools).toContain("compose");
+        expect(pastes).toEqual(["Next."]);
       });
 
-      /** Answer, the only tool switched on, replies in the chat window and pastes nothing. */
-      test("Answer alone replies in the chat window", async () => {
-        setTools(["answer"]);
+      /** With Edit and Compose both switched off, Answer, always on, is still offered: it replies in
+       * the chat window and pastes nothing (owner, 2026-10-27). */
+      test("with Edit and Compose switched off, Answer alone replies in the chat window", async () => {
+        setTools([]);
         transcription.enqueue(200, { text: "the request" });
         completions.enqueue(200, reply("the reply"));
 
@@ -4164,6 +4144,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         expect(completions.requests).toHaveLength(1);
         expect(completions.body(0).available_tools).not.toContain("compose");
+        expect(completions.body(0).available_tools).not.toContain("edit");
         expect(controller.phase).toEqual(idle);
         expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
         expect(pastes).toEqual([]);
@@ -4963,26 +4944,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(reminders.runs).toEqual([]);
           expect(calendar.runs).toEqual([{}]);
           expect(told(1)).toEqual(["Error: there is no tool named example_add.", "Added."]);
-        });
-
-        /** With Answer off the loop is offered the writing tool alone, and an app's tool the model calls
-         * anyway does not run, its app switched on or not: the backend passes on whatever the model calls,
-         * so the app is the only gate (ADR-DESK-055). The model is told there is no such tool. */
-        test("with Answer off, an app's tool the model calls does not run", async () => {
-          const calendar = new FakeLoopTool("example_read", "Checking your calendar", "calendar");
-          const pasted: string[] = [];
-
-          const { done } = await ask([calendar], [calling(["example_read", "{}"]), writes("compose", "I'm free at 3.")], () => setTools(["compose"]), {
-            paste: async (text) => {
-              pasted.push(text);
-            },
-          });
-          await done;
-
-          expect(completions.body(0).available_tools).toEqual(["memory_search", "memory_read", "kb_add", "kb_del", "compose"]);
-          expect(calendar.runs).toEqual([]);
-          expect(told(1)).toEqual(["Error: there is no tool named example_read."]);
-          expect(pasted).toEqual(["I'm free at 3."]);
         });
 
         /** Web on at key-down (the default) brings the backend's search with the web's tools, and the

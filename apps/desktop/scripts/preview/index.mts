@@ -97,7 +97,7 @@ const settings = {
   builtInExcludedApps: [{ bundleIdentifier: "com.1password.1password", name: "1Password" }],
   userName: "Alex Example",
   suggestedName: "Alex Example",
-  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"],
+  enabledTools: ["edit", "compose"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"],
   memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: {
     writingStyle: [
@@ -132,7 +132,7 @@ const memory = {
   searchFailed: null,
   status: null,
 };
-const welcome = { fileProblems: [] as StoredFile[], step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
+const welcome = { fileProblems: [] as StoredFile[], step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
 
 /** The paste history: a short entry, a long one clipped to its lines, and an older one. */
 const history = {

@@ -37,3 +37,5 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
 - A thirteenth bubble (two more connectors) would start a third row: the geometry test, which places up to
   every tool and connector, checks they stay inside the canvas.
 
+**Amendment 2026-10-27:** Answer is always offered (ADR-DESK-022 amendment of that date), so the
+connectors' bubbles show whenever the tools are known; "with Answer off, none" no longer arises.

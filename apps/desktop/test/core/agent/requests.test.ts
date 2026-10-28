@@ -168,15 +168,18 @@ describe("DesktopAgent", () => {
     expect(DesktopAgent.tools(null, all)).toEqual(["compose", "answer"]);
   });
 
-  /** A tool switched off in Settings is never offered; the other writing tool does not stand in for
-   * it, since its text would land on the selection (or the caret) wrongly. */
+  /** A writing tool switched off in Settings is never offered; the other writing tool does not stand
+   * in for it, since its text would land on the selection (or the caret) wrongly. Answer, which has
+   * no switch, is always offered, so a request with Edit and Compose both off still has somewhere to
+   * go (owner, 2026-10-27). */
   test.each<[string, AgentToolID[], AgentToolID[]]>([
     ["Ship it.", ["compose", "thunderbird", "answer"], ["answer"]],
     ["", ["edit", "thunderbird", "answer"], ["answer"]],
     ["", ["compose", "answer"], ["compose", "answer"]],
-    ["", ["compose", "thunderbird"], ["compose"]],
-    ["Ship it.", ["compose"], []],
-    ["", [], []],
+    ["", ["compose", "thunderbird"], ["compose", "answer"]],
+    ["Ship it.", ["compose"], ["answer"]],
+    ["", [], ["answer"]],
+    ["Ship it.", [], ["answer"]],
   ])("with selection %j and %j on, the agent offers %j", (selected, enabled, offered) => {
     expect(DesktopAgent.tools(selectionScreen(selected), enabled)).toEqual(offered);
   });
@@ -553,7 +556,7 @@ describe("terminal selection writing boundary", () => {
       await agentTools[tool].deliver(text, { paste: async (value) => { pastes.push(value); }, emailApp: null,
         thunderbird: null as never, showAnswer: () => {}, signal: new AbortController().signal });
     };
-    expect(offered).toEqual(["edit"]);
+    expect(offered).toEqual(["edit", "answer"]);
     if (expected.selectionComplete) {
       await writeAndDeliver();
       expect(completions.requests).toHaveLength(1);

@@ -334,9 +334,10 @@ export class DictationController extends Observable {
   }
 
   /** The apps agent mode shows a bubble for beside the tools': those switched on at key-down whose
-   * tools this computer has, while Answer, whose loop runs their tools, is offered; none otherwise. */
+   * tools this computer has, once the tools are known (Answer, whose loop runs their tools, is always
+   * among them); none before. */
   get connectors(): ConnectorID[] {
-    if (!this.currentTools.includes("answer")) return [];
+    if (this.currentTools.length === 0) return [];
     return connectorIDs.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.connectorTools.some((tool) => tool.connector === connector));
   }
 
@@ -840,14 +841,13 @@ export class DictationController extends Observable {
         const client = this.deps.makeCompletionsClient(settings.backendURL);
         // The tools the bubbles show: the same read and settings.
         const offered = DesktopAgent.tools(context, settings.enabledTools);
-        if (offered.length === 0) throw new AgentError("noToolEnabled");
         const conversation = chat ? chatTranscript(chat) : "";
         // The loop thinks under no tool's bubble: only an app whose tool runs, until the agent answers
         // or writes.
         this.setPhase({ kind: "running", tool: null });
-        // Only the tools of apps switched on at key-down are offered, and only those run; with Answer off
-        // none is offered (`requestTools`), and none runs: the backend passes on whatever the model calls.
-        const connectorTools = offered.includes("answer") ? this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector)) : [];
+        // Only the tools of apps switched on at key-down are offered, and only those run: the backend
+        // passes on whatever the model calls.
+        const connectorTools = this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector));
         // This request's searches, for their later pages.
         const memoryTools = new MemoryTools(this.deps.memory);
         const personalization = this.dictationPersonalization;
@@ -1109,7 +1109,7 @@ export class DictationController extends Observable {
   /** Bind one flat tool list to this request's captured context and settings. */
   private requestTools(offered: readonly AgentToolID[], connectorTools: readonly ConnectorTool[], memory: MemoryTools, settings: ToolSettings, windowRead: Promise<ScreenRead | null> | null, context: ScreenContext | null, emailApp: string | null, transcript: string, targetApp: Promise<number | null>, isCurrent: () => boolean, signal: AbortSignal): ToolRegistry {
     const definitions: RegisteredTool[] = [
-      ...config.answerServerTools.filter(() => offered.includes("answer")).map((name) => ({ name, terminal: false })),
+      ...config.answerServerTools.map((name) => ({ name, terminal: false })),
       ...connectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector.id)).flatMap((connector) => (connector.serverTools ?? []).map((name) => ({ name, terminal: false, bubble: connector.id }))),
       ...(connectorTools.length === 0 ? [] : [{ name: config.confirmationTool, terminal: false, preservesConfirmation: true, run: (call: ToolCall, round: number) => this.runConfirmationTool(call, round, (tool, args) => registry.perform(tool.name, () => this.runTool(tool, args, settings, signal), tool.progressLabelFor?.(args))) }]),
       ...connectorTools.map((tool) => ({ name: tool.name, terminal: tool.terminal ?? false, bubble: tool.connector, progressLabel: tool.progressLabel, deferredActivity: true, run: (call: ToolCall, round: number) => this.runConnectorTool(tool, call, round, settings, isCurrent, signal, (args) => registry.perform(tool.name, () => this.runTool(tool, args, settings, signal), tool.progressLabelFor?.(args))) })),

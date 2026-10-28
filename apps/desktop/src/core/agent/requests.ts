@@ -33,11 +33,11 @@ export interface AgentOutcome {
  * its own: the request takes as long as the model does (owner, 2026-09-26: agent mode has no timeout).
  */
 export const DesktopAgent = {
-  /** The tools agent mode offers for the screen read at key-down, among those the user has on
-   * (`enabled`): the writing tool, Edit when text is selected and Compose when not (never the other:
-   * its paste would land on the selection or the caret wrongly), and Answer, the chat window. */
+  /** The tools agent mode offers for the screen read at key-down: the writing tool, if the user has it
+   * on (`enabled`), Edit when text is selected and Compose when not (never the other: its paste would
+   * land on the selection or the caret wrongly), and Answer, the chat window, always. */
   tools(context: ScreenContext | null, enabled: readonly AgentToolID[]): AgentToolID[] {
-    return agentToolIDs.filter((tool) => enabled.includes(tool) && agentTools[tool].available(context));
+    return agentToolIDs.filter((tool) => (tool === "answer" || enabled.includes(tool)) && agentTools[tool].available(context));
   },
 
   /** Dispatch each round's calls through the flat registry, in order. Nonterminal results go back

@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../../src/core/backend/account.js";
-import { agentToolIDs, offeredAgentToolIDs } from "../../src/core/agent/tools.js";
+import { DesktopAgent } from "../../src/core/agent/requests.js";
+import { agentToolIDs, offeredAgentToolIDs, switchableAgentToolIDs } from "../../src/core/agent/tools.js";
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
@@ -200,7 +201,7 @@ describe("AppSettings", () => {
     app.readsScreen = false;
     app.hotkey = "function";
     app.emailClient = "org.mozilla.thunderbirdbeta";
-    app.setEnabled("answer", false);
+    app.setEnabled("compose", false);
     app.setConnectorEnabled("calendar", false);
     app.userName = "Alex Example";
     app.addWord("Xyvora");
@@ -220,7 +221,7 @@ describe("AppSettings", () => {
       readsScreen: true,
       excludedApps: config.builtInExcludedApps.map((excluded) => excluded.bundleIdentifier),
       excludedSites: [...config.builtInExcludedSites],
-      enabledTools: [...offeredAgentToolIDs],
+      enabledTools: [...switchableAgentToolIDs],
       enabledConnectors: [...connectorIDs],
       emailClient: null,
       hasTabMail: true,
@@ -231,7 +232,7 @@ describe("AppSettings", () => {
       memorySizeLimit: config.memorySizeLimitDefault,
       eventDuration: config.eventDurationDefault,
     });
-    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false, smartDictation: true, memorySizeLimit: lower, eventDuration: 20 });
+    expect(app.dictation(null)).toMatchObject({ enabledTools: ["edit"], dictionary: ["Xyvora"], learnsWords: false, smartDictation: true, memorySizeLimit: lower, eventDuration: 20 });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
   });
@@ -1053,12 +1054,22 @@ describe("connectors", () => {
 
 /** The agent tools the user switches on and off in Settings and the welcome wizard. */
 describe("agent tools", () => {
-  /** Every tool is on until the user turns it off. */
+  /** Every tool is on until the user turns it off. Answer has no switch: it is never among the tools
+   * switched on, and agent mode offers it with every request (owner, 2026-10-27). */
   test("every tool is on by default", () => {
     const app = settings();
 
     for (const tool of agentToolIDs) expect(app.isEnabled(tool)).toBe(true);
-    expect(app.dictation(null).enabledTools).toEqual(["edit", "compose", "answer"]);
+    expect(switchableAgentToolIDs).toEqual(["edit", "compose"]);
+    expect(app.dictation(null).enabledTools).toEqual(["edit", "compose"]);
+  });
+
+  /** A user who switched Answer off in an earlier version gets it back: the stored switch is never
+   * read, and agent mode offers Answer with Edit and Compose both off too. */
+  test("Answer switched off by an earlier version is offered again", () => {
+    const tools = settings(new MemoryStore({ disabledAgentTools: ["answer", "compose", "edit"] })).dictation(null).enabledTools;
+    expect(tools).toEqual([]);
+    expect(DesktopAgent.tools(null, tools)).toEqual(["answer"]);
   });
 
   /** Thunderbird's tool is offered to no dictation until its native connector (ADR-DESK-037), on or
@@ -1070,16 +1081,16 @@ describe("agent tools", () => {
     expect(app.enabledTools).not.toContain("thunderbird");
 
     app.setEnabled("thunderbird", false);
-    app.setEnabled("answer", false);
-    app.setEnabled("answer", true);
+    app.setEnabled("compose", false);
+    app.setEnabled("compose", true);
     expect(store.get("disabledAgentTools")).toEqual(["thunderbird"]);
     expect(settings(store).isEnabled("thunderbird")).toBe(false);
-    expect(settings(store).dictation(null).enabledTools).toEqual(["edit", "compose", "answer"]);
+    expect(settings(store).dictation(null).enabledTools).toEqual(["edit", "compose"]);
   });
 
   /** A tool turned off is left out of every dictation from then on, and stays off after a relaunch;
    * turned back on, it is offered again. */
-  test.each(offeredAgentToolIDs)("%s turned off stays off", (tool) => {
+  test.each(switchableAgentToolIDs)("%s turned off stays off", (tool) => {
     const store = new MemoryStore();
     const changes: number[] = [];
     const app = settings(store);
@@ -1089,10 +1100,10 @@ describe("agent tools", () => {
 
     const relaunched = settings(store);
     expect(relaunched.isEnabled(tool)).toBe(false);
-    expect(relaunched.dictation(null).enabledTools).toEqual(offeredAgentToolIDs.filter((other) => other !== tool));
+    expect(relaunched.dictation(null).enabledTools).toEqual(switchableAgentToolIDs.filter((other) => other !== tool));
 
     relaunched.setEnabled(tool, true);
-    expect(settings(store).dictation(null).enabledTools).toEqual(offeredAgentToolIDs);
+    expect(settings(store).dictation(null).enabledTools).toEqual(switchableAgentToolIDs);
   });
 
   /** Turning off two tools keeps both off; turning one off twice lists it once. */
@@ -1100,19 +1111,19 @@ describe("agent tools", () => {
     const store = new MemoryStore();
     const app = settings(store);
     app.setEnabled("thunderbird", false);
-    app.setEnabled("answer", false);
-    app.setEnabled("answer", false);
+    app.setEnabled("compose", false);
+    app.setEnabled("compose", false);
 
-    expect(store.get("disabledAgentTools")).toEqual(["answer", "thunderbird"]);
-    expect(app.enabledTools).toEqual(["edit", "compose"]);
+    expect(store.get("disabledAgentTools")).toEqual(["compose", "thunderbird"]);
+    expect(app.enabledTools).toEqual(["edit"]);
   });
 
   /** A stored name no longer an agent tool, or a stored value of another type, is ignored rather
    * than turning anything off. */
   test.each<[unknown, string[]]>([
-    [["answer", "retired-tool"], ["edit", "compose"]],
-    ["answer", ["edit", "compose", "answer"]],
-    [[7, null], ["edit", "compose", "answer"]],
+    [["compose", "retired-tool"], ["edit"]],
+    ["compose", ["edit", "compose"]],
+    [[7, null], ["edit", "compose"]],
   ])("a stored %j turns off only known tools", (stored, enabled) => {
     expect(settings(new MemoryStore({ disabledAgentTools: stored })).dictation(null).enabledTools).toEqual(enabled);
   });

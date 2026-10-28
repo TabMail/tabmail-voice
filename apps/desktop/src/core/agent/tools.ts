@@ -12,8 +12,10 @@ import type { ThunderbirdRelay } from "./connectors/thunderbird/relay.js";
  * chat relay. A tool that hands the request to another app goes through that app's connector
  * (ADR-DESK-020). Each tool's bubble shows above the pill while agent mode listens, and its border
  * circles while it runs. Edit and Compose are never offered together: the selection decides which
- * (each definition's `available`). Each offered one (`offeredAgentToolIDs`) can be switched off in Settings
- * and the welcome wizard; all are on by default (owner, 2026-09-26).
+ * (each definition's `available`). Edit and Compose (`switchableAgentToolIDs`) can be switched off in
+ * Settings and the welcome wizard, and are on by default (owner, 2026-09-26). Answer has no switch and
+ * is always offered (owner, 2026-10-27: "I don't think it should even exist"), so every request has
+ * somewhere to go.
  */
 export type AgentToolID = "edit" | "compose" | "thunderbird" | "answer";
 
@@ -25,17 +27,19 @@ export const agentToolIDs: readonly AgentToolID[] = ["edit", "compose", "thunder
  * connector (ADR-DESK-037). Offering it here again brings it back everywhere. */
 export const offeredAgentToolIDs: readonly AgentToolID[] = agentToolIDs.filter((tool) => tool !== "thunderbird");
 
+/** The offered tools the user can switch off, which Settings and the welcome wizard list: all but
+ * Answer, which is always on. */
+export const switchableAgentToolIDs: readonly AgentToolID[] = offeredAgentToolIDs.filter((tool) => tool !== "answer");
+
 export function isAgentToolID(name: unknown): name is AgentToolID {
   return typeof name === "string" && (agentToolIDs as readonly string[]).includes(name);
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
-export type AgentErrorKind = "noText" | "noToolEnabled" | "secretInSelection";
+export type AgentErrorKind = "noText" | "secretInSelection";
 
 const failureMessages: Record<AgentErrorKind, string> = {
   noText: "Couldn't write that. Try again.",
-  /** Every tool this request could use is switched off in Settings. */
-  noToolEnabled: "Turn on an agent tool in Settings.",
   /** The selection reached the app with secret-looking text taken out (ADR-DESK-046): a rewrite of
    * it, pasted over the selection, would put the placeholder where the secret was. */
   secretInSelection: "The selection holds what looks like a password or key, so it wasn't rewritten.",
@@ -205,9 +209,9 @@ export const ThunderbirdTool: AgentTool = {
 };
 
 /** Answers the user in the chat window the pill grows into, when the loop replies rather than writes
- * into the app (a question, an explanation of what is on screen, a follow-up). With it on, the loop
- * also reaches the user's apps and the web. Its bubble runs, and its chat window opens, only when the
- * agent answers (owner, 2026-10-07). */
+ * into the app (a question, an explanation of what is on screen, a follow-up). Always on: through it
+ * the loop also reaches the user's apps and the web. Its bubble runs, and its chat window opens,
+ * only when the agent answers (owner, 2026-10-07). */
 export const AnswerTool: AgentTool = {
   terminal: true,
   response: true,
