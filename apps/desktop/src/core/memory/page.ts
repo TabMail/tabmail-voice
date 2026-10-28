@@ -16,8 +16,9 @@ export interface MemoryEntry {
 
 /** Settings › Memory, as the window shows it. */
 export interface MemoryPageState {
-  /** The size limit chosen (bytes). */
-  sizeLimit: number;
+  /** The size limit chosen (bytes); null, "Not set", while the user's limit is unknown
+   * (`AppSettings.memorySizeLimit`). */
+  sizeLimit: number | null;
   /** What memory holds; null while it is read, or when it couldn't be (`unavailable`). */
   usage: MemoryStats | null;
   /** The memory helper couldn't say what memory holds. */
@@ -62,7 +63,7 @@ export class MemoryPage extends Observable {
     private readonly store: AgentMemory,
     /** Whether memory's database exists on this computer (the helper has ever run). */
     private readonly exists: () => boolean,
-    private readonly settings: { readonly memorySizeLimit: number; setMemorySizeLimit(value: number): boolean },
+    private readonly settings: { readonly memorySizeLimit: number | null; setMemorySizeLimit(value: number): boolean },
   ) {
     super();
     this.current = { sizeLimit: settings.memorySizeLimit, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null };

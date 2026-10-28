@@ -77,6 +77,9 @@ Thunderbird's copy or its files.
   limit the settings file can't keep is put back and nothing is trimmed ("That size limit couldn't be
   saved. Try again."), as an exclusion that can't be saved: a relaunch would bring back the saved
   one. Space freed is reused; the file keeps its size (no `VACUUM`, which could take unbounded time).
+  Since 2026-10-28 (#294) the limit can be "Not set": while the settings file can't be read, or after
+  its factory reset, the user's limit is unknown, so nothing is kept or trimmed until they pick one
+  (ADR-DESK-063).
 - **Settings › Memory** (`src/core/memory/page.ts`, a port of Thunderbird's Chat History tab, in
   Voice's style): a usage bar, "Memory used: X of <limit>", the limit, the requests newest first (at
   most `memoryListLimit`), a search, Remove on each, Reload (reads memory again and says "Memory

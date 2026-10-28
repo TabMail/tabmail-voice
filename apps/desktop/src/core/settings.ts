@@ -40,6 +40,9 @@ const Key = {
 /** Why a dictation is refused while the user opted out of AI (`AppSettings.optsOutOfAI`). */
 export const optedOutOfAILine = "AI features are off. To dictate, turn off Opt Out of AI in Settings";
 
+/** Why Settings › Memory is refused while the user opted out of AI (owner, 2026-10-28). */
+export const optedOutOfAIMemoryLine = "AI features are off. Turn off Opt Out of AI in Settings to use memory";
+
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
  * the rest of it: a change in Settings meanwhile applies from the next dictation (owner,
  * 2026-09-26). */
@@ -82,9 +85,9 @@ export interface DictationSettings {
   /** Whether the dictation asks for the backend's cleanup (and a long dictation for its final polish);
    * off, the transcript is pasted as heard. */
   smartDictation: boolean;
-  /** The most memory may take (bytes; `memorySizeLimit`): the request is kept within it. Null while
-   * the settings file couldn't be read: the user's limit is unknown, so the request isn't kept, as
-   * keeping it within the default would remove what a larger limit kept (ADR-DESK-063). */
+  /** The most memory may take (bytes; `AppSettings.memorySizeLimit`): the request is kept within it.
+   * Null while the user's limit is unknown, so the request isn't kept, as keeping it within the
+   * default would remove what a larger limit kept (ADR-DESK-063). */
   memorySizeLimit: number | null;
   /** How long a new event lasts when the user gave no end (minutes; `eventDuration`). */
   eventDuration: number;
@@ -139,6 +142,9 @@ export class AppSettings extends Observable {
   resetFile(moveAside: () => void): void {
     const before = this.hotkey;
     moveAside();
+    // The size limit the user chose was in the file: unknown still, so memory is never trimmed to a
+    // guess, until the user picks one (owner, 2026-10-28).
+    this.store.set(Key.memorySizeLimit, null);
     this.changed();
     if (this.hotkey !== before) this.onHotkeyChange?.(this.hotkey);
   }
@@ -344,8 +350,10 @@ export class AppSettings extends Observable {
     return storedBool(this.store, Key.optsOutOfAI) ?? false;
   }
 
-  set optsOutOfAI(value: boolean) {
-    this.write(Key.optsOutOfAI, value);
+  /** Keeps the user's choice; false, the choice as it was, when it couldn't be saved: what applies is
+   * what is saved, and the switch shows it (owner, 2026-10-28). */
+  setOptsOutOfAI(value: boolean): boolean {
+    return this.saveOrPutBack(Key.optsOutOfAI, value);
   }
 
   /** Why AI features are off, said when a dictation, an agent hold or Settings › Memory is refused;
@@ -354,6 +362,12 @@ export class AppSettings extends Observable {
   get aiOffLine(): string | null {
     if (this.store.problem !== undefined) return aiOffLine;
     return this.optsOutOfAI ? optedOutOfAILine : null;
+  }
+
+  /** Why Settings › Memory is refused, as `aiOffLine`, but naming memory when the user opted out. */
+  get memoryOffLine(): string | null {
+    if (this.store.problem !== undefined) return aiOffLine;
+    return this.optsOutOfAI ? optedOutOfAIMemoryLine : null;
   }
 
   /** Smart dictation: the AI cleanup of each dictation, which adds a second or more. Off unless the
@@ -368,8 +382,10 @@ export class AppSettings extends Observable {
 
   /** The most memory may take on this computer (bytes): one of `config.memorySizeLimitChoices`,
    * `config.memorySizeLimitDefault` until the user picks another. When memory reaches it, the oldest
-   * exchanges are removed first (ADR-DESK-061). */
-  get memorySizeLimit(): number {
+   * exchanges are removed first (ADR-DESK-061). Null, "Not set", while the user's limit is unknown:
+   * the settings file couldn't be read, or was reset (stored as null), until the user picks one. */
+  get memorySizeLimit(): number | null {
+    if (this.store.problem !== undefined || this.store.get(Key.memorySizeLimit) === null) return null;
     const stored = storedInteger(this.store, Key.memorySizeLimit);
     return stored !== null && config.memorySizeLimitChoices.includes(stored) ? stored : config.memorySizeLimitDefault;
   }
@@ -539,7 +555,7 @@ export class AppSettings extends Observable {
       dictionary: prioritizedWords(this.dictionary),
       learnsWords: readable && this.learnsWords,
       smartDictation: this.smartDictation,
-      memorySizeLimit: readable ? this.memorySizeLimit : null,
+      memorySizeLimit: this.memorySizeLimit,
       eventDuration: this.eventDuration,
     };
   }

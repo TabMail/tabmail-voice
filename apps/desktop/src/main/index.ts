@@ -121,10 +121,11 @@ if (needsX11Relaunch(appImage, process.argv)) {
   app.quit();
 }
 
-/** Settings › Memory's commands: refused while AI features are off (the settings file can't be read,
- * or the user opted out of AI), as memory is one: its helper runs a model over what the user asked
- * (owner, 2026-10-27). */
-const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
+/** Settings › Memory's commands refused while AI features are off (the settings file can't be read,
+ * or the user opted out of AI): a typed search, which memory's helper runs a model over, and the size
+ * limit, which trims it. Listing the newest, removing one and Clear All stay: they are local and send
+ * nothing, so the user can always delete what memory holds (owner, 2026-10-28). */
+const memoryCommands: ReadonlySet<Command["type"]> = new Set(["searchMemory", "setMemorySizeLimit"]);
 
 /** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
  * the command says so (ADR-DESK-063 amendment). Every command is named, so a new one is decided. */
@@ -992,8 +993,8 @@ function launch(): void {
   }
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
-    const aiOff = settings.aiOffLine;
-    if (aiOff !== null && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${aiOff}.` };
+    const memoryOff = settings.memoryOffLine;
+    if (memoryOff !== null && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${memoryOff}.` };
     // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
     // this session, and says how to fix the file, every time.
     const unsaved = unsavedFor(command);
@@ -1067,7 +1068,7 @@ function launch(): void {
         settings.smartDictation = command.value;
         return;
       case "setOptsOutOfAI":
-        settings.optsOutOfAI = command.value;
+        if (!settings.setOptsOutOfAI(command.value)) throw new Error(personalizationUnsaved);
         return;
       case "setClosesChatElsewhere":
         settings.closesChatElsewhere = command.value;
@@ -1076,7 +1077,8 @@ function launch(): void {
         if (!settings.setEventDuration(command.value)) throw new Error("The default event duration couldn't be saved. Check the disk and try again.");
         return;
       case "loadMemory":
-        return memoryPage.load();
+        // While AI features are off, the newest only: a search typed before isn't run again.
+        return memoryPage.load(settings.memoryOffLine === null ? undefined : "");
       case "searchMemory":
         return memoryPage.load(command.query);
       case "setMemorySizeLimit":

@@ -341,10 +341,17 @@ function PrivacyPane({ state }: { state: SettingsState }) {
     const { error } = await send(command);
     setProblem(error);
   };
+  /** A choice that couldn't be saved is said under the switch, which shows what is saved. */
+  const [optOutProblem, setOptOutProblem] = useState<string | null>(null);
+  const optOut = async (value: boolean) => {
+    setOptOutProblem(null);
+    const { error } = await send({ type: "setOptsOutOfAI", value });
+    setOptOutProblem(error);
+  };
   return (
     <>
       <Group>
-        <Toggle label="Opt Out of AI" checked={state.optsOutOfAI} onChange={(value) => send({ type: "setOptsOutOfAI", value })}>
+        <Toggle label="Opt Out of AI" checked={state.optsOutOfAI} onChange={optOut} extra={optOutProblem !== null && <span className="error">{optOutProblem}</span>}>
           Turns off dictation, agent mode and memory, so nothing you say or have on screen is sent to AI. Signing in and updates still work. On this computer only.
         </Toggle>
       </Group>
@@ -490,38 +497,47 @@ function MemoryPane({ state }: { state: SettingsState }) {
   };
   const chooseLimit = (value: number) => {
     // A lower limit can remove requests for good: asked first, as Clear All is, whatever memory is
-    // shown to hold. The list keeps the limit in force until then.
-    if (value < memory.sizeLimit) setConfirmingLimit(value);
+    // shown to hold; so is the first limit after a reset left it unset. The list keeps the limit in
+    // force until then.
+    if (limit === null || value < limit) setConfirmingLimit(value);
     else {
       setConfirmingLimit(null);
       void run({ type: "setMemorySizeLimit", value });
     }
   };
   const used = memory.usage?.usedBytes;
+  /** Null, "Not set", while the user's limit is unknown: no request is kept until one is chosen. */
+  const limit = memory.sizeLimit;
   return (
     <>
       <Group
         captions={[
           "Agent mode’s requests, and what it answered or wrote, are kept on this computer so it can look back at them when you ask. Plain dictation isn’t kept.",
-          "When memory reaches the limit, the oldest requests are removed first.",
+          limit === null ? "Size limit not set: agent mode’s requests aren’t kept until you choose one." : "When memory reaches the limit, the oldest requests are removed first.",
         ]}
       >
         <div className="row stack">
-          <span>{memory.unavailable ? `Memory used: unavailable (limit ${formatBytes(memory.sizeLimit)})` : used === undefined ? "Memory used: reading…" : `Memory used: ${formatBytes(used)} of ${formatBytes(memory.sizeLimit)}`}</span>
-          <div
-            className="usage-bar"
-            role="progressbar"
-            aria-label="Memory used"
-            aria-valuemin={0}
-            aria-valuemax={memory.sizeLimit}
-            aria-valuenow={Math.min(used ?? 0, memory.sizeLimit)}
-          >
-            <div className={(used ?? 0) > 0 ? "usage-fill some" : "usage-fill"} style={{ width: `${(Math.min(used ?? 0, memory.sizeLimit) / memory.sizeLimit) * 100}%` }} />
-          </div>
+          <span>
+            {memory.unavailable
+              ? `Memory used: unavailable (limit ${limit === null ? "not set" : formatBytes(limit)})`
+              : used === undefined
+                ? "Memory used: reading…"
+                : `Memory used: ${formatBytes(used)}${limit === null ? "" : ` of ${formatBytes(limit)}`}`}
+          </span>
+          {limit !== null && (
+            <div className="usage-bar" role="progressbar" aria-label="Memory used" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={Math.min(used ?? 0, limit)}>
+              <div className={(used ?? 0) > 0 ? "usage-fill some" : "usage-fill"} style={{ width: `${(Math.min(used ?? 0, limit) / limit) * 100}%` }} />
+            </div>
+          )}
         </div>
         <div className="row">
           <span>Size limit</span>
-          <select aria-label="Size limit" value={memory.sizeLimit} onChange={(event) => chooseLimit(Number(event.target.value))}>
+          <select aria-label="Size limit" value={limit ?? ""} onChange={(event) => chooseLimit(Number(event.target.value))}>
+            {limit === null && (
+              <option value="" disabled>
+                Not set
+              </option>
+            )}
             {config.memorySizeLimitChoices.map((bytes) => (
               <option key={bytes} value={bytes}>
                 {formatBytes(bytes)}
@@ -531,7 +547,9 @@ function MemoryPane({ state }: { state: SettingsState }) {
         </div>
         {confirmingLimit !== null && (
           <div className="row stack">
-            <span>Lower the limit to {formatBytes(confirmingLimit)}? The oldest requests above it are removed. This can’t be undone.</span>
+            <span>
+              {limit === null ? `Set the limit to ${formatBytes(confirmingLimit)}? If memory holds more, its oldest requests are removed.` : `Lower the limit to ${formatBytes(confirmingLimit)}? The oldest requests above it are removed.`} This can’t be undone.
+            </span>
             <div className="buttons">
               <button onClick={() => setConfirmingLimit(null)}>Cancel</button>
               <button
@@ -541,7 +559,7 @@ function MemoryPane({ state }: { state: SettingsState }) {
                   void run({ type: "setMemorySizeLimit", value: confirmingLimit });
                 }}
               >
-                Lower Limit
+                {limit === null ? "Set Limit" : "Lower Limit"}
               </button>
             </div>
           </div>
