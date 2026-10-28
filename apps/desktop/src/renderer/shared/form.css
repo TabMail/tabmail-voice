@@ -59,6 +59,11 @@ body {
   font-size: 11px;
 }
 
+/* A file that couldn't be read, said above the page. */
+.file-problem {
+  margin: 0 0 12px;
+}
+
 .allowed {
   color: var(--allowed);
 }

@@ -6,12 +6,14 @@ import { describe, expect, test } from "vitest";
 import { extractBullets } from "../../../src/core/personalization/bulletMerge.js";
 import { KBTools } from "../../../src/core/personalization/kbTools.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
-import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
+import { unsavedBecauseOf } from "../../../src/core/ui/fileProblems.js";
+import { MemoryStore, type StoreProblem } from "../../../src/core/util/keyValueStore.js";
 
 const kbKey = "user_prompts:user_kb.md";
 
 class FailingStore extends MemoryStore {
   failing = false;
+  problem: StoreProblem | undefined;
 
   override set(key: string, value: unknown): boolean {
     super.set(key, value);
@@ -163,5 +165,15 @@ describe("KBTools", () => {
     expect(run("kb_del", "alpha")).toEqual({ error: "failed to persist knowledge base" });
     expect(prompts.knowledgeBase).toBe("- alpha.");
     expect(changes()).toBe(0);
+  });
+
+  /** A knowledge base file that couldn't be read at launch: the model is told how the user fixes it,
+   * to say so, each time. */
+  test("an edit to a file that couldn't be read says how to fix it", () => {
+    const { store, run } = setup("- alpha.");
+    store.failing = true;
+    store.problem = { kind: "damaged", path: "/example/userPrompts.json", code: "invalid" };
+    expect(run("kb_add", "beta")).toEqual({ error: unsavedBecauseOf("knowledgeBase") });
+    expect(run("kb_del", "alpha")).toEqual({ error: unsavedBecauseOf("knowledgeBase") });
   });
 });

@@ -5,6 +5,7 @@
 import { join } from "node:path";
 import { Menu, type MenuItemConstructorOptions, nativeImage, type NativeImage, nativeTheme, Tray } from "electron";
 import { linuxTrayIcon, linuxTrayUsesLightText } from "./native/linux/trayIcon.js";
+import { fixFileLabel, screenNotReadLine, type StoredFile } from "../core/ui/fileProblems.js";
 import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/ui/menuModel.js";
 
 /** What the menu's items do. */
@@ -13,6 +14,8 @@ export interface TrayActions {
   showSettings(): void;
   requestMicrophone(): void;
   requestAccessibility(): void;
+  /** Tells why `file` couldn't be read, and how to fix it. */
+  showFileProblem(file: StoredFile): void;
   toggleDictation(): void;
   quit(): void;
   checkForUpdates(): void;
@@ -33,7 +36,8 @@ export interface TrayActions {
 export class TrayMenu {
   private readonly tray: Tray;
   private readonly icon: (marked: boolean) => NativeImage;
-  /** Whether the icon shows the mark: a dot beside the glyph while a permission is missing. */
+  /** Whether the icon shows the mark: a dot beside the glyph while a permission is missing or a file
+   * couldn't be read. */
   private marked = false;
 
   constructor(
@@ -62,11 +66,11 @@ export class TrayMenu {
 
   update(): void {
     const state = this.state();
-    const marked = !state.microphoneGranted || !state.accessibilityTrusted;
+    const marked = !state.microphoneGranted || !state.accessibilityTrusted || state.fileProblems.length > 0;
     if (marked !== this.marked) {
       this.marked = marked;
       this.tray.setImage(this.icon(marked));
-      this.tray.setToolTip(marked ? "TabMail Voice needs a permission" : "TabMail Voice");
+      this.tray.setToolTip(state.fileProblems.length > 0 ? "TabMail Voice can't read one of its files" : marked ? "TabMail Voice needs a permission" : "TabMail Voice");
     }
     this.tray.setContextMenu(Menu.buildFromTemplate(this.items(state)));
   }
@@ -78,6 +82,8 @@ export class TrayMenu {
     if (!state.isSignedIn) items.push({ label: "Sign In to TabMail…", click: () => actions.showSettings() });
     if (!state.microphoneGranted) items.push({ label: "Allow Microphone Access…", click: () => actions.requestMicrophone() });
     if (!state.accessibilityTrusted) items.push({ label: "Allow Accessibility Access…", click: () => actions.requestAccessibility() });
+    if (state.fileProblems.includes("settings")) items.push({ label: screenNotReadLine, enabled: false });
+    for (const file of state.fileProblems) items.push({ label: fixFileLabel(file), click: () => actions.showFileProblem(file) });
 
     if (showsDictationButton(state.debugMode, state.phase)) {
       const listening = state.phase.kind === "listening";

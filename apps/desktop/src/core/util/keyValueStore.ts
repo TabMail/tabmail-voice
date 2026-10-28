@@ -2,9 +2,21 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+/** Why a store's file, there at launch, couldn't be read: no permission to read it, damaged (not a JSON
+ * object), or another read error. Nothing is saved to it while the app runs (`fileProblems.ts` says
+ * what the user can do). */
+export interface StoreProblem {
+  kind: "permission" | "damaged" | "unreadable";
+  path: string;
+  /** The read error's code (`EACCES`, `EIO`), or `invalid` for a damaged file. */
+  code: string;
+}
+
 /** The app's preferences, as UserDefaults holds them on macOS: JSON values under string keys. The
  * main process keeps them in a JSON file under the app's data folder. */
 export interface KeyValueStore {
+  /** Set when the store's file was there but couldn't be read: every save answers false. */
+  readonly problem?: StoreProblem;
   get(key: string): unknown;
   /** False when the value could not be kept past this run (the file could not be written): it is
    * held until the app quits. */

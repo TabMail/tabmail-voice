@@ -30,7 +30,9 @@ import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
+import { fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
+import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
 import { PasteHistory } from "../core/dictation/pasteHistory.js";
 import { PermissionsModel } from "../core/onboarding/permissions.js";
@@ -118,6 +120,67 @@ if (needsX11Relaunch(appImage, process.argv)) {
 } else {
   app.quit();
 }
+
+/** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
+ * the command says so (ADR-DESK-063 amendment). Every command is named, so a new one is decided. */
+const commandWrites: Record<Command["type"], StoredFile | null> = {
+  sendCode: null,
+  verify: null,
+  signOut: null,
+  setHotkey: "settings",
+  setReadsScreen: "settings",
+  setUserName: "settings",
+  addDictionaryWord: "settings",
+  removeDictionaryWord: "settings",
+  setLearnsWords: "settings",
+  setSmartDictation: "settings",
+  setClosesChatElsewhere: "settings",
+  setEventDuration: "settings",
+  excludeApp: "settings",
+  removeExcludedApp: "settings",
+  excludeSite: "settings",
+  removeExcludedSite: "settings",
+  setEmailClient: "settings",
+  setAgentToolEnabled: "settings",
+  setConnectorEnabled: "settings",
+  setOpenAtLogin: null,
+  setDebugMode: "settings",
+  loadMemory: null,
+  searchMemory: null,
+  setMemorySizeLimit: "settings",
+  removeMemory: null,
+  clearMemory: null,
+  editWritingStyle: "knowledgeBase",
+  editKnowledgeBase: "knowledgeBase",
+  resetWritingStyle: "knowledgeBase",
+  resetKnowledgeBase: "knowledgeBase",
+  restorePromptHistory: "knowledgeBase",
+  setConsent: "settings",
+  requestMicrophone: null,
+  requestAccessibility: null,
+  enableGnomeIntegration: null,
+  checkForUpdates: null,
+  installUpdate: null,
+  // Next keeps the name given and, at the last step, that the wizard is finished.
+  welcomeNext: "settings",
+  welcomeBack: null,
+  welcomeGoTo: null,
+  fixVSCodeSettings: null,
+  openURL: null,
+  keepChatOpen: null,
+  closeChat: null,
+  openChatLink: null,
+  answerConfirmation: null,
+  chatHeight: null,
+  pointerOver: null,
+  chatDragStart: null,
+  dragChat: null,
+  copyNotPasted: null,
+  dismissNotPasted: null,
+  copyHistoryEntry: null,
+  closeHistory: null,
+  historyHeight: null,
+};
 
 /** Owns the long-lived objects and wires them together (`AppDelegate` in the Swift app). */
 function launch(): void {
@@ -358,6 +421,7 @@ function launch(): void {
     showSettings,
     requestMicrophone: () => void permissions.requestMicrophone(),
     requestAccessibility: () => permissions.requestAccessibility(),
+    showFileProblem,
     toggleDictation: () => controller.toggle(),
     quit: () => app.quit(),
     checkForUpdates: () => updater?.checkNow(),
@@ -449,6 +513,7 @@ function launch(): void {
       update: updater?.state ?? null,
       memory: memoryPage.state,
       personalization: personalizationState(prompts),
+      fileProblems: unreadableFiles(),
     };
   }
 
@@ -473,6 +538,7 @@ function launch(): void {
   function welcomeState(): WelcomeState {
     const current = wizard ?? new WelcomeWizard(settings, () => suggestedName);
     return {
+      fileProblems: unreadableFiles(),
       step: current.step,
       index: current.index,
       categoryIndex: current.categoryIndex,
@@ -507,6 +573,7 @@ function launch(): void {
       isSignedIn: account.isSignedIn,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
+      fileProblems: unreadableFiles(),
       hotkey: settings.hotkey,
       debugMode: settings.isDebugMode(account.email),
       phase: controller.phase,
@@ -570,6 +637,27 @@ function launch(): void {
       },
       isBusy: () => !isResting(controller.phase) || controller.chat !== null,
       onChange: () => pushSettingsWindows(),
+    });
+  }
+
+  /** Why `file` couldn't be read at launch, when it couldn't (ADR-DESK-063). */
+  function fileProblem(file: StoredFile): StoreProblem | undefined {
+    return file === "settings" ? settings.fileProblem : prompts.fileProblem;
+  }
+
+  function unreadableFiles(): StoredFile[] {
+    return storedFiles.filter((file) => fileProblem(file) !== undefined);
+  }
+
+  /** Tells why `file` couldn't be read and how to fix it by hand; the app never resets, moves or
+   * writes over it. The next launch reads it again. */
+  function showFileProblem(file: StoredFile): void {
+    const problem = fileProblem(file);
+    if (problem === undefined) return;
+    const { message, detail } = fileProblemNotice(file, problem, process.platform);
+    app.focus({ steal: true });
+    void dialog.showMessageBox({ type: "warning", message, detail, buttons: ["Show File", "Close"], defaultId: 1, cancelId: 1 }).then(({ response }) => {
+      if (response === 0) shell.showItemInFolder(problem.path);
     });
   }
 
@@ -840,20 +928,25 @@ function launch(): void {
   ipcMain.handle(channels.getState, (_event, name: unknown) => (isWindowName(name) ? stateOf(name) : null));
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
+    // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
+    // this session, and says how to fix the file, every time.
+    const file = commandWrites[command.type];
+    const unsaved = file !== null && fileProblem(file) !== undefined ? unsavedBecauseOf(file) : null;
     try {
       await run(command);
-      return { error: null };
+      return { error: unsaved };
     } catch (error) {
       log.error(`main: ${command.type} failed: ${errorName(error)}`);
-      return { error: error instanceof Error && error.message !== "" ? error.message : genericError };
+      return { error: unsaved ?? (error instanceof Error && error.message !== "" ? error.message : genericError) };
     }
   });
   ipcMain.on(channels.audioReport, (event, report: unknown) => {
     if (windows.isAudioWindow(event.sender) && isAudioReport(report)) capture.receive(report);
   });
 
-  /** An exclusion or a removal that could not be written to disk did not happen, and the user is
-   * told. */
+  /** An exclusion, a removal or a personalization edit that could not be written to disk did not
+   * happen, and the user is told (a file that couldn't be read at launch is told of by the command
+   * handler, `commandWrites`). */
   const exclusionUnsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
   const personalizationUnsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
   const removalUnsaved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
@@ -1096,4 +1189,7 @@ function launch(): void {
     tips.markLearned("agentKnowledgeBase");
     showWelcome();
   }
+  // A file that couldn't be read is told of once launch is done, the windows' commands wired; its Fix
+  // item stays in the menu.
+  for (const file of unreadableFiles()) showFileProblem(file);
 }

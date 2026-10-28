@@ -12,6 +12,7 @@ import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../
 import * as config from "../core/config.js";
 import type { DictionaryEntry } from "../core/dictionary/entries.js";
 import type { ExcludedApp } from "../core/dictation/excludedApps.js";
+import type { StoredFile } from "../core/ui/fileProblems.js";
 import type { MemoryPageState } from "../core/memory/page.js";
 import { compositionSections } from "../core/personalization/bulletMerge.js";
 import type { PersonalizationState } from "../core/personalization/page.js";
@@ -147,6 +148,8 @@ export interface SettingsState {
   /** Settings › Personalization: the writing style, the knowledge base and their history
    * (ADR-DESK-063). */
   personalization: PersonalizationState;
+  /** The app's files that couldn't be read at launch: Settings says so above every section. */
+  fileProblems: StoredFile[];
 }
 
 /** Whether VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
@@ -155,6 +158,9 @@ export interface SettingsState {
 export type VSCodeFix = "notNeeded" | "needed" | "done";
 
 export interface WelcomeState {
+  /** The app's files that couldn't be read at launch: the window says so for the settings file, which
+   * the wizard writes, above every step. */
+  fileProblems: StoredFile[];
   step: WelcomeStep;
   index: number;
   categoryIndex: number;

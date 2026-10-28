@@ -16,6 +16,7 @@ import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { formatBytes } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import type { PromptHistoryItem } from "../../core/personalization/page.js";
+import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
 import { send, useWindowState } from "../shared/bridge.js";
@@ -90,6 +91,11 @@ function Settings() {
       </nav>
       <main className="content">
         <h1>{section?.title}</h1>
+        {state.fileProblems.map((file) => (
+          <p key={file} className="error file-problem" role="alert">
+            {fileProblemLine(file)}
+          </p>
+        ))}
         {/* Every pane stays mounted, so a sign-in half done or a sign-out warning outlives a look
             at another section. */}
         <div hidden={shown !== "account"}>

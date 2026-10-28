@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { screenNotReadLine } from "../../src/core/ui/fileProblems.js";
 import type { MenuState, UpdateState } from "../../src/core/ui/menuModel.js";
 import { type TrayActions, TrayMenu } from "../../src/main/tray.js";
 
@@ -35,7 +36,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
+const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
 
 function actionsFrom(clicked: string[]): TrayActions {
   const action = (name: string) => () => void clicked.push(name);
@@ -44,6 +45,7 @@ function actionsFrom(clicked: string[]): TrayActions {
     showSettings: action("showSettings"),
     requestMicrophone: action("requestMicrophone"),
     requestAccessibility: action("requestAccessibility"),
+    showFileProblem: (file) => void clicked.push(`showFileProblem:${file}`),
     toggleDictation: action("toggleDictation"),
     quit: action("quit"),
     checkForUpdates: action("checkForUpdates"),
@@ -225,6 +227,25 @@ describe("TrayMenu's permission mark", () => {
     trayMenu.update();
     expect(icon()).toBe("trayTemplate.png");
     expect(tray.toolTip).toBe("TabMail Voice");
+  });
+
+  /** A file that couldn't be read marks the icon, as a missing permission does, and has its Fix item,
+   * which tells how to fix it, for as long as the app runs. */
+  test("a file that couldn't be read marks the icon and has a Fix item", () => {
+    const { labels, item, clicked } = menu(null, () => ({ ...ready, fileProblems: ["settings", "knowledgeBase"] }));
+    expect(icon()).toBe("trayTemplateMarked.png");
+    expect(tray.toolTip).toBe("TabMail Voice can't read one of its files");
+    expect(labels).toContain("Fix Settings File…");
+    expect(labels).toContain("Fix Knowledge Base File…");
+    // The settings file holds the user's exclusions: the menu says the screen isn't read meanwhile.
+    expect(labels.indexOf(screenNotReadLine)).toBe(labels.indexOf("Fix Settings File…") - 1);
+    expect(item(screenNotReadLine)?.enabled).toBe(false);
+
+    item("Fix Knowledge Base File…")?.click?.();
+    item("Fix Settings File…")?.click?.();
+    expect(clicked).toEqual(["showFileProblem:knowledgeBase", "showFileProblem:settings"]);
+ 
+    expect(menu(null, () => ({ ...ready, fileProblems: ["knowledgeBase"] })).labels).not.toContain(screenNotReadLine);
   });
 
   test("an unchanged state leaves the icon alone", () => {

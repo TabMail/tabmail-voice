@@ -28,7 +28,7 @@ import { defaultKnowledgeBase } from "../../../src/core/personalization/defaults
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { type MicrophoneStatus, PermissionsModel } from "../../../src/core/onboarding/permissions.js";
 import type { ScreenContext, ScreenRead } from "../../../src/core/dictation/screenContext.js";
-import type { DictationSettings } from "../../../src/core/settings.js";
+import { AppSettings, type DictationSettings } from "../../../src/core/settings.js";
 import { TipBook, tipDetails } from "../../../src/core/onboarding/tips.js";
 import { CancellationError, sleep } from "../../../src/core/util/timeout.js";
 import { type HTTPTransport, liveTransport, TransportError } from "../../../src/core/backend/http.js";
@@ -663,6 +663,60 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
       expect(transcription.body(1).vocabulary).toEqual(["Xyvora", "Ondrava Quist", "Talvenor Group"]);
     });
+  });
+
+  /** With screen reading off (or no settings file to read the user's exclusions from), nothing on
+   * screen is read: neither the field nor the window, in dictation or agent mode. */
+  test.each(["dictation", "agent"] as const)("with screen reading off the screen is never read (%s)", async (mode) => {
+    prefs.value = { ...defaultSettings(), readsScreen: false };
+    transcription.enqueue(200, mode === "agent" ? { text: "what is this" } : cleanedReply);
+    if (mode === "agent") completions.enqueue(200, Fixtures.completionsStream(JSON.stringify({ assistant: "It's a note." })));
+    const { controller } = makeController({ capture: new CountingCapture(true) });
+    let reads = 0;
+    controller.captureContext = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail" });
+    };
+    controller.captureWindow = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail" });
+    };
+
+    await holdAndRelease(controller, mode);
+
+    expect(await eventually(() => settled(controller))).toBe(true);
+    expect(reads).toBe(0);
+  });
+
+  /** While the settings file can't be read, the user's exclusions are unknown: a dictation from
+   * its settings reads neither the screen nor, to learn words, the field it pasted into. */
+  test("with the settings file unreadable neither the screen nor the field pasted into is read", async () => {
+    const store = new (class extends MemoryStore {
+      readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
+    })();
+    const app = new AppSettings(store, () => true);
+    app.readsScreen = true;
+    app.learnsWords = true;
+    // Consent and the server aren't what is checked: they are the test's.
+    prefs.value = { ...app.dictation(null), hasConsented: true, backendURL: defaultSettings().backendURL };
+    transcription.enqueue(200, cleanedReply);
+    const watches: number[] = [];
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections: { watch: (target) => watches.push(target), stop: () => {} } });
+    let reads = 0;
+    controller.captureContext = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail" });
+    };
+    controller.captureWindow = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail" });
+    };
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(reads).toBe(0);
+    expect(watches).toEqual([]);
   });
 
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
@@ -2703,6 +2757,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(row?.memId).toMatch(/^turn:[0-9a-f-]{36}$/);
         expect(row?.dateMs).toBeGreaterThanOrEqual(before);
         expect(memory.limits).toEqual([config.memorySizeLimitDefault]);
+      });
+
+      /** With no memory limit (the settings file couldn't be read), the request is carried out and not
+       * kept: keeping it within the default would remove what a larger limit kept. */
+      test("a request is not kept while the memory limit is unknown", async () => {
+        prefs.value = { ...prefs.value, memorySizeLimit: null };
+        transcription.enqueue(200, { text: request });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        const { pastes } = await carryOut(selectionScreen(""));
+        expect(pastes).toEqual(["We ship on Friday."]);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(memory.rows).toEqual([]);
+        expect(memory.limits).toEqual([]);
       });
 
       /** Compose and Edit look up memory too, with Answer off: what they write can reuse an earlier
