@@ -119,7 +119,7 @@ memory anyways and [it'll] search for it." Memory (ADR-DESK-061) keeps every age
   dedupe, trim and expire the shared KB, so Voice needs none of its own; their `[Pinned]`, `[Task]` and
   `[Reminder]` lines reach Voice as they wrote them.
 - Copy: nothing says agent mode learns about the user any more. Settings' KB caption: "Agent mode adds
-  to it when you ask it to remember something." The consent page's memory line: "Your past agent-mode
+  to it when you ask it to remember something." (replaced by the #296 tab captions, below) The consent page's memory line: "Your past agent-mode
   requests, your writing style and what you ask it to remember, kept only on this computer so it can
   use them. Edit or remove them anytime in Settings, which keeps the last `promptHistoryMax` versions of
   your writing style and knowledge base." The what's-new tip (not yet shipped): "New: agent mode
@@ -275,7 +275,10 @@ is now a tab: Writing style, Knowledge base, History, in a segmented control und
 (equal segments, the chosen one raised as a control; the system's selection colors in a contrast
 theme; the arrow keys move between them; the scroll bar's room is kept, so nothing shifts as a tab
 that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
-opens with a short caption, a sentence to a line (owner, 2026-10-28), and, for the two texts, its
+opens with a short caption, a sentence to a line (owner, 2026-10-28): Writing style "How agent mode
+writes for you. / Sent with its requests; TabMail doesn’t keep it.", Knowledge base "What agent mode
+knows and remembers about you. / Sent with each request; TabMail doesn’t keep it.", History "Your last
+`promptHistoryMax` changes, kept on this computer so you can put one back."; and, for the two texts, its
 Reset centered beside it; Reset's question, too wide to share the caption's line, goes under it
 rather than squeezing the caption into a column. Each panel is a stop in the Tab order of its own, so
 Tab from the chosen tab reaches it even when it holds no control (an empty History). Each writing style section is its own card

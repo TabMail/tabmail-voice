@@ -120,9 +120,16 @@ function toggle(label: string): HTMLInputElement {
   return input;
 }
 
-/** The text of the visible section's rows and notes. */
+/** The text of the visible section's rows and notes, without what is hidden in it (another tab's
+ * panel). */
 function visibleText(): string {
-  return [...document.querySelectorAll("main > div:not([hidden])")].map((pane) => pane.textContent ?? "").join("\n");
+  return [...document.querySelectorAll("main > div:not([hidden])")]
+    .map((pane) => {
+      const shown = pane.cloneNode(true) as Element;
+      for (const hidden of shown.querySelectorAll("[hidden]")) hidden.remove();
+      return shown.textContent ?? "";
+    })
+    .join("\n");
 }
 
 /** Types `text` into `input` as the user would, so React sees the change. */
@@ -719,12 +726,14 @@ describe("Settings page", () => {
     test("Reset asks before it resets", async () => {
       const { commands } = await open();
       const resets = () => [...document.querySelectorAll("button")].filter((element) => element.textContent === "Reset…");
+      await act(async () => tab("Knowledge base").click());
       await act(async () => resets()[1]?.click());
       await act(async () => button("Cancel").click());
       expect(commands).toEqual([]);
       await act(async () => resets()[1]?.click());
       expect(visibleText()).toContain("Reset your knowledge base to the default?");
       await act(async () => button("Reset").click());
+      await act(async () => tab("Writing style").click());
       await act(async () => resets()[0]?.click());
       await act(async () => button("Reset").click());
       expect(commands).toEqual([{ type: "resetKnowledgeBase" }, { type: "resetWritingStyle" }]);
@@ -1081,7 +1090,8 @@ describe("Settings page", () => {
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
-      Personalization: ["Writing style", "General writing style", "Knowledge base", "History", "No changes yet."],
+      // The tab shown first, Writing style; the other tabs' own text is in the tabs' tests.
+      Personalization: ["Writing style", "General writing style", "Knowledge base", "History", "How agent mode writes for you."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],

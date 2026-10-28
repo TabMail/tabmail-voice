@@ -271,7 +271,6 @@ input.switch:checked::before {
   .nav.selected .attention {
     background: SelectedItemText;
   }
-
 }
 
 /* Settings › Dictionary: the add field fills its row, and the words are rows of the same card. */

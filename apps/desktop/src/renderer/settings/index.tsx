@@ -751,8 +751,8 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
 }
 
 /** A row of tabs, one chosen, as a segmented control: a click or the arrow keys choose another,
- * and Tab moves on into the chosen tab's panel, to its first control (`id` names the panels by
- * place, `<id>-<index>`: an id holds no spaces). */
+ * and Tab moves on into the chosen tab's panel (`id` names the panels by place, `<id>-<index>`: an
+ * id holds no spaces). */
 function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { label: string; id: string; tabs: readonly Name[]; chosen: Name; onChoose: (tab: Name) => void }) {
   const list = useRef<HTMLDivElement>(null);
   const move = (by: number) => {
