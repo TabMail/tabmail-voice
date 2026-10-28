@@ -401,7 +401,7 @@ export function isCommand(value: unknown): value is Command {
 }
 
 /** Whether `value` is a list of bullets. Neither their number nor their length is capped: the knowledge
- * base's other writers (`kb_add`, the refine) aren't, and an edit carries every bullet shown, so a cap
+ * base's other writer (`kb_add`) isn't, and an edit carries every bullet shown, so a cap
  * here would refuse every edit of a knowledge base holding one bullet past it (the Settings fields
  * keep a typed bullet within `personalizationBulletMaxLength`). */
 function isBulletList(value: unknown): value is string[] {

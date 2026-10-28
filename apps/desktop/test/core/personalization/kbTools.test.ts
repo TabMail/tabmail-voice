@@ -42,7 +42,7 @@ describe("KBTools", () => {
     expect(KBTools.names).toEqual(["kb_add", "kb_del"]);
   });
 
-  /** What the user asked to be remembered is pinned, so a refine never edits or removes it. */
+  /** What the user asked to be remembered is pinned, so the refine Thunderbird and iOS run never edits or removes it. */
   test("kb_add keeps the statement pinned, as a bullet", () => {
     const { prompts, run, changes } = setup("- alpha.");
     expect(run("kb_add", "  Prefers morning meetings  ")).toBe("Added to knowledge base.");

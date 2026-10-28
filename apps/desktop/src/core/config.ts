@@ -403,15 +403,6 @@ export const memoryBubbleDescription = "Looks back at your earlier requests, and
 /** The agent loop's knowledge-base tools, as the backend names them. */
 export const kbAddTool = "kb_add";
 export const kbDelTool = "kb_del";
-/** The backend prompt that learns a chat's knowledge into the knowledge base (`KBRefiner`). */
-export const kbRefinePrompt = "system_prompt_kb_refine";
-/** A chat window that closes after at least this many requests has its knowledge learned into the
- * knowledge base (`KBRefiner`), as on iOS. */
-export const kbRefineMinUserTurns = 3;
-/** The refine's limits, as Thunderbird and iOS send them: reminders past due by more than this many
- * days are removed, and the knowledge base is kept to this many bullets. */
-export const kbRefineReminderRetentionDays = 14;
-export const kbRefineMaxBullets = 200;
 /** Settings' history of the knowledge base and writing style: at most this many entries, the oldest
  * dropped first; an edit is recorded once edits have stopped for this long (ms), as on iOS. */
 export const promptHistoryMax = 100;

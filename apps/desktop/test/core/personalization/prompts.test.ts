@@ -120,7 +120,7 @@ describe("UserPrompts", () => {
     expect(prompts.knowledgeBase).toBe("- beta\n- gamma with a second line\n- alpha");
   });
 
-  /** A statement `kb_add` (or a refine) kept after Settings showed the knowledge base survives the
+  /** A statement `kb_add` kept after Settings showed the knowledge base survives the
    * user's edit of what was shown: the edit merges into the text as it is now. */
   test("a statement added after the page showed survives an edit", () => {
     const { prompts } = setup({ [kbKey]: "- alpha\n- beta" });
@@ -132,7 +132,7 @@ describe("UserPrompts", () => {
     expect(extractBullets(prompts.knowledgeBase)).toEqual(["alpha", "[Pinned] Added meanwhile."]);
   });
 
-  /** Saving one bullet changes no other: an untouched bullet a refine stored with a leading space
+  /** Saving one bullet changes no other: an untouched bullet stored with a leading space
    * stays byte for byte when another is edited. */
   test("an edit of one bullet keeps an untouched one as stored", () => {
     const { prompts } = setup({ [kbKey]: "- Alpha.\n-  Beta." });
@@ -224,9 +224,9 @@ describe("UserPrompts", () => {
     expect(store.get(compositionKey)).toBe(expected);
   });
 
-  /** A bullet a refine stored with a space after its "- " is shown with that space; Settings can
+  /** A bullet stored with a space after its "- " is shown with that space; Settings can
    * still remove each bullet it shows, and an edit of one replaces it in place. */
-  test("every bullet shown can be removed and edited, one a refine stored with a leading space too", () => {
+  test("every bullet shown can be removed and edited, one stored with a leading space too", () => {
     const produced = () => {
       const { prompts } = setup({ [kbKey]: "- a." });
       const before = prompts.knowledgeBase;

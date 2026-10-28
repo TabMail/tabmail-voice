@@ -145,7 +145,7 @@ function ConsentPage({ state }: { state: WelcomeState }) {
         </li>
         <li>
           <HistoryIcon size={config.welcomeLabelIconSize} />
-          <span>Your past agent-mode requests, your writing style and what it learns about you, kept only on this computer so it can use them. Edit or remove them anytime in Settings.</span>
+          <span>Your past agent-mode requests, your writing style and what it learns about you, kept only on this computer so it can use them. Edit them anytime in Settings, which keeps your last {config.promptHistoryMax} versions to restore.</span>
         </li>
         <li>
           <LockShieldIcon size={config.welcomeLabelIconSize} />

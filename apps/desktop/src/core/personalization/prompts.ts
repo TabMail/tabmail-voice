@@ -20,7 +20,7 @@ const Key = {
 
 export type PromptField = "composition" | "kb";
 
-/** How a history entry came about: edits (in Settings, by the agent's tools, or by a refine), recorded
+/** How a history entry came about: edits (in Settings or by the agent's tools), recorded
  * once they stop, or a reset or a restore, recorded before it. As iOS names them. */
 export type PromptHistorySource = "local_edit" | "reset";
 
@@ -52,7 +52,7 @@ function sentWritingStyle(composition: string): string {
  * empty one is left out. Split on the breaks and trimmed, rather than one pattern of spaces around
  * breaks, which takes time growing with the square of a long run of spaces. A bullet in `kept` (one
  * shown and left as it was) stays as it is stored, so saving one bullet changes no other: tidying an
- * untouched one (a refine can store "-  Beta.") would make it another bullet, and a removal of it
+ * untouched one (a multi-line `kb_add` can store "-  Beta.") would make it another bullet, and a removal of it
  * made with the same list would miss it. */
 function asBullets(bullets: readonly string[], kept: ReadonlySet<string> = new Set()): string {
   return bullets
@@ -72,9 +72,9 @@ function asBullets(bullets: readonly string[], kept: ReadonlySet<string> = new S
 
 /** `current` with the user's edit from `shown` to `edited`: `edited` as it is when `current` still
  * holds the bullets shown, else the edit merged into it three ways (`mergeFlatField`), so a bullet
- * `kb_add` or a refine added since the page showed is kept. */
+ * `kb_add` added since the page showed is kept. */
 function withEdit(current: string, shown: readonly string[], edited: readonly string[]): string {
-  // The bullets as shown, not tidied: a stored one `kb_add` or a refine wrote with a space after its
+  // The bullets as shown, not tidied: a stored one `kb_add` wrote with a space after its
   // "- " must match itself, or its removal or edit is lost in the merge.
   const base = shown.map((bullet) => `- ${bullet}`).join("\n");
   const kept = new Set(shown);
@@ -99,14 +99,13 @@ function isHistoryEntry(value: unknown): value is PromptHistoryEntry {
 /**
  * The user's writing style and knowledge base (ADR-DESK-063), kept on this computer in their own
  * file, as Thunderbird's add-on keeps them: the writing style as its markdown with three sections of
- * bullets, the knowledge base as a list of bullets. Settings, the agent's `kb_add` and `kb_del` and a
- * chat's refine all write through here, each reading the text and writing it back in one step, so no
+ * bullets, the knowledge base as a list of bullets. Settings and the agent's `kb_add` and `kb_del`
+ * all write through here, each reading the text and writing it back in one step, so no
  * write is lost to another. A text never written is its default, which reading it never stores.
  */
 export class UserPrompts extends Observable {
   private pendingFields = new Set<PromptField>();
   private historyTimer: ReturnType<typeof setTimeout> | null = null;
-  private knowledgeBaseReplaced = 0;
 
   constructor(private readonly store: KeyValueStore) {
     super();
@@ -154,12 +153,6 @@ export class UserPrompts extends Observable {
     return this.save("kb", updated) ? "saved" : "unsaved";
   }
 
-  /** How many times Reset or Restore has put back the knowledge base whole: a refine of the text
-   * they replaced is dropped (`KBRefiner`), never merged into what the user chose. */
-  get knowledgeBaseReplacements(): number {
-    return this.knowledgeBaseReplaced;
-  }
-
   /** Puts the writing style back to its default, recording it as it was first. */
   resetComposition(): boolean {
     return this.reset("composition", defaultComposition);
@@ -184,10 +177,7 @@ export class UserPrompts extends Observable {
     this.flushHistory();
     this.record("reset", ["composition", "kb"]);
     const saved = this.write({ [Key.composition]: entry.composition, [Key.knowledgeBase]: entry.kb });
-    if (saved) {
-      this.knowledgeBaseReplaced += 1;
-      this.changed();
-    }
+    if (saved) this.changed();
     return saved;
   }
 
@@ -203,10 +193,7 @@ export class UserPrompts extends Observable {
     this.flushHistory();
     this.record("reset", [field]);
     const saved = this.write({ [field === "kb" ? Key.knowledgeBase : Key.composition]: value });
-    if (saved) {
-      if (field === "kb") this.knowledgeBaseReplaced += 1;
-      this.changed();
-    }
+    if (saved) this.changed();
     return saved;
   }
 

@@ -91,13 +91,6 @@ export class CompletionsClient {
     return reply.assistant;
   }
 
-  /** The knowledge base the backend's refine (`kbRefinePrompt`) returns (`refined_kb`). */
-  async refineKB(message: CompletionsMessage, accessToken: string, signal?: AbortSignal): Promise<string> {
-    const { reply } = await this.send(message, accessToken, signal, { disable_tools: true });
-    if (typeof reply.refined_kb !== "string") throw new BackendError("invalidResponse");
-    return reply.refined_kb;
-  }
-
   /** One round of a prompt that may call the `tools` named (`available_tools`, tools on): the loop's
    * first round with `conversationState` undefined, else the next one with the state the last round
    * returned and the tools' results added. `onServerTool` hears of each backend tool as it starts and

@@ -36,7 +36,7 @@ export class KBTools {
   }
 
   private add(statement: string): unknown {
-    // Pinned: the user asked for it, so a refine never edits or removes it.
+    // Pinned: the user asked for it, so the knowledge-base refine Thunderbird and iOS run never edits or removes it.
     const patch = `ADD\n${statement.startsWith("[Pinned]") ? statement : `[Pinned] ${statement}`}`;
     let failed = false;
     const outcome = this.prompts.updateKnowledgeBase((current) => {

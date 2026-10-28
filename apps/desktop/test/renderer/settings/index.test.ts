@@ -502,7 +502,7 @@ describe("Settings page", () => {
       expect(prompts.knowledgeBase).toBe("- Works with Sam.");
     });
 
-    /** The knowledge base changed elsewhere (`kb_add`, `kb_del`, a refine) while Settings shows it:
+    /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:
      * each field shows its own bullet, what is being typed in a later field stays, and is saved with
      * the list shown now, and a field left untouched saves nothing. */
     test("a knowledge base changed elsewhere keeps what is being typed", async () => {
@@ -578,7 +578,7 @@ describe("Settings page", () => {
       expect(commands).toEqual([]);
     });
 
-    /** A bullet another writer stored with a leading space (a multi-line kb_add, a refine) is
+    /** A bullet another writer stored with a leading space (a multi-line kb_add) is
      * shown as stored; leaving it untouched saves nothing. */
     test("an item stored with a leading space and left untouched saves nothing", async () => {
       const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: [" Alice.", "Works with Sam."] } });
@@ -1412,8 +1412,8 @@ describe("Settings page", () => {
       "Language",
       "Useful links to personal website and other resources",
       "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
-      `Agent mode adds to it when you ask it to remember something, and learns from a chat of ${config.kbRefineMinUserTurns} or more requests when its window closes.`,
-      "Each change to your writing style and knowledge base is kept here, so you can put an earlier version back.",
+      "Agent mode adds to it when you ask it to remember something.",
+      `Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`,
       "No changes yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
