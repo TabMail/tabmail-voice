@@ -21,7 +21,8 @@ export type AgentToolID = "edit" | "compose" | "thunderbird" | "answer";
 
 export const agentToolIDs: readonly AgentToolID[] = ["edit", "compose", "thunderbird", "answer"];
 
-/** The tools agent mode offers, and Settings and the welcome wizard list. Thunderbird's is left out
+/** The tools agent mode offers (Settings and the welcome wizard list those with a switch,
+ * `switchableAgentToolIDs`). Thunderbird's is left out
  * until the native connector to TabMail's add-on replaces its chat relay (owner, 2026-09-29: "right
  * now it's just clunky"), so the other tools can be tried without it; its code stays for that
  * connector (ADR-DESK-037). Offering it here again brings it back everywhere. */

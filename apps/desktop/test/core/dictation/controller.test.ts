@@ -3055,14 +3055,20 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const tool = (connector: ConnectorID): ConnectorTool => ({ name: `${connector}_example`, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
       prefs.value = { ...prefs.value, enabledTools: [], enabledConnectors: connectorIDs.filter((connector) => connector !== "notes") };
       const { controller } = makeController({ capture: new CountingCapture(true), thunderbird: new FakeThunderbird(), connectorTools: [tool("web"), tool("calendar"), tool("notes"), tool("calendar")] });
-      controller.captureContext = async () => selectionScreen("");
+      const read = deferred<ScreenContext>();
+      controller.captureContext = () => read.promise;
 
       controller.handle("start");
-      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
       expect(controller.connectors).toEqual([]);
       controller.handle("toggleMode");
+      // Agent mode before the screen read decides the tools: no app's bubble before the tools'.
+      await sleep(50);
+      expect(controller.mode).toBe("agent");
+      expect(controller.tools).toEqual([]);
+      expect(controller.connectors).toEqual([]);
+      read.resolve(selectionScreen(""));
       expect(await eventually(() => controller.tools.length > 0)).toBe(true);
-      prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs], enabledConnectors: [...connectorIDs] };
+      prefs.value = { ...prefs.value, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs] };
 
       expect(controller.tools).toEqual(["answer"]);
       expect(controller.connectors).toEqual(["calendar", "web"]);
@@ -4056,7 +4062,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
        * privacy: the second is told the screen is hidden, with nothing of the first screen but what
        * the conversation holds. */
       test("an answer asked on a hidden screen after a shown one is told the screen is hidden", async () => {
-        setTools(["answer"]);
+        setTools([]);
         transcription.enqueue(200, { text: "first question" });
         completions.enqueue(200, reply("first answer"));
         const { controller } = makeController({ capture: new CountingCapture(true) });
@@ -4214,7 +4220,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           return (state?.harmony_messages ?? []).filter((message) => message.role === "tool").map((message) => message.content);
         }
 
-        /** Agent mode asked `toolRequest` with only Answer on (so nothing to choose), the backend
+        /** Agent mode asked `toolRequest` with Edit and Compose off (so Answer alone), the backend
          * answering each of `rounds` in turn, `tools` running on this computer. Returns once the
          * controller exists; `done` settles with the request. `inChat`: asked as a follow-up, in the
          * chat window an earlier answer (`question`, `answer`, the backend's first request) opened,
@@ -4226,7 +4232,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           options: Parameters<typeof carryOut>[3] & { inChat?: boolean } = {},
         ): Promise<{ controller: DictationController; done: ReturnType<typeof carryOut>; chatChanges: boolean[] }> {
           const { inChat = false, ...carryOutOptions } = options;
-          setTools(["answer"]);
+          setTools([]);
           if (inChat) {
             transcription.enqueue(200, { text: question });
             completions.enqueue(200, reply(answer));
@@ -4277,7 +4283,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         /** `screen_read` (ADR-DESK-016, 2026-10-25): the agent is given what the window shows, and
          * reads the whole window, read since, only when it asks. It is offered with a window read and
-         * not hidden, Answer on or off, and runs here. */
+         * not hidden, and runs here. */
         describe("screen_read", () => {
           const whole = blankScreen({ appName: "Example Mail", renderedText: "Earlier in the thread\n» ‸" });
 
@@ -4623,7 +4629,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             ["a Compose without text", "compose" as const, "{}", selectionScreen(""), new AgentError("noText").message],
             ["an Edit of a redacted selection", "edit" as const, JSON.stringify({ text: "Rewritten." }), { ...selectionScreen("token [redacted] here"), selectionRedacted: true }, new AgentError("secretInSelection").message],
           ])("kb_add beside %s fails before the knowledge base changes", async (_case, tool, args, screen, message) => {
-            setTools([tool, "answer"]);
+            setTools([tool]);
             const before = prompts.knowledgeBase;
             transcription.enqueue(200, { text: toolRequest });
             completions.enqueue(200, calling(["kb_add", JSON.stringify({ statement: "Lunch is at noon" })], [tool, args]));
@@ -5594,7 +5600,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
            * first, with no failure. */
           test("the question answered aloud is declined when the model writes into the app instead", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
-            const { controller, done } = await ask([tool], [calling(sameCall), writes("compose", "We ship on Friday.")], () => setTools(["answer", "compose"]));
+            const { controller, done } = await ask([tool], [calling(sameCall), writes("compose", "We ship on Friday.")], () => setTools(["compose"]));
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
 
             await sayAloud(controller, "Yes.");
@@ -6557,7 +6563,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             [calling(["example_create", "{}"]), writes("compose", "I'm free at 3.")],
             (controller) => {
               controllerRef = controller;
-              setTools(["compose", "answer"]);
+              setTools(["compose"]);
             },
             {
               paste: async () => {
@@ -6590,7 +6596,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             [then === "answers" ? reply(answer) : writes("compose", "I'm free at 3.")],
             (controller) => {
               controllerRef = controller;
-              if (then === "writes") setTools(["compose", "answer"]);
+              if (then === "writes") setTools(["compose"]);
               controller.observe(() => pending.push(controller.chat?.pendingRequest ?? null));
             },
             { paste: async () => void chatAtPaste.push(controllerRef?.chat ?? null) },
@@ -6622,7 +6628,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             [calling(["example_create", "{}"]), writes("compose", "Added it.")],
             (controller) => {
               controllerRef = controller;
-              setTools(["compose", "answer"]);
+              setTools(["compose"]);
             },
             {
               paste: async (text) => {

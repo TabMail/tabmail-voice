@@ -1292,8 +1292,10 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
     expect(await send({ type: "setAgentToolEnabled", tool: "compose", value: false })).toEqual({ error: null });
     expect(await send({ type: "setAgentToolEnabled", tool: "retired-tool", value: false })).toEqual({ error: expect.any(String) });
-    // Answer has no switch: one sent anyway is refused and changes nothing.
+    // Answer has no switch, nor has Thunderbird's tool while it isn't offered (ADR-DESK-037): one sent
+    // anyway is refused and changes nothing.
     expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: expect.any(String) });
+    expect(await send({ type: "setAgentToolEnabled", tool: "thunderbird", value: false })).toEqual({ error: expect.any(String) });
 
     expect(state("settings").enabledTools).toEqual(["edit"]);
     expect(state("welcome").enabledTools).toEqual(["edit"]);

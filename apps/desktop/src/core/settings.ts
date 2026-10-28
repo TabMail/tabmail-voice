@@ -421,7 +421,8 @@ export class AppSettings extends Observable {
     return Array.isArray(stored) ? stored.filter(isAgentToolID) : [];
   }
 
-  /** Whether agent mode may use `tool`. Every tool is on unless switched off (owner, 2026-09-26). */
+  /** Whether `tool`'s switch is on. Every switch is on unless switched off (owner, 2026-09-26); Answer,
+   * which has none, is offered whatever this says (owner, 2026-10-27). */
   isEnabled(tool: AgentToolID): boolean {
     return !this.disabledAgentTools.includes(tool);
   }

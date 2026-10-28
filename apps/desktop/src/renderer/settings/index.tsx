@@ -386,8 +386,9 @@ function hasName(state: SettingsState): boolean {
   return (state.userName ?? "").trim() !== "";
 }
 
-/** The user's name, then a switch for each agent tool and each app Answer reaches, alphabetically
- * (owner, 2026-09-28), as the bubbles under the pill first show. */
+/** The user's name, then a switch for each switchable agent tool (Answer, always on, has none) and
+ * each app Answer reaches, alphabetically (owner, 2026-09-28), as the bubbles under the pill first
+ * show. */
 function AgentPane({ state }: { state: SettingsState }) {
   return (
     <>

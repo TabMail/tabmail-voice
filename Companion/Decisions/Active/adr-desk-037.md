@@ -27,3 +27,8 @@ ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built se
   delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
   case) were taken out with it and come back from this change's history.
 
+**Amendment 2026-10-27:** Settings and the welcome wizard now list `switchableAgentToolIDs` (Edit and
+Compose), drawn from `offeredAgentToolIDs` without Answer, which is always on and has no switch
+(ADR-DESK-022 amendment of that date); `AppSettings.enabledTools` reads that list, and
+`setAgentToolEnabled` accepts only it, so Thunderbird's tool is refused there too. Bringing
+Thunderbird's tool back is still offering it in `offeredAgentToolIDs`.
