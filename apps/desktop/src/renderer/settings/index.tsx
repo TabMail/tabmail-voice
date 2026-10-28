@@ -497,7 +497,7 @@ function MemoryPane({ state }: { state: SettingsState }) {
   };
   const chooseLimit = (value: number) => {
     // A lower limit can remove requests for good: asked first, as Clear All is, whatever memory is
-    // shown to hold; so is the first limit after a reset left it unset. The list keeps the limit in
+    // shown to hold; so is the first limit while it is "Not set". The list keeps the limit in
     // force until then.
     if (limit === null || value < limit) setConfirmingLimit(value);
     else {

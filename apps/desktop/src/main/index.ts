@@ -124,7 +124,8 @@ if (needsX11Relaunch(appImage, process.argv)) {
 /** Settings › Memory's commands refused while AI features are off (the settings file can't be read,
  * or the user opted out of AI): a typed search, which memory's helper runs a model over, and the size
  * limit, which trims it. Listing the newest, removing one and Clear All stay: they are local and send
- * nothing, so the user can always delete what memory holds (owner, 2026-10-28). */
+ * nothing of the user's (starting memory's helper may still fetch its model from TabMail's CDN), so the
+ * user can always delete what memory holds (owner, 2026-10-28). */
 const memoryCommands: ReadonlySet<Command["type"]> = new Set(["searchMemory", "setMemorySizeLimit"]);
 
 /** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
