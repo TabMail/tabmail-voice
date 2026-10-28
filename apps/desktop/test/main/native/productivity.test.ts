@@ -142,6 +142,9 @@ describe("Native event editor boundary (Linux)", () => {
   });
   it.each([
     { attendees: [null] }, { organizer: "me@example.com" }, { recurrence: 5 }, { recurrence: { ...weekly, days: [null] } },
+    { isInvitation: "no" }, { recurrence: { ...weekly, interval: 0 } }, { recurrence: { ...weekly, days: Array.from({ length: 367 }, () => ({ weekday: 2, week: 0 })) } },
+    { recurrence: { ...weekly, days: [{ weekday: 0, week: 0 }] } }, { recurrence: { ...weekly, days: [{ weekday: 2, week: 1.5 }] } },
+    { recurrence: { ...weekly, monthDays: Array.from({ length: 367 }, () => 1) } }, { calendarId: "x\0y" }, { recurrence: { ...weekly, count: null, until: "soon" } },
     { availability: "tentative" }, { attendees: [{ email: "a@example.com", name: null, status: "maybe" }] }, { organizer: { email: 4 } },
     { recurrence: { ...weekly, frequency: "HOURLY" } }, { recurrence: { ...weekly, count: 0 } }, { recurrence: { ...weekly, days: [{ weekday: 8, week: 0 }] } },
     { recurrence: { ...weekly, monthDays: [1.5] } }, { isDetached: "no" }, { id: "x\0y" }, { occurrence: "soon" }, { timeZone: 5 },
@@ -171,6 +174,21 @@ describe("Native event editor boundary (Linux)", () => {
     await new NativeEventStore(plain).addEvent({ ...converted, end: new Date(start) });
     expect(plain).toHaveBeenCalledWith("calendarAdd", { title: "Sync", start, end: start, isAllDay: false, location: null, notes: null });
   });
+  it("sends every field an edit changes, as the helper reads them", async () => {
+    const run = vi.fn().mockResolvedValue(row);
+    await new NativeEventStore(run, undefined, true).editor?.edit(row.id, null, "all", {
+      title: "Planning", start: new Date(start + 60_000), end: new Date(start + 120_000), isAllDay: true, location: "Room 4", notes: "Agenda",
+      availability: "busy", invite: [], uninvite: [], exclude: [],
+    });
+    expect(run.mock.lastCall?.[1]).toStrictEqual({ id: row.id, occurrence: null, scope: "all", title: "Planning", start: start + 60_000, end: start + 120_000,
+      isAllDay: true, location: "Room 4", notes: "Agenda", availability: "busy", invite: [], uninvite: [], exclude: [] });
+  });
+  it("reads every answer an attendee can give", async () => {
+    const answers = ["accepted", "declined", "tentative", "pending", "unknown"] as const;
+    const run = vi.fn().mockResolvedValue([{ ...row, attendees: answers.map((status, index) => ({ email: `person${index}@example.com`, name: null, status })) }]);
+    const [read] = await new NativeEventStore(run, undefined, true).events(new Date(start - 1), new Date(start + 1));
+    expect(read?.attendees?.map((person) => person.status)).toEqual(answers);
+  });
   it("sends an edit's changes, keeping, ending or setting the rule", async () => {
     const run = vi.fn().mockResolvedValue(row);
     const editor = new NativeEventStore(run, undefined, true).editor;
@@ -186,11 +204,13 @@ describe("Native event editor boundary (Linux)", () => {
   });
   it("lists calendars and deletes by id", async () => {
     const calendars = [{ id: "system-calendar", title: "Personal", account: "On This Computer", isDefault: true }];
-    const run = vi.fn().mockResolvedValueOnce(calendars).mockResolvedValueOnce({}).mockResolvedValueOnce([{ ...calendars[0], isDefault: "yes" }]).mockResolvedValueOnce([null]);
+    const run = vi.fn().mockResolvedValueOnce(calendars).mockResolvedValueOnce({}).mockResolvedValueOnce([{ ...calendars[0], isDefault: "yes" }]).mockResolvedValueOnce([null])
+      .mockResolvedValueOnce([{ ...calendars[0], id: "x\0y" }]);
     const editor = new NativeEventStore(run, undefined, true).editor;
     expect(await editor?.calendars()).toEqual(calendars);
     await editor?.delete(row.id);
     expect(run).toHaveBeenLastCalledWith("calendarDelete", { id: row.id });
+    await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
     await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
     await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
   });

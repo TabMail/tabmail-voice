@@ -261,8 +261,9 @@ for method, params in [('calendarEvents', {'start':start_dst, 'end':start_dst+86
     assert quiet, method
     again = faulted(method, params, 'changed-first')
     assert again.returncode == 0 and json.loads(again.stdout) == quiet, (method, again.stderr)
-    changing = faulted(method, params, 'changed')
-    assert changing.returncode != 0 and changing.stdout == '' and changing.stderr.strip() == 'productivity request failed', (method, changing.stdout)
+    for fault in ['changed', 'removed']:
+        changing = faulted(method, params, fault)
+        assert changing.returncode != 0 and changing.stdout == '' and changing.stderr.strip() == 'productivity request failed', (method, fault, changing.stdout)
 print('EDS reads interrupted by a change are made again, and a source that keeps changing fails with nothing')
 
 # The calendar editor (ADR-DESK-060's Linux amendment): ids, one event, the scopes of a change,
@@ -404,11 +405,11 @@ assert call('calendarDelete', {'id':plain['id']}) == {}
 invitation = ICalGLib.Component.new_from_string('BEGIN:VEVENT\r\nUID:invited-event\r\nSUMMARY:Invited\r\nDTSTART:' +
     datetime.datetime.fromtimestamp(week(8)/1000, datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '\r\nDURATION:PT1H\r\n' +
     'ORGANIZER;CN=Organizer:mailto:organizer@example.com\r\nATTENDEE;PARTSTAT=ACCEPTED;CN=Organizer:mailto:organizer@example.com\r\n' +
-    'ATTENDEE;PARTSTAT=TENTATIVE:mailto:someone@example.com\r\nATTENDEE:mailto:other@example.com\r\nEND:VEVENT\r\n')
+    'ATTENDEE;PARTSTAT=TENTATIVE:mailto:someone@example.com\r\nATTENDEE:mailto:other@example.com\r\nATTENDEE;PARTSTAT=DECLINED:mailto:declined@example.com\r\nEND:VEVENT\r\n')
 assert calendar_client.create_object_sync(invitation, ECal.OperationFlags.NONE, None)[0]
 [invited] = rows('Invited')
 assert invited['isInvitation'] and invited['organizer'] == {'email':'organizer@example.com', 'name':'Organizer', 'status':'unknown'}, invited
-assert [(person['email'], person['status']) for person in invited['attendees']] == [('organizer@example.com', 'accepted'), ('someone@example.com', 'tentative'), ('other@example.com', 'pending')]
+assert [(person['email'], person['status']) for person in invited['attendees']] == [('organizer@example.com', 'accepted'), ('someone@example.com', 'tentative'), ('other@example.com', 'pending'), ('declined@example.com', 'declined')]
 assert invited['end'] - invited['start'] == 3600000
 assert refused('calendarEdit', {'id':invited['id'], 'occurrence':None, 'scope':'all', 'title':'Mine now', **unchanged}) == 'notOrganizer'
 assert call('calendarDelete', {'id':invited['id']}) == {} and rows('Invited') == []
@@ -569,6 +570,83 @@ assert answered('calendarAdd', event(title='Read only event'), 'readonly') == {'
 assert answered('calendarEdit', {'id':writable['id'], 'occurrence':None, 'scope':'all', 'title':'Read only event', **unchanged}, 'readonly') == {'refused':'calendarReadOnly'}
 assert answered('calendarDelete', {'id':writable['id']}, 'readonly') == {'refused':'calendarReadOnly'}
 assert answered('calendarAdd', event(title='No default event'), 'nodefault') == {'refused':'noDefaultCalendar'}
+# A server that sends invitations but doesn't know the user's address can't send them from the user.
+assert answered('calendarEdit', {'id':writable['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'invite':[{'email':'a@example.com', 'name':None}]}}, 'schedules') == {'refused':'calendarNoInvitations'}
+assert people(rows('Writable event')[0]) == []
 assert rows('Read only event') == [] and rows('No default event') == [] and len(rows('Writable event')) == 1
 assert call('calendarDelete', {'id':writable['id']}) == {}
 print('EDS a read-only calendar and a missing default calendar refuse without saving, passed')
+
+# A split names its occurrence in the series' own zone, as EDS's server backends (Google, CalDAV,
+# Exchange) take it for the new series' start; its local backend converts it itself, so what the
+# backend receives is read here (recorded at the library boundary).
+record = os.path.join(os.environ['HOME'], 'split-recurrence-id.txt')
+zoned = call('calendarAdd', event(title='Zoned split', start=week(34), end=week(34)+3600000, recurrence=rule(count=6)))
+recorded = subprocess.run([executable], input=json.dumps({'method':'calendarEdit', 'params':{'id':zoned['id'], 'occurrence':week(36),
+    'scope':'thisAndFollowing', 'title':'Zoned later', **unchanged}})+'\n', text=True, capture_output=True, timeout=20,
+    env={**os.environ, 'LD_PRELOAD':sys.argv[2], 'VOICE_PRODUCTIVITY_FAULT':'record', 'VOICE_PRODUCTIVITY_RECORD':record})
+assert recorded.returncode == 0, recorded.stderr
+# One line per split, unfolded (RFC 5545 folds a long one).
+[named] = open(record).read().replace('\r\n ', '').replace('\n ', '').splitlines()
+assert named.rstrip('Z').endswith(':' + (day0 + datetime.timedelta(weeks=36)).strftime('%Y%m%dT%H%M%S')), named
+if zone not in ('UTC', 'Etc/UTC'): assert ';TZID=' in named and zone in named, named
+assert [row['start'] for row in rows('Zoned split')] == [week(34), week(35)] and [row['start'] for row in rows('Zoned later')] == [week(k) for k in range(36, 40)]
+assert call('calendarDelete', {'id':zoned['id']}) == {} and call('calendarDelete', {'id':json.loads(recorded.stdout)['id']}) == {}
+print("EDS a split names its occurrence in the series' zone, as a server backend keeps it, passed")
+
+# Where the series' start is excluded, EDS counts the next occurrence as the first and changes the
+# whole series from it: so does the helper.
+first_gone = call('calendarAdd', event(title='First excluded', start=week(35), end=week(35)+3600000, recurrence=rule(frequency='DAILY', count=5)))
+call('calendarEdit', {'id':first_gone['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'exclude':[week(35)]}})
+renamed_first = call('calendarEdit', {'id':first_gone['id'], 'occurrence':at(35, 1), 'scope':'thisAndFollowing', 'title':'First excluded renamed', **unchanged})
+assert renamed_first['id'] == first_gone['id'] and renamed_first['recurrence'] == rule(frequency='DAILY', count=5), renamed_first
+assert [row['start'] for row in rows('First excluded renamed')] == [at(35, day) for day in range(1, 5)] and rows('First excluded') == []
+# Moved from there, every occurrence moves by as much from the series' own start, which comes back as
+# the confirmation says deleted ones do; the count is the series'.
+call('calendarEdit', {'id':first_gone['id'], 'occurrence':at(35, 1), 'scope':'thisAndFollowing', 'start':at(35, 1, 60), 'end':at(35, 1, 120), **unchanged})
+assert [row['start'] for row in rows('First excluded renamed')] == [at(35, day, 60) for day in range(5)]
+assert call('calendarDelete', {'id':first_gone['id']}) == {}
+print('EDS this and following from the first occurrence left after an excluded start changes the series, passed')
+
+# A series another app changed from one occurrence on (RANGE), or whose rule the app reads only in
+# part (RDATE, EXRULE), is changed in the calendar app, though it can be deleted here.
+for uid, extra in [('ranged-series', None), ('extra-dates', 'RDATE:' + utc(week(36)+86400000)), ('dropped-dates', 'EXRULE:FREQ=WEEKLY;COUNT=1')]:
+    seeded = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:{uid}\r\nSUMMARY:{uid}\r\nDTSTART:{utc(week(36))}\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=3\r\n' + (extra + '\r\n' if extra else '') + 'END:VEVENT\r\n')
+    assert calendar_client.create_object_sync(seeded, ECal.OperationFlags.NONE, None)[0]
+    if extra is None:
+        ranged = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:{uid}\r\nSUMMARY:{uid} later\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:{utc(week(36)+86400000)}\r\nDTSTART:{utc(week(36)+86400000+3600000)}\r\nDURATION:PT1H\r\nEND:VEVENT\r\n')
+        assert calendar_client.modify_object_sync(ranged, ECal.ObjModType.THIS, ECal.OperationFlags.NONE, None)
+    before = rows(uid) + rows(uid + ' later')
+    assert before and all(row['recurrence'] is not None for row in before), before
+    for row in before:
+        for scope in ['all', 'thisOnly', 'thisAndFollowing']:
+            assert refused('calendarEdit', {'id':row['id'], 'occurrence':row['occurrence'], 'scope':scope, 'title':'Changed here', **unchanged}) == 'unsupportedRecurrence', (uid, row, scope)
+    assert rows(uid) + rows(uid + ' later') == before and rows('Changed here') == []
+    assert call('calendarDelete', {'id':before[0]['id']}) == {} and rows(uid) == [] and rows(uid + ' later') == []
+print("EDS series with another app's change from one occurrence on, added dates or a removal rule refused for changes, deleted, passed")
+
+# A floating series (no zone, read in the user's) moved by its occurrences keeps the wall time.
+floating_start = (day0 + datetime.timedelta(weeks=0)).strftime('%Y%m%dT%H%M%S')
+floating_series = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:floating-series\r\nSUMMARY:Floating series\r\nDTSTART:{floating_start}\r\nDURATION:PT1H\r\nRRULE:FREQ=WEEKLY;COUNT=30\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(floating_series, ECal.OperationFlags.NONE, None)[0]
+floating_rows = rows('Floating series')
+assert [row['start'] for row in floating_rows] == [week(k) for k in range(30)], floating_rows
+call('calendarEdit', {'id':floating_rows[0]['id'], 'occurrence':week(3), 'scope':'all', 'start':at(3, 0, 30), 'end':at(3, 0, 90), **unchanged})
+assert [row['start'] for row in rows('Floating series')] == [at(k, 0, 30) for k in range(30)]
+assert call('calendarDelete', {'id':floating_rows[0]['id']}) == {}
+print('EDS a floating series moved keeps its local time of day, passed')
+
+# An occurrence another app changed alone, under its own zoned recurrence id, is deleted as itself.
+new_york = ZoneInfo('America/New_York')
+york = lambda k: datetime.datetime.fromtimestamp(week(37)/1000, new_york).replace(tzinfo=None) + datetime.timedelta(weeks=k)
+york_ms = lambda k: int(york(k).replace(tzinfo=new_york).timestamp()*1000)
+york_series = ICalGLib.Component.new_from_string(f"BEGIN:VEVENT\r\nUID:york-series\r\nSUMMARY:York series\r\nDTSTART;TZID=America/New_York:{york(0).strftime('%Y%m%dT%H%M%S')}\r\nDURATION:PT1H\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nEND:VEVENT\r\n")
+assert calendar_client.create_object_sync(york_series, ECal.OperationFlags.NONE, None)[0]
+york_alone = ICalGLib.Component.new_from_string(f"BEGIN:VEVENT\r\nUID:york-series\r\nSUMMARY:York alone\r\nRECURRENCE-ID;TZID=America/New_York:{york(1).strftime('%Y%m%dT%H%M%S')}\r\nDTSTART;TZID=America/New_York:{(york(1) + datetime.timedelta(hours=2)).strftime('%Y%m%dT%H%M%S')}\r\nDURATION:PT1H\r\nEND:VEVENT\r\n")
+assert calendar_client.modify_object_sync(york_alone, ECal.ObjModType.THIS, ECal.OperationFlags.NONE, None)
+york_rows = rows('York series')
+assert [row['start'] for row in york_rows] == [york_ms(0), york_ms(2)] and len(rows('York alone')) == 1, york_rows
+call('calendarEdit', {'id':york_rows[0]['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'exclude':[york_ms(1)]}})
+assert rows('York alone') == [] and [row['start'] for row in rows('York series')] == [york_ms(0), york_ms(2)]
+assert call('calendarDelete', {'id':york_rows[0]['id']}) == {}
+print('EDS an occurrence changed alone by another app, deleted by its date from the series, passed')

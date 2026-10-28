@@ -870,9 +870,11 @@ struct Found {
     // The occurrence changed on its own, or the event (the series) itself.
     ICalComponent* stored = nullptr;
     JSON row;
-    // An occurrence the series' rule makes (not one changed on its own), and whether it is the first.
+    // An occurrence the series' rule makes (not one changed on its own); whether it is the first, as
+    // EDS counts it (an excluded start doesn't count), and whether it is at the series' own start.
     bool generated = false;
     bool first = false;
+    bool atStart = false;
     int64_t occurrence = 0;
 };
 Found find(ESourceRegistry* registry, const std::string& id, const JSON& occurrence) {
@@ -952,7 +954,12 @@ Found find(ESourceRegistry* registry, const std::string& id, const JSON& occurre
             if (i_cal_component_count_properties(component.get(), I_CAL_RECURRENCEID_PROPERTY) && recurrenceIDText(component.get()) == found.rid) found.stored = component.get();
     } else {
         found.generated = true;
-        found.first = found.occurrence == seriesStart;
+        found.atStart = found.occurrence == seriesStart;
+        // EDS changes the whole series for a split at its first occurrence: asked as EDS decides it.
+        Object<ECalComponent> component(e_cal_component_new_from_icalcomponent(i_cal_component_clone(found.master)), g_object_unref);
+        if (!component) throw std::runtime_error("invalid series");
+        auto rid = dateFromWire(found.occurrence, !found.row["isAllDay"].get<bool>());
+        found.first = e_cal_util_is_first_instance(component.get(), rid.get(), e_cal_client_tzlookup_cb, client);
     }
     return found;
 }
@@ -1135,6 +1142,25 @@ void requireWritable(ECalClient* client) {
 void requireDescribedRule(const Found& found) {
     if (found.rid.empty() && repeating(found.master) && recurrence(found.master, found.client.get()).is_null()) refuse("unsupportedRecurrence");
 }
+// Changing a series whose rule the app reads only in part (dates added by RDATE, removed by EXRULE) would
+// leave those behind, and an occurrence another app changed with all after it (a RANGE recurrence id)
+// takes its fields from that change, not the series: such a series is changed in the user's calendar app,
+// though an occurrence changed on its own alone is still changed here when nothing has a RANGE.
+void requireEditableSeries(const Found& found) {
+    if (found.rid.empty() && found.master && (i_cal_component_count_properties(found.master, I_CAL_RDATE_PROPERTY) ||
+        i_cal_component_count_properties(found.master, I_CAL_EXRULE_PROPERTY)))
+        refuse("unsupportedRecurrence");
+    for (const auto& component : found.series) {
+        Object<ICalProperty> rid(i_cal_component_get_first_property(component.get(), I_CAL_RECURRENCEID_PROPERTY), g_object_unref);
+        Object<ICalParameter> range(rid ? i_cal_property_get_first_parameter(rid.get(), I_CAL_RANGE_PARAMETER) : nullptr, g_object_unref);
+        if (range) refuse("unsupportedRecurrence");
+    }
+}
+// A timed start with neither a zone nor UTC: read, as EDS reads it, in the user's zone.
+bool floating(ICalComponent* component) {
+    Object<ICalTime> start(i_cal_component_get_dtstart(component), g_object_unref);
+    return start && !i_cal_time_is_null_time(start.get()) && !i_cal_time_is_date(start.get()) && !i_cal_time_is_utc(start.get()) && !i_cal_time_get_timezone(start.get());
+}
 // Invitations need a calendar whose server sends them (Google, Nextcloud), and the user's address
 // on it: a calendar on this computer has neither.
 void requireInvitations(ECalClient* client, const Calendar& calendar) {
@@ -1316,11 +1342,13 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     requireWritable(found.client.get());
     if (found.row["isInvitation"].get<bool>()) refuse("notOrganizer");
     requireDescribedRule(found);
+    requireEditableSeries(found);
     // Removing someone tells them too, so it needs a calendar that sends invitations as adding does.
     if (!invited.empty() || !uninvited.empty()) requireInvitations(found.client.get(), found.calendar);
     // One occurrence can't repeat on its own: the app never asks it.
     if (ruleChanges && (!found.rid.empty() || (found.generated && scope == "thisOnly"))) throw std::runtime_error("invalid rule change");
     // Each still an occurrence of this series, all found before any is deleted: a refusal deletes none.
+    // One changed on its own is deleted as itself, by its recurrence id.
     std::vector<std::string> excluded;
     for (const auto date : exclude) {
         const auto named = find(registry, id, date);
@@ -1343,11 +1371,22 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     ECalObjModType mod = detached || (alone && scope == "thisOnly") ? E_CAL_OBJ_MOD_THIS : alone ? E_CAL_OBJ_MOD_THIS_AND_FUTURE : E_CAL_OBJ_MOD_ALL;
     Object<ICalComponent> edited(i_cal_component_clone(found.stored), g_object_unref);
     auto zone = startZone(found.stored, client);
+    // Times written for a floating start are written in the user's zone, as they were read.
+    if (!zone && floating(found.stored)) zone = localZone();
     if (alone) {
-        // The occurrence named, as it is.
+        // The occurrence named, as it is. A split names it in the series' own zone: EDS's server
+        // backends make that the new series' start as it is, without the conversion its local one makes.
         auto rid = dateFromWire(found.occurrence, !rowAllDay);
         removeAll(edited.get(), I_CAL_RECURRENCEID_PROPERTY);
-        i_cal_component_set_recurrenceid(edited.get(), rid.get());
+        if (mod == E_CAL_OBJ_MOD_THIS_AND_FUTURE && zone && !rowAllDay) {
+            rid.reset(i_cal_time_new_from_timet_with_zone(found.occurrence / 1000, FALSE, zone));
+            i_cal_time_set_timezone(rid.get(), zone);
+            auto property = i_cal_property_new_recurrenceid(rid.get());
+            i_cal_property_take_parameter(property, i_cal_parameter_new_tzid(i_cal_timezone_get_tzid(zone)));
+            i_cal_component_take_property(edited.get(), property);
+        } else {
+            i_cal_component_set_recurrenceid(edited.get(), rid.get());
+        }
         setTimes(edited.get(), rowStart, rowEnd, rowAllDay, zone);
     }
     if (mod == E_CAL_OBJ_MOD_THIS_AND_FUTURE) {
@@ -1378,7 +1417,7 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     if (rezone) zone = localZone();
     if (start || allDay || rezone) {
         const auto newStart = start.value_or(rowStart), newEnd = end.value_or(rowEnd);
-        if (mod != E_CAL_OBJ_MOD_ALL || !found.generated || found.first) {
+        if (mod != E_CAL_OBJ_MOD_ALL || !found.generated || found.atStart) {
             // The occurrence named takes the times confirmed.
             setTimes(edited.get(), newStart, newEnd, isAllDay, zone);
         } else {

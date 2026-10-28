@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include <libecal/libecal.h>
 #include <dlfcn.h>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 namespace {
@@ -35,7 +36,9 @@ extern "C" void e_cal_client_view_start(ECalClientView* view, GError** error) {
     const char* requested = std::getenv("VOICE_PRODUCTIVITY_FAULT");
     const bool always = requested && !std::strcmp(requested, "changed");
     const bool first = requested && !std::strcmp(requested, "changed-first") && views++ == 0;
+    const bool removed = requested && !std::strcmp(requested, "removed");
     if ((!error || !*error) && (always || first)) g_signal_emit_by_name(view, "objects-modified", static_cast<GSList*>(nullptr));
+    if ((!error || !*error) && removed) g_signal_emit_by_name(view, "objects-removed", static_cast<GSList*>(nullptr));
 }
 namespace {
 bool mode(const char* name) {
@@ -48,9 +51,10 @@ template <typename Function> Function next(const char* name) {
     return real;
 }
 }
-// `server`: every calendar acts as one on a server that sends invitations, for the user me@example.com.
+// `server`: every calendar acts as one on a server that sends invitations, for the user me@example.com;
+// `schedules`: one that sends them but doesn't know the user's address.
 extern "C" gboolean e_client_check_capability(EClient* client, const gchar* capability) {
-    if (mode("server") && !std::strcmp(capability, E_CAL_STATIC_CAPABILITY_SAVE_SCHEDULES)) return TRUE;
+    if ((mode("server") || mode("schedules")) && !std::strcmp(capability, E_CAL_STATIC_CAPABILITY_SAVE_SCHEDULES)) return TRUE;
     return next<decltype(&e_client_check_capability)>("e_client_check_capability")(client, capability);
 }
 extern "C" gboolean e_client_get_backend_property_sync(EClient* client, const gchar* name, gchar** value, GCancellable* cancel, GError** error) {
@@ -66,4 +70,18 @@ extern "C" gboolean e_client_is_readonly(EClient* client) {
 extern "C" ESource* e_source_registry_ref_default_calendar(ESourceRegistry* registry) {
     if (mode("nodefault")) return nullptr;
     return next<decltype(&e_source_registry_ref_default_calendar)>("e_source_registry_ref_default_calendar")(registry);
+}
+// `record`: the RECURRENCE-ID each split (THIS_AND_FUTURE) names is appended to the file
+// VOICE_PRODUCTIVITY_RECORD names, as the backend receives it.
+extern "C" gboolean e_cal_client_modify_object_sync(ECalClient* client, ICalComponent* component, ECalObjModType mod, ECalOperationFlags flags,
+    GCancellable* cancel, GError** error) {
+    const char* path = std::getenv("VOICE_PRODUCTIVITY_RECORD");
+    if (mode("record") && path && mod == E_CAL_OBJ_MOD_THIS_AND_FUTURE) {
+        ICalProperty* rid = i_cal_component_get_first_property(component, I_CAL_RECURRENCEID_PROPERTY);
+        gchar* text = rid ? i_cal_property_as_ical_string(rid) : nullptr;
+        if (FILE* file = std::fopen(path, "a")) { std::fputs(text ? text : "none\n", file); std::fclose(file); }
+        g_free(text);
+        if (rid) g_object_unref(rid);
+    }
+    return next<decltype(&e_cal_client_modify_object_sync)>("e_cal_client_modify_object_sync")(client, component, mod, flags, cancel, error);
 }

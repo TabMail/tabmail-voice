@@ -162,6 +162,9 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   by time of day, by RDATE alone, or a key libical doesn't know) reads with no rule, so the app would
   confirm a change to one event and EDS would change every occurrence. Such a series is changed and
   deleted in the user's calendar app; an occurrence of it changed on its own is still edited alone.
+  A series the app reads only in part is refused for changes too (deleting it is allowed): dates
+  added by RDATE or removed by EXRULE, which a change would leave behind, and a series with an
+  occurrence another app changed with all after it (a RANGE recurrence id).
 - An event's id is its source's uid and the component's uid, `|`-separated (each with `%` and `|`
   escaped), plus the recurrence id of a detached occurrence. An occurrence is found as on the Mac:
   within `eventOccurrenceToleranceMs` of the start asked, searched over
@@ -170,6 +173,12 @@ without an editor (voice #229: its app calendar is invisible to the user and has
 - `thisOnly` stores a detached occurrence (the master's copy with its rules removed, under the
   occurrence's recurrence id); `thisAndFollowing` is EDS's THIS_AND_FUTURE, which ends the series and
   starts a new one under a new uid; on the first occurrence, and for `all`, the whole series changes.
+  The first occurrence is EDS's own (`e_cal_util_is_first_instance`, which skips excluded dates), so
+  a split from the first occurrence left after an excluded start changes the whole series, as EDS
+  does, and the confirmation and the store agree. The split's recurrence id is written in the
+  series' zone with its TZID: EDS's server backends start the new series there as it is, without the
+  conversion its local backend makes. A series with a floating start is read in the user's zone, as
+  EDS reads it, so moving it keeps its local time of day.
   The split is made with the series as it is, and the change then goes to the new series (the one
   starting there that wasn't before) as an `all` change: EDS counts a split's COUNT from the series it
   ends and puts back a start that still falls on one of its occurrences, so a split carrying the
@@ -183,7 +192,8 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   changing one is refused (`notOrganizer`), deleting it is not.
 - A read of calendars, memos or tasks that a change interrupts is made again from the start, up to
   `calendarReadAttempts` times: EDS can tell a new view of a change saved just before it (a write of
-  Voice's own included), and a read is still never a mix of versions. Writes are never repeated.
+  Voice's own included), and a read is still never a mix of versions; a removal counts as a change.
+  Writes are never repeated. An attendee's DECLINED reads `declined`, as on the Mac.
 - A repeating event's times are stored in the local zone with its TZID set explicitly: libical 3.0
   labels a time converted to a zone as UTC, which stored 09:00 in Toronto as 09:00 UTC.
 - Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
