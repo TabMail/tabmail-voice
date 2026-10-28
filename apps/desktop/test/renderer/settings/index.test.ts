@@ -531,6 +531,19 @@ describe("Settings page", () => {
       expect(shownPanels()).toEqual(["Knowledge base"]);
     });
 
+    /** Tab from the chosen tab reaches its panel even with no control in it (a History with nothing
+     * in it): each panel is a stop in the Tab order. The previews press a real Tab key. */
+    test("each panel is a stop in the Tab order, an empty History too", async () => {
+      await open();
+      expect(document.body.textContent).toContain("No changes yet.");
+      const panels = [...document.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+      expect(panels.map((panel) => [panel.getAttribute("aria-label"), panel.tabIndex])).toEqual([
+        ["Writing style", 0],
+        ["Knowledge base", 0],
+        ["History", 0],
+      ]);
+    });
+
     /** A tab left and come back to is as it was: what is being typed in it is still there. */
     test("what is being typed stays through a change of tab", async () => {
       const { commands } = await open();

@@ -404,9 +404,11 @@ ul.dictionary {
 }
 
 /* A tab's lines and its Reset, centered on each other; a sentence to a line, and one too long for
- * its line wraps evenly. */
+ * its line wraps evenly. An action too wide to sit beside the lines (Reset's question) goes under
+ * them, rather than squeezing them into a column. */
 .tab-intro {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -414,7 +416,7 @@ ul.dictionary {
 }
 
 .tab-intro p {
-  flex: 1;
+  flex: 1 1 auto;
   margin: 0;
 }
 

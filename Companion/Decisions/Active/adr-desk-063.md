@@ -276,7 +276,9 @@ is now a tab: Writing style, Knowledge base, History, in a segmented control und
 theme; the arrow keys move between them; the scroll bar's room is kept, so nothing shifts as a tab
 that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
 opens with a short caption, a sentence to a line (owner, 2026-10-28), and, for the two texts, its
-Reset centered beside it; each writing style section is its own card
+Reset centered beside it; Reset's question, too wide to share the caption's line, goes under it
+rather than squeezing the caption into a column. Each panel is a stop in the Tab order of its own, so
+Tab from the chosen tab reaches it even when it holds no control (an empty History). Each writing style section is its own card
 under a heading with the section's name. Every tab stays rendered while hidden, so what is being typed
 in one is still there on coming back. A change that couldn't be saved is said under the tabs until the
 next change, whichever tab is chosen: a field left for another tab saves as it is left, and its failure
@@ -284,4 +286,6 @@ can arrive as that tab shows, so it must still be said there. Each tab names its
 holds no spaces). Nothing about what is stored or sent changes. Tests:
 `renderer/settings/index.test.ts` (tabs, panels and their ids, the chosen tab drawn as chosen,
 headings, Reset per tab, arrow keys, typing kept, a failure still said after a change of tab), `renderer/settings/style.test.ts` (the chosen tab raised, equal segments, the contrast
-theme's colors and focus ring after the rules they override, the lists' lines between rows).
+theme's colors and focus ring after the rules they override, the lists' lines between rows), and the
+previews (`npm run preview`), which check each tab's caption as laid out (a sentence to a line, Reset
+centered beside it, its question under it) and press a real Tab key from an empty History's tab.

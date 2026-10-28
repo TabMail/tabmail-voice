@@ -684,7 +684,9 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
     setFailure(error);
   };
   const panel = (name: PersonalizationTab, children: ReactNode) => (
-    <div role="tabpanel" id={`${id}-${personalizationTabs.indexOf(name)}`} aria-label={name} hidden={tab !== name}>
+    // A stop in the Tab order of its own: Tab from the chosen tab reaches its panel even when the
+    // panel holds no control (an empty History).
+    <div role="tabpanel" id={`${id}-${personalizationTabs.indexOf(name)}`} aria-label={name} tabIndex={0} hidden={tab !== name}>
       {children}
     </div>
   );
@@ -781,7 +783,7 @@ function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { labe
 }
 
 /** What a tab holds, said at its top a sentence to a line, with the tab's own action (Reset) beside
- * it. */
+ * it, or under it when the action is too wide to share the line (Reset's question). */
 function TabIntro({ lines, children }: { lines: string[]; children?: ReactNode }) {
   return (
     <div className="tab-intro">
