@@ -137,6 +137,11 @@ const app = vi.hoisted(() => ({
   /** The open dialogs shown, and what the user picks in the next one (null: canceled). */
   openDialogs: [] as Record<string, unknown>[],
   pickedPath: null as string | null,
+  /** The relay connections Device Sync opened, in order; whether the app closed each. */
+  syncSockets: [] as { url: string; closed: boolean }[],
+  /** Electron's `powerMonitor` events, by name, and what `net.isOnline` says. */
+  powerEvents: new Map<string, () => void>(),
+  online: true,
 }));
 
 vi.mock("electron", async () => {
@@ -189,6 +194,8 @@ vi.mock("electron", async () => {
     },
     screen: { screenToDipRect: (_window: unknown, rect: Rect) => rect, getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+    powerMonitor: { on: (event: string, handler: () => void) => app.powerEvents.set(event, handler) },
+    net: { isOnline: () => app.online },
     shell: {
       showItemInFolder: (path: string) => void app.shownFiles.push(path),
       openExternal: async (url: string) => {
@@ -362,6 +369,14 @@ vi.mock("../../src/main/native/macos/osascript.js", () => ({
       app.scripts.push({ source, args });
       return "";
     },
+  },
+}));
+// Device Sync's relay is never reached: each connection is noted.
+vi.mock("../../src/main/deviceSyncSocket.js", () => ({
+  deviceSyncSocket: () => (url: string) => {
+    const socket = { url, closed: false };
+    app.syncSockets.push(socket);
+    return { send() {}, close: () => void (socket.closed = true) };
   },
 }));
 vi.mock("../../src/main/storage/logFile.js", () => ({
@@ -686,6 +701,9 @@ afterEach(() => {
   app.quits = 0;
   app.openDialogs = [];
   app.pickedPath = null;
+  app.syncSockets = [];
+  app.powerEvents.clear();
+  app.online = true;
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -1422,6 +1440,60 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(await send({ type: "setUserName", value: " Alex Example" })).toEqual({ error: null });
     for (const name of ["settings", "welcome"] as const) expect(state(name).userName).toBe(" Alex Example");
     expect(app.stored.get("userName")).toBe(" Alex Example");
+  });
+
+  /** Device Sync (root ADR-021) as the app wires it: for the account signed in, once the user
+   * consented, to the development relay in debug mode; a wake and the computer back online connect
+   * afresh, its switch turns it off and on, and quitting closes it. */
+  test("Device Sync connects with consent, follows debug mode, a wake, the network and its switch, and stops at quit", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { syncsDevices: boolean; deviceSyncTooLarge: boolean };
+      const relays = () => app.syncSockets.map((socket) => `${socket.url.split("?")[0]}${socket.closed ? " closed" : ""}`);
+      app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@tabmail.ai" } });
+      await launch("darwin");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(relays()).toEqual([]);
+
+      expect(await send({ type: "setConsent", value: true })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays()).toEqual([config.deviceSyncURL]));
+      expect(app.syncSockets[0]?.url).toBe(`${config.deviceSyncURL}?token=access`);
+      expect(state()).toMatchObject({ syncsDevices: true, deviceSyncTooLarge: false });
+
+      expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays()).toEqual([`${config.deviceSyncURL} closed`, config.deviceSyncDevelopmentURL]));
+      expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays().at(-1)).toBe(config.deviceSyncURL));
+
+      app.powerEvents.get("resume")?.();
+      await vi.waitFor(() => expect(relays().slice(2)).toEqual([`${config.deviceSyncURL} closed`, config.deviceSyncURL]));
+
+      app.online = false;
+      vi.advanceTimersByTime(config.deviceSyncOnlineCheckInterval);
+      app.online = true;
+      vi.advanceTimersByTime(config.deviceSyncOnlineCheckInterval);
+      await vi.waitFor(() => expect(relays().slice(3)).toEqual([`${config.deviceSyncURL} closed`, config.deviceSyncURL]));
+      vi.advanceTimersByTime(config.deviceSyncOnlineCheckInterval);
+      expect(relays()).toHaveLength(5);
+
+      expect(await send({ type: "setSyncsDevices", value: false })).toEqual({ error: null });
+      expect([relays().at(-1), state().syncsDevices, app.stored.get("deviceSync")]).toEqual([`${config.deviceSyncURL} closed`, false, false]);
+      expect(await send({ type: "setSyncsDevices", value: true })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays()).toHaveLength(6));
+
+      app.appEvents.get("before-quit")?.({ preventDefault() {} });
+      await vi.waitFor(() => expect(relays().at(-1)).toBe(`${config.deviceSyncURL} closed`));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** Signed in, with consent given before, Device Sync connects at launch. */
+  test("Device Sync connects at launch for an account signed in that consented before", async () => {
+    app.stored.set("hasConsentedToDictationData", true);
+    app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@example.com" } });
+    await launch("darwin");
+    await vi.waitFor(() => expect(app.syncSockets.map((socket) => socket.url)).toEqual([`${config.deviceSyncURL}?token=access`]));
   });
 
   /** A packaged build writes the debug log while debug mode is on for an account allowed it: on at

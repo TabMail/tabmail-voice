@@ -35,6 +35,7 @@ const Key = {
   eventDuration: "eventDurationMinutes",
   closesChatElsewhere: "closesChatElsewhere",
   optsOutOfAI: "optsOutOfAI",
+  deviceSync: "deviceSync",
 } as const;
 
 /** Why a dictation is refused while the user opted out of AI (`AppSettings.optsOutOfAI`). */
@@ -357,6 +358,24 @@ export class AppSettings extends Observable {
    * what is saved, and the switch shows it (owner, 2026-10-28). */
   setOptsOutOfAI(value: boolean): boolean {
     return this.saveOrPutBack(Key.optsOutOfAI, value);
+  }
+
+  /** Device Sync of the writing style and the knowledge base with the user's other devices (root
+   * ADR-021). On unless the user switches it off. Opt Out of AI leaves it as it is: it sends nothing to
+   * a model, and Opt Out of AI itself is never synced. */
+  get syncsDevices(): boolean {
+    return storedBool(this.store, Key.deviceSync) ?? true;
+  }
+
+  /** Keeps the user's choice; false, the choice as it was, when it couldn't be saved. */
+  setSyncsDevices(value: boolean): boolean {
+    return this.saveOrPutBack(Key.deviceSync, value);
+  }
+
+  /** Whether Device Sync may run: the file read (its switch is in it), the user's consent given, and
+   * the switch on. */
+  get deviceSyncAllowed(): boolean {
+    return this.store.problem === undefined && this.hasConsented && this.syncsDevices;
   }
 
   /** Why AI features are off, said when a dictation or an agent hold is refused;

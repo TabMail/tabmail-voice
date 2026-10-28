@@ -88,7 +88,9 @@ describe("file problems", () => {
     expect(resetCopyPath("/example/TabMail Voice/settings", now)).toBe("/example/TabMail Voice/settings (before reset 2099-01-02 03.04.05)");
   });
 
-  /** The one confirmation says plainly what this computer loses and where the file is kept. */
+  /** The one confirmation says plainly what this computer loses and where the file is kept; for the
+   * knowledge base and writing style, that the other devices keep theirs, which Device Sync brings
+   * back. */
   test("the confirmation says what is lost on this computer and where the file is kept", () => {
     const copy = "/example/TabMail Voice/settings (before reset 2099-01-02 03.04.05).json";
     expect(resetConfirmation("settings", copy)).toEqual({
@@ -97,7 +99,7 @@ describe("file problems", () => {
     });
     expect(resetConfirmation("knowledgeBase", copy)).toEqual({
       message: "Reset your knowledge base, writing style and their history to the defaults?",
-      detail: `Your knowledge base, writing style and their history on this computer go back to the defaults. Your settings and memory stay as they are.\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}`,
+      detail: `Your knowledge base, writing style and their history on this computer go back to the defaults. Your other devices keep theirs, and while Sync with my other devices is on, theirs come back here. Your settings and memory stay as they are.\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}`,
     });
   });
 

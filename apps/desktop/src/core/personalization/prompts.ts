@@ -5,6 +5,7 @@
 import type { Personalization } from "../agent/requests.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
+import { epochZero, isSyncTime, nextSyncTime } from "../sync/time.js";
 import { type KeyValueStore, type StoreProblem, storedString } from "../util/keyValueStore.js";
 import { Observable } from "../util/observable.js";
 import { compositionSections, extractBullets, extractSection, mergeFlatField, replaceSection } from "./bulletMerge.js";
@@ -16,13 +17,45 @@ const Key = {
   composition: "user_prompts:user_composition.md",
   knowledgeBase: "user_prompts:user_kb.md",
   history: "prompt_history",
+  /** Device Sync's (Thunderbird's names): when the text last changed, and the text another device
+   * last sent and its time, the common ancestor of the next merge. */
+  syncTime: (field: PromptField) => `device_sync_ts:${field}`,
+  peerBase: (field: PromptField) => `device_peer_base:${field}`,
+  peerBaseTime: (field: PromptField) => `device_peer_base_ts:${field}`,
+  /** The TabMail account the texts belong to (iOS's name). */
+  owner: "device_sync_owner_user_id",
 } as const;
 
 export type PromptField = "composition" | "kb";
 
+export const promptFields: readonly PromptField[] = ["composition", "kb"];
+
+function textKey(field: PromptField): string {
+  return field === "kb" ? Key.knowledgeBase : Key.composition;
+}
+
 /** How a history entry came about: edits (in Settings or by the agent's tools), recorded
- * once they stop, or a reset or a restore, recorded before it. As iOS names them. */
-export type PromptHistorySource = "local_edit" | "reset";
+ * once they stop, or a reset or a restore, recorded before it, or what Device Sync received,
+ * recorded before it applied. As iOS names them. */
+export type PromptHistorySource = "local_edit" | "reset" | "sync_receive";
+
+/** One text as Device Sync merges it (`DeviceSync`). */
+export interface PromptSyncState {
+  text: string;
+  /** When it last changed here (`epochZero` for one never edited, or reset). */
+  time: string;
+  /** What another device last sent of it, and its time: null for a text never synced, or reset. */
+  peerBase: string | null;
+  peerBaseTime: string;
+}
+
+/** What Device Sync writes of one text (`UserPrompts.applySync`): a merged text, its time, and what
+ * the other device sent, each only when given. */
+export interface PromptSyncChange {
+  text?: string;
+  time?: string;
+  peerBase?: { text: string; time: string };
+}
 
 /** The two texts at one moment, kept so the user can put them back (iOS's `PromptHistoryEntry`,
  * without the fields Voice doesn't have). */
@@ -88,7 +121,7 @@ function isHistoryEntry(value: unknown): value is PromptHistoryEntry {
   return (
     typeof entry.id === "string" &&
     typeof entry.timestamp === "string" &&
-    (entry.source === "local_edit" || entry.source === "reset") &&
+    (entry.source === "local_edit" || entry.source === "reset" || entry.source === "sync_receive") &&
     Array.isArray(entry.fields) &&
     entry.fields.every((field) => field === "composition" || field === "kb") &&
     typeof entry.composition === "string" &&
@@ -106,6 +139,9 @@ function isHistoryEntry(value: unknown): value is PromptHistoryEntry {
 export class UserPrompts extends Observable {
   private pendingFields = new Set<PromptField>();
   private historyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Called after the user, or the agent's tools, changed a text here (`edit`), or reset it: Device
+   * Sync sends the one and asks other devices for the other. Never for what Device Sync wrote. */
+  onLocalChange: ((field: PromptField, kind: "edit" | "reset") => void) | undefined;
 
   constructor(private readonly store: KeyValueStore) {
     super();
@@ -189,9 +225,78 @@ export class UserPrompts extends Observable {
     if (entry === undefined) return false;
     this.flushHistory();
     this.record("reset", ["composition", "kb"]);
-    const saved = this.write({ [Key.composition]: entry.composition, [Key.knowledgeBase]: entry.kb });
-    if (saved) this.changed();
-    return saved;
+    const saved = this.write({ [Key.composition]: entry.composition, [Key.knowledgeBase]: entry.kb, ...this.stamps(promptFields) });
+    if (!saved) return false;
+    this.changed();
+    for (const field of promptFields) this.onLocalChange?.(field, "edit");
+    return true;
+  }
+
+  /** The TabMail account the texts belong to; null before one signed in. */
+  get owner(): string | null {
+    return storedString(this.store, Key.owner);
+  }
+
+  /** Makes the texts the signed-in account's (iOS ADR-IOS-089): kept when they are its own already,
+   * taken as they are when they belong to no account yet, and back at their defaults, with no history
+   * and nothing synced, when they belong to another. False when that couldn't be saved: they are still
+   * the other account's then, and nothing of theirs is synced. */
+  claim(userID: string): boolean {
+    const owner = this.owner;
+    if (owner === userID) return true;
+    if (owner === null) return this.write({ [Key.owner]: userID });
+    const cleared: Record<string, unknown> = { [Key.composition]: undefined, [Key.knowledgeBase]: undefined, [Key.history]: undefined, [Key.owner]: userID };
+    for (const field of promptFields) Object.assign(cleared, { [Key.syncTime(field)]: undefined, [Key.peerBase(field)]: undefined, [Key.peerBaseTime(field)]: undefined });
+    if (!this.write(cleared)) return false;
+    // Another account's edits waiting to be recorded are not this one's history.
+    if (this.historyTimer !== null) clearTimeout(this.historyTimer);
+    this.historyTimer = null;
+    this.pendingFields = new Set();
+    log.debug("UserPrompts: another account signed in; knowledge base and writing style back to defaults");
+    this.changed();
+    return true;
+  }
+
+  /** `field` as Device Sync merges it. */
+  syncState(field: PromptField): PromptSyncState {
+    const time = this.store.get(Key.syncTime(field));
+    const peerBase = storedString(this.store, Key.peerBase(field));
+    const peerBaseTime = this.store.get(Key.peerBaseTime(field));
+    return {
+      text: field === "kb" ? this.knowledgeBase : this.composition,
+      time: isSyncTime(time) ? time : epochZero,
+      peerBase,
+      peerBaseTime: peerBase !== null && isSyncTime(peerBaseTime) ? peerBaseTime : epochZero,
+    };
+  }
+
+  /** Writes what Device Sync merged, in one write: when a text changes, both texts as they were are
+   * recorded first (`sync_receive`). Tells no `onLocalChange`: it isn't sent on as an edit. False when
+   * it couldn't be saved (nothing changed then). */
+  applySync(changes: Partial<Record<PromptField, PromptSyncChange>>): boolean {
+    const values: Record<string, unknown> = {};
+    const changedFields: PromptField[] = [];
+    for (const field of promptFields) {
+      const change = changes[field];
+      if (change === undefined) continue;
+      if (change.text !== undefined) {
+        values[textKey(field)] = change.text;
+        changedFields.push(field);
+      }
+      if (change.time !== undefined) values[Key.syncTime(field)] = change.time;
+      if (change.peerBase !== undefined) Object.assign(values, { [Key.peerBase(field)]: change.peerBase.text, [Key.peerBaseTime(field)]: change.peerBase.time });
+    }
+    if (Object.keys(values).length === 0) return true;
+    if (changedFields.length > 0) {
+      this.flushHistory();
+      this.record("sync_receive", changedFields);
+    }
+    if (!this.write(values)) return false;
+    if (changedFields.length > 0) {
+      log.debug(`UserPrompts: ${changedFields.join(", ")} changed by Device Sync`);
+      this.changed();
+    }
+    return true;
   }
 
   /** Records the edits waiting for their quiet period now: the app is quitting. */
@@ -202,17 +307,30 @@ export class UserPrompts extends Observable {
     this.recordPending();
   }
 
+  /** Puts `field` back to `value`, its default, here only: its time goes back to epoch zero and what
+   * other devices sent is forgotten, so Device Sync never sends the default over their text and takes
+   * theirs back (Thunderbird's reset, which then asks them for it). */
   private reset(field: PromptField, value: string): boolean {
     this.flushHistory();
     this.record("reset", [field]);
-    const saved = this.write({ [field === "kb" ? Key.knowledgeBase : Key.composition]: value });
-    if (saved) this.changed();
-    return saved;
+    const saved = this.write({ [textKey(field)]: value, [Key.syncTime(field)]: epochZero, [Key.peerBase(field)]: undefined, [Key.peerBaseTime(field)]: undefined });
+    if (!saved) return false;
+    this.changed();
+    this.onLocalChange?.(field, "reset");
+    return true;
   }
 
-  /** Writes `field`, telling of the change and recording it once edits stop. */
+  /** The times to stamp `fields`' edits with (`nextSyncTime`). */
+  private stamps(fields: readonly PromptField[]): Record<string, string> {
+    return Object.fromEntries(fields.map((field) => {
+      const state = this.syncState(field);
+      return [Key.syncTime(field), nextSyncTime(Date.now(), [state.time, state.peerBaseTime])];
+    }));
+  }
+
+  /** Writes `field`, stamped with the time, telling of the change and recording it once edits stop. */
   private save(field: PromptField, value: string): boolean {
-    if (!this.write({ [field === "kb" ? Key.knowledgeBase : Key.composition]: value })) return false;
+    if (!this.write({ [textKey(field)]: value, ...this.stamps([field]) })) return false;
     log.debug(`UserPrompts: ${field} saved (${value.length} chars)`);
     this.pendingFields.add(field);
     if (this.historyTimer !== null) clearTimeout(this.historyTimer);
@@ -223,13 +341,14 @@ export class UserPrompts extends Observable {
       this.changed();
     }, config.promptHistoryQuietPeriod);
     this.changed();
+    this.onLocalChange?.(field, "edit");
     return true;
   }
 
   /** Writes `values` together, in one write of the file; when it couldn't be written, puts them all
    * back and returns false: what applies is what is saved. One write for both, so a restore that
    * fails can't leave one text changed in the file. */
-  private write(values: Record<string, string>): boolean {
+  private write(values: Record<string, unknown>): boolean {
     const before = Object.fromEntries(Object.keys(values).map((key) => [key, this.store.get(key)]));
     if (this.store.setAll(values)) return true;
     this.store.setAll(before);

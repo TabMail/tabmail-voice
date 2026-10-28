@@ -99,6 +99,18 @@ export function mergeFlatField(base: string, local: string, remote: string): str
   return merged.map((bullet) => `- ${bullet}`).join("\n");
 }
 
+/** A three-way merge of the writing style, section by section (`compositionSections`), each as
+ * `mergeFlatField` merges: `local` with only the sections whose bullets the merge changed rewritten. */
+export function mergeSectionedField(base: string, local: string, remote: string): string {
+  let result = local;
+  for (const section of compositionSections) {
+    const localBullets = extractBullets(extractSection(local, section));
+    const merged = mergeBullets(extractBullets(extractSection(base, section)), localBullets, extractBullets(extractSection(remote, section)));
+    if (!sameBullets(merged, localBullets)) result = replaceSection(result, section, merged.map((bullet) => `- ${bullet}`).join("\n"));
+  }
+  return result;
+}
+
 function sameBullets(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((bullet, index) => bullet === b[index]);
 }

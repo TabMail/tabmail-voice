@@ -304,3 +304,10 @@ Display only: the section's heading in the style document, shared with Thunderbi
 by Device Sync, and the section an edit names stay exactly as they were. Tested in
 `renderer/settings/index.test.ts` ("the general section's label is display only") and
 `core/personalization/prompts.test.ts` ("an edit saves the style document's headings as they are").
+
+**Amendment 2026-10-28 — Device Sync (ADR-DESK-066).** The knowledge base and writing style sync with
+the user's Thunderbird and iOS apps through the relay, as the context above planned; the rules are in
+ADR-DESK-066. Settings › Personalization shows Device Sync's switch, "Sync with my other devices",
+above its tabs, with the too-large error under it. History labels an entry taken from another device
+"Synced" (`sync_receive`, iOS's source). The factory reset of the knowledge base file says in its
+confirmation that the other devices keep theirs, and that while the switch is on they come back here.

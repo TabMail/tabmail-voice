@@ -456,7 +456,7 @@ describe("UserPrompts", () => {
 
   test("history entries that aren't well formed are left out", () => {
     const good = { id: "a", timestamp: new Date().toISOString(), source: "reset", fields: ["kb"], composition: "", kb: "- alpha" };
-    const { prompts } = setup({ prompt_history: [good, { ...good, id: 1 }, { ...good, source: "sync_receive" }, { ...good, fields: ["action"] }, null, "text"] });
+    const { prompts } = setup({ prompt_history: [good, { ...good, id: 1 }, { ...good, source: "sync_send" }, { ...good, fields: ["action"] }, null, "text"] });
     expect(prompts.history).toEqual([good]);
   });
 });

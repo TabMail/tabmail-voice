@@ -88,6 +88,8 @@ const settings = {
   learnsWords: true,
   smartDictation: false,
   optsOutOfAI: false,
+  syncsDevices: true,
+  deviceSyncTooLarge: false,
   closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,

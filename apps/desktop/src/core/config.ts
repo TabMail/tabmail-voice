@@ -439,6 +439,26 @@ export const personalizationBulletMaxLength = 2_000;
 /** The longest history entry id Settings may name to restore. */
 export const promptHistoryIDMaxLength = 100;
 
+// MARK: Device Sync (root ADR-021; the numbers are iOS's `DeviceSyncService`'s)
+
+/** The relay, and the development one debug mode uses (ADR-DESK-018). */
+export const deviceSyncURL = "wss://sync.tabmail.ai/ws";
+export const deviceSyncDevelopmentURL = "wss://sync-dev.tabmail.ai/ws";
+/** An edit is sent once edits have stopped for this long (ms), as Thunderbird sends them. */
+export const deviceSyncSendDelay = 500;
+/** How often the connection is kept alive (ms), and the other devices asked for their texts (ms). */
+export const deviceSyncPingInterval = 30_000;
+export const deviceSyncProbeInterval = 300_000;
+/** A lost connection is tried again after the first delay (ms), doubled each time up to the second
+ * (ms), at most this many times; then at the computer's next wake or return online. */
+export const deviceSyncReconnectBaseDelay = 5_000;
+export const deviceSyncReconnectMaxDelay = 300_000;
+export const deviceSyncReconnectAttempts = 10;
+/** The relay drops a larger message, saying nothing (bytes). */
+export const deviceSyncMessageMaxBytes = 131_072;
+/** How often the main process looks whether the computer came back online (ms). */
+export const deviceSyncOnlineCheckInterval = 30_000;
+
 // MARK: Apps excluded from screen reading
 
 /** The password managers the screen is never read in, in every installation (owner, 2026-09-30), by

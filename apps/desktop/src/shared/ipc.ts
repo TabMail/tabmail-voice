@@ -119,6 +119,10 @@ export interface SettingsState {
   smartDictation: boolean;
   /** Opt Out of AI (`AppSettings.optsOutOfAI`). */
   optsOutOfAI: boolean;
+  /** Device Sync's switch (`AppSettings.syncsDevices`), and whether the texts were too large to send
+   * (`DeviceSync.tooLarge`). */
+  syncsDevices: boolean;
+  deviceSyncTooLarge: boolean;
   /** Whether a click elsewhere or another app in front closes the idle chat window. */
   closesChatElsewhere: boolean;
   /** How long a new event lasts when no end is given (minutes; `AppSettings.eventDuration`). */
@@ -220,6 +224,7 @@ export type Command =
   | { type: "setLearnsWords"; value: boolean }
   | { type: "setSmartDictation"; value: boolean }
   | { type: "setOptsOutOfAI"; value: boolean }
+  | { type: "setSyncsDevices"; value: boolean }
   | { type: "setClosesChatElsewhere"; value: boolean }
   | { type: "setEventDuration"; value: number }
   /** Asks the user to pick an app, and excludes it from screen reading. */
@@ -381,6 +386,7 @@ export function isCommand(value: unknown): value is Command {
     case "setLearnsWords":
     case "setSmartDictation":
     case "setOptsOutOfAI":
+    case "setSyncsDevices":
     case "setClosesChatElsewhere":
     case "setOpenAtLogin":
     case "setDebugMode":

@@ -32,6 +32,8 @@ const signedIn: SettingsState = {
   learnsWords: true,
   smartDictation: true,
   optsOutOfAI: false,
+  syncsDevices: true,
+  deviceSyncTooLarge: false,
   closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,
@@ -505,6 +507,36 @@ describe("Settings page", () => {
       await act(async () => button("Personalization").click());
       return page;
     }
+
+    /** Device Sync's switch, above the tabs: it sends the choice; one that couldn't be saved is said
+     * under it, the switch showing what is saved; texts too large for the relay are said while it is on. */
+    test("the Device Sync switch sends its choice, and says what stops it", async () => {
+      const unsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
+      const tooLarge = "Too large to sync. Remove some bullets to sync again.";
+      let reply: CommandResult = { error: null };
+      let shown: SettingsState = signedIn;
+      const { commands, push } = await settingsPage(() => reply, () => shown, shown);
+      await act(async () => button("Personalization").click());
+      const row = () => toggle("Sync with my other devices").closest(".row")?.textContent ?? "";
+      expect(toggle("Sync with my other devices").checked).toBe(true);
+      await act(async () => toggle("Sync with my other devices").click());
+      expect(commands).toEqual([{ type: "setSyncsDevices", value: false }]);
+
+      reply = { error: unsaved };
+      await act(async () => toggle("Sync with my other devices").click());
+      expect(toggle("Sync with my other devices").checked).toBe(true);
+      expect(row()).toContain(unsaved);
+
+      reply = { error: null };
+      shown = { ...signedIn, deviceSyncTooLarge: true };
+      await act(async () => toggle("Sync with my other devices").click());
+      expect(row()).toContain(tooLarge);
+      expect(row()).not.toContain(unsaved);
+
+      await push({ ...signedIn, syncsDevices: false, deviceSyncTooLarge: true });
+      expect(toggle("Sync with my other devices").checked).toBe(false);
+      expect(row()).not.toContain(tooLarge);
+    });
 
     /** Each section is shown by its name. */
     test("shows the writing style's sections by name and the knowledge base's items", async () => {
@@ -1241,7 +1273,7 @@ describe("Settings page", () => {
       "Agent mode": ["Your name", "Edit", "Compose", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
       // The tab shown first, Writing style; the other tabs' own text is in the tabs' tests.
-      Personalization: ["Writing style", "General writing style for emails and formal replies", "Knowledge base", "History", "How agent mode writes emails and formal replies for you."],
+      Personalization: ["Sync with my other devices", "Writing style", "General writing style for emails and formal replies", "Knowledge base", "History", "How agent mode writes emails and formal replies for you."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
@@ -1568,8 +1600,8 @@ describe("Settings page", () => {
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
     // Smart dictation, screen reading, learning the user's corrections, debug mode, the two agent
-    // tools with a switch, closing the chat window on a click elsewhere, and Opt Out of AI.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(8);
+    // tools with a switch, closing the chat window on a click elsewhere, Opt Out of AI, and Device Sync.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(9);
     expect(page.commands).toEqual([]);
   });
 
@@ -1718,6 +1750,7 @@ describe("Settings page", () => {
       "No requests kept yet.",
       // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
       // One short line each (owner, 2026-10-28).
+      "Keeps your writing style and knowledge base the same in TabMail on your other devices.",
       "How agent mode writes emails and formal replies for you. Sent with requests that may write; TabMail doesn’t keep it.",
       "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
       `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,

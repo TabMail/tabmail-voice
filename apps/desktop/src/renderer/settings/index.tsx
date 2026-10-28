@@ -735,6 +735,8 @@ const writingStyleSectionLabels: Readonly<Record<string, string>> = { "General w
 
 /** Personalization's tabs, in order. */
 const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
+/** Why Device Sync isn't sending: the texts are over the relay's size. */
+const deviceSyncTooLargeLine = "Too large to sync. Remove some bullets to sync again.";
 type PersonalizationTab = (typeof personalizationTabs)[number];
 
 /** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages,
@@ -743,7 +745,9 @@ type PersonalizationTab = (typeof personalizationTabs)[number];
  * heading, and the knowledge base are lists of bullets to edit, add to and remove from, each text
  * with a reset to its default, confirmed in place; the history lists the newest first, each entry
  * showing what restoring it would change, with Restore, confirmed in place. Every tab stays
- * rendered while another shows, so what is being typed in one is still there on coming back. */
+ * rendered while another shows, so what is being typed in one is still there on coming back. Above
+ * the tabs, Device Sync's switch, with what stops it said under it: a choice that couldn't be saved,
+ * or texts too large for the relay. */
 function PersonalizationPane({ state }: { state: SettingsState }) {
   const personalization = state.personalization;
   const [tab, setTab] = useState<PersonalizationTab>("Writing style");
@@ -754,6 +758,13 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
     const { error } = await send(command);
     setFailure(error);
   };
+  const [syncProblem, setSyncProblem] = useState<string | null>(null);
+  const sync = async (value: boolean) => {
+    setSyncProblem(null);
+    const { error } = await send({ type: "setSyncsDevices", value });
+    setSyncProblem(error);
+  };
+  const syncError = syncProblem ?? (state.syncsDevices && state.deviceSyncTooLarge ? deviceSyncTooLargeLine : null);
   const panel = (name: PersonalizationTab, children: ReactNode) => (
     // A stop in the Tab order of its own: Tab from the chosen tab reaches its panel even when the
     // panel holds no control (an empty History).
@@ -763,6 +774,11 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
   );
   return (
     <>
+      <Group>
+        <Toggle label="Sync with my other devices" checked={state.syncsDevices} onChange={sync} extra={syncError !== null && <span className="error">{syncError}</span>}>
+          Keeps your writing style and knowledge base the same in TabMail on your other devices.
+        </Toggle>
+      </Group>
       <Tabs label="Personalization" id={id} tabs={personalizationTabs} chosen={tab} onChoose={setTab} />
       {panel(
         "Writing style",
@@ -967,7 +983,7 @@ function BulletRow({ bullet, label, onSave, onRemove }: { bullet: string; label:
 }
 
 /** How a history entry came about, as iOS labels it. */
-const historySources: Record<PromptHistoryItem["source"], string> = { local_edit: "Edit", reset: "Reset" };
+const historySources: Record<PromptHistoryItem["source"], string> = { local_edit: "Edit", reset: "Reset", sync_receive: "Synced" };
 
 /** One history entry: how and when, what it changed, and, opened, what restoring it would change,
  * with Restore, confirmed in place. */
