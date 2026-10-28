@@ -2453,8 +2453,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
   /** Only the settings file turns the network off: with the knowledge base file alone unreadable,
    * requests go out as ever. */
-  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
-    if (unreadable !== null) {
+  // Opt Out of AI is read once at a hold's start (ADR-DESK-010 amendment 2026-10-28): the transport leaves
+  // a request a hold already made to finish.
+  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"], ["Opt Out of AI on", "optsOutOfAI"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
+    if (unreadable === "optsOutOfAI") app.stored.set("optsOutOfAI", true);
+    else if (unreadable !== null) {
       const path = join(app.userData, unreadable);
       app.problems.set(path, { kind: "damaged", path, code: "invalid" });
       app.dialogResponse = 2;
@@ -3093,6 +3096,17 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    /** Opt Out of AI turns AI off, not the app (owner, 2026-10-28): updates as ever, on their own and
+     * when asked. */
+    test("a packaged build with Opt Out of AI on updates as ever, when asked too", async () => {
+      app.stored.set("optsOutOfAI", true);
+      await launchPackaged();
+      expect(app.trayState?.().update).toEqual({ kind: "idle" });
+      expect(await send({ type: "checkForUpdates" })).toEqual({ error: null });
+      expect(app.autoUpdater?.checks).toBe(1);
+      expect(app.trayState?.().update).toEqual({ kind: "checking" });
     });
 
     test("a download is not ready until macOS accepts it", async () => {

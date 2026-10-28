@@ -3315,6 +3315,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(memory.limits).toEqual([config.memorySizeLimitDefault, config.memorySizeLimitChoices[0]]);
     });
 
+    /** Opt Out of AI switched on during a hold applies from the next one, as every setting does: the hold
+     * under way finishes, and the next is refused, sending nothing. */
+    test("Opt Out of AI switched on during a hold applies from the next one", async () => {
+      transcription.enqueue(200, { text: "write we ship friday" });
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
+
+      const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
+        controller.onPhaseChange = (phase) => {
+          if (phase.kind !== "listening") return;
+          prefs.value = { ...defaultSettings(), aiOffLine: optedOutOfAILine };
+        };
+      });
+      expect(pastes).toEqual(["We ship on Friday."]);
+
+      controller.onPhaseChange = undefined;
+      const sent = transcription.requests.length + completions.requests.length;
+      controller.handle("startAgent");
+      controller.handle("finish");
+      expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect(transcription.requests.length + completions.requests.length).toBe(sent);
+      expect(pastes).toHaveLength(1);
+    });
+
     /** The last recording (ADR-DESK-018) is kept only for a dictation that started in debug mode, as the
      * settings snapshot of key-down says: a switch flipped during the hold applies from the next one. */
     describe("keeping the last recording", () => {

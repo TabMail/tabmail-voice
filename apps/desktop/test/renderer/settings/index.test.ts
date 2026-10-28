@@ -1067,7 +1067,7 @@ describe("Settings page", () => {
 
   /** Each switch sends its own setting with the value it was switched to. */
   test("each switch sends its setting", async () => {
-    const shown = { ...signedIn, readsScreen: false, openAtLogin: true, debugAllowed: true, debugMode: false };
+    const shown = { ...signedIn, readsScreen: false, openAtLogin: true, debugAllowed: true, debugMode: false, optsOutOfAI: true };
     const page = await settingsPage({ error: null }, shown, shown);
 
     await act(async () => toggle("Smart dictation").click());
@@ -1081,7 +1081,7 @@ describe("Settings page", () => {
       { type: "setReadsScreen", value: true },
       { type: "setOpenAtLogin", value: false },
       { type: "setDebugMode", value: true },
-      { type: "setOptsOutOfAI", value: true },
+      { type: "setOptsOutOfAI", value: false },
     ]);
   });
 
