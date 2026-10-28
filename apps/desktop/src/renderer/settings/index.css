@@ -119,10 +119,13 @@
 
 /* The chosen section. */
 
+/* The scroll bar's room is kept whether or not the section scrolls, so the page doesn't shift as one
+ * appears (a Personalization tab that scrolls beside one that doesn't). */
 .content {
   flex: 1;
   overflow-y: auto;
   padding: 26px 28px;
+  scrollbar-gutter: stable;
 }
 
 /* The content, and elsewhere the whole window, in the window's own color. */
@@ -268,6 +271,7 @@ input.switch:checked::before {
   .nav.selected .attention {
     background: SelectedItemText;
   }
+
 }
 
 /* Settings › Dictionary: the add field fills its row, and the words are rows of the same card. */
@@ -348,15 +352,91 @@ ul.dictionary {
   }
 }
 
-/* Settings › Personalization: each text's card opens with its title and Reset; a writing style
- * section's name heads its bullets; each bullet is a field filling its row, as tall as its text. History rows open to
- * the bullets a restore brings back (in the accent) and takes away (struck out). */
-.group-title {
+/* Settings › Personalization: tabs (writing style, knowledge base, history) as a macOS segmented
+ * control, the chosen one raised as a control; each tab opens with what it holds and its Reset; a
+ * writing style section's name heads its own card; each bullet is a field filling its row, as tall
+ * as its text, the add field under a line once there are any. History rows open to the bullets a
+ * restore brings back (in the accent) and takes away (struck out). */
+/* Equal segments, so the control keeps its size and place whichever tab is chosen. */
+.tabs {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  width: fit-content;
+  margin: 0 auto 18px;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 7px;
+  background: var(--hover);
+}
+
+.tabs button.tab {
+  padding: 3px 16px;
+  border: 0.5px solid transparent;
+  border-radius: 5px;
+  background: none;
+  box-shadow: none;
+}
+
+.tabs button.tab:not(.selected):hover {
+  background: var(--hover);
+}
+
+.tabs button.tab.selected {
+  border-color: var(--control-border);
+  background: var(--control);
+  box-shadow: var(--control-shadow);
+}
+
+/* In Windows' contrast themes the chosen tab takes the system's selection colors, with its own focus
+ * ring, as the chosen section does; after the rules above, so it wins over them. */
+@media (forced-colors: active) {
+  .tabs button.tab.selected {
+    background: SelectedItem;
+    color: SelectedItemText;
+    forced-color-adjust: none;
+  }
+
+  .tabs button.tab:focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
+  }
+}
+
+.tab-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin: 0 14px 14px;
+}
+
+.tab-intro > div {
+  flex: 1 1 260px;
+}
+
+.tab-intro p {
+  margin: 0;
+}
+
+.tab-intro p + p {
+  margin-top: 4px;
+}
+
+.section-heading {
+  margin: 0 14px 6px;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.bullet-editor {
-  border-top: 1px solid var(--separator);
+.group > ul.dictionary:first-child,
+.bullet-editor ul.dictionary {
+  border-top: none;
+}
+
+.bullet-editor ul.dictionary:not(:empty) {
+  border-bottom: 1px solid var(--separator);
 }
 
 /* A bullet's field, styled as a text field, wraps and grows with its text (`field-sizing`). */

@@ -662,42 +662,86 @@ function MemoryPane({ state }: { state: SettingsState }) {
   );
 }
 
-/** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages:
- * the writing style's three sections and the knowledge base each as a list of bullets to edit, add
- * to and remove from, each text with a reset to its default, confirmed in place; and their history,
- * the newest first, each entry showing what restoring it would change, with Restore, confirmed in
- * place. */
+/** Personalization's tabs, in order. */
+const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
+type PersonalizationTab = (typeof personalizationTabs)[number];
+
+/** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages,
+ * each a tab, with their history the third (owner, 2026-10-28: the page was too long, and the
+ * writing style's sections hard to see). The writing style's three sections, each under its own
+ * heading, and the knowledge base are lists of bullets to edit, add to and remove from, each text
+ * with a reset to its default, confirmed in place; the history lists the newest first, each entry
+ * showing what restoring it would change, with Restore, confirmed in place. Every tab stays
+ * rendered while another shows, so what is being typed in one is still there on coming back. */
 function PersonalizationPane({ state }: { state: SettingsState }) {
   const personalization = state.personalization;
+  const [tab, setTab] = useState<PersonalizationTab>("Writing style");
   const [failure, setFailure] = useState<string | null>(null);
+  const id = useId();
   const run = async (command: Command) => {
     setFailure(null);
     const { error } = await send(command);
     setFailure(error);
   };
+  const choose = (chosen: PersonalizationTab) => {
+    // A failure is said under the tab it came from, so it goes with that tab.
+    setFailure(null);
+    setTab(chosen);
+  };
+  const panel = (name: PersonalizationTab, children: ReactNode) => (
+    <div role="tabpanel" id={`${id}-${name}`} aria-label={name} hidden={tab !== name}>
+      {children}
+    </div>
+  );
   return (
     <>
-      <Group captions={["How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it."]}>
-        <div className="row">
-          <span className="group-title">Writing style</span>
-          <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
-        </div>
-        {personalization.writingStyle.map(({ section, bullets }) => (
-          <BulletEditor key={section} title={section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
-        ))}
-      </Group>
-      <Group
-        captions={[
-          "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
-          "Agent mode adds to it when you ask it to remember something.",
-        ]}
-      >
-        <div className="row">
-          <span className="group-title">Knowledge base</span>
-          <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
-        </div>
-        <BulletEditor title="Knowledge base" hideTitle bullets={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
-      </Group>
+      <Tabs label="Personalization" id={id} tabs={personalizationTabs} chosen={tab} onChoose={choose} />
+      {panel(
+        "Writing style",
+        <>
+          <TabIntro captions={["How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it."]}>
+            <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
+          </TabIntro>
+          {personalization.writingStyle.map(({ section, bullets }) => (
+            <section key={section} className="card-section">
+              <h2 className="section-heading">{section}</h2>
+              <div className="group">
+                <BulletEditor title={section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
+              </div>
+            </section>
+          ))}
+        </>,
+      )}
+      {panel(
+        "Knowledge base",
+        <>
+          <TabIntro captions={["What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.", "Agent mode adds to it when you ask it to remember something."]}>
+            <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
+          </TabIntro>
+          <Group>
+            <BulletEditor title="Knowledge base" bullets={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
+          </Group>
+        </>,
+      )}
+      {panel(
+        "History",
+        <>
+          <TabIntro captions={[`Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`]} />
+          <Group>
+            {personalization.history.length === 0 ? (
+              <div className="row">
+                <span className="caption">No changes yet.</span>
+              </div>
+            ) : (
+              <ul className="dictionary" aria-label="History">
+                {personalization.history.map((item) => (
+                  <HistoryRow key={item.id} item={item} onRestore={() => void run({ type: "restorePromptHistory", id: item.id })} />
+                ))}
+              </ul>
+            )}
+          </Group>
+        </>,
+      )}
       {failure !== null && (
         <Group>
           <div className="row">
@@ -705,23 +749,54 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
           </div>
         </Group>
       )}
-      <Group captions={[`Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`]}>
-        <div className="row">
-          <span className="group-title">History</span>
-        </div>
-        {personalization.history.length === 0 ? (
-          <div className="row">
-            <span className="caption">No changes yet.</span>
-          </div>
-        ) : (
-          <ul className="dictionary" aria-label="History">
-            {personalization.history.map((item) => (
-              <HistoryRow key={item.id} item={item} onRestore={() => void run({ type: "restorePromptHistory", id: item.id })} />
-            ))}
-          </ul>
-        )}
-      </Group>
     </>
+  );
+}
+
+/** A row of tabs, one chosen, as a segmented control: a click or the arrow keys choose another,
+ * and Tab moves on to the chosen tab's panel (`id` names the panels: `<id>-<tab>`). */
+function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { label: string; id: string; tabs: readonly Name[]; chosen: Name; onChoose: (tab: Name) => void }) {
+  const list = useRef<HTMLDivElement>(null);
+  const move = (by: number) => {
+    const next = tabs.at((tabs.indexOf(chosen) + by) % tabs.length) ?? chosen;
+    onChoose(next);
+    list.current?.querySelector<HTMLButtonElement>(`[aria-controls="${CSS.escape(`${id}-${next}`)}"]`)?.focus();
+  };
+  return (
+    <div
+      ref={list}
+      className="tabs"
+      role="tablist"
+      aria-label={label}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault();
+          move(event.key === "ArrowRight" ? 1 : -1);
+        }
+      }}
+    >
+      {tabs.map((tab) => (
+        <button key={tab} role="tab" aria-selected={tab === chosen} aria-controls={`${id}-${tab}`} tabIndex={tab === chosen ? 0 : -1} className={tab === chosen ? "tab selected" : "tab"} onClick={() => onChoose(tab)}>
+          {tab}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** What a tab holds, said at its top, with the tab's own action (Reset) beside it. */
+function TabIntro({ captions, children }: { captions: string[]; children?: ReactNode }) {
+  return (
+    <div className="tab-intro">
+      <div>
+        {captions.map((caption) => (
+          <p key={caption} className="caption">
+            {caption}
+          </p>
+        ))}
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -748,7 +823,7 @@ function ResetButton({ what, onReset }: { what: string; onReset: () => void }) {
 
 /** A list of bullets: each one a field, saved as it is left or Return is pressed, with a remove
  * button; then a field to add one. `onChange` is given the whole list as edited. */
-function BulletEditor({ title, hideTitle = false, bullets, onChange }: { title: string; hideTitle?: boolean; bullets: string[]; onChange: (bullets: string[]) => Promise<void> }) {
+function BulletEditor({ title, bullets, onChange }: { title: string; bullets: string[]; onChange: (bullets: string[]) => Promise<void> }) {
   const [draft, setDraft] = useState("");
   const add = (event: FormEvent) => {
     event.preventDefault();
@@ -758,11 +833,6 @@ function BulletEditor({ title, hideTitle = false, bullets, onChange }: { title: 
   };
   return (
     <div className="bullet-editor">
-      {!hideTitle && (
-        <div className="row">
-          <span className="caption">{title}</span>
-        </div>
-      )}
       <ul className="dictionary" aria-label={title}>
         {bullets.map((bullet, index) => (
           // Keyed by the text and how many equal bullets come before it, not by position: a bullet

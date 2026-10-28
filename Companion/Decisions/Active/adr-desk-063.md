@@ -268,3 +268,17 @@ features are off (this file unreadable, or Opt Out of AI), Settings › Memory l
 but neither searches nor sets the limit (ADR-DESK-010 amendment, #294). Tests: `settings.test.ts`,
 `main/index.test.ts` (the reset leaves the limit null, memory is never trimmed, and the user's pick is
 kept and applied), `renderer/settings/index.test.ts`, `core/ui/fileProblems.test.ts`.
+
+**Amendment 2026-10-28 (#296) — Settings › Personalization as tabs.** Owner: the page was too long,
+and the writing style's sections ("General writing style", "Language", …) were hard to see. Each block
+is now a tab: Writing style, Knowledge base, History, in a segmented control under the page title
+(equal segments, the chosen one raised as a control; the system's selection colors in a contrast
+theme; the arrow keys move between them; the scroll bar's room is kept, so nothing shifts as a tab
+that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
+opens with its caption and, for the two texts, its Reset; each writing style section is its own card
+under a heading with the section's name. Every tab stays rendered while hidden, so what is being typed
+in one is still there on coming back; a failure is said under the tab it came from and goes when
+another tab is chosen. Nothing about what is stored or sent changes. Tests:
+`renderer/settings/index.test.ts` (tabs, panels, headings, Reset per tab, arrow keys, typing kept, the
+failure line), `renderer/settings/style.test.ts` (the chosen tab raised, equal segments, the contrast
+theme's colors and focus ring after the rules they override).

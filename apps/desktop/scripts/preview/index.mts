@@ -209,7 +209,7 @@ const noteLayoutProblem = `(maxLines, exactLines) => {
 /** A shot of `page` with `state`; `whole` names what must show whole in it (the welcome window's
  * buttons, below everything else; a question's buttons in a chat long enough to scroll): inside the
  * window and inside every box above it in the page that clips. */
-const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; whole?: string; noteLines?: number | null }[] = [
+const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; tab?: string; whole?: string; noteLines?: number | null }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
@@ -284,12 +284,14 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-privacy", page: "settings/index.html", size: settingsWindowSize, section: "Privacy", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }, { bundleIdentifier: "org.example.notes", name: "Example Notes" }], excludedSites: ["example.com", "bank.example.org"] } },
   { name: "settings-permissions-vscode", page: "settings/index.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   { name: "settings-general", page: "settings/index.html", size: settingsWindowSize, section: "General", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, debugAllowed: true } },
-  // Personalization: the writing style's sections, the knowledge base and the history.
   // A settings file that couldn't be read at launch, said above the section.
   { name: "settings-file-problem", page: "settings/index.html", size: settingsWindowSize, section: "Dictation", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, fileProblems: ["settings", "knowledgeBase"] } },
+  // Personalization, a tab each: the writing style's sections, the knowledge base and the history.
   { name: "settings-personalization", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
-  // The whole page, down to the history, in a window tall enough to hold it.
-  { name: "settings-personalization-whole", page: "settings/index.html", size: { width: settingsWindowSize.width, height: settingsWindowSize.height * 3 }, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  // The writing style tab whole, down to its last section, in a window tall enough to hold it.
+  { name: "settings-personalization-whole", page: "settings/index.html", size: { width: settingsWindowSize.width, height: settingsWindowSize.height * 2 }, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-knowledge-base", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", tab: "Knowledge base", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-history", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", tab: "History", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   { name: "settings-personalization-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   { name: "settings-personalization-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   // Memory: usage against the limit, the requests kept, the newest first; dark; nothing kept yet; a
@@ -346,6 +348,10 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
       `new Promise((resolve) => { const started = Date.now(); const click = () => { const button = [...document.querySelectorAll("button.nav")].find((button) => button.textContent === ${JSON.stringify(shot.section)}); if (button) { button.click(); resolve(true); } else if (Date.now() - started > 5000) resolve(false); else setTimeout(click, 50); }; click(); })`,
     )) as boolean;
     if (!shown) throw new Error(`the page has no ${shot.section} section`);
+  }
+  if (shot.tab) {
+    const chosen = (await window.webContents.executeJavaScript(`(() => { const tab = [...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === ${JSON.stringify(shot.tab)}); tab?.click(); return tab !== undefined; })()`)) as boolean;
+    if (!chosen) throw new Error(`the section has no ${shot.tab} tab`);
   }
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));
