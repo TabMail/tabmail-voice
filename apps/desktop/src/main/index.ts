@@ -356,7 +356,7 @@ function launch(): void {
     // Native connectors require a platform implementation; shared web/email tools use Electron.
     connectorTools: platformConnectors.flatMap((connector) =>
       connector.tools({
-        eventStore: process.platform === "win32" ? new NativeEventStore(productivityRunner(join(helpers, "voice-productivity.exe")), "TabMail Voice calendar (local to this PC)") : process.platform === "linux" ? new NativeEventStore(productivityRunner(join(helpers, "voice-productivity"))) : mac.eventStore,
+        eventStore: process.platform === "win32" ? new NativeEventStore(productivityRunner(join(helpers, "voice-productivity.exe")), "TabMail Voice calendar (local to this PC)") : process.platform === "linux" ? new NativeEventStore(productivityRunner(join(helpers, "voice-productivity")), undefined, true) : mac.eventStore,
         contactStore: process.platform === "win32" ? new NativeContactStore(productivityRunner(join(helpers, "voice-productivity.exe")), "TabMail Voice contacts (local to this PC)") : process.platform === "linux" ? new NativeContactStore(productivityRunner(join(helpers, "voice-productivity"))) : mac.contactStore,
         fileStore: process.platform === "win32" ? new WindowsFileStore(homedir()) : process.platform === "linux" ? new LinuxFileStore(homedir(), linuxSearchRunner(join(helpers, "voice-files"))) : mac.fileStore,
         home: homedir(),

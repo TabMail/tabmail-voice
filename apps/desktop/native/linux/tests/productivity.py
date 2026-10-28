@@ -249,3 +249,152 @@ for fault in ['timezone', 'uid']:
     assert result.returncode != 0 and result.stdout == '', (fault, result.stdout)
     assert result.stderr.strip() == 'productivity request failed', result.stderr
 print('EDS UID/timezone failures return no partial or empty-success result')
+
+# The calendar editor (ADR-DESK-060's Linux amendment): ids, one event, the scopes of a change,
+# deletion and refusals, on dates relative to today, clear of the fixed fixtures above.
+def refused(method, params):
+    return call(method, params).get('refused')
+ms = lambda value: int(value.timestamp()*1000)
+# Local wall times (naive), so each week's start keeps 09:00 in the system zone EDS counts in.
+day0 = (datetime.datetime.now() + datetime.timedelta(days=400)).replace(hour=9, minute=0, second=0, microsecond=0)
+week = lambda k: ms(day0 + datetime.timedelta(weeks=k))
+# Days and minutes added in local wall time: a daylight-saving change between keeps the clock time.
+at = lambda k, days=0, minutes=0: ms(day0 + datetime.timedelta(weeks=k, days=days, minutes=minutes))
+span = {'start': week(-1), 'end': week(40)}
+def rule(**fields):
+    return {'frequency':'WEEKLY', 'interval':1, 'count':None, 'until':None, 'days':[], 'monthDays':[], 'months':[], 'positions':[], 'yearWeeks':[], 'yearDays':[], **fields}
+def event(**fields):
+    return {'title':'Weekly sync', 'start':week(0), 'end':week(0)+3600000, 'isAllDay':False, 'location':None, 'notes':None,
+            'calendarId':None, 'availability':'busy', 'recurrence':None, 'attendees':[], **fields}
+unchanged = {'invite':[], 'uninvite':[], 'exclude':[]}
+def rows(title=None):
+    return sorted((row for row in call('calendarEvents', span) if title is None or row['title'] == title), key=lambda row: row['start'])
+
+calendars = call('calendars', {})
+default = [calendar for calendar in calendars if calendar['isDefault']]
+assert len(default) == 1 and default[0]['title'] and default[0]['account'], calendars
+second = EDataServer.Source.new(None, None)
+second.set_display_name('Second calendar')
+second.set_parent('local-stub')
+second.get_extension(EDataServer.SOURCE_EXTENSION_CALENDAR).set_backend_name('local')
+assert registry.commit_source_sync(second, None)
+assert {'id':second.get_uid(), 'title':'Second calendar', 'account':default[0]['account'], 'isDefault':False} in call('calendars', {})
+chosen = call('calendarAdd', event(title='Chosen calendar', calendarId=second.get_uid(), start=week(1), end=week(1)+60000))
+assert chosen['calendarId'] == second.get_uid() and chosen['calendar'] == 'Second calendar' and chosen['id'].startswith(second.get_uid() + '|')
+assert refused('calendarAdd', event(calendarId='missing-calendar')) == 'noSuchCalendar'
+assert call('calendarDelete', {'id':chosen['id']}) == {}
+print('EDS writable calendar list, a chosen calendar and an unknown one passed')
+
+zone = ECal.util_get_system_timezone_location()
+series = call('calendarAdd', event(availability='free', recurrence=rule(count=30)))
+assert series['occurrence'] == week(0) and series['availability'] == 'free' and series['calendarId'] == default[0]['id']
+assert series['recurrence'] == rule(count=30) and not series['isDetached'] and not series['isInvitation'], series
+assert series['timeZone'] == ('UTC' if zone in ('UTC', 'Etc/UTC') else zone), series
+stored = calendar_client.get_object_sync(series['id'].split('|')[1], None, None)[1]
+assert stored.get_first_property(ICalGLib.PropertyKind.TRANSP_PROPERTY).get_transp() == ICalGLib.PropertyTransp.TRANSPARENT
+occurrences = rows('Weekly sync')
+assert [row['start'] for row in occurrences] == [week(k) for k in range(30)], occurrences
+# Thirty weeks cross a daylight-saving change wherever the system zone has one.
+assert all(datetime.datetime.fromtimestamp(row['start']/1000).time() == day0.time() for row in occurrences)
+assert all(row['id'] == series['id'] and row['occurrence'] == row['start'] for row in occurrences)
+print('EDS repeating event created in the local zone, free, read back with its id and rule passed')
+
+assert call('calendarEvent', {'id':series['id'], 'occurrence':None})['start'] == week(0)
+assert call('calendarEvent', {'id':series['id'], 'occurrence':week(2)+3600000})['start'] == week(2)
+assert refused('calendarEvent', {'id':series['id'], 'occurrence':week(2)+3*3600000}) == 'noSuchEvent'
+for bad in ['no-separator', '|', 'missing-calendar|uid', series['id'] + '%41', series['id'] + 'x']:
+    assert refused('calendarEvent', {'id':bad, 'occurrence':None}) == 'noSuchEvent', bad
+call('calendarEvent', {'id':series['id'], 'occurrence':'tomorrow'}, False)
+print('EDS event by id and occurrence, within the tolerance only, and unknown ids passed')
+
+third = call('calendarEdit', {'id':series['id'], 'occurrence':week(2), 'scope':'thisOnly', 'title':'Third moved',
+    'start':week(2)+3600000, 'end':week(2)+7200000, **unchanged})
+assert third['isDetached'] and third['id'] != series['id'] and third['id'].startswith(series['id'] + '|'), third
+assert third['occurrence'] == week(2) and third['start'] == week(2)+3600000 and third['recurrence'] == rule(count=30)
+assert [row['start'] for row in rows('Weekly sync')] == [week(k) for k in range(30) if k != 2]
+assert call('calendarEvent', {'id':series['id'], 'occurrence':week(2)})['id'] == third['id']
+assert call('calendarEdit', {'id':third['id'], 'occurrence':None, 'scope':'thisOnly', 'location':'Room 4', **unchanged})['location'] == 'Room 4'
+assert call('calendarEdit', {'id':third['id'], 'occurrence':None, 'scope':'thisOnly', 'location':'', **unchanged})['location'] is None
+call('calendarEdit', {'id':third['id'], 'occurrence':None, 'scope':'thisOnly', 'recurrence':None, **unchanged}, False)
+print('EDS one occurrence changed alone, then by its own id, passed')
+
+assert refused('calendarEdit', {'id':series['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'exclude':[week(4), week(4)+5*3600000]}}) == 'noSuchEvent'
+assert len(rows('Weekly sync')) == 29
+call('calendarEdit', {'id':series['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'exclude':[week(4), week(5)]}})
+assert [row['start'] for row in rows('Weekly sync')] == [week(k) for k in range(30) if k not in (2, 4, 5)]
+print('EDS occurrences deleted from a series, all found before any is deleted, passed')
+
+moved = call('calendarEdit', {'id':series['id'], 'occurrence':week(6), 'scope':'all',
+    'start':at(6, 1, 30), 'end':at(6, 1, 30)+5400000, 'availability':'busy', **unchanged})
+assert moved['id'] == series['id'] and moved['start'] == at(0, 1, 30) and moved['availability'] == 'busy', moved
+later = rows('Weekly sync')
+# Moved by a day to 09:30 local: deleted ones come back, the occurrence changed alone stays.
+assert [row['start'] for row in later] == [at(k, 1, 30) for k in range(30)], later
+assert all(row['end'] - row['start'] == 5400000 for row in later)
+assert [row['start'] for row in rows('Third moved')] == [week(2)+3600000]
+print('EDS series moved by days to a new time of day, keeping the length confirmed, passed')
+
+following = call('calendarEdit', {'id':series['id'], 'occurrence':at(20, 1, 30), 'scope':'thisAndFollowing', 'title':'Later sync',
+    'start':at(20, 1, 120), 'end':at(20, 1, 180), **unchanged})
+assert following['id'] != series['id'] and following['id'].count('|') == 1 and following['occurrence'] == following['start'], following
+assert following['recurrence'] == rule(count=10), following
+assert [row['start'] for row in rows('Later sync')] == [at(k, 1, 120) for k in range(20, 30)]
+assert [row['start'] for row in rows('Weekly sync')] == [at(k, 1, 30) for k in range(20)]
+assert call('calendarEvent', {'id':series['id'], 'occurrence':None})['recurrence'] == rule(count=20)
+single = call('calendarEdit', {'id':following['id'], 'occurrence':None, 'scope':'all', 'recurrence':None, **unchanged})
+assert single['recurrence'] is None and single['occurrence'] is None and len(rows('Later sync')) == 1
+print('EDS this and following split into a series of its own, and a rule ended, passed')
+
+daily = call('calendarEdit', {'id':following['id'], 'occurrence':None, 'scope':'all',
+    'recurrence':rule(frequency='DAILY', until=at(20, 3, 120)), **unchanged})
+assert daily['recurrence'] == rule(frequency='DAILY', until=at(20, 3, 120)), daily
+assert len(rows('Later sync')) == 3
+assert call('calendarDelete', {'id':following['id']}) == {} and rows('Later sync') == []
+print('EDS a rule set on a single event, with a timed end, passed')
+
+assert call('calendarDelete', {'id':third['id']}) == {} and rows('Third moved') == []
+assert len(rows('Weekly sync')) == 20
+assert call('calendarDelete', {'id':series['id']}) == {} and rows('Weekly sync') == []
+assert refused('calendarDelete', {'id':series['id']}) == 'noSuchEvent'
+print('EDS deletion of one changed occurrence, then of a series, passed')
+
+first_day = day0.replace(hour=0)
+days = call('calendarAdd', event(title='Day series', start=ms(first_day), end=ms(first_day), isAllDay=True,
+    recurrence=rule(until=ms(first_day + datetime.timedelta(weeks=3, days=1))-1)))
+assert days['timeZone'] is None and days['recurrence']['until'] == ms(first_day + datetime.timedelta(weeks=3, days=1))-1, days
+assert [row['start'] for row in rows('Day series')] == [ms(first_day + datetime.timedelta(weeks=k)) for k in range(4)]
+call('calendarEdit', {'id':days['id'], 'occurrence':ms(first_day + datetime.timedelta(weeks=1)), 'scope':'all',
+    'start':ms(first_day + datetime.timedelta(weeks=1, days=2)), 'end':ms(first_day + datetime.timedelta(weeks=1, days=3)), **unchanged})
+moved_days = rows('Day series')
+assert [(row['start'], row['end']) for row in moved_days[:2]] == [(ms(first_day + datetime.timedelta(weeks=k, days=2)), ms(first_day + datetime.timedelta(weeks=k, days=3))) for k in range(2)], moved_days
+assert call('calendarDelete', {'id':days['id']}) == {}
+timed = call('calendarAdd', event(title='Becomes all day', start=week(3), end=week(3)+3600000))
+assert timed['occurrence'] is None and timed['recurrence'] is None and timed['timeZone'] == 'UTC'
+whole = call('calendarEdit', {'id':timed['id'], 'occurrence':week(3), 'scope':'all', 'isAllDay':True,
+    'start':ms(first_day + datetime.timedelta(weeks=3)), 'end':ms(first_day + datetime.timedelta(weeks=3)), **unchanged})
+assert whole['isAllDay'] and whole['start'] == whole['end'] == ms(first_day + datetime.timedelta(weeks=3)), whole
+assert call('calendarDelete', {'id':timed['id']}) == {}
+print('EDS all-day series with a last day, moved by days, and a timed event made all day passed')
+
+# A calendar on this computer has no server to send invitations.
+assert refused('calendarAdd', event(attendees=[{'email':'invitee@example.com', 'name':'Invitee'}])) == 'calendarNoInvitations'
+plain = call('calendarAdd', event(title='Plain event'))
+assert refused('calendarEdit', {'id':plain['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'invite':[{'email':'invitee@example.com', 'name':None}]}}) == 'calendarNoInvitations'
+for person in [{'email':'two\r\nATTENDEE:mailto:x@example.com', 'name':None}, {'email':'no-at-sign', 'name':None}, {'email':'a@example.com', 'name':'Quote " name'}]:
+    call('calendarEdit', {'id':plain['id'], 'occurrence':None, 'scope':'all', **{**unchanged, 'invite':[person]}}, False)
+call('calendarEdit', {'id':plain['id'], 'occurrence':None, 'scope':'all', 'start':week(0), **unchanged}, False)
+call('calendarAdd', event(recurrence=rule(count=2, until=week(4))), False)
+assert call('calendarEdit', {'id':plain['id'], 'occurrence':None, 'scope':'all', 'notes':'Agenda', **unchanged})['notes'] == 'Agenda'
+assert call('calendarDelete', {'id':plain['id']}) == {}
+invitation = ICalGLib.Component.new_from_string('BEGIN:VEVENT\r\nUID:invited-event\r\nSUMMARY:Invited\r\nDTSTART:' +
+    datetime.datetime.fromtimestamp(week(8)/1000, datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '\r\nDURATION:PT1H\r\n' +
+    'ORGANIZER;CN=Organizer:mailto:organizer@example.com\r\nATTENDEE;PARTSTAT=ACCEPTED;CN=Organizer:mailto:organizer@example.com\r\n' +
+    'ATTENDEE;PARTSTAT=TENTATIVE:mailto:someone@example.com\r\nATTENDEE:mailto:other@example.com\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(invitation, ECal.OperationFlags.NONE, None)[0]
+[invited] = rows('Invited')
+assert invited['isInvitation'] and invited['organizer'] == {'email':'organizer@example.com', 'name':'Organizer', 'status':'unknown'}, invited
+assert [(person['email'], person['status']) for person in invited['attendees']] == [('organizer@example.com', 'accepted'), ('someone@example.com', 'tentative'), ('other@example.com', 'pending')]
+assert invited['end'] - invited['start'] == 3600000
+assert refused('calendarEdit', {'id':invited['id'], 'occurrence':None, 'scope':'all', 'title':'Mine now', **unchanged}) == 'notOrganizer'
+assert call('calendarDelete', {'id':invited['id']}) == {} and rows('Invited') == []
+print('EDS invitations refused without a server, attendee checks, and an invitation read and kept as it is passed')

@@ -10,8 +10,8 @@ import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector,
 import { isAddress } from "./email.js";
 
 /** An event in the user's calendars, as the calendar tools read and create them. The fields after
- * `notes` are read and written only by a store with an `editor` (Apple Calendar); other stores leave
- * them out. */
+ * `notes` are read and written only by a store with an `editor` (Apple Calendar, and Evolution Data
+ * Server on Linux); other stores leave them out. */
 export interface CalendarEvent {
   title: string;
   start: Date;
@@ -102,8 +102,9 @@ export interface EventChanges {
 }
 
 /** Single events read, changed and deleted by id, where the store can (Apple Calendar through
- * EventKit, ADR-DESK-060). Attendees are invited, updated and told of a cancellation by the
- * calendar's server (iCloud, Google, Exchange) once a change is saved. */
+ * EventKit, and Evolution Data Server through `voice-productivity` on Linux, ADR-DESK-060).
+ * Attendees are invited, updated and told of a cancellation by the calendar's server (iCloud,
+ * Google, Exchange) once a change is saved. */
 export interface EventEditor {
   /** The event `id` names; of a repeating one, the occurrence that started at `occurrence`, or the
    * first without it. */

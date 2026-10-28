@@ -95,7 +95,8 @@ itself invites with, which EventKit keeps to itself. The owner chose the last, c
   event that is gone, read-only or not the user's when it saves. (Amended 2026-10-18: edit and delete
   read the event again when they ran, so a duration changed meanwhile moved the end past the one
   confirmed, and a person named but absent when asked was removed once added.)
-- **Without an editor** (Windows and Linux, which have no event store), the read, edit and delete
+- **Without an editor** (Windows, which has no event store; Linux has one from 2026-10-27, amendment
+  below), the read, edit and delete
   tools aren't offered, and a create with `calendar_id`, `transparency` free, `attendees` or
   `recurrence` is refused (busy, the default, goes ahead: 2026-10-18). `calendar_read` pages at `config.calendarReadPageSize` and lists the calendars on page 1.
   The backend's schemas for this are `v0.2.5` (its ADR-017 amendment): an older app is never offered
@@ -147,3 +148,30 @@ five candidates on a page, "Date tile looks awesome".
   …"), and "New: …" on any other new line (a new repetition), with removed text in `<del>` and a
   new title or time in `<ins>`; nothing changes on screen.
 
+**Amendment 2026-10-27: Linux edits events through Evolution Data Server (voice #230).**
+Owner: "linux now can be implemented safely … all we need is integrating properly". Windows stays
+without an editor (voice #229: its app calendar is invisible to the user and has no invitations).
+- `voice-productivity` answers `calendarEvent`, `calendars`, `calendarEdit` and `calendarDelete`
+  with the Mac helper's parameters and replies, and `calendarAdd` takes the same extended fields
+  (calendar, availability, recurrence, attendees). `NativeEventStore` has its `editor` only where it
+  is built editable (Linux); the tools are the Mac's, unchanged.
+- A refusal is a reply `{"refused": kind}` with the Mac's kinds (`noSuchEvent`, `noSuchCalendar`,
+  `calendarReadOnly`, `noDefaultCalendar`, `notOrganizer`, `calendarNoInvitations`), which the app
+  turns into `EventStoreError`; any other failure is a helper error, as before.
+- An event's id is its source's uid and the component's uid, `|`-separated (each with `%` and `|`
+  escaped), plus the recurrence id of a detached occurrence. An occurrence is found as on the Mac:
+  within `eventOccurrenceToleranceMs` of the start asked, searched over
+  `eventOccurrenceSearchSpanMs`, through the same expansion `calendarEvents` reads, so a detached or
+  RANGE-moved occurrence is the one shown.
+- `thisOnly` stores a detached occurrence (the master's copy with its rules removed, under the
+  occurrence's recurrence id); `thisAndFollowing` is EDS's THIS_AND_FUTURE, which ends the series and
+  starts a new one under a new uid (found again by its start and title); on the first occurrence, and
+  for `all`, the whole series changes. A series moved with `all` keeps its days apart and its
+  length; one that repeats is written in the local zone with its TZID, so its wall time holds across
+  daylight saving.
+- Invitations need a calendar whose backend sends them (`save-schedules`) and knows the user's own
+  address; otherwise adding or changing people is refused as `calendarNoInvitations` (a local
+  calendar). An event is an invitation when it has attendees and an organizer other than the user;
+  changing one is refused (`notOrganizer`), deleting it is not.
+- Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
+  (`tests/productivity.py`); a server-backed calendar (Google) by hand (TESTS.md).

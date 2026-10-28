@@ -5,4 +5,8 @@
 namespace voice::HelperConfig {
 inline constexpr unsigned targetActivationWaitMs = 1000;
 inline constexpr unsigned targetActivationPollMs = 20;
+// An occurrence named by its original start is found within this of it, searched for this far
+// either side (the macOS helper's eventOccurrenceTolerance and eventOccurrenceSearchSpan).
+inline constexpr long long eventOccurrenceToleranceMs = 2LL * 60 * 60 * 1000;
+inline constexpr long long eventOccurrenceSearchSpanMs = 31LL * 24 * 60 * 60 * 1000;
 }
