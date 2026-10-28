@@ -158,9 +158,6 @@ export interface SettingsState {
 export type VSCodeFix = "notNeeded" | "needed" | "done";
 
 export interface WelcomeState {
-  /** The app's files that couldn't be read at launch: the window says so for the settings file, which
-   * the wizard writes, above every step. */
-  fileProblems: StoredFile[];
   step: WelcomeStep;
   index: number;
   categoryIndex: number;

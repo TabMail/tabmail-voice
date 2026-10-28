@@ -59,7 +59,7 @@ describe("file problems", () => {
     });
   });
 
-  /** The line above Settings and the welcome window, and the menu's while the settings can't be read. */
+  /** The line above Settings, and the menu's while the settings can't be read. */
   test("the line shown while a file can't be read says what isn't saved and the Fix item", () => {
     expect(fileProblemLine("settings")).toBe("TabMail Voice can't read its settings file, so changes to settings aren't saved and nothing on screen or in your other apps is read. Choose Fix Settings File… in TabMail Voice's menu to fix it.");
     expect(fileProblemLine("knowledgeBase")).toBe("TabMail Voice can't read its knowledge base file, so changes to your knowledge base and writing style aren't saved. Choose Fix Knowledge Base File… in TabMail Voice's menu to fix it.");

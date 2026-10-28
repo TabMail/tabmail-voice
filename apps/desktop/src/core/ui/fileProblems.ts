@@ -28,7 +28,7 @@ export function unsavedBecauseOf(file: StoredFile): string {
   return `TabMail Voice can't read its ${names[file].title.toLowerCase()} file, so this wasn't saved. Choose ${fixFileLabel(file)} in TabMail Voice's menu to fix it.`;
 }
 
-/** Said at the top of Settings, and the welcome window for the settings file, while `file` can't be read. */
+/** Said at the top of Settings while `file` can't be read. */
 export function fileProblemLine(file: StoredFile): string {
   const changes = file === "settings" ? "changes to settings aren't saved and nothing on screen or in your other apps is read" : "changes to your knowledge base and writing style aren't saved";
   return `TabMail Voice can't read its ${names[file].title.toLowerCase()} file, so ${changes}. Choose ${fixFileLabel(file)} in TabMail Voice's menu to fix it.`;

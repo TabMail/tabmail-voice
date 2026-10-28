@@ -178,3 +178,13 @@ Tests: `main/storage/jsonFileStore.test.ts`, `jsonFileStore.readErrors.test.ts`,
 `core/ui/fileProblems.test.ts`, `main/tray.test.ts`, `main/index.test.ts`, `kbTools.test.ts`,
 `settings.test.ts`, `dictation/controller.test.ts`, `renderer/settings/index.test.ts`,
 `renderer/welcome/index.test.ts`.
+
+**Amendment (2026-10-27, an unreadable settings file never opens the welcome wizard; owner, issue
+#285):** a settings file that can't be read reads as setup never done (consent and the finished
+wizard are in it), so the wizard opened at every launch, and from the menu's Finish Setting Up and
+Welcome Guide. It never opens then: `showWelcome` tells how to fix the file instead (the same dialog as
+at launch and the Fix Settings File… item), and launch opens no wizard, only that dialog. Consent stays
+not given inside, so nothing of the user's is read, as above. The welcome window's line about the
+settings file, which it could then never show, is gone (`WelcomeState.fileProblems` deleted); Settings
+still says it above every section. Test: `main/index.test.ts`, for each kind of read failure, at
+launch and from the menu.

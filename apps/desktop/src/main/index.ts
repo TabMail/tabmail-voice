@@ -538,7 +538,6 @@ function launch(): void {
   function welcomeState(): WelcomeState {
     const current = wizard ?? new WelcomeWizard(settings, () => suggestedName);
     return {
-      fileProblems: unreadableFiles(),
       step: current.step,
       index: current.index,
       categoryIndex: current.categoryIndex,
@@ -661,8 +660,11 @@ function launch(): void {
     });
   }
 
-  /** Opens the welcome wizard at its first step; brings the open one forward instead. */
+  /** Opens the welcome wizard at its first step; brings the open one forward instead. While the
+   * settings file can't be read, which reads as setup never done, it tells how to fix the file instead,
+   * and the wizard never opens (owner, 2026-10-27). */
   function showWelcome(): void {
+    if (settings.fileProblem !== undefined) return showFileProblem("settings");
     if (!windows.isOpen("welcome")) {
       stopObservingWizard?.();
       const fresh = new WelcomeWizard(settings, () => suggestedName);
@@ -1185,7 +1187,8 @@ function launch(): void {
 
   // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
   // says what's new, so the tip that tells a user who set the app up before never shows to this one.
-  if (!settings.hasFinishedWelcome) {
+  // A settings file that can't be read is not setup never done: the fix below is told instead.
+  if (!settings.hasFinishedWelcome && settings.fileProblem === undefined) {
     tips.markLearned("agentKnowledgeBase");
     showWelcome();
   }

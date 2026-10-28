@@ -18,7 +18,7 @@ import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
 import { memoryRow } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
-import { channels, type SettingsState, type WelcomeState } from "../../src/shared/ipc.js";
+import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
 /** The signal a tool runs with: a request never canceled. */
@@ -94,7 +94,7 @@ const app = vi.hoisted(() => ({
   trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
-  trayState: null as (() => { update: unknown; fileProblems?: unknown }) | null,
+  trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
@@ -2108,7 +2108,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.trayState?.().fileProblems).toEqual(["settings"]);
     const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
     expect(settingsState().fileProblems).toEqual(["settings"]);
-    expect((app.handlers.get(channels.getState)?.({}, "welcome") as WelcomeState).fileProblems).toEqual(["settings"]);
 
     for (const command of [
       { type: "setHotkey", hotkey: "rightOption" },
@@ -2369,6 +2368,29 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.trayActions?.debug.showLastScreenContext();
     app.appEvents.get("second-instance")?.();
     expect(app.presented).toEqual(["settings", "welcome", "contextDebug", "settings"]);
+  });
+
+  /** A settings file that can't be read reads as setup never done, but the welcome wizard never
+   * opens then (owner, 2026-10-27): at launch and from the menu (Finish Setting Up and Welcome Guide
+   * both call `showWelcome`), every way into it tells how to fix the file instead. */
+  test.each(["permission", "damaged", "unreadable"] as const)("a settings file that can't be read (%s) never opens the welcome wizard, and offers the fix steps instead", async (kind) => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind, path, code: kind === "damaged" ? "invalid" : "EIO" });
+    app.dialogResponse = 1;
+    await launch("darwin");
+
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.dialogs).toHaveLength(1);
+    const fix = app.dialogs[0];
+    expect(fix?.message).toContain("settings file");
+    expect(app.presented).toEqual([]);
+    expect(app.trayState?.().hasConsented).toBe(false);
+
+    app.trayActions?.showWelcome();
+    expect(await eventually(() => app.dialogs.length === 2)).toBe(true);
+    expect(app.dialogs[1]).toEqual(fix);
+    expect(app.presented).toEqual([]);
   });
 
   describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {
