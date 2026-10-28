@@ -10,12 +10,11 @@ import { elapsed, log } from "../log.js";
 import { charCount } from "../util/text.js";
 
 /** A message naming a backend prompt: `content` is the prompt's name and `vars` its template
- * variables, flattened into top-level JSON keys beside `role` and `content` (as on iOS); a number
- * goes as a JSON number. */
+ * variables, flattened into top-level JSON keys beside `role` and `content` (as on iOS). */
 export interface CompletionsMessage {
   role: string;
   content: string;
-  vars: Record<string, string | number>;
+  vars: Record<string, string>;
 }
 
 /** A tool the model called that the app runs (the backend runs its own server tools). */
@@ -186,10 +185,7 @@ export class CompletionsClient {
       `prompt ${message.content} (role ${message.role})`,
       ...Object.keys(message.vars)
         .sort()
-        .map((key) => {
-          const value = String(message.vars[key] ?? "");
-          return `--- ${key} (${charCount(value)} chars) ---\n${value}`;
-        }),
+        .map((key) => `--- ${key} (${charCount(message.vars[key] ?? "")} chars) ---\n${message.vars[key] ?? ""}`),
     ].join("\n");
   }
 

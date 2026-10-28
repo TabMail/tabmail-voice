@@ -67,6 +67,18 @@ describe("mergeFlatField", () => {
   });
 });
 
+/** A bullet is read with the spaces around its line trimmed, as Thunderbird reads it: a text written
+ * elsewhere (Thunderbird, iOS) may indent or pad its bullets. */
+describe("extractBullets", () => {
+  test("an indented or padded bullet reads as its words", () => {
+    expect(extractBullets("  - alpha  \n\t- beta\t\n- gamma")).toEqual(["alpha", "beta", "gamma"]);
+  });
+
+  test("a removal holds against a padded copy of the bullets it was made from", () => {
+    expect(mergeFlatField("- alpha\n- beta", "- alpha", "  - alpha  \n  - beta  ")).toBe("- alpha");
+  });
+});
+
 describe("the writing style's sections", () => {
   test("each section's bullets read from Thunderbird's default", () => {
     const sections = compositionSections.map((section) => extractBullets(extractSection(defaultComposition, section)));

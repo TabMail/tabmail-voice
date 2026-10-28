@@ -126,8 +126,8 @@ memory anyways and [it'll] search for it." Memory (ADR-DESK-061) keeps every age
   remembers / your requests and what you / ask it to, on this computer". The History caption states
   what History holds, plainly (owner: "in line with what happens right now", and not scary): the last
   `promptHistoryMax` (100) changes to the writing style and knowledge base, kept on this computer to put
-  an earlier version back; an edit or removal stays in the earlier versions until newer changes roll
-  them off. Past requests have no history: Settings › Memory searches and removes them.
+  an earlier version back. (The caption doesn't say it, but an edit or removal stays in the earlier
+  versions until newer changes roll them off.) Past requests have no history: Settings › Memory searches and removes them.
 - Test: `controller.test.ts` › the knowledge base › "a chat … is not learned into the knowledge base"
   (closed, and closed by a follow-up written into the app, after four requests): no
   `system_prompt_kb_refine` request is sent, no request at all is sent at the close (only the follow-up
