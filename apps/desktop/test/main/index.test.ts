@@ -1059,8 +1059,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.historyWindow.filter((entry) => entry === "close")).toEqual(["close", "close", "close", "close", "close"]);
   });
 
-  test("closing the paste history elsewhere leaves the app shown", async () => {
-    await launch("linux");
+  test.each(["win32", "linux"] as const)("closing the paste history on %s leaves the app shown", async (platform) => {
+    await launch(platform);
     app.controller?.onShowHistory?.();
     await send({ type: "closeHistory" });
     app.controller?.onShowHistory?.();

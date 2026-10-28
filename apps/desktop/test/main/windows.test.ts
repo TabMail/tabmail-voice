@@ -190,6 +190,31 @@ describe("Windows", () => {
     expect(closes).toEqual([true, false]);
   });
 
+  /** The app closes the history through `Windows.close` (Escape, an entry clicked, a click
+   * elsewhere): the window closes, the caller hears whether it had the focus, it is no longer open,
+   * and the next opening makes a new one. */
+  test("closing the paste history through Windows closes it and tells the caller", () => {
+    const windows = new Windows(() => null as never);
+    const closes: boolean[] = [];
+    const bounds = { x: 10, y: 20, width: config.pasteHistoryWindowWidth, height: 200 };
+    windows.showHistory(bounds, () => windows.close("history"), (focused) => closes.push(focused));
+    const first = electron.BrowserWindow.instances[0];
+    if (!first) throw new Error("no window");
+    first.focused = true;
+    windows.close("history");
+    expect(closes).toEqual([true]);
+    expect(first.isDestroyed()).toBe(true);
+    expect(windows.isOpen("history")).toBe(false);
+
+    // Reopened, then closed by its blur (a click elsewhere), the focus already gone.
+    windows.showHistory(bounds, () => windows.close("history"), (focused) => closes.push(focused));
+    const second = electron.BrowserWindow.instances[1];
+    if (!second || second === first) throw new Error("no new window");
+    second.emit("blur");
+    expect(closes).toEqual([true, false]);
+    expect(windows.isOpen("history")).toBe(false);
+  });
+
   /** On macOS the sidebar shows the frosted material through a clear window, under inset traffic
    * lights; elsewhere nothing draws a material, so the window has the config's own color for the
    * theme, never a clear one. */
