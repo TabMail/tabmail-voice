@@ -237,7 +237,6 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** The knowledge base and writing style this dictation started with, read with its settings. */
   private dictationPersonalization: Personalization;
-  /** Learns a closed chat's knowledge into the knowledge base, one chat at a time. */
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
   /** The app in front at key-down: the paste goes there only, and the corrections are learned from

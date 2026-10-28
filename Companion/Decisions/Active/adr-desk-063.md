@@ -88,7 +88,7 @@ its reset when another account signs in) comes next, in the same release.
   every later edit of such a KB. The Settings fields take at most `personalizationBulletMaxLength`
   characters for a bullet the user types.
 - **Consent.** The consent page's memory line now names the writing style and what agent mode learns
-  about the user (ADR-DESK-010, amended); users who consented before are told by the release's one
+  about the user (*since 2026-10-27: what the user asks it to remember; see the amendment below*) (ADR-DESK-010, amended); users who consented before are told by the release's one
   what's-new tip, and are not asked again. That tip, ADR-DESK-061's what's-new under a new id (`agentKnowledgeBase`, so the count of `agentMemory`, which 0.4.0 to 0.5.2 showed, never holds it back), reads "New:
   agent mode remembers / requests and learns about you, / on this computer".
 
@@ -118,11 +118,20 @@ memory anyways and [it'll] search for it." Memory (ADR-DESK-061) keeps every age
   style stays edited by the user only. Once Device Sync syncs the KB, Thunderbird's and iOS's refines
   dedupe, trim and expire the shared KB, so Voice needs none of its own; their `[Pinned]`, `[Task]` and
   `[Reminder]` lines reach Voice as they wrote them.
-- Copy: Settings' KB caption no longer says it learns from a chat ("Agent mode adds to it when you ask
-  it to remember something."). The History caption and the consent page's memory line state what
-  History holds, plainly (owner: "in line with what happens right now", and not scary): the last
-  `promptHistoryMax` (100) versions of both texts, kept on this computer to restore; an edit or removal
-  stays in the earlier versions until newer changes roll them off.
+- Copy: nothing says agent mode learns about the user any more. Settings' KB caption: "Agent mode adds
+  to it when you ask it to remember something." The consent page's memory line: "Your past agent-mode
+  requests, your writing style and what you ask it to remember, kept only on this computer so it can
+  use them. Edit or remove them anytime in Settings, which keeps the last `promptHistoryMax` versions of
+  your writing style and knowledge base." The what's-new tip (not yet shipped): "New: agent mode
+  remembers / your requests and what you / ask it to, on this computer". The History caption states
+  what History holds, plainly (owner: "in line with what happens right now", and not scary): the last
+  `promptHistoryMax` (100) changes to the writing style and knowledge base, kept on this computer to put
+  an earlier version back; an edit or removal stays in the earlier versions until newer changes roll
+  them off. Past requests have no history: Settings › Memory searches and removes them.
 - Test: `controller.test.ts` › the knowledge base › "a chat … is not learned into the knowledge base"
   (closed, and closed by a follow-up written into the app, after four requests): no
-  `system_prompt_kb_refine` request is sent and the KB is unchanged; red on the code with the refine.
+  `system_prompt_kb_refine` request is sent, no request at all is sent at the close (only the follow-up
+  written into the app), and the KB is unchanged; red on the code with the refine. The account-change
+  tests that also checked the refine keep their account half: "signing out ends the conversation
+  before the next account" and "signing into another account ends the conversation" (a direct switch,
+  no sign-out: the chat closes and the next request carries no conversation).

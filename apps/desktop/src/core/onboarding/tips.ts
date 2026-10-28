@@ -20,7 +20,7 @@ import { type KeyValueStore, storedBool, storedInteger } from "../util/keyValueS
  *   as agent mode is switched on while no name is set, every time. Never learned: a name set ends it.
  * - `agentKnowledgeBase`: what's new, once (owner, 2026-10-03: "an ordinary tooltip that shows with high
  *   priority only once"): agent mode keeps its requests on this computer and can look them up
- *   (ADR-DESK-061), and keeps what it learns about the user there too (ADR-DESK-063). First in line at
+ *   (ADR-DESK-061), and what the user asks it to remember there too (ADR-DESK-063). First in line at
  *   the next dictation; learned at launch by a user still in the welcome wizard, whose consent page
  *   says it. A new what's-new has a new id, so the count of the one before (`agentMemory`, which
  *   0.4.0 to 0.5.2 showed) never holds it back. */

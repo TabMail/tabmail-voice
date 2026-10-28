@@ -578,7 +578,7 @@ describe("Settings page", () => {
       expect(commands).toEqual([]);
     });
 
-    /** A bullet another writer stored with a leading space (a multi-line kb_add) is
+    /** A bullet another writer stored with a leading space (Thunderbird or iOS) is
      * shown as stored; leaving it untouched saves nothing. */
     test("an item stored with a leading space and left untouched saves nothing", async () => {
       const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: [" Alice.", "Works with Sam."] } });

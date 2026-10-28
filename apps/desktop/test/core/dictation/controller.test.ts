@@ -3952,6 +3952,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
       });
 
+      /** Signing straight into another account, without signing out, ends the conversation too. */
+      test("signing into another account ends the conversation", async () => {
+        const account = signedIn(auth);
+        const { controller } = await openChat(() => {}, undefined, { account });
+
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+        await account.verify(Fixtures.email, "123456");
+
+        expect(controller.chat).toBeNull();
+        queue("second account question", "answer", "second account reply");
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => settled(controller) && completions.requests.length === 2)).toBe(true);
+        expect(completions.authorizations[1]).toBe("Bearer access-b");
+        expect(completionsVars(1)?.conversation).toBe("");
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
+      });
+
       /** Signed out while the answer is written: it never opens a chat window. */
       test("signing out during an answer opens no chat", async () => {
         const account = signedIn(auth);
@@ -4639,6 +4656,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
               queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
               await followUp(controller);
             }
+            const sent = completions.requests.length;
             if (how === "closed") {
               completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Asks about errors often.`));
               controller.closeChat();
@@ -4650,6 +4668,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await sleep(100);
 
             expect(controller.chat).toBeNull();
+            // Only the follow-up written into the app was sent: nothing went at the close.
+            expect(completions.requests).toHaveLength(how === "closed" ? sent : sent + 1);
             expect(refines()).toBe(0);
             expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
           });

@@ -52,7 +52,7 @@ function sentWritingStyle(composition: string): string {
  * empty one is left out. Split on the breaks and trimmed, rather than one pattern of spaces around
  * breaks, which takes time growing with the square of a long run of spaces. A bullet in `kept` (one
  * shown and left as it was) stays as it is stored, so saving one bullet changes no other: tidying an
- * untouched one (a multi-line `kb_add` can store "-  Beta.") would make it another bullet, and a removal of it
+ * untouched one (a text written elsewhere, as Thunderbird and iOS write it, can hold "-  Beta.") would make it another bullet, and a removal of it
  * made with the same list would miss it. */
 function asBullets(bullets: readonly string[], kept: ReadonlySet<string> = new Set()): string {
   return bullets
@@ -74,7 +74,7 @@ function asBullets(bullets: readonly string[], kept: ReadonlySet<string> = new S
  * holds the bullets shown, else the edit merged into it three ways (`mergeFlatField`), so a bullet
  * `kb_add` added since the page showed is kept. */
 function withEdit(current: string, shown: readonly string[], edited: readonly string[]): string {
-  // The bullets as shown, not tidied: a stored one `kb_add` wrote with a space after its
+  // The bullets as shown, not tidied: a stored one written elsewhere with a space after its
   // "- " must match itself, or its removal or edit is lost in the merge.
   const base = shown.map((bullet) => `- ${bullet}`).join("\n");
   const kept = new Set(shown);
