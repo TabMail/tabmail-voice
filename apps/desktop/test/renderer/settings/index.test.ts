@@ -476,7 +476,7 @@ describe("Settings page", () => {
     test("shows the writing style's sections by name and the knowledge base's items", async () => {
       await open();
       const lists = [...document.querySelectorAll("ul.dictionary")].map((list) => list.getAttribute("aria-label"));
-      expect(lists).toEqual(["General writing style", "Language", "Useful links to personal website and other resources", "Knowledge base"]);
+      expect(lists).toEqual(["General writing style for emails and formal replies", "Language", "Useful links to personal website and other resources", "Knowledge base"]);
       expect(field("Knowledge base, item 2").value).toBe("Works with Sam.");
     });
 
@@ -510,8 +510,8 @@ describe("Settings page", () => {
       await open();
       const panel = (name: string) => document.querySelector(`[role="tabpanel"][aria-label="${name}"]`) as HTMLElement;
       const resets = (name: string) => [...panel(name).querySelectorAll("button")].filter((element) => element.textContent === "Reset…");
-      expect([...panel("Writing style").querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual(["General writing style", "Language", "Useful links to personal website and other resources"]);
-      expect(panel("Writing style").textContent).toContain("How agent mode writes for you");
+      expect([...panel("Writing style").querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual(["General writing style for emails and formal replies", "Language", "Useful links to personal website and other resources"]);
+      expect(panel("Writing style").textContent).toContain("How agent mode writes emails and formal replies for you");
       expect(panel("Knowledge base").textContent).toContain("What agent mode knows and remembers about you");
       expect(panel("Knowledge base").querySelector('ul[aria-label="Knowledge base"]')).not.toBeNull();
       expect(panel("History").textContent).toContain(`Your last ${config.promptHistoryMax} changes`);
@@ -743,6 +743,17 @@ describe("Settings page", () => {
       await act(async () => type(add, "I also write in French."));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
       expect(commands).toEqual([{ type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English Only.", "I also write in French."] }]);
+    });
+
+    /** The general section shows as for emails and formal replies (#301), but its edits still name the
+     * section as the shared style document heads it, unchanged. */
+    test("the general section's label is display only", async () => {
+      const { commands } = await open();
+      expect(document.querySelector('ul[aria-label="General writing style"]')).toBeNull();
+      const add = field("Add to General writing style for emails and formal replies");
+      await act(async () => type(add, "Keep it short."));
+      await act(async () => (add.form as HTMLFormElement).requestSubmit());
+      expect(commands).toEqual([{ type: "editWritingStyle", section: "General writing style", shown: ["ALWAYS start with a greeting."], bullets: ["ALWAYS start with a greeting.", "Keep it short."] }]);
     });
 
     /** Reset asks first, in place; Cancel sends nothing. */
@@ -1114,7 +1125,7 @@ describe("Settings page", () => {
       "Agent mode": ["Your name", "Edit", "Compose", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
       // The tab shown first, Writing style; the other tabs' own text is in the tabs' tests.
-      Personalization: ["Writing style", "General writing style", "Knowledge base", "History", "How agent mode writes for you."],
+      Personalization: ["Writing style", "General writing style for emails and formal replies", "Knowledge base", "History", "How agent mode writes emails and formal replies for you."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
@@ -1591,7 +1602,7 @@ describe("Settings page", () => {
       "No requests kept yet.",
       // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
       // One short line each (owner, 2026-10-28).
-      "How agent mode writes for you. Sent with its requests; TabMail doesn’t keep it.",
+      "How agent mode writes emails and formal replies for you. Sent only when agent mode may write or edit text; TabMail doesn’t keep it.",
       "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
       `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,
       "No changes yet.",
