@@ -789,7 +789,7 @@ void expand(const std::vector<Object<ICalComponent>>& components, ECalClient* cl
                     auto row = eventRow(instance.get(), state.stored, state.master, state.client, state.calendar, state.id, occurrence,
                         !state.detachedFrom.is_null());
                     state.bytes += row.dump().size();
-                    if (state.result.size() >= 1000 || state.bytes > voice::HelperConfig::calendarEventsMaxBytes) throw std::runtime_error("too many occurrences");
+                    if (state.result.size() >= 1000 || state.bytes > 512 * 1024) throw std::runtime_error("too many occurrences");
                     state.result.push_back(std::move(row));
                     return TRUE;
                 } catch (...) { state.failed = true; return FALSE; }
@@ -1015,12 +1015,17 @@ Rule ruleFrom(const JSON& value) {
 }
 // Replaces `component`'s rule: UNTIL is UTC for a timed event (RFC 5545 with a zoned start), the
 // day for an all-day one.
+// The week start, which the app doesn't read, is kept as stored: weekly rules every other week and
+// week numbers count from it.
 void setRule(ICalComponent* component, const Rule& rule, bool allDay) {
+    Object<ICalProperty> stored(i_cal_component_get_first_property(component, I_CAL_RRULE_PROPERTY), g_object_unref);
+    Object<ICalRecurrence> before(stored ? i_cal_property_get_rrule(stored.get()) : nullptr, g_object_unref);
     removeAll(component, I_CAL_RRULE_PROPERTY);
     auto encoded = rule.text;
     if (!rule.until.is_null()) encoded += ";UNTIL=" + ridText(rule.until.get<int64_t>(), allDay);
     Object<ICalRecurrence> recurrence(i_cal_recurrence_new_from_string(encoded.c_str()), g_object_unref);
     if (!recurrence) throw std::runtime_error("invalid rule");
+    if (before) i_cal_recurrence_set_week_start(recurrence.get(), i_cal_recurrence_get_week_start(before.get()));
     i_cal_component_take_property(component, i_cal_property_new_rrule(recurrence.get()));
 }
 void clearRule(ICalComponent* component) {
@@ -1428,9 +1433,18 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     if (ruleChanges) {
         if (rule) setRule(edited.get(), *rule, isAllDay);
         else clearRule(edited.get());
-    } else if (isAllDay != rowAllDay && repeating(edited.get())) {
-        // Its end is written as its start now is, a date or a time (RFC 5545 3.3.10).
-        setRule(edited.get(), ruleFrom(found.row["recurrence"]), isAllDay);
+    } else if (isAllDay != rowAllDay) {
+        // Its end alone is written as its start now is, a date or a time (RFC 5545 3.3.10).
+        Object<ICalProperty> property(i_cal_component_get_first_property(edited.get(), I_CAL_RRULE_PROPERTY), g_object_unref);
+        Object<ICalRecurrence> recurrence(property ? i_cal_property_get_rrule(property.get()) : nullptr, g_object_unref);
+        Object<ICalTime> until(recurrence ? i_cal_recurrence_get_until(recurrence.get()) : nullptr, g_object_unref);
+        if (until && !i_cal_time_is_null_time(until.get())) {
+            const auto& last = found.row["recurrence"].is_object() ? found.row["recurrence"]["until"] : JSON(nullptr);
+            if (!last.is_number_integer()) throw std::runtime_error("invalid rule end");
+            Object<ICalTime> written(i_cal_time_new_from_string(ridText(last.get<int64_t>(), isAllDay).c_str()), g_object_unref);
+            i_cal_recurrence_set_until(recurrence.get(), written.get());
+            i_cal_property_set_rrule(property.get(), recurrence.get());
+        }
     }
     // A timed event made to repeat (or a day made timed) keeps its time of day in the user's zone across
     // a daylight-saving change; a series stored in UTC is left as it is.

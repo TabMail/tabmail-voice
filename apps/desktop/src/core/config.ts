@@ -508,9 +508,6 @@ export const accessibilityPollInterval = 1_000;
 
 /** Longest a request to the macOS helper may take before it counts as failed. */
 export const helperRequestTimeout = 3_000;
-/** The longest reply the productivity helper's process gives (bytes): the Linux helper's calendar read
- * carries up to 2 MiB of rows (its `HelperConfig::calendarEventsMaxBytes`), the editor's fields each. */
-export const productivityReplyMaxBytes = 4 * 1024 * 1024;
 /** Allow IPC scheduling under load while staying inside the normal hold-reveal interval.
  * The native compositor call has its own shorter deadline; this bounds a stalled helper. */
 export const linuxCaretRequestTimeout = 200;

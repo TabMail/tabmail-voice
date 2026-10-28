@@ -733,3 +733,35 @@ call('calendarEdit', {'id':until_series['id'], 'occurrence':ms(first_day + datet
 assert until_text(until_series).endswith('Z') and [row['start'] for row in rows('Until series')] == [at(k, 4) for k in range(26, 29)]
 assert call('calendarDelete', {'id':until_series['id']}) == {}
 print('EDS a series with an end made all day and timed again keeps its end in the start\'s form, passed')
+
+# A rule another app stored with a week start (every other week counts from it): made all day, only its
+# end is rewritten; its rule changed, the week start stays; a rule without an end is left as stored.
+def rule_text(row):
+    return calendar_client.get_object_sync(row['id'].split('|')[1], None, None)[1].get_first_property(ICalGLib.PropertyKind.RRULE_PROPERTY).as_ical_string().replace('\r\n ', '').strip()
+tuesday = (day0 + datetime.timedelta(weeks=30)).astimezone(datetime.timezone.utc)
+tuesday = tuesday + datetime.timedelta(days=(1 - tuesday.weekday()) % 7)
+stamp = lambda value: value.strftime('%Y%m%dT%H%M%SZ')
+dates = lambda title: [datetime.datetime.fromtimestamp(row['start']/1000).date() for row in rows(title)]
+week_start = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:week-start\r\nSUMMARY:Week start\r\nDTSTART:{stamp(tuesday)}\r\nDURATION:PT1H\r\nRRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,SU;WKST=SU;UNTIL={stamp(tuesday + datetime.timedelta(weeks=5))}\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(week_start, ECal.OperationFlags.NONE, None)[0]
+week_rows = rows('Week start')
+week_dates = dates('Week start')
+assert len(week_dates) >= 4, week_rows
+first_date = datetime.datetime.combine(week_dates[0], datetime.time())
+call('calendarEdit', {'id':week_rows[0]['id'], 'occurrence':week_rows[0]['occurrence'], 'scope':'all', 'isAllDay':True, 'start':ms(first_date), 'end':ms(first_date), **unchanged})
+assert dates('Week start') == week_dates and all(row['isAllDay'] for row in rows('Week start'))
+assert 'WKST=SU' in rule_text(week_rows[0]) and 'T' not in rule_text(week_rows[0]).split('UNTIL=')[1].split(';')[0], rule_text(week_rows[0])
+longer = {**rows('Week start')[0]['recurrence'], 'until':ms(first_date + datetime.timedelta(weeks=9))}
+call('calendarEdit', {'id':week_rows[0]['id'], 'occurrence':rows('Week start')[0]['occurrence'], 'scope':'all', 'recurrence':longer, **unchanged})
+assert 'WKST=SU' in rule_text(week_rows[0]) and dates('Week start')[:len(week_dates)] == week_dates and len(dates('Week start')) > len(week_dates), (rule_text(week_rows[0]), dates('Week start'))
+assert call('calendarDelete', {'id':week_rows[0]['id']}) == {}
+counted = ICalGLib.Component.new_from_string(f'BEGIN:VEVENT\r\nUID:week-counted\r\nSUMMARY:Week counted\r\nDTSTART:{stamp(tuesday)}\r\nDURATION:PT1H\r\nRRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,SU;WKST=SU;COUNT=4\r\nEND:VEVENT\r\n')
+assert calendar_client.create_object_sync(counted, ECal.OperationFlags.NONE, None)[0]
+counted_rows = rows('Week counted')
+counted_rule, counted_dates = rule_text(counted_rows[0]), dates('Week counted')
+call('calendarEdit', {'id':counted_rows[0]['id'], 'occurrence':counted_rows[0]['occurrence'], 'scope':'all', 'isAllDay':True, 'start':ms(first_date), 'end':ms(first_date), **unchanged})
+# The rule as stored (EDS's own end-date parameter follows the start).
+rule_value = lambda text: text.split(':', 1)[1]
+assert rule_value(rule_text(counted_rows[0])) == rule_value(counted_rule) and dates('Week counted') == counted_dates, (counted_rule, rule_text(counted_rows[0]))
+assert call('calendarDelete', {'id':counted_rows[0]['id']}) == {}
+print('EDS a rule with its own week start keeps it made all day and with its rule changed, and an endless one is left as stored, passed')

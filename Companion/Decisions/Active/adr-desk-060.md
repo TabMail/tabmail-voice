@@ -193,7 +193,9 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   at all. A series moved with `all` keeps its days apart and its length; an event made to repeat is
   written in the local zone with its TZID, so its wall time holds across daylight saving, and a
   series another app stored in UTC stays in UTC when its rule changes. A series with an end made all
-  day, or timed, has its UNTIL rewritten as a date or a time to match (RFC 5545 3.3.10).
+  day, or timed, has only its UNTIL rewritten, as a date or a time to match (RFC 5545 3.3.10); a rule
+  written anew keeps the stored week start (WKST), which the app doesn't read and which weekly rules
+  every other week and week numbers count from.
 - Invitations need a calendar whose backend sends them (`save-schedules`) and knows the user's own
   address; otherwise adding or removing people is refused as `calendarNoInvitations` (a local
   calendar): removing someone tells them, as adding does. An event is an invitation when it has attendees and an organizer other than the user;
@@ -201,9 +203,7 @@ without an editor (voice #229: its app calendar is invisible to the user and has
 - A read of calendars, memos or tasks that a change interrupts is made again from the start, up to
   `calendarReadAttempts` times: EDS can tell a new view of a change saved just before it (a write of
   Voice's own included), and a read is still never a mix of versions; a removal counts as a change.
-  Writes are never repeated. An attendee's DECLINED reads `declined`, as on the Mac. A calendar read
-  carries up to `HelperConfig::calendarEventsMaxBytes` of rows (sized for 1000 rows with the editor's
-  fields and attendees), which the app's `productivityReplyMaxBytes` takes.
+  Writes are never repeated. An attendee's DECLINED reads `declined`, as on the Mac.
 - A repeating event's times are stored in the local zone with its TZID set explicitly: libical 3.0
   labels a time converted to a zone as UTC, which stored 09:00 in Toronto as 09:00 UTC.
 - Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
