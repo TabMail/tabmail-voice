@@ -30,7 +30,7 @@ import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
-import { appOffLine, fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
+import { aiOffLine, fileProblemNotice, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
@@ -121,8 +121,8 @@ if (needsX11Relaunch(appImage, process.argv)) {
   app.quit();
 }
 
-/** Settings › Memory's commands, which ask memory (its helper's first start fetches its model from
- * TabMail): refused while the settings file can't be read, as the whole app is off then (owner,
+/** Settings › Memory's commands: refused while the settings file can't be read, as its AI features
+ * are off then and memory is one (its helper runs a model over what the user asked; owner,
  * 2026-10-27). */
 const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
 
@@ -224,11 +224,11 @@ function launch(): void {
   const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
   const portalHotkeys = ["F8", "F9"] as const;
   const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
-  // While the settings file can't be read the whole app is off (owner, 2026-10-27): no request to
-  // TabMail's backend goes out, signing in included, whatever asks for it. Nor does anything else reach
-  // TabMail: the updater isn't built, and Settings › Memory doesn't start memory's helper (below).
-  const transport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${appOffLine}.`)));
-  const account = new AccountModel(new AuthClient(transport), new KeychainSessionStore());
+  // While the settings file can't be read its AI features are off (owner, 2026-10-27): no request
+  // that carries what the user said (audio or text) goes out, whatever asks for it. Signing in and
+  // updates work as ever; Settings › Memory is refused (below).
+  const aiTransport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${aiOffLine}.`)));
+  const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
   const hotkeyHelper = new HelperClient({ name: "voice-hotkey", executable: join(helpers, process.platform === "win32" ? "voice-hotkey.exe" : "voice-hotkey") });
@@ -347,9 +347,9 @@ function launch(): void {
     frontmostApp: () => targetWindows.capture(),
     keyboardLanguage: () => system.keyboardLanguage(),
     systemEmailApp: () => process.platform === "darwin" ? mac.systemEmailApp() : Promise.resolve(null),
-    makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), transport),
-    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), transport).warmUp(accessToken),
-    makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), transport),
+    makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), aiTransport),
+    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), aiTransport).warmUp(accessToken),
+    makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), aiTransport),
     // Native connectors require a platform implementation; shared web/email tools use Electron.
     connectorTools: platformConnectors.flatMap((connector) =>
       connector.tools({
@@ -420,8 +420,8 @@ function launch(): void {
   }
 
   // Packaged macOS and Windows builds update from their platform's feed (ADR-DESK-041, ADR-DESK-050);
-  // apt updates Linux (ADR-DESK-058). Not while the settings file can't be read: the app is off then.
-  const updatePlatform = isDebugBuild || settings.fileProblem !== undefined ? null : makeUpdatePlatform();
+  // apt updates Linux (ADR-DESK-058).
+  const updatePlatform = isDebugBuild ? null : makeUpdatePlatform();
   const updater = updatePlatform === null ? null : makeUpdater(updatePlatform);
 
   let showsSmokeTip = false;
@@ -944,7 +944,7 @@ function launch(): void {
   }
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
-    if (settings.fileProblem !== undefined && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${appOffLine}.` };
+    if (settings.fileProblem !== undefined && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${aiOffLine}.` };
     // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
     // this session, and says how to fix the file, every time.
     const unsaved = unsavedFor(command);

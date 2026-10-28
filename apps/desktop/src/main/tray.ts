@@ -5,7 +5,7 @@
 import { join } from "node:path";
 import { Menu, type MenuItemConstructorOptions, nativeImage, type NativeImage, nativeTheme, Tray } from "electron";
 import { linuxTrayIcon, linuxTrayUsesLightText } from "./native/linux/trayIcon.js";
-import { fixFileLabel, appOffLine, type StoredFile } from "../core/ui/fileProblems.js";
+import { fixFileLabel, aiOffLine, type StoredFile } from "../core/ui/fileProblems.js";
 import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/ui/menuModel.js";
 
 /** What the menu's items do. */
@@ -82,7 +82,7 @@ export class TrayMenu {
     if (!state.isSignedIn) items.push({ label: "Sign In to TabMail…", click: () => actions.showSettings() });
     if (!state.microphoneGranted) items.push({ label: "Allow Microphone Access…", click: () => actions.requestMicrophone() });
     if (!state.accessibilityTrusted) items.push({ label: "Allow Accessibility Access…", click: () => actions.requestAccessibility() });
-    if (state.fileProblems.includes("settings")) items.push({ label: appOffLine, enabled: false });
+    if (state.fileProblems.includes("settings")) items.push({ label: aiOffLine, enabled: false });
     for (const file of state.fileProblems) items.push({ label: fixFileLabel(file), click: () => actions.showFileProblem(file) });
 
     if (showsDictationButton(state.debugMode, state.phase)) {

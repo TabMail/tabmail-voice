@@ -196,18 +196,22 @@ this, a user could consent again in the wizard, unsaved, and dictate that sessio
 file keeps the wizard closed: a knowledge base file that can't be read leaves it as ever. Test: `main/index.test.ts`, for each kind of read failure, at
 launch and from the menu.
 
-*Widened the same day (owner): "since we don't know if consented, nor if AI disabled now", the whole
-app is off while the settings file can't be read, dictation included.* `DictationSettings.isOff`
-refuses every dictation and agent hold at its start, before consent is even looked at, with
-`appOffLine` ("TabMail Voice is off until its settings file is fixed"); and every request the app
-makes to TabMail's backend, signing in included, goes through one transport that refuses it while the
-file can't be read, whatever asks. Nothing else reaches TabMail either: the updater isn't built (no
-update check, no update item in the menu, until a launch reads the file), and Settings › Memory's
-commands are refused, as memory's helper they start fetches its model from TabMail at its first start. The menu shows that line above Fix Settings File… (replacing
-"Not reading the screen or other apps until the settings file is fixed"), and the fix dialog and
-Settings say it. The reading gates above stay as they are. Tests: `dictation/controller.test.ts` (a
-dictation and an agent hold from those settings start nothing, read nothing and send nothing),
-`main/index.test.ts` (sign-in, its code, the warm-up, transcription and completions reach no network;
-with the file read, or only the knowledge base file unreadable, the same request does; no update
-check and no update item; Settings › Memory never reaches memory), `tray.test.ts`,
+*Widened the same day (owner): "we don't know if consented, nor if AI disabled now", so while the
+settings file can't be read its AI features are off, dictation included. "The thing to turn off is
+AI": everything that isn't AI keeps working.* Off: every dictation and agent hold, refused at its start
+by `DictationSettings.isAIOff` before consent is even looked at, with `aiOffLine` ("AI features are off
+until your settings file is fixed"), so no audio, transcription, warm-up, cleanup or completion and no
+read of the screen, a field or another app; every request that carries what the user said
+(transcription, warm-up, completions) also goes through one transport that refuses it while the file
+can't be read, whatever asks; and memory, whose helper runs a model over what the user asked, so
+Settings › Memory's commands are refused. On, as ever: signing in and the account, updates, Settings,
+the menu and the fix dialog. A user switch kept in the settings file can't be read, so what it governs
+is off too; Device Sync, which comes later, follows that rule. The menu shows that line above Fix
+Settings File… (replacing "Not reading the screen or other apps until the settings file is fixed"),
+and the fix dialog and Settings say it. The reading gates above stay as they are. Tests:
+`dictation/controller.test.ts` (a dictation and an agent hold from those settings, consent given or
+not, start nothing, read nothing and send nothing), `main/index.test.ts` (the warm-up, transcription
+and completions reach no network while signing in does; with the file read, or only the knowledge base
+file unreadable, they do; updates as ever with either file unreadable; Settings › Memory never reaches
+memory, and does with only the knowledge base file unreadable), `tray.test.ts`,
 `core/ui/fileProblems.test.ts`.

@@ -16,9 +16,10 @@ const names: Record<StoredFile, { title: string; held: string }> = {
   knowledgeBase: { title: "Knowledge Base", held: "your knowledge base, writing style and their history" },
 };
 
-/** While the settings file can't be read the whole app is off (owner, 2026-10-27: "since we don't
- * know if consented, nor if ai disabled now"): the menu says so, and a dictation is refused with it. */
-export const appOffLine = "TabMail Voice is off until its settings file is fixed";
+/** While the settings file can't be read its AI features are off (owner, 2026-10-27: "we don't know
+ * if consented, nor if AI disabled now"; "the thing to turn off is AI"): the menu says so, and a
+ * dictation is refused with it. */
+export const aiOffLine = "AI features are off until your settings file is fixed";
 
 /** The menu item that tells how to fix `file`, shown while it can't be read. */
 export function fixFileLabel(file: StoredFile): string {
@@ -32,7 +33,7 @@ export function unsavedBecauseOf(file: StoredFile): string {
 
 /** Said at the top of Settings while `file` can't be read. */
 export function fileProblemLine(file: StoredFile): string {
-  const changes = file === "settings" ? "it is off until the file is fixed" : "changes to your knowledge base and writing style aren't saved";
+  const changes = file === "settings" ? "its AI features are off until the file is fixed" : "changes to your knowledge base and writing style aren't saved";
   return `TabMail Voice can't read its ${names[file].title.toLowerCase()} file, so ${changes}. Choose ${fixFileLabel(file)} in TabMail Voice's menu to fix it.`;
 }
 
@@ -41,7 +42,7 @@ export function fileProblemLine(file: StoredFile): string {
 export function fileProblemNotice(file: StoredFile, problem: StoreProblem, platform: string): { message: string; detail: string } {
   const { title, held } = names[file];
   const name = title.toLowerCase();
-  const meanwhile = file === "settings" ? `${appOffLine}: it doesn't dictate, read or send anything, and leaves the file as it is.` : `Until it is fixed, TabMail Voice uses the defaults for ${held}, saves no change to them, and leaves the file as it is.`;
+  const meanwhile = file === "settings" ? `${aiOffLine}: TabMail Voice doesn't dictate or read anything, and leaves the file as it is.` : `Until it is fixed, TabMail Voice uses the defaults for ${held}, saves no change to them, and leaves the file as it is.`;
   switch (problem.kind) {
     case "permission":
       return {

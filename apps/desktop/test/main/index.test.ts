@@ -12,7 +12,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
-import { appOffLine, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
+import { aiOffLine, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
@@ -2405,22 +2405,26 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.presented).toEqual([]);
   });
 
-  /** While the settings file can't be read the whole app is off (owner, 2026-10-27): no request of
-   * any kind reaches the network, signing in included; with it read, the same request goes out. */
-  test("a settings file that can't be read lets no request reach TabMail", async () => {
+  /** While the settings file can't be read its AI features are off (owner, 2026-10-27): no request
+   * that carries what the user said reaches the network, whatever asks; signing in still does. With
+   * the file read, the same requests go out. */
+  test("a settings file that can't be read lets no AI request reach TabMail, and signing in still works", async () => {
     const path = join(app.userData, "settings.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
     app.dialogResponse = 1;
     await launch("darwin");
     expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
 
-    expect(await send({ type: "sendCode", email: "user@example.com" })).toEqual({ error: `${appOffLine}.` });
-    expect(await send({ type: "verify", email: "user@example.com", code: "123456" })).toEqual({ error: `${appOffLine}.` });
-    await expect(app.backend?.warmUp("https://api.example.com", "token")).rejects.toThrow(appOffLine);
+    await expect(app.backend?.warmUp("https://api.example.com", "token")).rejects.toThrow(aiOffLine);
     // The two that carry what the user said, the audio and the text.
-    await expect(app.backend?.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token")).rejects.toThrow(appOffLine);
-    await expect(app.backend?.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token")).rejects.toThrow(appOffLine);
+    await expect(app.backend?.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token")).rejects.toThrow(aiOffLine);
+    await expect(app.backend?.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token")).rejects.toThrow(aiOffLine);
     expect(app.requests).toEqual([]);
+
+    // Signing in isn't AI: it reaches TabMail as ever.
+    await send({ type: "sendCode", email: "user@example.com" });
+    await send({ type: "verify", email: "user@example.com", code: "123456" });
+    expect(app.requests).toHaveLength(2);
   });
 
   /** Only the settings file turns the network off: with the knowledge base file alone unreadable,
@@ -2458,7 +2462,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const asked = (["prepare", "index", "search", "read", "stats", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
 
     for (const command of [{ type: "loadMemory" }, { type: "searchMemory", query: "friday" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
-      expect(await send(command)).toEqual({ error: `${appOffLine}.` });
+      expect(await send(command)).toEqual({ error: `${aiOffLine}.` });
     }
     // The size limit is kept in the settings file: it says how to fix it, as every such command does.
     expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
@@ -2812,28 +2816,12 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       }
     });
 
-    test("a packaged build whose settings file can't be read never looks for an update, as the app is off", async () => {
+    /** Updates aren't AI: a file that can't be read, the settings one included, leaves them as ever
+     * (owner, 2026-10-27). */
+    test.each(["settings.json", "userPrompts.json"])("a packaged build with %s unreadable looks for updates as ever", async (file) => {
       vi.useFakeTimers();
       try {
-        const path = join(app.userData, "settings.json");
-        app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-        app.dialogResponse = 1;
-        let launched = false;
-        void launchPackaged().then(() => (launched = true));
-        while (!launched) await vi.advanceTimersByTimeAsync(0);
-        await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
-        expect(app.autoUpdater?.checks ?? 0).toBe(0);
-        // No update item in the menu either.
-        expect(app.trayState?.().update).toBeNull();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    test("a packaged build whose knowledge base file alone can't be read looks for updates as ever", async () => {
-      vi.useFakeTimers();
-      try {
-        const path = join(app.userData, "userPrompts.json");
+        const path = join(app.userData, file);
         app.problems.set(path, { kind: "damaged", path, code: "invalid" });
         app.dialogResponse = 1;
         let launched = false;
