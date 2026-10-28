@@ -683,19 +683,14 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
     const { error } = await send(command);
     setFailure(error);
   };
-  const choose = (chosen: PersonalizationTab) => {
-    // A failure is said under the tab it came from, so it goes with that tab.
-    setFailure(null);
-    setTab(chosen);
-  };
   const panel = (name: PersonalizationTab, children: ReactNode) => (
-    <div role="tabpanel" id={`${id}-${name}`} aria-label={name} hidden={tab !== name}>
+    <div role="tabpanel" id={`${id}-${personalizationTabs.indexOf(name)}`} aria-label={name} hidden={tab !== name}>
       {children}
     </div>
   );
   return (
     <>
-      <Tabs label="Personalization" id={id} tabs={personalizationTabs} chosen={tab} onChoose={choose} />
+      <Tabs label="Personalization" id={id} tabs={personalizationTabs} chosen={tab} onChoose={setTab} />
       {panel(
         "Writing style",
         <>
@@ -754,13 +749,14 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
 }
 
 /** A row of tabs, one chosen, as a segmented control: a click or the arrow keys choose another,
- * and Tab moves on to the chosen tab's panel (`id` names the panels: `<id>-<tab>`). */
+ * and Tab moves on to the chosen tab's panel (`id` names the panels by place, `<id>-<index>`: an id
+ * holds no spaces). */
 function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { label: string; id: string; tabs: readonly Name[]; chosen: Name; onChoose: (tab: Name) => void }) {
   const list = useRef<HTMLDivElement>(null);
   const move = (by: number) => {
-    const next = tabs.at((tabs.indexOf(chosen) + by) % tabs.length) ?? chosen;
-    onChoose(next);
-    list.current?.querySelector<HTMLButtonElement>(`[aria-controls="${CSS.escape(`${id}-${next}`)}"]`)?.focus();
+    const index = (tabs.indexOf(chosen) + by + tabs.length) % tabs.length;
+    onChoose(tabs[index] ?? chosen);
+    list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[index]?.focus();
   };
   return (
     <div
@@ -775,8 +771,8 @@ function Tabs<Name extends string>({ label, id, tabs, chosen, onChoose }: { labe
         }
       }}
     >
-      {tabs.map((tab) => (
-        <button key={tab} role="tab" aria-selected={tab === chosen} aria-controls={`${id}-${tab}`} tabIndex={tab === chosen ? 0 : -1} className={tab === chosen ? "tab selected" : "tab"} onClick={() => onChoose(tab)}>
+      {tabs.map((tab, index) => (
+        <button key={tab} role="tab" aria-selected={tab === chosen} aria-controls={`${id}-${index}`} tabIndex={tab === chosen ? 0 : -1} className={tab === chosen ? "tab selected" : "tab"} onClick={() => onChoose(tab)}>
           {tab}
         </button>
       ))}

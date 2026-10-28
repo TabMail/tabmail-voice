@@ -488,7 +488,12 @@ describe("Settings page", () => {
         expect(tabs().filter((element) => element.getAttribute("aria-selected") === "true")).toEqual([tab(name)]);
         expect(tabs().map((element) => element.tabIndex)).toEqual(tabs().map((element) => (element === tab(name) ? 0 : -1)));
         expect(shownPanels()).toEqual([name]);
-        expect(document.getElementById(tab(name).getAttribute("aria-controls") ?? "")?.hidden).toBe(false);
+        // Drawn as chosen, not only announced.
+        expect([...document.querySelectorAll(".tabs button.tab.selected")]).toEqual([tab(name)]);
+        // The tab names its panel by one id (a space would make it a list of two that name nothing).
+        const controls = tab(name).getAttribute("aria-controls") ?? "";
+        expect(controls).toMatch(/^\S+$/);
+        expect(document.getElementById(controls)).toBe(document.querySelector(`[role="tabpanel"][aria-label="${name}"]`));
       }
     });
 
@@ -536,14 +541,17 @@ describe("Settings page", () => {
       expect(commands).toEqual([]);
     });
 
-    /** A failure is said under the tab it came from, and goes when another tab is chosen. */
-    test("a failure goes with its tab", async () => {
+    /** A change that couldn't be saved is said until the next change, whichever tab is chosen: a
+     * save as a field is left for another tab can fail as that tab is chosen, and must still be said. */
+    test("a failure is still said after a change of tab", async () => {
       await open(signedIn, { error: "This couldn't be saved, so nothing changed." });
       await act(async () => tab("Knowledge base").click());
       await act(async () => (document.querySelector('button[aria-label="Remove Knowledge base, item 1"]') as HTMLButtonElement).click());
       expect(visibleText()).toContain("This couldn't be saved, so nothing changed.");
-      await act(async () => tab("History").click());
-      expect(visibleText()).not.toContain("This couldn't be saved");
+      for (const name of ["History", "Writing style"]) {
+        await act(async () => tab(name).click());
+        expect(visibleText(), name).toContain("This couldn't be saved, so nothing changed.");
+      }
     });
 
     /** A bullet the user types is capped, as ADR-DESK-063 says: the boundary takes any length, so

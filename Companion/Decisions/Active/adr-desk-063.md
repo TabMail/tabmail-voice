@@ -277,8 +277,10 @@ theme; the arrow keys move between them; the scroll bar's room is kept, so nothi
 that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
 opens with its caption and, for the two texts, its Reset; each writing style section is its own card
 under a heading with the section's name. Every tab stays rendered while hidden, so what is being typed
-in one is still there on coming back; a failure is said under the tab it came from and goes when
-another tab is chosen. Nothing about what is stored or sent changes. Tests:
-`renderer/settings/index.test.ts` (tabs, panels, headings, Reset per tab, arrow keys, typing kept, the
-failure line), `renderer/settings/style.test.ts` (the chosen tab raised, equal segments, the contrast
-theme's colors and focus ring after the rules they override).
+in one is still there on coming back. A change that couldn't be saved is said under the tabs until the
+next change, whichever tab is chosen: a field left for another tab saves as it is left, and its failure
+can arrive as that tab shows, so it must still be said there. Each tab names its panel by place (an id
+holds no spaces). Nothing about what is stored or sent changes. Tests:
+`renderer/settings/index.test.ts` (tabs, panels and their ids, the chosen tab drawn as chosen,
+headings, Reset per tab, arrow keys, typing kept, a failure still said after a change of tab), `renderer/settings/style.test.ts` (the chosen tab raised, equal segments, the contrast
+theme's colors and focus ring after the rules they override, the lists' lines between rows).

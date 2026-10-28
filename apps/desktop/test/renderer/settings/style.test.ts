@@ -163,6 +163,13 @@ describe("Settings stylesheet", () => {
     expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover", ".tabs", ".tabs button.tab:not(.selected):hover"]);
   });
 
+  /** Personalization's lists sit in their own cards: no line above a list that opens its card, and
+   * a line between a bullet list's items and its add field only when there are items. */
+  test("the lists' lines fall between rows, not at a card's edge", () => {
+    expect(declaring(css, /border-top:\s*none/)).toEqual([".group > ul.dictionary:first-child", ".bullet-editor ul.dictionary"]);
+    expect(value(css, ".bullet-editor ul.dictionary:not(:empty)", "border-bottom")).toBe("1px solid var(--separator)");
+  });
+
   /** Personalization's chosen tab is raised as a control on the tabs' gray track, as a macOS
    * segmented control's is, and in Windows' contrast themes takes the system's selection colors. */
   test("the chosen tab is raised on its track", () => {
