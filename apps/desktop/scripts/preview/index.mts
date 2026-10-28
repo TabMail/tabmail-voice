@@ -206,10 +206,43 @@ const noteLayoutProblem = `(maxLines, exactLines) => {
   return null;
 }`;
 
+/** What is wrong with the chosen Personalization tab's caption and action as the page laid them out,
+ * or null: each sentence on a line of its own, one line tall, and the action (Reset) beside the
+ * lines and centered on them, or, asked as its question, under them (owner, 2026-10-28: short
+ * captions, a sentence to a line, Reset centered). Run in the page, as `() => …`. */
+const introProblem = `() => {
+  const intro = document.querySelector('[role="tabpanel"]:not([hidden]) .tab-intro');
+  const text = intro?.querySelector(":scope > p");
+  const sentences = [...(text?.querySelectorAll(":scope > span") ?? [])];
+  if (!intro || !(text instanceof HTMLElement) || sentences.length === 0) return "the tab has no caption";
+  // One line's height, in the caption's own font.
+  const probe = sentences[0].cloneNode();
+  probe.textContent = "X";
+  text.append(probe);
+  const lineHeight = probe.getBoundingClientRect().height;
+  probe.remove();
+  let above = null;
+  for (const sentence of sentences) {
+    const box = sentence.getBoundingClientRect();
+    const lines = Math.round(box.height / lineHeight);
+    if (lines !== 1) return '"' + sentence.textContent.trim() + '" shows as ' + lines + " lines";
+    if (above !== null && box.top < above.bottom - 0.5) return "two sentences share a line";
+    above = box;
+  }
+  const caption = text.getBoundingClientRect();
+  const question = intro.querySelector(":scope > .buttons")?.getBoundingClientRect();
+  if (question) return question.top < caption.bottom - 0.5 ? "Reset's question is beside the caption, not under it" : null;
+  const action = intro.querySelector(":scope > button")?.getBoundingClientRect();
+  if (!action) return null;
+  if (action.left < caption.right - 0.5) return "Reset is not beside the caption";
+  if (Math.abs(action.top + action.bottom - caption.top - caption.bottom) / 2 > 1) return "Reset is not centered on the caption";
+  return null;
+}`;
+
 /** A shot of `page` with `state`; `whole` names what must show whole in it (the welcome window's
  * buttons, below everything else; a question's buttons in a chat long enough to scroll): inside the
  * window and inside every box above it in the page that clips. */
-const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; whole?: string; noteLines?: number | null }[] = [
+const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; tab?: string; reset?: boolean; tabInto?: boolean; whole?: string; noteLines?: number | null }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
@@ -284,12 +317,19 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-privacy", page: "settings/index.html", size: settingsWindowSize, section: "Privacy", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }, { bundleIdentifier: "org.example.notes", name: "Example Notes" }], excludedSites: ["example.com", "bank.example.org"] } },
   { name: "settings-permissions-vscode", page: "settings/index.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   { name: "settings-general", page: "settings/index.html", size: settingsWindowSize, section: "General", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, debugAllowed: true } },
-  // Personalization: the writing style's sections, the knowledge base and the history.
   // A settings file that couldn't be read at launch, said above the section.
   { name: "settings-file-problem", page: "settings/index.html", size: settingsWindowSize, section: "Dictation", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, fileProblems: ["settings", "knowledgeBase"] } },
+  // Personalization, a tab each: the writing style's sections, the knowledge base and the history.
   { name: "settings-personalization", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
-  // The whole page, down to the history, in a window tall enough to hold it.
-  { name: "settings-personalization-whole", page: "settings/index.html", size: { width: settingsWindowSize.width, height: settingsWindowSize.height * 3 }, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  // The writing style tab whole, down to its last section, in a window tall enough to hold it.
+  { name: "settings-personalization-whole", page: "settings/index.html", size: { width: settingsWindowSize.width, height: settingsWindowSize.height * 2 }, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-knowledge-base", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", tab: "Knowledge base", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-history", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", tab: "History", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  // Reset asked as its question, under each text tab's caption; a History with nothing in it, which
+  // Tab from its tab still reaches.
+  { name: "settings-personalization-reset", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", reset: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-knowledge-base-reset", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", tab: "Knowledge base", reset: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
+  { name: "settings-personalization-history-empty", page: "settings/index.html", size: settingsWindowSize, section: "Personalization", tab: "History", tabInto: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization: { ...personalization, history: [] } } },
   { name: "settings-personalization-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   { name: "settings-personalization-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Personalization", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, personalization } },
   // Memory: usage against the limit, the requests kept, the newest first; dark; nothing kept yet; a
@@ -347,11 +387,29 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
     )) as boolean;
     if (!shown) throw new Error(`the page has no ${shot.section} section`);
   }
+  if (shot.tab) {
+    const chosen = (await window.webContents.executeJavaScript(`(() => { const tab = [...document.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === ${JSON.stringify(shot.tab)}); tab?.click(); return tab !== undefined; })()`)) as boolean;
+    if (!chosen) throw new Error(`the section has no ${shot.tab} tab`);
+  }
+  if (shot.reset) {
+    const asked = (await window.webContents.executeJavaScript(`(() => { const reset = [...document.querySelectorAll('[role="tabpanel"]:not([hidden]) .tab-intro button')].find((button) => button.textContent === "Reset…"); reset?.click(); return reset !== undefined; })()`)) as boolean;
+    if (!asked) throw new Error("the tab has no Reset");
+  }
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   const rendered = (await window.webContents.executeJavaScript(`(document.getElementById("root")?.childElementCount ?? 0) > 0`)) as boolean;
   const whole = shot.whole === undefined || ((await window.webContents.executeJavaScript(`(() => { const element = document.querySelector(${JSON.stringify(shot.whole)}); const box = element?.getBoundingClientRect(); if (box === undefined || box.top < 0 || box.bottom > innerHeight) return false; for (let above = element.parentElement; above !== null && above !== document.body; above = above.parentElement) { const clip = above.getBoundingClientRect(); if (getComputedStyle(above).overflowY !== "visible" && (box.top < clip.top || box.bottom > clip.bottom)) return false; } return true; })()`)) as boolean);
   if (errors > 0 || !rendered || !whole) throw new Error(`the page ${errors > 0 ? "logged errors" : !rendered ? "rendered nothing" : `cut off ${shot.whole}`}`);
+  const intro = shot.section === "Personalization" ? ((await window.webContents.executeJavaScript(`(${introProblem})()`)) as string | null) : null;
+  if (intro !== null) throw new Error(`the tab's caption is wrong: ${intro}`);
+  if (shot.tabInto) {
+    // A real Tab key, from the chosen tab, as Chromium moves focus.
+    await window.webContents.executeJavaScript(`document.querySelector('[role="tab"][aria-selected="true"]').focus()`);
+    if (!window.webContents.debugger.isAttached()) window.webContents.debugger.attach();
+    for (const type of ["keyDown", "keyUp"]) await window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", { type, key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    const reached = (await window.webContents.executeJavaScript(`document.querySelector('[role="tabpanel"]:not([hidden])')?.contains(document.activeElement) ?? false`)) as boolean;
+    if (!reached) throw new Error("Tab from the chosen tab doesn't reach its panel");
+  }
   const noteProblem = shot.noteLines === undefined ? null : ((await window.webContents.executeJavaScript(`(${noteLayoutProblem})(${noteTextMaxLines}, ${JSON.stringify(shot.noteLines)})`)) as string | null);
   if (noteProblem !== null) throw new Error(`the not-pasted note is wrong: ${noteProblem}`);
   const phase = (shot.state as { phase?: { kind?: string }; isHearing?: boolean }).phase?.kind;

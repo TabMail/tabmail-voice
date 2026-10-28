@@ -11,14 +11,14 @@ import { palette } from "../../../src/core/palette.js";
 const css = readFileSync(join(import.meta.dirname, "../../../src/renderer/settings/index.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** The block `@media <query>` opens, or "" when there is none. */
-function mediaBlock(query: string): string {
-  const start = css.indexOf(`@media ${query}`);
+function mediaBlock(query: string, text: string = css): string {
+  const start = text.indexOf(`@media ${query}`);
   if (start === -1) return "";
-  const open = css.indexOf("{", start);
+  const open = text.indexOf("{", start);
   let depth = 0;
-  for (let index = open; index < css.length; index += 1) {
-    if (css[index] === "{") depth += 1;
-    else if (css[index] === "}" && --depth === 0) return css.slice(open + 1, index);
+  for (let index = open; index < text.length; index += 1) {
+    if (text[index] === "{") depth += 1;
+    else if (text[index] === "}" && --depth === 0) return text.slice(open + 1, index);
   }
   return "";
 }
@@ -111,13 +111,21 @@ describe("Settings stylesheet", () => {
   });
 
   /** Focus is Chromium's own ring (the browser's default indicator, in the system accent), except in
-   * a contrast theme, where the chosen section needs its own ring in a system color, set off from
-   * its fill. */
+   * a contrast theme, where the chosen section and the chosen tab need their own ring in a system
+   * color, set off from their fill. */
   test("focus shows on every background", () => {
-    const forced = mediaBlock("(forced-colors: active)");
-    expect(css.replace(forced, "")).not.toMatch(/:focus-visible/);
-    expect(value(forced, ".sidebar button.nav:focus-visible", "outline")).toBe("2px solid CanvasText");
-    expect(parseFloat(value(forced, ".sidebar button.nav:focus-visible", "outline-offset") ?? "0")).toBeGreaterThan(0);
+    const query = "(forced-colors: active)";
+    let outside = css;
+    let forced = "";
+    for (let block = mediaBlock(query, outside); block !== ""; block = mediaBlock(query, outside)) {
+      forced += block;
+      outside = outside.replace(`@media ${query}`, "").replace(block, "");
+    }
+    expect(outside).not.toMatch(/:focus-visible/);
+    for (const selector of [".sidebar button.nav:focus-visible", ".tabs button.tab:focus-visible"]) {
+      expect(value(forced, selector, "outline")).toBe("2px solid CanvasText");
+      expect(parseFloat(value(forced, selector, "outline-offset") ?? "0")).toBeGreaterThan(0);
+    }
   });
 
   /** On macOS the sidebar is the title bar (a drag region, which swallows clicks): its section
@@ -151,7 +159,42 @@ describe("Settings stylesheet", () => {
   test("the chosen section stays white on its gradient, hovered or not", () => {
     expect(value(css, ".sidebar button.nav.selected", "color")).toBe("var(--on-accent)");
     expect(palette.light.onAccent).toBe("#FFFFFF");
-    expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover"]);
+    // Personalization's tabs take the hover's gray for their track, and on the tabs not chosen.
+    expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover", ".tabs", ".tabs button.tab:not(.selected):hover"]);
+  });
+
+  /** Each Personalization tab opens with a sentence to a line, its Reset centered on them (owner,
+   * 2026-10-28: the lines broke oddly and the button sat off center). */
+  test("a tab's lines and its Reset sit centered, a sentence to a line", () => {
+    expect(value(css, ".tab-intro", "align-items")).toBe("center");
+    expect(value(css, ".tab-intro p > span", "display")).toBe("block");
+    expect(value(css, ".tab-intro button", "flex")).toBe("none");
+  });
+
+  /** Personalization's lists sit in their own cards: no line above a list that opens its card, and
+   * a line between a bullet list's items and its add field only when there are items. */
+  test("the lists' lines fall between rows, not at a card's edge", () => {
+    expect(declaring(css, /border-top:\s*none/)).toEqual([".group > ul.dictionary:first-child", ".bullet-editor ul.dictionary"]);
+    expect(value(css, ".bullet-editor ul.dictionary:not(:empty)", "border-bottom")).toBe("1px solid var(--separator)");
+  });
+
+  /** Personalization's chosen tab is raised as a control on the tabs' gray track, as a macOS
+   * segmented control's is, and in Windows' contrast themes takes the system's selection colors. */
+  test("the chosen tab is raised on its track", () => {
+    expect(value(css, ".tabs button.tab.selected", "background")).toBe("var(--control)");
+    expect(value(css, ".tabs button.tab.selected", "box-shadow")).toBe("var(--control-shadow)");
+    expect(value(css, ".tabs button.tab", "background")).toBe("none");
+    // Equal segments: the control keeps its size whichever tab is chosen.
+    expect(value(css, ".tabs", "grid-auto-columns")).toBe("1fr");
+    // Nor does it move as a tab that scrolls replaces one that doesn't: the scroll bar's room is kept.
+    expect(value(css, ".content", "scrollbar-gutter")).toBe("stable");
+    // The contrast themes' rule comes after the one it overrides, or that one wins.
+    const forced = css.slice(css.lastIndexOf("@media (forced-colors: active)"));
+    expect(css.lastIndexOf("@media (forced-colors: active)")).toBeGreaterThan(css.indexOf(".tabs button.tab.selected {"));
+    expect(value(forced, ".tabs button.tab.selected", "background")).toBe("SelectedItem");
+    expect(value(forced, ".tabs button.tab.selected", "color")).toBe("SelectedItemText");
+    // Its own colors, not the system's backplate behind its label.
+    expect(value(forced, ".tabs button.tab.selected", "forced-color-adjust")).toBe("none");
   });
 
   /** An off switch's white thumb stands out 3:1 from its track (a control's state, WCAG 1.4.11), on

@@ -119,7 +119,7 @@ memory anyways and [it'll] search for it." Memory (ADR-DESK-061) keeps every age
   dedupe, trim and expire the shared KB, so Voice needs none of its own; their `[Pinned]`, `[Task]` and
   `[Reminder]` lines reach Voice as they wrote them.
 - Copy: nothing says agent mode learns about the user any more. Settings' KB caption: "Agent mode adds
-  to it when you ask it to remember something." The consent page's memory line: "Your past agent-mode
+  to it when you ask it to remember something." (replaced by the #296 tab captions, below) The consent page's memory line: "Your past agent-mode
   requests, your writing style and what you ask it to remember, kept only on this computer so it can
   use them. Edit or remove them anytime in Settings, which keeps the last `promptHistoryMax` versions of
   your writing style and knowledge base." The what's-new tip (not yet shipped): "New: agent mode
@@ -268,3 +268,27 @@ features are off (this file unreadable, or Opt Out of AI), Settings › Memory l
 but neither searches nor sets the limit (ADR-DESK-010 amendment, #294). Tests: `settings.test.ts`,
 `main/index.test.ts` (the reset leaves the limit null, memory is never trimmed, and the user's pick is
 kept and applied), `renderer/settings/index.test.ts`, `core/ui/fileProblems.test.ts`.
+
+**Amendment 2026-10-28 (#296) — Settings › Personalization as tabs.** Owner: the page was too long,
+and the writing style's sections ("General writing style", "Language", …) were hard to see. Each block
+is now a tab: Writing style, Knowledge base, History, in a segmented control under the page title
+(equal segments, the chosen one raised as a control; the system's selection colors in a contrast
+theme; the arrow keys move between them; the scroll bar's room is kept, so nothing shifts as a tab
+that scrolls replaces one that doesn't). Settings › Personalization opens on Writing style. Each tab
+opens with a short caption, a sentence to a line (owner, 2026-10-28): Writing style "How agent mode
+writes for you. / Sent with its requests; TabMail doesn’t keep it.", Knowledge base "What agent mode
+knows and remembers about you. / Sent with each request; TabMail doesn’t keep it.", History "Your last
+`promptHistoryMax` changes, kept on this computer so you can put one back."; and, for the two texts, its
+Reset centered beside it; Reset's question, too wide to share the caption's line, goes under it
+rather than squeezing the caption into a column. Each panel is a stop in the Tab order of its own, so
+Tab from the chosen tab reaches it even when it holds no control (an empty History). Each writing style section is its own card
+under a heading with the section's name. Every tab stays rendered while hidden, so what is being typed
+in one is still there on coming back. A change that couldn't be saved is said under the tabs until the
+next change, whichever tab is chosen: a field left for another tab saves as it is left, and its failure
+can arrive as that tab shows, so it must still be said there. Each tab names its panel by place (an id
+holds no spaces). Nothing about what is stored or sent changes. Tests:
+`renderer/settings/index.test.ts` (tabs, panels and their ids, the chosen tab drawn as chosen,
+headings, Reset per tab, arrow keys, typing kept, a failure still said after a change of tab), `renderer/settings/style.test.ts` (the chosen tab raised, equal segments, the contrast
+theme's colors and focus ring after the rules they override, the lists' lines between rows), and the
+previews (`npm run preview`), which check each tab's caption as laid out (a sentence to a line, Reset
+centered beside it, its question under it) and press a real Tab key from an empty History's tab.

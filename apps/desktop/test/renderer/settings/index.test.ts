@@ -120,9 +120,16 @@ function toggle(label: string): HTMLInputElement {
   return input;
 }
 
-/** The text of the visible section's rows and notes. */
+/** The text of the visible section's rows and notes, without what is hidden in it (another tab's
+ * panel). */
 function visibleText(): string {
-  return [...document.querySelectorAll("main > div:not([hidden])")].map((pane) => pane.textContent ?? "").join("\n");
+  return [...document.querySelectorAll("main > div:not([hidden])")]
+    .map((pane) => {
+      const shown = pane.cloneNode(true) as Element;
+      for (const hidden of shown.querySelectorAll("[hidden]")) hidden.remove();
+      return shown.textContent ?? "";
+    })
+    .join("\n");
 }
 
 /** Types `text` into `input` as the user would, so React sees the change. */
@@ -473,6 +480,123 @@ describe("Settings page", () => {
       expect(field("Knowledge base, item 2").value).toBe("Works with Sam.");
     });
 
+    const tabs = () => [...document.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Personalization"] > [role="tab"]')];
+    const tab = (name: string) => tabs().find((element) => element.textContent === name) as HTMLButtonElement;
+    /** The panels on show: each tab's panel, named as its tab, hidden unless its tab is chosen. */
+    const shownPanels = () => [...document.querySelectorAll<HTMLElement>('[role="tabpanel"]')].filter((panel) => !panel.hidden).map((panel) => panel.getAttribute("aria-label"));
+
+    /** Each block is a tab (owner, 2026-10-28: the page was too long): Writing style first and
+     * chosen, and only the chosen tab's panel shows, the one its tab names. */
+    test("the writing style, knowledge base and history are tabs, one shown at a time", async () => {
+      await open();
+      expect(tabs().map((element) => element.textContent)).toEqual(["Writing style", "Knowledge base", "History"]);
+      for (const name of ["Writing style", "Knowledge base", "History", "Writing style"]) {
+        await act(async () => tab(name).click());
+        expect(tabs().filter((element) => element.getAttribute("aria-selected") === "true")).toEqual([tab(name)]);
+        expect(tabs().map((element) => element.tabIndex)).toEqual(tabs().map((element) => (element === tab(name) ? 0 : -1)));
+        expect(shownPanels()).toEqual([name]);
+        // Drawn as chosen, not only announced.
+        expect([...document.querySelectorAll(".tabs button.tab.selected")]).toEqual([tab(name)]);
+        // The tab names its panel by one id (a space would make it a list of two that name nothing).
+        const controls = tab(name).getAttribute("aria-controls") ?? "";
+        expect(controls).toMatch(/^\S+$/);
+        expect(document.getElementById(controls)).toBe(document.querySelector(`[role="tabpanel"][aria-label="${name}"]`));
+      }
+    });
+
+    /** Each tab keeps what it holds: its captions, and Reset for the writing style and the knowledge
+     * base; each writing style section is headed by its name, not by a caption. */
+    test("each tab holds its own block, the writing style's sections under headings", async () => {
+      await open();
+      const panel = (name: string) => document.querySelector(`[role="tabpanel"][aria-label="${name}"]`) as HTMLElement;
+      const resets = (name: string) => [...panel(name).querySelectorAll("button")].filter((element) => element.textContent === "Reset…");
+      expect([...panel("Writing style").querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual(["General writing style", "Language", "Useful links to personal website and other resources"]);
+      expect(panel("Writing style").textContent).toContain("How agent mode writes for you");
+      expect(panel("Knowledge base").textContent).toContain("What agent mode knows and remembers about you");
+      expect(panel("Knowledge base").querySelector('ul[aria-label="Knowledge base"]')).not.toBeNull();
+      expect(panel("History").textContent).toContain(`Your last ${config.promptHistoryMax} changes`);
+      expect(panel("History").textContent).toContain("No changes yet.");
+      expect([resets("Writing style").length, resets("Knowledge base").length, resets("History").length]).toEqual([1, 1, 0]);
+      const { commands } = await open();
+      await act(async () => tab("Knowledge base").click());
+      await act(async () => resets("Knowledge base")[0]?.click());
+      await act(async () => button("Reset").click());
+      expect(commands).toEqual([{ type: "resetKnowledgeBase" }]);
+    });
+
+    /** The arrow keys choose the next or previous tab, round the ends, and focus it. */
+    test("the arrow keys move between the tabs", async () => {
+      await open();
+      const press = (key: string) => (document.activeElement ?? tab("Writing style")).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      tab("Writing style").focus();
+      for (const [key, chosen] of [["ArrowRight", "Knowledge base"], ["ArrowRight", "History"], ["ArrowRight", "Writing style"], ["ArrowLeft", "History"], ["ArrowLeft", "Knowledge base"]] as const) {
+        await act(async () => press(key));
+        expect(shownPanels()).toEqual([chosen]);
+        expect(document.activeElement).toBe(tab(chosen));
+      }
+      await act(async () => press("ArrowDown"));
+      expect(shownPanels()).toEqual(["Knowledge base"]);
+    });
+
+    /** Tab from the chosen tab reaches its panel even with no control in it (a History with nothing
+     * in it): each panel is a stop in the Tab order. The previews press a real Tab key. */
+    test("each panel is a stop in the Tab order, an empty History too", async () => {
+      await open();
+      expect(document.body.textContent).toContain("No changes yet.");
+      const panels = [...document.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+      expect(panels.map((panel) => [panel.getAttribute("aria-label"), panel.tabIndex])).toEqual([
+        ["Writing style", 0],
+        ["Knowledge base", 0],
+        ["History", 0],
+      ]);
+    });
+
+    /** A tab left and come back to is as it was: what is being typed in it is still there. */
+    test("what is being typed stays through a change of tab", async () => {
+      const { commands } = await open();
+      await act(async () => type(field("Add to Language"), "I also write in French."));
+      await act(async () => tab("History").click());
+      await act(async () => tab("Writing style").click());
+      expect(field("Add to Language").value).toBe("I also write in French.");
+      expect(commands).toEqual([]);
+    });
+
+    /** An item being edited when another tab is chosen is saved as focus moves to that tab, in
+     * either text, and shows as edited on coming back. */
+    test("an item being edited is saved as another tab is chosen", async () => {
+      const { commands } = await open();
+      const leaveFor = async (item: HTMLInputElement, name: string) => {
+        await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: tab(name) })));
+        await act(async () => tab(name).click());
+      };
+      await act(async () => tab("Knowledge base").click());
+      const kbItem = field("Knowledge base, item 1");
+      await act(async () => type(kbItem, "Prefers afternoon meetings."));
+      await leaveFor(kbItem, "Writing style");
+      const languageItem = field("Language, item 1");
+      await act(async () => type(languageItem, "I write in English and French."));
+      await leaveFor(languageItem, "History");
+      expect(commands).toEqual([
+        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] },
+        { type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English and French."] },
+      ]);
+      await act(async () => tab("Knowledge base").click());
+      expect(field("Knowledge base, item 1").value).toBe("Prefers afternoon meetings.");
+    });
+
+    /** A change that couldn't be saved is said until the next change, whichever tab is chosen: a
+     * save as a field is left for another tab can fail as that tab is chosen, and must still be said. */
+    test("a failure is still said after a change of tab", async () => {
+      await open(signedIn, { error: "This couldn't be saved, so nothing changed." });
+      await act(async () => tab("Knowledge base").click());
+      await act(async () => (document.querySelector('button[aria-label="Remove Knowledge base, item 1"]') as HTMLButtonElement).click());
+      expect(visibleText()).toContain("This couldn't be saved, so nothing changed.");
+      for (const name of ["History", "Writing style"]) {
+        await act(async () => tab(name).click());
+        expect(visibleText(), name).toContain("This couldn't be saved, so nothing changed.");
+      }
+    });
+
     /** A bullet the user types is capped, as ADR-DESK-063 says: the boundary takes any length, so
      * these fields are the only cap. */
     test("the Settings fields cap a typed bullet", async () => {
@@ -625,12 +749,14 @@ describe("Settings page", () => {
     test("Reset asks before it resets", async () => {
       const { commands } = await open();
       const resets = () => [...document.querySelectorAll("button")].filter((element) => element.textContent === "Reset…");
+      await act(async () => tab("Knowledge base").click());
       await act(async () => resets()[1]?.click());
       await act(async () => button("Cancel").click());
       expect(commands).toEqual([]);
       await act(async () => resets()[1]?.click());
       expect(visibleText()).toContain("Reset your knowledge base to the default?");
       await act(async () => button("Reset").click());
+      await act(async () => tab("Writing style").click());
       await act(async () => resets()[0]?.click());
       await act(async () => button("Reset").click());
       expect(commands).toEqual([{ type: "resetKnowledgeBase" }, { type: "resetWritingStyle" }]);
@@ -987,7 +1113,8 @@ describe("Settings page", () => {
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
-      Personalization: ["Writing style", "General writing style", "Knowledge base", "No changes yet."],
+      // The tab shown first, Writing style; the other tabs' own text is in the tabs' tests.
+      Personalization: ["Writing style", "General writing style", "Knowledge base", "History", "How agent mode writes for you."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
@@ -1463,13 +1590,10 @@ describe("Settings page", () => {
       "When memory reaches the limit, the oldest requests are removed first.",
       "No requests kept yet.",
       // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
-      "How agent mode writes for you when it composes or edits text. Kept on this computer, and sent to TabMail with those requests; TabMail doesn’t keep it.",
-      "General writing style",
-      "Language",
-      "Useful links to personal website and other resources",
-      "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
-      "Agent mode adds to it when you ask it to remember something.",
-      `Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`,
+      // One short line each (owner, 2026-10-28).
+      "How agent mode writes for you. Sent with its requests; TabMail doesn’t keep it.",
+      "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
+      `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,
       "No changes yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
