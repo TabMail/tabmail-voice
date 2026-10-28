@@ -253,8 +253,10 @@ reset no longer puts it back to the default, which would remove the oldest reque
 Instead `AppSettings.resetFile` stores the limit as null, "Not set" (`AppSettings.unsetMemorySizeLimit`).
 The fix by hand (the file moved to the Trash) loses the limit the same way, so a launch that finds no
 settings file (`JSONFileStore.isNew`) while memory's database is there stores it as null too. A
-database exists only after agent mode ran, so the limit is unknown, not the default. This also covers a
-reset whose null couldn't be written. `AppSettings.memorySizeLimit` reads
+database exists only after agent mode ran, so the limit is unknown, not the default. The reset writes the
+limit not set together with what it keeps (the Globe key's saved action) in one write
+(`AppSettings.resetFile`'s `kept`): if that write fails, no file exists, and the next launch reads it as
+removed by hand, so a reset can never leave a file that reads the default limit. `AppSettings.memorySizeLimit` reads
 null both while the file can't be read and while it is not set, and a request is kept only within a
 known limit (`DictationSettings.memorySizeLimit`), so nothing is kept or trimmed until the user picks
 one. Settings › Memory shows the menu at "Not set", no usage bar, and the caption "Size limit not set:

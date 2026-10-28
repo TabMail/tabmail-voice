@@ -139,11 +139,14 @@ export class AppSettings extends Observable {
   }
 
   /** The user's factory reset of the settings file (`moveAside`, which throws, changing nothing, when
-   * the file can't be moved): every setting reads its default from here on. */
-  resetFile(moveAside: () => void): void {
+   * the file can't be moved): every setting reads its default from here on, but for the values in
+   * `kept`, and memory's size limit, which is unknown, "Not set" (`unsetMemorySizeLimit`). Both are
+   * in one write: the new file has the limit not set, or there is no file, which the next launch
+   * reads as removed by hand. */
+  resetFile(moveAside: () => void, kept: Readonly<Record<string, unknown>> = {}): void {
     const before = this.hotkey;
     moveAside();
-    this.unsetMemorySizeLimit();
+    this.store.setAll({ ...kept, [Key.memorySizeLimit]: null });
     this.changed();
     if (this.hotkey !== before) this.onHotkeyChange?.(this.hotkey);
   }
@@ -392,9 +395,9 @@ export class AppSettings extends Observable {
     return stored !== null && config.memorySizeLimitChoices.includes(stored) ? stored : config.memorySizeLimitDefault;
   }
 
-  /** The size limit the user chose was in a settings file that is gone (reset, or removed by hand):
-   * unknown, "Not set", so memory is never trimmed to a guess until the user picks one (owner,
-   * 2026-10-28). */
+  /** The size limit the user chose was in a settings file that is gone (removed by hand; the reset
+   * stores the same in its one write): unknown, "Not set", so memory is never trimmed to a guess
+   * until the user picks one (owner, 2026-10-28). */
   unsetMemorySizeLimit(): void {
     this.store.set(Key.memorySizeLimit, null);
   }

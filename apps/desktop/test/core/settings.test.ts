@@ -298,6 +298,7 @@ test("Settings › Memory's line names memory while opted out", () => {
   expect(app.memoryOffLine).toBeNull();
   app.setOptsOutOfAI(true);
   expect(app.memoryOffLine).toBe(optedOutOfAIMemoryLine);
+  expect(optedOutOfAIMemoryLine).toBe("AI features are off. Turn off Opt Out of AI in Settings to use memory");
 });
 
 /** What applies is what is saved (owner, 2026-10-28): a choice the file couldn't keep is reported, and
@@ -356,6 +357,34 @@ test("a reset that keeps the hotkey tells no hotkey change, and one that fails c
 
   app.resetFile(() => store.moveAside());
   expect([changes, heard]).toEqual([1, []]);
+});
+
+/** A reset whose disk fails partway: what it keeps and the size limit not set are one write, so the
+ * new file has the limit not set, or there is no file (read at the next launch as removed by hand),
+ * never a file that reads the default limit and trims memory (owner, 2026-10-28). */
+test.each([1, 0])("a reset with %i write left writes the size limit not set with what it keeps, or nothing", (writesLeft) => {
+  const store = new (class extends UnreadStore {
+    written: Record<string, unknown> | undefined;
+    private left = writesLeft;
+    override set(key: string, value: unknown): boolean {
+      super.set(key, value);
+      return this.write();
+    }
+    override setAll(values: Readonly<Record<string, unknown>>): boolean {
+      super.setAll(values);
+      return this.write();
+    }
+    private write(): boolean {
+      if (this.problem !== undefined || this.left === 0) return false;
+      this.left -= 1;
+      this.written = this.snapshot();
+      return true;
+    }
+  })();
+  const app = new AppSettings(store, () => true);
+  app.resetFile(() => store.moveAside(), { globeKeyActionBeforeFnHotkey: 2 });
+  expect(store.written).toEqual(writesLeft === 0 ? undefined : { globeKeyActionBeforeFnHotkey: 2, memorySizeLimit: null });
+  expect([app.memorySizeLimit, store.get("globeKeyActionBeforeFnHotkey")]).toEqual([null, 2]);
 });
 
 /** The size limit the user chose was in the file that couldn't be read: unknown before the reset and

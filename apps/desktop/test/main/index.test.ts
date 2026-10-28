@@ -2543,24 +2543,26 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(await send(command)).toEqual({ error: `${optedOutOfAIMemoryLine}.` });
     }
     expect([app.stored.has("memorySizeLimit"), queries(), trim?.mock.calls.length]).toEqual([false, [], 0]);
-    // Removing reads the list again with no search either, before any load.
-    for (const command of [{ type: "removeMemory", memId: "turn:1" }, { type: "loadMemory" }] as const) {
-      expect(await send(command)).toEqual({ error: null });
+    // Each command that reads the list again, run right after a search typed while AI was on, reads
+    // the newest: opening the section, a removal, Clear All, and a Clear All that failed.
+    clear?.mockRejectedValueOnce(new Error("busy"));
+    for (const [command, error] of [
+      [{ type: "loadMemory" }, null],
+      [{ type: "removeMemory", memId: "turn:1" }, null],
+      [{ type: "clearMemory" }, "Memory couldn't be cleared. Try again."],
+      [{ type: "clearMemory" }, null],
+    ] as const) {
+      expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
+      expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: null });
+      expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+      expect(await send(command), command.type).toEqual({ error });
+      expect(queries()?.slice(-2), command.type).toEqual(["friday", ""]);
     }
-    expect([queries(), remove?.mock.calls, trim?.mock.calls.length]).toEqual([["", ""], [[["turn:1"]]], 0]);
+    expect([remove?.mock.calls, clear?.mock.calls.length, trim?.mock.calls.length]).toEqual([[[["turn:1"]]], 2, 0]);
     // Signing in still reaches TabMail; memory sent nothing.
     expect(app.requests).toHaveLength(0);
     await send({ type: "sendCode", email: "user@example.com" });
     expect(app.requests).toHaveLength(1);
-
-    expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
-    expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: null });
-    expect(queries()?.at(-1)).toBe("friday");
-
-    // So does Clear All, right after a search typed while AI was on.
-    expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
-    expect(await send({ type: "clearMemory" })).toEqual({ error: null });
-    expect([clear?.mock.calls.length, queries()?.at(-1), trim?.mock.calls.length]).toEqual([1, "", 0]);
   });
 
   /** What applies is what is saved (owner, 2026-10-28): Opt Out of AI that couldn't be written says so,

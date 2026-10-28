@@ -696,13 +696,10 @@ function launch(): void {
     if (fileProblem(file) !== problem) return;
     try {
       if (file === "settings") {
-        settings.resetFile(() => {
-          // The Globe key's way back to the user's own action lives in this file (ADR-DESK-031): kept
-          // across the reset, so the hotkey's change hands the key back.
-          const globeKeyChoice = store.get(savedChoiceKey);
-          store.moveAside(copy);
-          if (globeKeyChoice !== undefined) store.set(savedChoiceKey, globeKeyChoice);
-        });
+        // The Globe key's way back to the user's own action lives in this file (ADR-DESK-031): kept
+        // across the reset, so the hotkey's change hands the key back.
+        const globeKeyChoice = store.get(savedChoiceKey);
+        settings.resetFile(() => store.moveAside(copy), globeKeyChoice === undefined ? {} : { [savedChoiceKey]: globeKeyChoice });
       } else prompts.resetFile(() => promptsStore.moveAside(copy));
     } catch (error) {
       log.error(`main: the ${file} file couldn't be reset: ${errorName(error)}`);
