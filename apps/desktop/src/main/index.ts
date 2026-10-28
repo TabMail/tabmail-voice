@@ -121,10 +121,12 @@ if (needsX11Relaunch(appImage, process.argv)) {
   app.quit();
 }
 
-/** Settings › Memory's commands: refused while AI features are off (the settings file can't be read,
- * or the user opted out of AI), as memory is one: its helper runs a model over what the user asked
- * (owner, 2026-10-27). */
-const memoryCommands: ReadonlySet<Command["type"]> = new Set(["loadMemory", "searchMemory", "setMemorySizeLimit", "removeMemory", "clearMemory"]);
+/** Settings › Memory's commands refused while AI features are off (the settings file can't be read,
+ * or the user opted out of AI): a typed search, which memory's helper runs a model over, and the size
+ * limit, which trims it. Listing the newest, removing one and Clear All stay: they are local and send
+ * nothing of the user's (starting memory's helper may still fetch its model from TabMail's CDN), so the
+ * user can always delete what memory holds (owner, 2026-10-28). */
+const memoryCommands: ReadonlySet<Command["type"]> = new Set(["searchMemory", "setMemorySizeLimit"]);
 
 /** The file each command writes the user's choice to, if any: while it couldn't be read at launch,
  * the command says so (ADR-DESK-063 amendment). Every command is named, so a new one is decided. */
@@ -228,7 +230,7 @@ function launch(): void {
   // While the settings file can't be read its AI features are off (owner, 2026-10-27): transcription,
   // its warm-up and completions are refused, whatever asks for them (dictation and agent mode, which
   // the rest goes through, are refused at their start). Signing in and updates work as ever;
-  // Settings › Memory is refused (below).
+  // Settings › Memory searches nothing and sets no size limit (below).
   const aiTransport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${aiOffLine}.`)));
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
@@ -276,6 +278,11 @@ function launch(): void {
   // user of this computer, whoever is signed in (ADR-DESK-061).
   const memoryDirectory = join(app.getPath("userData"), "memory");
   const memory = new MemoryHelper({ executable: join(helpers, process.platform === "win32" ? "voice-memory.exe" : "voice-memory"), directory: memoryDirectory });
+  // No settings file while memory's database is there: the file was removed by hand, the fix
+  // dialog's first way (ADR-DESK-063), and the size limit the user chose went with it. Unknown, as
+  // after the factory reset, so memory is never trimmed to the default. Before Settings › Memory
+  // first reads the limit.
+  if (store.isNew && existsSync(memoryFolders(memoryDirectory).databaseFile)) settings.unsetMemorySizeLimit();
   // Settings › Memory reads nothing until memory's database exists: the helper creates it at its
   // first start, when agent mode is first chosen.
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
@@ -690,13 +697,10 @@ function launch(): void {
     if (fileProblem(file) !== problem) return;
     try {
       if (file === "settings") {
-        settings.resetFile(() => {
-          // The Globe key's way back to the user's own action lives in this file (ADR-DESK-031): kept
-          // across the reset, so the hotkey's change hands the key back.
-          const globeKeyChoice = store.get(savedChoiceKey);
-          store.moveAside(copy);
-          if (globeKeyChoice !== undefined) store.set(savedChoiceKey, globeKeyChoice);
-        });
+        // The Globe key's way back to the user's own action lives in this file (ADR-DESK-031): kept
+        // across the reset, so the hotkey's change hands the key back.
+        const globeKeyChoice = store.get(savedChoiceKey);
+        settings.resetFile(() => store.moveAside(copy), globeKeyChoice === undefined ? {} : { [savedChoiceKey]: globeKeyChoice });
       } else prompts.resetFile(() => promptsStore.moveAside(copy));
     } catch (error) {
       log.error(`main: the ${file} file couldn't be reset: ${errorName(error)}`);
@@ -985,6 +989,11 @@ function launch(): void {
   session.defaultSession.setPermissionCheckHandler((contents, permission) => permission === "media" && contents !== null && windows.isAudioWindow(contents));
 
   ipcMain.handle(channels.getState, (_event, name: unknown) => (isWindowName(name) ? stateOf(name) : null));
+  /** The search Settings › Memory's list is read for: the one shown, but while AI features are off
+   * the newest only, so a search typed before isn't run again (owner, 2026-10-28). */
+  function memoryListQuery(): string | undefined {
+    return settings.memoryOffLine === null ? undefined : "";
+  }
   /** Says how to fix the file `command` writes, while that file couldn't be read at launch. */
   function unsavedFor(command: Command): string | null {
     const file = commandWrites[command.type];
@@ -992,8 +1001,8 @@ function launch(): void {
   }
   ipcMain.handle(channels.command, async (_event, command: unknown): Promise<CommandResult> => {
     if (!isCommand(command)) return { error: genericError };
-    const aiOff = settings.aiOffLine;
-    if (aiOff !== null && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${aiOff}.` };
+    const memoryOff = settings.memoryOffLine;
+    if (memoryOff !== null && memoryCommands.has(command.type)) return { error: unsavedFor(command) ?? `${memoryOff}.` };
     // A command that writes a file that couldn't be read at launch isn't saved, whatever it did for
     // this session, and says how to fix the file, every time.
     const unsaved = unsavedFor(command);
@@ -1067,7 +1076,7 @@ function launch(): void {
         settings.smartDictation = command.value;
         return;
       case "setOptsOutOfAI":
-        settings.optsOutOfAI = command.value;
+        if (!settings.setOptsOutOfAI(command.value)) throw new Error(personalizationUnsaved);
         return;
       case "setClosesChatElsewhere":
         settings.closesChatElsewhere = command.value;
@@ -1076,15 +1085,15 @@ function launch(): void {
         if (!settings.setEventDuration(command.value)) throw new Error("The default event duration couldn't be saved. Check the disk and try again.");
         return;
       case "loadMemory":
-        return memoryPage.load();
+        return memoryPage.load(memoryListQuery());
       case "searchMemory":
         return memoryPage.load(command.query);
       case "setMemorySizeLimit":
         return memoryPage.setSizeLimit(command.value);
       case "removeMemory":
-        return memoryPage.remove(command.memId);
+        return memoryPage.remove(command.memId, memoryListQuery());
       case "clearMemory":
-        return memoryPage.clear();
+        return memoryPage.clear(memoryListQuery());
       case "editWritingStyle":
         if (!prompts.editCompositionSection(command.section, command.shown, command.bullets)) throw new Error(personalizationUnsaved);
         return;

@@ -13,6 +13,7 @@ import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { formatBytes } from "../../../src/core/memory/page.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
@@ -876,6 +877,29 @@ describe("Settings page", () => {
       expect(visibleText()).not.toContain("Lower the limit");
     });
 
+    /** After a reset of a settings file that couldn't be read, the limit the user chose is unknown:
+     * "Not set", no bar, nothing kept until one is chosen, and any choice asked first, as it can remove
+     * requests (owner, 2026-10-28). */
+    test("a size limit not set says so, shows no bar, and asks before any choice", async () => {
+      const { commands } = await open(withMemory({ usage: { docs: 1, usedBytes: 2 * GB }, sizeLimit: null }));
+      expect(visibleText()).toContain("Memory used: 2 GB");
+      expect(visibleText()).not.toContain("Memory used: 2 GB of");
+      expect(visibleText()).toContain("Size limit not set: agent mode’s requests aren’t kept until you choose one.");
+      expect(visibleText()).not.toContain("When memory reaches the limit");
+      expect(document.querySelector('[role="progressbar"]')).toBeNull();
+      expect([menu("Size limit").value, menu("Size limit").selectedOptions[0]?.textContent]).toEqual(["", "Not set"]);
+
+      const largest = config.memorySizeLimitChoices.at(-1) ?? 0;
+      await act(async () => pick(menu("Size limit"), String(largest)));
+      expect(visibleText()).toContain(`Set the limit to ${formatBytes(largest)}? If memory holds more, its oldest requests are removed. This can’t be undone.`);
+      expect(sent(commands)).toEqual([]);
+      await act(async () => button("Set Limit").click());
+      expect(sent(commands)).toEqual([{ type: "setMemorySizeLimit", value: largest }]);
+
+      await open(withMemory({ usage: null, unavailable: true, sizeLimit: null }));
+      expect(visibleText()).toContain("Memory used: unavailable (limit not set)");
+    });
+
     test("asks before a smaller limit even when usage can't be read", async () => {
       const { commands } = await open(withMemory({ usage: null, unavailable: true, entries: [] }));
       await act(async () => pick(menu("Size limit"), String(100 * MB)));
@@ -1083,6 +1107,24 @@ describe("Settings page", () => {
       { type: "setDebugMode", value: true },
       { type: "setOptsOutOfAI", value: false },
     ]);
+  });
+
+  /** What applies is what is saved (owner, 2026-10-28): Opt Out of AI that couldn't be saved says so
+   * under the switch, which shows the choice saved, and the next try clears it. */
+  test("Opt Out of AI that couldn't be saved says so, and shows what is saved", async () => {
+    const unsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
+    let reply: CommandResult = { error: unsaved };
+    let shown: SettingsState = { ...signedIn, optsOutOfAI: false };
+    await settingsPage(() => reply, () => shown, shown);
+    await act(async () => toggle("Opt Out of AI").click());
+    expect(toggle("Opt Out of AI").checked).toBe(false);
+    expect(toggle("Opt Out of AI").closest(".row")?.textContent).toContain(unsaved);
+
+    reply = { error: null };
+    shown = { ...signedIn, optsOutOfAI: true };
+    await act(async () => toggle("Opt Out of AI").click());
+    expect(toggle("Opt Out of AI").checked).toBe(true);
+    expect(document.body.textContent).not.toContain(unsaved);
   });
 
   test("the hotkey menu contains only the keys supported on this platform", async () => {

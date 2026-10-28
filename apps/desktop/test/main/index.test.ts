@@ -13,7 +13,7 @@ import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import { aiOffLine, resetCopyPath, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
-import { optedOutOfAILine } from "../../src/core/settings.js";
+import { optedOutOfAIMemoryLine } from "../../src/core/settings.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
@@ -74,6 +74,8 @@ const app = vi.hoisted(() => ({
   savesFail: false,
   /** Why a file couldn't be read at launch, by its path: none is saved to (`JSONFileStore.problem`). */
   problems: new Map<string, import("../../src/core/util/keyValueStore.js").StoreProblem>(),
+  /** The files not there at launch, by path (`JSONFileStore.isNew`). */
+  missingFiles: new Set<string>(),
   /** The files shown in Finder. */
   shownFiles: [] as string[],
   opened: [] as string[],
@@ -308,7 +310,9 @@ vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
       private readonly file: Map<string, unknown>;
       private wasReset = false;
       problem: import("../../src/core/util/keyValueStore.js").StoreProblem | undefined;
+      readonly isNew: boolean;
       constructor(private readonly path: string) {
+        this.isNew = app.missingFiles.has(path);
         const file = path === join(app.userData, "settings.json") ? app.stored : (app.files.get(path) ?? new Map<string, unknown>());
         app.files.set(path, file);
         this.file = file;
@@ -627,6 +631,7 @@ afterEach(() => {
   app.files.clear();
   app.savesFail = false;
   app.problems.clear();
+  app.missingFiles.clear();
   app.shownFiles = [];
   app.opened = [];
   app.requests = [];
@@ -2473,9 +2478,12 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.requests).toHaveLength(4);
   });
 
-  /** Settings › Memory starts memory's helper, whose first start fetches its model from TabMail: while
-   * the settings file can't be read, every one of its commands is refused and memory is never asked. */
-  test("a settings file that can't be read keeps Settings › Memory from reaching memory", async () => {
+  /** While AI features are off, Settings › Memory lists the newest, removes one and clears all: they
+   * are local and send nothing, so what memory holds can always be deleted. A typed search, which
+   * memory's helper runs a model over, and the size limit, which trims memory, are refused (owner,
+   * 2026-10-28). Both states AI is off in are the same: a settings file that can't be read, and Opt
+   * Out of AI. */
+  test("a settings file that can't be read lets Settings › Memory list, remove and clear, but not search or set the limit", async () => {
     app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
     const path = join(app.userData, "settings.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
@@ -2486,20 +2494,26 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await launch("darwin");
     const memory = app.memory;
     if (memory === null) throw new Error("no memory");
-    const asked = (["prepare", "index", "search", "read", "stats", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
+    const [search, trim, remove, clear] = (["search", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
 
-    for (const command of [{ type: "loadMemory" }, { type: "searchMemory", query: "friday" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
-      expect(await send(command)).toEqual({ error: `${aiOffLine}.` });
-    }
+    expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: `${aiOffLine}.` });
     // The size limit is kept in the settings file: it says how to fix it, as every such command does.
     expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
-    for (const spy of asked) expect(spy).not.toHaveBeenCalled();
+    expect([search?.mock.calls.length, trim?.mock.calls.length]).toEqual([0, 0]);
+    for (const command of [{ type: "loadMemory" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
+      expect(await send(command)).toEqual({ error: null });
+    }
+    expect(remove?.mock.calls).toEqual([[["turn:1"]]]);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(search?.mock.calls.map(([asked]) => (asked as { query: string }).query)).toEqual(["", "", ""]);
+    expect([trim?.mock.calls.length, app.requests.length]).toEqual([0, 0]);
   });
 
-  /** Opt Out of AI (owner, 2026-10-28): Settings › Memory never reaches memory, and says how to turn AI
-   * back on; signing in, Settings and the menu work as ever, and switching it off again lets memory be
-   * reached. */
-  test("Opt Out of AI keeps Settings › Memory from reaching memory, and is kept", async () => {
+  /** Opt Out of AI (owner, 2026-10-28): Settings › Memory lists the newest (a search typed before isn't
+   * run again), removes one and clears all, and refuses a typed search and the size limit, saying
+   * how to turn AI back on; signing in, Settings and the menu work as ever, and switching it off again
+   * lets memory be searched. */
+  test("Opt Out of AI lets Settings › Memory list, remove and clear, but not search or set the limit, and is kept", async () => {
     app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
     const database = memoryFolders(join(app.userData, "memory")).databaseFile;
     mkdirSync(dirname(database), { recursive: true });
@@ -2507,26 +2521,173 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await launch("darwin");
     const memory = app.memory;
     if (memory === null) throw new Error("no memory");
-    const asked = (["prepare", "index", "search", "read", "stats", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
+    const [search, trim, remove, clear] = (["search", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
+    const queries = () => search?.mock.calls.map(([asked]) => (asked as { query: string }).query);
     const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
     expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI]).toEqual([false, false]);
+    // With AI on, the list keeps the search typed: after a removal, Clear All and a reload.
+    expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: null });
+    for (const command of [{ type: "removeMemory", memId: "turn:2" }, { type: "clearMemory" }, { type: "loadMemory" }] as const) {
+      expect(await send(command)).toEqual({ error: null });
+    }
+    expect([queries(), remove?.mock.calls, clear?.mock.calls.length]).toEqual([["friday", "friday", "friday", "friday"], [[["turn:2"]]], 1]);
+    remove?.mockClear();
+    clear?.mockClear();
 
     expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
     expect(app.stored.get("optsOutOfAI")).toBe(true);
     expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI]).toEqual([true, true]);
+    search?.mockClear();
     const limit = config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0;
-    for (const command of [{ type: "loadMemory" }, { type: "searchMemory", query: "friday" }, { type: "setMemorySizeLimit", value: limit }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
-      expect(await send(command)).toEqual({ error: `${optedOutOfAILine}.` });
+    for (const command of [{ type: "searchMemory", query: "friday" }, { type: "setMemorySizeLimit", value: limit }] as const) {
+      expect(await send(command)).toEqual({ error: `${optedOutOfAIMemoryLine}.` });
     }
-    expect(app.stored.has("memorySizeLimit")).toBe(false);
-    for (const spy of asked) expect(spy).not.toHaveBeenCalled();
-    // Signing in still reaches TabMail.
+    expect([app.stored.has("memorySizeLimit"), queries(), trim?.mock.calls.length]).toEqual([false, [], 0]);
+    // Each command that reads the list again, run right after a search typed while AI was on, reads
+    // the newest: opening the section, a removal, Clear All, and a Clear All that failed.
+    clear?.mockRejectedValueOnce(new Error("busy"));
+    for (const [command, error] of [
+      [{ type: "loadMemory" }, null],
+      [{ type: "removeMemory", memId: "turn:1" }, null],
+      [{ type: "clearMemory" }, "Memory couldn't be cleared. Try again."],
+      [{ type: "clearMemory" }, null],
+    ] as const) {
+      expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
+      expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: null });
+      expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+      expect(await send(command), command.type).toEqual({ error });
+      expect(queries()?.slice(-2), command.type).toEqual(["friday", ""]);
+    }
+    expect([remove?.mock.calls, clear?.mock.calls.length, trim?.mock.calls.length]).toEqual([[[["turn:1"]]], 2, 0]);
+    // Signing in still reaches TabMail; memory sent nothing.
+    expect(app.requests).toHaveLength(0);
     await send({ type: "sendCode", email: "user@example.com" });
     expect(app.requests).toHaveLength(1);
+  });
 
-    expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
+  /** A removal while AI features are off, in either state, answers and reads the list again only once
+   * memory has removed the request: the list shown then no longer holds it, and nothing is sent. */
+  test.each(["Opt Out of AI on", "the settings file can't be read"] as const)("with %s, a removal reads the list again only once memory has removed it", async (mode) => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "settings.json");
+    if (mode === "the settings file can't be read") {
+      app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+      app.dialogResponse = 2;
+    }
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    memory.rows.push(memoryRow("first request", "first reply", Date.now() - 1000, "first"), memoryRow("second request", "second reply", Date.now(), "second"));
+    if (mode === "Opt Out of AI on") expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
     expect(await send({ type: "loadMemory" })).toEqual({ error: null });
-    expect(asked.some((spy) => spy.mock.calls.length > 0)).toBe(true);
+    const search = vi.spyOn(memory, "search");
+    // Memory's removal held until released, as a busy helper would.
+    const remove = memory.remove.bind(memory);
+    let release = () => {};
+    const removing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(memory, "remove").mockImplementation(async (ids) => {
+      await removing;
+      return remove(ids);
+    });
+    let answered = false;
+    const pending = send({ type: "removeMemory", memId: "turn:first" }).then((result) => {
+      answered = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([answered, search.mock.calls.length, memory.rows.map((row) => row.memId)]).toEqual([false, 0, ["turn:first", "turn:second"]]);
+    release();
+    expect(await pending).toEqual({ error: null });
+    const shown = app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
+    expect([memory.rows.map((row) => row.memId), shown.memory.entries.map((row) => row.memId)]).toEqual([["turn:second"], ["turn:second"]]);
+    expect([search.mock.calls.map(([asked]) => asked.query), app.requests.length]).toEqual([[""], 0]);
+  });
+
+  /** What applies is what is saved (owner, 2026-10-28): Opt Out of AI that couldn't be written says so,
+   * on or off, and Settings, the menu and AI features are as they were. */
+  test("Opt Out of AI that couldn't be saved says so, and the switch shows what is saved", async () => {
+    await launch("darwin");
+    const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
+    const unsaved = { error: "This couldn't be saved, so nothing changed. Check the disk and try again." };
+    const pushes = app.trayUpdates;
+    app.savesFail = true;
+    expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual(unsaved);
+    expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI, app.stored.has("optsOutOfAI"), app.trayUpdates]).toEqual([false, false, false, pushes]);
+    await send({ type: "sendCode", email: "user@example.com" });
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+
+    app.savesFail = false;
+    expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+    app.savesFail = true;
+    expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual(unsaved);
+    expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI, app.stored.get("optsOutOfAI")]).toEqual([true, true, true]);
+    expect(await send({ type: "searchMemory", query: "friday" })).toEqual({ error: `${optedOutOfAIMemoryLine}.` });
+  });
+
+  /** A settings file removed by hand (the fix dialog's first way) took the user's size limit with it: at
+   * the next launch, with memory's database there, the limit is "Not set", as after the reset, and
+   * memory is never trimmed to the default. Without memory, or with the file there, nothing changes. */
+  test.each([
+    ["removed by hand, memory kept", true, true, null],
+    ["not there, and no memory yet", true, false, undefined],
+    ["there, with memory", false, true, undefined],
+  ])("a settings file %s: the size limit stored is %s", async (_, missing, hasMemory, expected) => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    if (missing) app.missingFiles.add(join(app.userData, "settings.json"));
+    if (hasMemory) {
+      const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+      mkdirSync(dirname(database), { recursive: true });
+      writeFileSync(database, "");
+    }
+    await launch("darwin");
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const trim = vi.spyOn(memory, "trim");
+    const sizeLimit = () => (app.handlers.get(channels.getState)?.({}, "settings") as SettingsState).memory.sizeLimit;
+    const shown = expected === null ? null : config.memorySizeLimitDefault;
+    // Shown from the start, before Settings › Memory reads memory.
+    expect(sizeLimit()).toBe(shown);
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([expected, shown, 0]);
+  });
+
+  /** The size limit the user chose was in the settings file that couldn't be read: the reset leaves it
+   * "Not set", and memory is never trimmed until the user picks one (owner, 2026-10-28). */
+  test("a settings reset never trims memory: its size limit is not set until the user picks one", async () => {
+    app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    const database = memoryFolders(join(app.userData, "memory")).databaseFile;
+    mkdirSync(dirname(database), { recursive: true });
+    writeFileSync(database, "");
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    const memory = app.memory;
+    if (memory === null) throw new Error("no memory");
+    const trim = vi.spyOn(memory, "trim");
+    const sizeLimit = () => (app.handlers.get(channels.getState)?.({}, "settings") as SettingsState).memory.sizeLimit;
+    expect(sizeLimit()).toBeNull();
+
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    expect(await send({ type: "loadMemory" })).toEqual({ error: null });
+    expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([null, null, 0]);
+
+    const choice = config.memorySizeLimitChoices[0] ?? 0;
+    // A first pick that couldn't be saved leaves it not set: nothing is trimmed, now or later.
+    app.savesFail = true;
+    expect(await send({ type: "setMemorySizeLimit", value: choice })).toEqual({ error: "That size limit couldn't be saved. Try again." });
+    expect([app.stored.has("memorySizeLimit"), app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls.length]).toEqual([true, null, null, 0]);
+    app.savesFail = false;
+    expect(await send({ type: "setMemorySizeLimit", value: choice })).toEqual({ error: null });
+    expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls]).toEqual([choice, choice, [[choice]]]);
   });
 
   test("a knowledge base file that can't be read leaves Settings › Memory reaching memory", async () => {

@@ -15,11 +15,14 @@ import { errorName, log } from "../../core/log.js";
  * the user's factory reset (`moveAside`; ADR-DESK-063). */
 export class JSONFileStore extends MemoryStore {
   private currentProblem: StoreProblem | undefined;
+  /** No file was there at launch: the store started empty, at the defaults. */
+  readonly isNew: boolean;
 
   constructor(private readonly path: string) {
     const contents = read(path);
     super("problem" in contents ? {} : contents.values);
     this.currentProblem = "problem" in contents ? contents.problem : undefined;
+    this.isNew = "isNew" in contents;
   }
 
   get problem(): StoreProblem | undefined {
@@ -72,13 +75,13 @@ export class JSONFileStore extends MemoryStore {
 }
 
 /** The file's values, none when it isn't there yet; else why it can't be read. */
-function read(path: string): { values: Record<string, unknown> } | { problem: StoreProblem } {
+function read(path: string): { values: Record<string, unknown>; isNew?: true } | { problem: StoreProblem } {
   let text: string;
   try {
     text = readFileSync(path, "utf8");
   } catch (error) {
     const code = errorCode(error);
-    if (code === "ENOENT") return { values: {} };
+    if (code === "ENOENT") return { values: {}, isNew: true };
     log.error(`FileStore: couldn't read a preferences file (${code}); nothing is saved to it`);
     return { problem: { kind: code === "EACCES" || code === "EPERM" ? "permission" : "unreadable", path, code } };
   }

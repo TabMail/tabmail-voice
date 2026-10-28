@@ -2,8 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import * as config from "../config.js";
-import { formatBytes } from "../memory/page.js";
 import type { StoreProblem } from "../util/keyValueStore.js";
 
 /** The app's files a problem can be told for: the settings file, and the knowledge base and writing
@@ -84,7 +82,7 @@ export function resetCopyPath(path: string, now: Date): string {
 export function resetConfirmation(file: StoredFile, copy: string): { message: string; detail: string } {
   const lost =
     file === "settings"
-      ? `Your settings on this computer go back to their defaults, your dictionary and excluded apps and websites among them, and the welcome guide opens to set TabMail Voice up again. Memory's size limit goes back to ${formatBytes(config.memorySizeLimitDefault)}: if memory holds more, its oldest requests are removed. Your sign-in, knowledge base and writing style stay as they are.`
+      ? `Your settings on this computer go back to their defaults, your dictionary and excluded apps and websites among them, and the welcome guide opens to set TabMail Voice up again. Your sign-in, memory, knowledge base and writing style stay as they are.`
       : "Your knowledge base, writing style and their history on this computer go back to the defaults. Your settings and memory stay as they are.";
   return { message: `Reset ${names[file].held} to the defaults?`, detail: `${lost}\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}` };
 }

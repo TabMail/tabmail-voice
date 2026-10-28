@@ -12,7 +12,7 @@ import { agentToolIDs, offeredAgentToolIDs, switchableAgentToolIDs } from "../..
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
-import { AppSettings, optedOutOfAILine } from "../../src/core/settings.js";
+import { AppSettings, optedOutOfAILine, optedOutOfAIMemoryLine } from "../../src/core/settings.js";
 import { aiOffLine } from "../../src/core/ui/fileProblems.js";
 import { JSONFileStore } from "../../src/main/storage/jsonFileStore.js";
 
@@ -277,18 +277,38 @@ test("Opt Out of AI is off by default, kept, and says why AI is off", () => {
   let changes = 0;
   app.observe(() => changes++);
   expect([app.optsOutOfAI, app.aiOffLine, app.dictation(null).aiOffLine]).toEqual([false, null, null]);
-  app.optsOutOfAI = true;
+  app.setOptsOutOfAI(true);
   expect([app.optsOutOfAI, app.aiOffLine, app.dictation(null).aiOffLine, changes]).toEqual([true, optedOutOfAILine, optedOutOfAILine, 1]);
   expect(settings(store).optsOutOfAI).toBe(true);
-  app.optsOutOfAI = false;
+  app.setOptsOutOfAI(false);
   expect([settings(store).optsOutOfAI, app.aiOffLine]).toEqual([false, null]);
 
   const unreadable = new (class extends MemoryStore {
     readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
   })();
   const held = settings(unreadable);
-  held.optsOutOfAI = true;
-  expect(held.aiOffLine).toBe(aiOffLine);
+  held.setOptsOutOfAI(true);
+  expect([held.aiOffLine, held.memoryOffLine]).toEqual([aiOffLine, aiOffLine]);
+});
+
+/** Settings › Memory names memory when the user opted out (owner, 2026-10-28), and the file's own
+ * line while it can't be read. */
+test("Settings › Memory's line names memory while opted out", () => {
+  const app = settings();
+  expect(app.memoryOffLine).toBeNull();
+  app.setOptsOutOfAI(true);
+  expect(app.memoryOffLine).toBe(optedOutOfAIMemoryLine);
+  expect(optedOutOfAIMemoryLine).toBe("AI features are off. Turn off Opt Out of AI in Settings to use memory");
+});
+
+/** What applies is what is saved (owner, 2026-10-28): a choice the file couldn't keep is reported, and
+ * the switch, and AI features, are as they were. */
+test("Opt Out of AI that couldn't be saved is reported, and is as it was", () => {
+  const app = settings(new UnsavedStore());
+  let changes = 0;
+  app.observe(() => changes++);
+  expect(app.setOptsOutOfAI(true)).toBe(false);
+  expect([app.optsOutOfAI, app.aiOffLine, changes]).toEqual([false, null, 0]);
 });
 
 /** A store whose file couldn't be read, reset as `JSONFileStore.moveAside` does: what the session held
@@ -337,6 +357,52 @@ test("a reset that keeps the hotkey tells no hotkey change, and one that fails c
 
   app.resetFile(() => store.moveAside());
   expect([changes, heard]).toEqual([1, []]);
+});
+
+/** A reset whose disk fails partway: what it keeps and the size limit not set are one write, so the
+ * new file has the limit not set, or there is no file (read at the next launch as removed by hand),
+ * never a file that reads the default limit and trims memory (owner, 2026-10-28). */
+test.each([1, 0])("a reset with %i write left writes the size limit not set with what it keeps, or nothing", (writesLeft) => {
+  const store = new (class extends UnreadStore {
+    written: Record<string, unknown> | undefined;
+    private left = writesLeft;
+    override set(key: string, value: unknown): boolean {
+      super.set(key, value);
+      return this.write();
+    }
+    override setAll(values: Readonly<Record<string, unknown>>): boolean {
+      super.setAll(values);
+      return this.write();
+    }
+    private write(): boolean {
+      if (this.problem !== undefined || this.left === 0) return false;
+      this.left -= 1;
+      this.written = this.snapshot();
+      return true;
+    }
+  })();
+  const app = new AppSettings(store, () => true);
+  app.resetFile(() => store.moveAside(), { globeKeyActionBeforeFnHotkey: 2 });
+  expect(store.written).toEqual(writesLeft === 0 ? undefined : { globeKeyActionBeforeFnHotkey: 2, memorySizeLimit: null });
+  expect([app.memorySizeLimit, store.get("globeKeyActionBeforeFnHotkey")]).toEqual([null, 2]);
+});
+
+/** The size limit the user chose was in the file that couldn't be read: unknown before the reset and
+ * after it, "Not set", so no request is kept and memory is never trimmed to a guess until the user
+ * picks one (owner, 2026-10-28). */
+test("a reset leaves memory's size limit not set until the user picks one, and it stays so", () => {
+  const store = new UnreadStore();
+  const app = new AppSettings(store, () => true);
+  expect([app.memorySizeLimit, app.dictation(null).memorySizeLimit]).toEqual([null, null]);
+
+  app.resetFile(() => store.moveAside());
+  expect([app.memorySizeLimit, app.dictation(null).memorySizeLimit, store.get("memorySizeLimit")]).toEqual([null, null, null]);
+  // Read again at the next launch.
+  expect(new AppSettings(store, () => true).memorySizeLimit).toBeNull();
+
+  const choice = config.memorySizeLimitChoices[0] ?? 0;
+  expect(app.setMemorySizeLimit(choice)).toBe(true);
+  expect([app.memorySizeLimit, app.dictation(null).memorySizeLimit]).toEqual([choice, choice]);
 });
 
 /** Memory's size limit: 1 GB until the user picks another of the choices, which is kept; any other

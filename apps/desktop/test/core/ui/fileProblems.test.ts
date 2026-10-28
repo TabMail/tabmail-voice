@@ -93,7 +93,7 @@ describe("file problems", () => {
     const copy = "/example/TabMail Voice/settings (before reset 2099-01-02 03.04.05).json";
     expect(resetConfirmation("settings", copy)).toEqual({
       message: "Reset your settings to the defaults?",
-      detail: `Your settings on this computer go back to their defaults, your dictionary and excluded apps and websites among them, and the welcome guide opens to set TabMail Voice up again. Memory's size limit goes back to 1 GB: if memory holds more, its oldest requests are removed. Your sign-in, knowledge base and writing style stay as they are.\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}`,
+      detail: `Your settings on this computer go back to their defaults, your dictionary and excluded apps and websites among them, and the welcome guide opens to set TabMail Voice up again. Your sign-in, memory, knowledge base and writing style stay as they are.\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}`,
     });
     expect(resetConfirmation("knowledgeBase", copy)).toEqual({
       message: "Reset your knowledge base, writing style and their history to the defaults?",

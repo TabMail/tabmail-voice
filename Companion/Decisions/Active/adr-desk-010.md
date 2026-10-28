@@ -122,3 +122,27 @@ Tests:
   signing in still reaches TabMail; the switch is saved and shown in Settings and the menu; it is
   unsaved while the settings file can't be read; turning it off reaches memory again.
 - `menuModel.test.ts`, `renderer/settings/index.test.ts`.
+
+**Amendment 2026-10-28 (owner, issue #294) — what Opt Out of AI leaves to memory, and a failed save.**
+- Settings › Memory names memory in its refusal: "AI features are off. Turn off Opt Out of AI in
+  Settings to use memory." (`optedOutOfAIMemoryLine`, from `AppSettings.memoryOffLine`; the unreadable
+  file's own line still comes first). The dictation line stays as above.
+- Only a typed search and the size limit are refused. A typed search runs memory's helper model over
+  what the user typed; the size limit trims memory. Listing the newest, removing one request and Clear
+  All work: they are local and send nothing, so the user can always delete what memory holds. The list
+  is read with no search, after a removal or Clear All too, so a search typed before isn't run again.
+  Listing or removing can start memory's helper, which fetches its model from TabMail's CDN if an
+  earlier start never finished downloading it; nothing of the user's is sent. Both states where AI features are
+  off behave the same here: the opt-out, and a settings file that can't be read (ADR-DESK-063).
+  This supersedes "Settings › Memory's commands are refused with the same line" above.
+- A choice of the switch that couldn't be written is put back (`AppSettings.setOptsOutOfAI`, as an
+  exclusion is) and said under the switch: "This couldn't be saved, so nothing changed. Check the disk
+  and try again." So what applies is what is saved, and the switch shows it.
+- A dictation or memory operation under way when the switch changes finishes (the snapshot rule,
+  above), as the owner confirmed.
+
+Tests: `settings.test.ts` (the memory line; a failed save reported, the switch as it was);
+`main/index.test.ts` (in both off states: list, remove and clear go through, with the list read with no
+search; search and the size limit are refused and memory is never trimmed or searched; a failed save
+says so, on or off, Settings and the menu as they were); `renderer/settings/index.test.ts` (the
+failure said under the switch, which shows what is saved).

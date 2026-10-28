@@ -746,7 +746,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     app.hasConsented = true;
     app.readsScreen = true;
     app.learnsWords = true;
-    app.optsOutOfAI = true;
+    app.setOptsOutOfAI(true);
     prefs.value = { ...app.dictation(null), backendURL: defaultSettings().backendURL };
     transcription.enqueue(200, cleanedReply);
     completions.enqueue(200, writes("compose", "Written."));
@@ -2813,7 +2813,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(memory.limits).toEqual([config.memorySizeLimitDefault]);
       });
 
-      /** With no memory limit (the settings file couldn't be read), the request is carried out and not
+      /** With no memory limit (the settings file couldn't be read, or a reset left it not set), the request is carried out and not
        * kept: keeping it within the default would remove what a larger limit kept. */
       test("a request is not kept while the memory limit is unknown", async () => {
         prefs.value = { ...prefs.value, memorySizeLimit: null };

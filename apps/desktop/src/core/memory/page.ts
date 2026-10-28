@@ -16,8 +16,9 @@ export interface MemoryEntry {
 
 /** Settings › Memory, as the window shows it. */
 export interface MemoryPageState {
-  /** The size limit chosen (bytes). */
-  sizeLimit: number;
+  /** The size limit chosen (bytes); null, "Not set", while the user's limit is unknown
+   * (`AppSettings.memorySizeLimit`). */
+  sizeLimit: number | null;
   /** What memory holds; null while it is read, or when it couldn't be (`unavailable`). */
   usage: MemoryStats | null;
   /** The memory helper couldn't say what memory holds. */
@@ -62,7 +63,7 @@ export class MemoryPage extends Observable {
     private readonly store: AgentMemory,
     /** Whether memory's database exists on this computer (the helper has ever run). */
     private readonly exists: () => boolean,
-    private readonly settings: { readonly memorySizeLimit: number; setMemorySizeLimit(value: number): boolean },
+    private readonly settings: { readonly memorySizeLimit: number | null; setMemorySizeLimit(value: number): boolean },
   ) {
     super();
     this.current = { sizeLimit: settings.memorySizeLimit, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null };
@@ -114,26 +115,28 @@ export class MemoryPage extends Observable {
     await this.load();
   }
 
-  async remove(memID: string): Promise<void> {
+  /** Removes one exchange, then reads the list for `query` (the one shown when omitted). */
+  async remove(memID: string, query?: string): Promise<void> {
     await this.store.remove([memID]);
     this.update({ status: null });
-    await this.load();
+    await this.load(query);
   }
 
   /** Removes everything memory holds; says so only once it is done. Asked of memory whether or not
    * its database exists: a clear cut short can have deleted the database file and left its
-   * write-ahead log, which holds the latest exchanges, and the next Clear All must remove it. */
-  async clear(): Promise<void> {
+   * write-ahead log, which holds the latest exchanges, and the next Clear All must remove it. The list
+   * is read again for `query` (the one shown when omitted). */
+  async clear(query?: string): Promise<void> {
     try {
       await this.store.clear();
     } catch (error) {
       log.error(`MemoryPage: memory couldn't be cleared: ${errorName(error)}`);
       this.update({ status: null });
-      await this.load();
+      await this.load(query);
       throw new Error("Memory couldn't be cleared. Try again.", { cause: error });
     }
     this.update({ status: "Memory cleared." });
-    await this.load();
+    await this.load(query);
   }
 
   private update(change: Partial<MemoryPageState>): void {
