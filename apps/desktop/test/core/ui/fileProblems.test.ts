@@ -36,7 +36,7 @@ describe("file problems", () => {
     expect(fileProblemNotice("settings", kinds[0]!, "darwin").detail).toContain("Get Info, and under Sharing & Permissions give your account Read & Write access");
     expect(fileProblemNotice("settings", kinds[0]!, "win32").detail).toContain("Properties > Security");
     expect(fileProblemNotice("settings", kinds[0]!, "linux").detail).toContain("chmod u+rw");
-    for (const platform of ["darwin", "win32", "linux"]) expect(fileProblemNotice("settings", kinds[0]!, platform).detail).toContain(`Then quit TabMail Voice and open it again.\n\nOr choose Reset to Defaults… to start again with the defaults; the file is kept, renamed.`);
+    for (const platform of ["darwin", "win32", "linux"]) expect(fileProblemNotice("settings", kinds[0]!, platform).detail).toContain(`Then quit TabMail Voice and open it again.\n\nOr choose Reset to Defaults… to start again; the file is kept, renamed.`);
   });
 
   test("another read error names its code", () => {
@@ -47,15 +47,15 @@ describe("file problems", () => {
   test("each notice says, whole, what the app does meanwhile and what the user does", () => {
     expect(fileProblemNotice("knowledgeBase", kinds[1]!, "darwin")).toEqual({
       message: "TabMail Voice's knowledge base file is damaged.",
-      detail: `Until it is fixed, TabMail Voice uses the defaults for your knowledge base, writing style and their history, saves no change to them, and leaves the file as it is.\n\nTo reset your knowledge base, writing style and their history to the defaults, quit TabMail Voice, move this file to the Trash, and open TabMail Voice again:\n${path}\n\nThis removes what the file held on this computer.\n\nOr choose Reset to Defaults… to start again with the defaults; the file is kept, renamed.`,
+      detail: `Until it is fixed, TabMail Voice uses the defaults for your knowledge base, writing style and their history, saves no change to them, and leaves the file as it is.\n\nTo reset your knowledge base, writing style and their history to the defaults, quit TabMail Voice, move this file to the Trash, and open TabMail Voice again:\n${path}\n\nThis removes what the file held on this computer.\n\nOr choose Reset to Defaults… to start again; the file is kept, renamed.`,
     });
     expect(fileProblemNotice("settings", kinds[2]!, "linux")).toEqual({
       message: "TabMail Voice couldn't read its settings file (EIO).",
-      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nCheck that the disk holding it is connected and working, then quit TabMail Voice and open it again. The file:\n${path}\n\nOr choose Reset to Defaults… to start again with the defaults; the file is kept, renamed.`,
+      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nCheck that the disk holding it is connected and working, then quit TabMail Voice and open it again. The file:\n${path}\n\nOr choose Reset to Defaults… to start again; the file is kept, renamed.`,
     });
     expect(fileProblemNotice("settings", kinds[0]!, "darwin")).toEqual({
       message: "TabMail Voice doesn't have permission to read its settings file.",
-      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nIn Finder, select the file, choose File > Get Info, and under Sharing & Permissions give your account Read & Write access. The file:\n${path}\n\nThen quit TabMail Voice and open it again.\n\nOr choose Reset to Defaults… to start again with the defaults; the file is kept, renamed.`,
+      detail: `AI features are off until your settings file is fixed: TabMail Voice doesn't dictate or read your screen, and leaves the file as it is.\n\nIn Finder, select the file, choose File > Get Info, and under Sharing & Permissions give your account Read & Write access. The file:\n${path}\n\nThen quit TabMail Voice and open it again.\n\nOr choose Reset to Defaults… to start again; the file is kept, renamed.`,
     });
   });
 
@@ -78,7 +78,7 @@ describe("file problems", () => {
     for (const file of storedFiles)
       for (const problem of kinds)
         for (const platform of ["darwin", "win32", "linux"])
-          expect(fileProblemNotice(file, problem, platform).detail).toMatch(/\n\nOr choose Reset to Defaults… to start again with the defaults; the file is kept, renamed\.$/);
+          expect(fileProblemNotice(file, problem, platform).detail).toMatch(/\n\nOr choose Reset to Defaults… to start again; the file is kept, renamed\.$/);
   });
 
   test("the reset keeps the file beside it, its name dated in local time", () => {
@@ -93,7 +93,7 @@ describe("file problems", () => {
     const copy = "/example/TabMail Voice/settings (before reset 2099-01-02 03.04.05).json";
     expect(resetConfirmation("settings", copy)).toEqual({
       message: "Reset your settings to the defaults?",
-      detail: `Every setting on this computer goes back to its default, your dictionary and the apps and websites you excluded included, and the welcome guide opens to set TabMail Voice up again. Your sign-in, memory, knowledge base and writing style stay as they are.\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}`,
+      detail: `Your settings on this computer go back to their defaults, your dictionary and excluded apps and websites among them, and the welcome guide opens to set TabMail Voice up again. Memory's size limit goes back to 1 GB: if memory holds more, its oldest requests are removed. Your sign-in, knowledge base and writing style stay as they are.\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}`,
     });
     expect(resetConfirmation("knowledgeBase", copy)).toEqual({
       message: "Reset your knowledge base, writing style and their history to the defaults?",

@@ -210,10 +210,12 @@ describe("JSONFileStore", () => {
     writeFileSync(path, "not json");
     writeFileSync(aside, "kept");
     const store = new JSONFileStore(path);
+    expect(store.set("readsScreen", true)).toBe(false);
     expect(() => store.moveAside(aside)).toThrow();
     expect(readFileSync(path, "utf8")).toBe("not json");
     expect(readFileSync(aside, "utf8")).toBe("kept");
     expect(store.problem?.kind).toBe("damaged");
+    expect(store.get("readsScreen")).toBe(true);
     expect(store.set("readsScreen", false)).toBe(false);
   });
 
@@ -221,9 +223,12 @@ describe("JSONFileStore", () => {
     const path = join(scratch(), "settings.json");
     writeFileSync(path, "not json");
     const store = new JSONFileStore(path);
+    // What the session held until quit stays when the reset fails.
+    expect(store.set("readsScreen", true)).toBe(false);
     expect(() => store.moveAside(join(dirname(path), "missing folder", "aside.json"))).toThrow();
     expect(readFileSync(path, "utf8")).toBe("not json");
     expect(store.problem?.kind).toBe("damaged");
+    expect(store.get("readsScreen")).toBe(true);
     expect(store.set("readsScreen", false)).toBe(false);
   });
 });

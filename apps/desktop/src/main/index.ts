@@ -26,7 +26,7 @@ import { DictationController, isResting } from "../core/dictation/controller.js"
 import { MemoryPage } from "../core/memory/page.js";
 import { personalizationState } from "../core/personalization/page.js";
 import { UserPrompts } from "../core/personalization/prompts.js";
-import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
+import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
@@ -683,9 +683,18 @@ function launch(): void {
     const { message, detail } = resetConfirmation(file, copy);
     const { response } = await dialog.showMessageBox({ type: "warning", message, detail, buttons: ["Reset", "Cancel"], defaultId: 1, cancelId: 1 });
     if (response !== 0) return;
+    // A second confirmation, left open while the first reset the file, has nothing left to reset.
+    if (fileProblem(file) !== problem) return;
     try {
-      if (file === "settings") settings.resetFile(() => store.moveAside(copy));
-      else prompts.resetFile(() => promptsStore.moveAside(copy));
+      if (file === "settings") {
+        settings.resetFile(() => {
+          // The Globe key's way back to the user's own action lives in this file (ADR-DESK-031): kept
+          // across the reset, so the hotkey's change hands the key back.
+          const globeKeyChoice = store.get(savedChoiceKey);
+          store.moveAside(copy);
+          if (globeKeyChoice !== undefined) store.set(savedChoiceKey, globeKeyChoice);
+        });
+      } else prompts.resetFile(() => promptsStore.moveAside(copy));
     } catch (error) {
       log.error(`main: the ${file} file couldn't be reset: ${errorName(error)}`);
       void dialog.showMessageBox({ type: "warning", ...resetFailed(file), buttons: ["OK"] });

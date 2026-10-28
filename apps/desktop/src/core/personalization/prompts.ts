@@ -111,7 +111,8 @@ export class UserPrompts extends Observable {
     super();
   }
 
-  /** Why the texts' file couldn't be read at launch, when it couldn't: nothing is saved to it. */
+  /** Why the texts' file couldn't be read at launch, until it is fixed or the user resets it: nothing
+   * is saved to it meanwhile. */
   get fileProblem(): StoreProblem | undefined {
     return this.store.problem;
   }
