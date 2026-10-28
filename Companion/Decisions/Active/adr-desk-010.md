@@ -81,3 +81,9 @@ becomes "Your past agent-mode requests, your writing style and what it learns ab
 on this computer so it can use them. Edit or remove them anytime in Settings." They are sent with
 agent-mode requests and not stored by TabMail, so the closing line stays true. Users who consented
 before are not asked again: the release's one what's-new tip tells them, as for memory.
+
+**Amendment 2026-10-27 — no refine (ADR-DESK-063's amendment of this date).** Voice no longer learns
+the knowledge base from chats, so the line becomes "Your past agent-mode requests, your writing style
+and what you ask it to remember, kept only on this computer so it can use them. Edit or remove them
+anytime in Settings, which keeps the last `promptHistoryMax` versions of your writing style and
+knowledge base." It says less is kept than before, so no one who consented is asked again.

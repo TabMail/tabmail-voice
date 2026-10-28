@@ -403,15 +403,6 @@ export const memoryBubbleDescription = "Looks back at your earlier requests, and
 /** The agent loop's knowledge-base tools, as the backend names them. */
 export const kbAddTool = "kb_add";
 export const kbDelTool = "kb_del";
-/** The backend prompt that learns a chat's knowledge into the knowledge base (`KBRefiner`). */
-export const kbRefinePrompt = "system_prompt_kb_refine";
-/** A chat window that closes after at least this many requests has its knowledge learned into the
- * knowledge base (`KBRefiner`), as on iOS. */
-export const kbRefineMinUserTurns = 3;
-/** The refine's limits, as Thunderbird and iOS send them: reminders past due by more than this many
- * days are removed, and the knowledge base is kept to this many bullets. */
-export const kbRefineReminderRetentionDays = 14;
-export const kbRefineMaxBullets = 200;
 /** Settings' history of the knowledge base and writing style: at most this many entries, the oldest
  * dropped first; an edit is recorded once edits have stopped for this long (ms), as on iOS. */
 export const promptHistoryMax = 100;
@@ -814,11 +805,11 @@ export const setNameTip: TipSettings = {
   maxDisplays: null,
 };
 /** What's new: agent mode keeps its requests on this computer and can look them up (ADR-DESK-061),
- * and keeps what it learns about the user there too (ADR-DESK-063), shown once, ahead of the other
+ * and what the user asks it to remember there too (ADR-DESK-063), shown once, ahead of the other
  * tips (owner, 2026-10-03: "really punchy"), long enough to read twice. It took the place of the one
  * for memory alone (`agentMemory`), which took that of the one for long dictations (ADR-DESK-049). */
 export const agentKnowledgeBaseTip: TipSettings = {
-  lines: ["New: agent mode remembers", "requests and learns about you,", "on this computer"],
+  lines: ["New: agent mode remembers", "your requests and what you", "ask it to, on this computer"],
   displayDuration: 6_000,
   maxDisplays: 1,
 };

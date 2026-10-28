@@ -53,7 +53,7 @@ its reset when another account signs in) comes next, in the same release.
   lists them in `available_tools` (ADR-DESK-064), as this version does; no prompt names them, so
   they need no protocol bump. On the flat tool registry they are `requestTools` entries with
   memory's bubble and no progress label.
-- **The refine** (`kbRefine.ts`, a port of iOS's `KBRefinementService`). When a chat window closes
+- **The refine** (*removed 2026-10-27, see the amendment below; kept as history*) (`kbRefine.ts`, a port of iOS's `KBRefinementService`). When a chat window closes
   after at least `kbRefineMinUserTurns` (3) requests, its requests and replies (`[USER]:` / `[AGENT]:`,
   never the screen) go to the backend's `system_prompt_kb_refine` with the KB as it was then, the
   time, and Thunderbird's limits (14 days' reminder retention, 200 bullets), tools off. What comes back
@@ -88,7 +88,7 @@ its reset when another account signs in) comes next, in the same release.
   every later edit of such a KB. The Settings fields take at most `personalizationBulletMaxLength`
   characters for a bullet the user types.
 - **Consent.** The consent page's memory line now names the writing style and what agent mode learns
-  about the user (ADR-DESK-010, amended); users who consented before are told by the release's one
+  about the user (*since 2026-10-27: what the user asks it to remember; see the amendment below*) (ADR-DESK-010, amended); users who consented before are told by the release's one
   what's-new tip, and are not asked again. That tip, ADR-DESK-061's what's-new under a new id (`agentKnowledgeBase`, so the count of `agentMemory`, which 0.4.0 to 0.5.2 showed, never holds it back), reads "New:
   agent mode remembers / requests and learns about you, / on this computer".
 
@@ -97,8 +97,41 @@ its reset when another account signs in) comes next, in the same release.
   user's own notes and preferences, not email content (root ADR-004), and are kept as Thunderbird and
   iOS keep them.
 - Every agent-mode request is larger by the KB (and a writing request by the style).
-- The refine sends a closed chat's requests and replies to the backend once more (not kept there).
-- The refine also writes `[Reminder]` entries for "remind me" requests, as Thunderbird's and iOS's do;
+- *(Until 2026-10-27, when the refine was removed:)* The refine sends a closed chat's requests and replies to the backend once more (not kept there).
+- *(Until 2026-10-27:)* The refine also writes `[Reminder]` entries for "remind me" requests, as Thunderbird's and iOS's do;
   Voice's own reminders go to `reminder_create` and Voice fires no KB reminders (owner question open,
   recorded in the backend ADR-023 amendment).
 - Tests: see `TESTS.md` (the knowledge base and writing style rows).
+
+**Amendment 2026-10-27: no refine; the knowledge base changes only through the tools and Settings.**
+Owner: "the voice app just reads existing knowledge base and uses the tools to edit the knowledge base
+directly itself, but it's not automated in terms of chat summarization or anything, because the memory
+search deals with everything", and "we don't have to extract facts from the chat because [Voice] has
+memory anyways and [it'll] search for it." Memory (ADR-DESK-061) keeps every agent-mode request and
+`memory_search` finds it, so nothing a chat said is summarized into the KB.
+- The refine is deleted: `kbRefine.ts` (`KBRefiner`, `refineChatHistory`, `refineTime`), the
+  controller's chat-close trigger (`dropChat` no longer sends anything), `CompletionsClient.refineKB`,
+  the config numbers (`kbRefinePrompt`, `kbRefineMinUserTurns`, `kbRefineReminderRetentionDays`,
+  `kbRefineMaxBullets`) and `UserPrompts.knowledgeBaseReplacements`, which only the refine read. No
+  backend change: the backend's refine is unchanged for Thunderbird and iOS.
+- Voice's KB changes only through `kb_add`, `kb_del` and Settings (edit, Reset, Restore). The writing
+  style stays edited by the user only. Once Device Sync syncs the KB, Thunderbird's and iOS's refines
+  dedupe, trim and expire the shared KB, so Voice needs none of its own; their `[Pinned]`, `[Task]` and
+  `[Reminder]` lines reach Voice as they wrote them.
+- Copy: nothing says agent mode learns about the user any more. Settings' KB caption: "Agent mode adds
+  to it when you ask it to remember something." The consent page's memory line: "Your past agent-mode
+  requests, your writing style and what you ask it to remember, kept only on this computer so it can
+  use them. Edit or remove them anytime in Settings, which keeps the last `promptHistoryMax` versions of
+  your writing style and knowledge base." The what's-new tip (not yet shipped): "New: agent mode
+  remembers / your requests and what you / ask it to, on this computer". The History caption states
+  what History holds, plainly (owner: "in line with what happens right now", and not scary): the last
+  `promptHistoryMax` (100) changes to the writing style and knowledge base, kept on this computer to put
+  an earlier version back. (The caption doesn't say it, but an edit or removal stays in the earlier
+  versions until newer changes roll them off.) Past requests have no history: Settings › Memory searches and removes them.
+- Test: `controller.test.ts` › the knowledge base › "a chat … is not learned into the knowledge base"
+  (closed, and closed by a follow-up written into the app, after four requests): no
+  `system_prompt_kb_refine` request is sent, no request at all is sent at the close (only the follow-up
+  written into the app), and the KB is unchanged; red on the code with the refine. The account-change
+  tests that also checked the refine keep their account half: "signing out ends the conversation
+  before the next account" and "signing into another account ends the conversation" (a direct switch,
+  no sign-out: the chat closes and the next request carries no conversation).

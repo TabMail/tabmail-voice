@@ -72,6 +72,6 @@ one line here carrying its number and title.
 - **[ADR-DESK-060](Companion/Decisions/Active/adr-desk-060.md)**: Calendar events are edited, deleted and shared, at parity with Thunderbird and iOS
 - **[ADR-DESK-061](Companion/Decisions/Active/adr-desk-061.md)**: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
 - **[ADR-DESK-062](Companion/Decisions/Active/adr-desk-062.md)**: The default event duration, in Settings and set by agent mode's Settings tool
-- **[ADR-DESK-063](Companion/Decisions/Active/adr-desk-063.md)**: The knowledge base and writing style, kept on this computer, sent with agent mode
+- **[ADR-DESK-063](Companion/Decisions/Active/adr-desk-063.md)**: The knowledge base and writing style, kept on this computer, sent with agent mode; amended 2026-10-27: no KB refine (chat summarize removed, `KBRefiner`/`kbRefine.ts` deleted), KB changes only via `kb_add`/`kb_del`/Settings, memory_search covers chats; History copy states the last `promptHistoryMax` versions
 - **[ADR-DESK-064](Companion/Decisions/Active/adr-desk-064.md)**: The app sends a protocol version, and shares Thunderbird's and iOS's prompts and tools
 - **[ADR-DESK-065](Companion/Decisions/Active/adr-desk-065.md)**: On macOS the app is in the Dock while Settings is open

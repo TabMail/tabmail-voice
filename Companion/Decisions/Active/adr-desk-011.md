@@ -112,4 +112,5 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
 request now also carries the user's knowledge base (`user_kb_content`, always) and writing style
 (`user_composition_prompt`, its three sections only, when Compose or Edit is offered), both read at
 key-down, and the loop offers `kb_add` and `kb_del`. A chat window closing after at least three
-requests sends its requests and replies to the backend's knowledge-base refine.
+requests sends its requests and replies to the backend's knowledge-base refine (*removed 2026-10-27:
+closing a chat sends nothing; ADR-DESK-063's amendment of that date*).

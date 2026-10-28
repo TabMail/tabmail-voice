@@ -658,7 +658,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
       <Group
         captions={[
           "What agent mode knows about you, kept on this computer and sent to TabMail with each request; TabMail doesn’t keep it.",
-          `Agent mode adds to it when you ask it to remember something, and learns from a chat of ${config.kbRefineMinUserTurns} or more requests when its window closes.`,
+          "Agent mode adds to it when you ask it to remember something.",
         ]}
       >
         <div className="row">
@@ -674,7 +674,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
           </div>
         </Group>
       )}
-      <Group captions={["Each change to your writing style and knowledge base is kept here, so you can put an earlier version back."]}>
+      <Group captions={[`Your last ${config.promptHistoryMax} changes to your writing style and knowledge base, kept on this computer so you can put an earlier version back.`]}>
         <div className="row">
           <span className="group-title">History</span>
         </div>
@@ -735,7 +735,7 @@ function BulletEditor({ title, hideTitle = false, bullets, onChange }: { title: 
       <ul className="dictionary" aria-label={title}>
         {bullets.map((bullet, index) => (
           // Keyed by the text and how many equal bullets come before it, not by position: a bullet
-          // changed elsewhere (a tool, a refine) shows afresh, and one added or removed elsewhere
+          // changed elsewhere (a tool) shows afresh, and one added or removed elsewhere
           // leaves the other rows, and what is being typed in them, as they are.
           <BulletRow
             key={`${bullets.slice(0, index).filter((other) => other === bullet).length}:${bullet}`}

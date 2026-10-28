@@ -3952,6 +3952,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
       });
 
+      /** Signing straight into another account, without signing out, ends the conversation too. */
+      test("signing into another account ends the conversation", async () => {
+        const account = signedIn(auth);
+        const { controller } = await openChat(() => {}, undefined, { account });
+
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+        await account.verify(Fixtures.email, "123456");
+
+        expect(controller.chat).toBeNull();
+        queue("second account question", "answer", "second account reply");
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => settled(controller) && completions.requests.length === 2)).toBe(true);
+        expect(completions.authorizations[1]).toBe("Bearer access-b");
+        expect(completionsVars(1)?.conversation).toBe("");
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
+      });
+
       /** Signed out while the answer is written: it never opens a chat window. */
       test("signing out during an answer opens no chat", async () => {
         const account = signedIn(auth);
@@ -4510,16 +4527,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
         });
 
         /** The knowledge base and writing style (ADR-DESK-063): `kb_add` and `kb_del` run on this
-         * computer, every request carries the knowledge base as it was at key-down, and a chat of
-         * enough requests is refined into it when it closes. */
+         * computer, and every request carries the knowledge base as it was at key-down. */
         describe("the knowledge base", () => {
           function refinedReply(knowledgeBase: string): string {
             return Fixtures.completionsStream(JSON.stringify({ assistant: "", refined_kb: knowledgeBase }));
           }
 
-          /** The refine requests sent so far. */
+          /** The knowledge-base refine requests sent so far (the backend's `system_prompt_kb_refine`). */
           function refines(): number {
-            return completions.requests.filter((_, index) => completionsVars(index)?.content === config.kbRefinePrompt).length;
+            return completions.requests.filter((_, index) => completionsVars(index)?.content === "system_prompt_kb_refine").length;
           }
 
           test("kb_add keeps the statement, and the next request carries it", async () => {
@@ -4632,95 +4648,28 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(completionsVars(0)?.user_composition_prompt).toBe("");
           });
 
-          /** A chat of at least `kbRefineMinUserTurns` requests is refined when it closes, and what
-           * the refine learned is kept. */
-          test("a chat of enough requests is refined when it closes", async () => {
+          /** Closing a chat, however long, sends TabMail nothing and leaves the knowledge base as it
+           * was: it changes only through `kb_add`, `kb_del` and Settings (owner, 2026-10-27). */
+          test.each(["closed", "written into the app"])("a chat %s is not learned into the knowledge base", async (how) => {
             const { controller } = await openChat();
-            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
+            for (let turn = 1; turn <= 4; turn += 1) {
               queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
               await followUp(controller);
             }
             const sent = completions.requests.length;
-            completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Asks about errors often.`));
-
-            controller.closeChat();
-
-            expect(await eventually(() => prompts.knowledgeBase.endsWith("- Asks about errors often."))).toBe(true);
-            expect(completions.requests).toHaveLength(sent + 1);
-            expect(completionsVars(sent)?.content).toBe(config.kbRefinePrompt);
-            expect(completionsVars(sent)?.chat_history).toBe(`[USER]: ${question}\n\n[AGENT]: ${answer}\n\n[USER]: follow up 1\n\n[AGENT]: Reply 1.\n\n[USER]: follow up 2\n\n[AGENT]: Reply 2.`);
-          });
-
-          /** Consent withdrawn while the chat is open: closing it sends nothing more to TabMail. */
-          test("a chat closed after consent was withdrawn isn't refined", async () => {
-            const { controller } = await openChat();
-            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
-              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
+            if (how === "closed") {
+              completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Asks about errors often.`));
+              controller.closeChat();
+            } else {
+              queue("write the fix here", "compose", "Define it first.");
+              completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Writes fixes in place.`));
               await followUp(controller);
-            }
-            completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Learned without consent.`));
-            prefs.value = { ...prefs.value, hasConsented: false };
-
-            controller.closeChat();
-            await sleep(100);
-
-            expect(refines()).toBe(0);
-            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
-          });
-
-          /** A follow-up written into the app closes the chat window, which refines the chat: its
-           * answered requests, not the one written into the app. */
-          test("a chat closed by a follow-up written into the app is refined", async () => {
-            const { controller } = await openChat();
-            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
-              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
-              await followUp(controller);
-            }
-            queue("write the fix here", "compose", "Define it first.");
-            completions.enqueue(200, refinedReply(`${defaultKnowledgeBase}\n- Writes fixes in place.`));
-            const sent = completions.requests.length;
-
-            await followUp(controller);
-
-            expect(controller.chat).toBeNull();
-            expect(await eventually(() => prompts.knowledgeBase.endsWith("- Writes fixes in place."))).toBe(true);
-            expect(refines()).toBe(1);
-            expect(completionsVars(sent + 1)?.content).toBe(config.kbRefinePrompt);
-            const history = String(completionsVars(sent + 1)?.chat_history);
-            expect(history).toContain("[USER]: follow up 2");
-            expect(history).not.toContain("write the fix here");
-          });
-
-          test("a shorter chat isn't refined", async () => {
-            const { controller } = await openChat();
-            for (let turn = 2; turn < config.kbRefineMinUserTurns; turn += 1) {
-              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
-              await followUp(controller);
-            }
-            controller.closeChat();
-            await sleep(100);
-            expect(refines()).toBe(0);
-          });
-
-          /** Signing out, or into another account, ends the conversation without refining it:
-           * nothing it said is sent under the next account or reaches the knowledge base it reads. */
-          test.each(["signed out", "switched"])("a chat ended by the account's change isn't refined (%s)", async (how) => {
-            const account = signedIn(auth);
-            const { controller } = await openChat(() => {}, undefined, { account });
-            for (let turn = 1; turn < config.kbRefineMinUserTurns; turn += 1) {
-              queue(`follow up ${turn}`, "answer", `Reply ${turn}.`);
-              await followUp(controller);
-            }
-            completions.enqueue(200, refinedReply("- Learned from the first account."));
-
-            if (how === "signed out") account.signOut();
-            else {
-              auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
-              await account.verify(Fixtures.email, "123456");
             }
             await sleep(100);
 
             expect(controller.chat).toBeNull();
+            // Only the follow-up written into the app was sent: nothing went at the close.
+            expect(completions.requests).toHaveLength(how === "closed" ? sent : sent + 1);
             expect(refines()).toBe(0);
             expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
           });

@@ -2098,7 +2098,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     }
   });
 
-  /** The knowledge base changed outside Settings (by `kb_add`, `kb_del` or the refine): the Settings
+  /** The knowledge base changed outside Settings (by `kb_add` or `kb_del`): the Settings
    * window is pushed the new state. */
   test("a knowledge base change made outside Settings reaches the Settings window", async () => {
     await launch("darwin");

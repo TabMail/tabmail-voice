@@ -73,7 +73,7 @@ describe("IPC", () => {
       { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength) },
       ...compositionSections.map((section) => ({ type: "editWritingStyle", section, shown: [], bullets: ["Short sentences."] })),
       { type: "editKnowledgeBase", shown: ["a"], bullets: [] },
-      // A bullet longer than the Settings fields take, as kb_add or a refine can store, still lets
+      // A bullet longer than the Settings fields take, as kb_add can store, still lets
       // the knowledge base be edited.
       { type: "editKnowledgeBase", shown: ["x".repeat(config.personalizationBulletMaxLength + 1), "a"], bullets: ["a"] },
       { type: "resetWritingStyle" },

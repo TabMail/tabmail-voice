@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "../backend/account.js";
-import { type AgentChat, appendTurn, type ChatTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
+import { type AgentChat, appendTurn, chatTranscript, emptyChat, type EventQuestion, type QuestionAnswer, settleQuestion } from "../agent/chat.js";
 import { type BubbleKey, memoryBubble, screenReadBubble, ranNow } from "../agent/bubbleOrder.js";
 import { type ConnectorID, connectorIDs, connectors } from "../agent/connectors/index.js";
 import { ToolRegistry, type RegisteredTool } from "../agent/toolRegistry.js";
@@ -26,7 +26,6 @@ import { TransportError } from "../backend/http.js";
 import { LevelEnvelope } from "../audio/levelEnvelope.js";
 import { agentPart, type AgentMemory, memoryRow } from "../memory/store.js";
 import { MemoryTools } from "../memory/tools.js";
-import { KBRefiner } from "../personalization/kbRefine.js";
 import { KBTools } from "../personalization/kbTools.js";
 import type { UserPrompts } from "../personalization/prompts.js";
 import { elapsed, errorName, log } from "../log.js";
@@ -119,7 +118,7 @@ export interface DictationDependencies {
    * (ADR-DESK-061). */
   memory: AgentMemory;
   /** The user's knowledge base and writing style (ADR-DESK-063): sent with agent mode's requests,
-   * edited by its `kb_add` and `kb_del`, and refined when a chat window closes. */
+   * edited by its `kb_add` and `kb_del`. */
   prompts: UserPrompts;
   /** Keeps the latest recording for "Play Last Recording"; called only for a dictation that started
    * in debug mode (`DictationSettings.keepsRecording`). */
@@ -238,8 +237,6 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** The knowledge base and writing style this dictation started with, read with its settings. */
   private dictationPersonalization: Personalization;
-  /** Learns a closed chat's knowledge into the knowledge base, one chat at a time. */
-  private readonly refiner: KBRefiner;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
   /** The app in front at key-down: the paste goes there only, and the corrections are learned from
@@ -312,7 +309,6 @@ export class DictationController extends Observable {
     super();
     this.dictationSettings = deps.settings();
     this.dictationPersonalization = deps.prompts.personalization;
-    this.refiner = new KBRefiner(deps.prompts);
     deps.account.onAccountChange = () => this.accountChanged();
   }
 
@@ -1793,36 +1789,20 @@ export class DictationController extends Observable {
     this.closeChat();
   }
 
-  /** The conversation and any request under way end: the chat window closes, and what it taught is
-   * learned into the knowledge base unless it is the account's end (`refines`). */
-  private endConversation(refines = true): void {
+  /** The conversation and any request under way end: the chat window closes. */
+  private endConversation(): void {
     // A failure still showing goes too: the pill it shows is where the conversation started.
     if (this.currentPhase.kind !== "idle") this.discard();
-    this.dropChat(refines);
+    this.dropChat();
   }
 
-  /** The chat window closes; its conversation, unless `refines` is false, goes to the knowledge
-   * base's refine (`KBRefiner`, which passes over a short one). */
-  private dropChat(refines = true): void {
+  /** The chat window closes. Nothing it said is learned into the knowledge base, which changes only
+   * through `kb_add`, `kb_del` and Settings: memory keeps the requests, and `memory_search` finds them
+   * (ADR-DESK-063). */
+  private dropChat(): void {
     cancelTimer(this.chatCloseTimer);
     this.chatCloseTimer = null;
-    const turns = this.currentChat?.turns ?? [];
     this.setChat(null);
-    if (refines && turns.length > 0) this.refine(turns);
-  }
-
-  /** Refines the knowledge base with a closed chat's `turns`, under the account signed in now and the
-   * settings read now, its first step: nothing is sent once consent is withdrawn, and nothing waits
-   * for it (ADR-DESK-063). */
-  private refine(turns: readonly ChatTurn[]): void {
-    const settings = this.deps.settings();
-    if (!settings.hasConsented) {
-      log.debug("DictationController: consent withdrawn; chat not refined");
-      return;
-    }
-    const account = this.deps.account;
-    const client = this.deps.makeCompletionsClient(settings.backendURL);
-    void this.refiner.refine(turns, client, account, account.session?.userID ?? null);
   }
 
   /** Signing out, or into another account, ends the conversation and any agent request under way,
@@ -1833,8 +1813,7 @@ export class DictationController extends Observable {
     // in at the upload.
     if (this.currentMode !== "agent") return;
     log.debug("DictationController: account changed; conversation ended");
-    // The conversation was the last account's: it teaches the knowledge base nothing.
-    this.endConversation(false);
+    this.endConversation();
   }
 
   /** Changes the open chat window's `change` fields; nothing while it is closed. */
