@@ -23,6 +23,10 @@ hidden audio window and the paste history skip it).
   never did. Electron's default menu would show there, with View (reload, developer tools) and Help
   (Electron's website), none of them the app's. The Mac app sets its own: the app menu (About, Hide,
   Quit), Edit (cut, copy and paste in Settings' fields) and Window. Windows and Linux are unchanged.
+  *Amended 2026-10-28 (#298): it also has File, Electron's `fileMenu` role, whose one item on macOS is
+  Close Window (Cmd-W): Electron's Window menu on macOS has no Close, so Cmd-W did nothing. It closes
+  the focused window (Settings, the welcome guide, the last screen context, the paste history); the
+  overlay is never focused, so it is never closed this way, and the app keeps running in the menu bar.*
 
 **Consequences:**
 - Clicking the Dock icon activates the app, which brings its open window forward (macOS does this).

@@ -733,12 +733,13 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   });
 
   /** In the Dock while Settings is open (ADR-DESK-065), the Mac app has the menu bar: its own menu,
-   * Edit (copy and paste in the fields) and Window, never Electron's default with its View (reload,
-   * developer tools) and Help (Electron's website). Windows and Linux are left as they were. */
+   * File (Close Window, so Cmd-W closes the window in front, #298), Edit (copy and paste in the fields)
+   * and Window, never Electron's default with its View (reload, developer tools) and Help (Electron's
+   * website). Windows and Linux are left as they were. */
   test.each(["darwin", "win32", "linux"] as const)("the application menu on %s", async (platform) => {
     app.applicationMenu = null;
     await launch(platform);
-    expect(app.applicationMenu).toEqual(platform === "darwin" ? [{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }] : null);
+    expect(app.applicationMenu).toEqual(platform === "darwin" ? [{ role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" }, { role: "windowMenu" }] : null);
   });
 
   /** A `voice-microphone` that (re)starts, as it does after each dictation, gets the
