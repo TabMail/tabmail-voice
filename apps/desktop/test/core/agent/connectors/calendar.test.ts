@@ -223,6 +223,7 @@ describe("calendar_read", () => {
     expect(new EventStoreError("remindersNoAccess").message).toContain("System Settings › Privacy & Security › Reminders");
     expect(new EventStoreError("noDefaultCalendar").message).toContain("Calendar's settings");
     expect(new EventStoreError("noDefaultList").message).toContain("Reminders' settings");
+    expect(new EventStoreError("unsupportedRecurrence").message).toContain("in their calendar app");
   });
 });
 

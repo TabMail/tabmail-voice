@@ -550,6 +550,9 @@ def served(method, params):
 people = lambda row: [person['email'] for person in row['attendees']]
 shared = served('calendarAdd', event(title='Shared event', start=week(32), end=week(32)+3600000, attendees=[{'email':'a@example.com', 'name':'A'}]))
 assert people(shared) == ['a@example.com'] and shared['organizer']['email'] == 'me@example.com' and not shared['isInvitation'], shared
+# Each person is asked to take part and to answer (RFC 5545 ROLE and RSVP).
+shared_text = calendar_client.get_object_sync(shared['id'].split('|')[1], None, None)[1].as_ical_string().replace('\r\n ', '')
+assert [line for line in shared_text.splitlines() if line.startswith('ATTENDEE') and 'ROLE=REQ-PARTICIPANT' in line and 'RSVP=TRUE' in line and 'a@example.com' in line], shared_text
 again = served('calendarEdit', {'id':shared['id'], 'occurrence':None, 'scope':'all',
     **{**unchanged, 'invite':[{'email':'A@example.com', 'name':None}, {'email':'b@example.com', 'name':None}, {'email':'me@example.com', 'name':None}]}})
 assert people(again) == ['a@example.com', 'b@example.com', 'me@example.com'] and again['organizer']['email'] == 'me@example.com', again
@@ -665,3 +668,68 @@ call('calendarEdit', {'id':york_rows[0]['id'], 'occurrence':None, 'scope':'all',
 assert rows('York alone') == [] and [row['start'] for row in rows('York series')] == [york_ms(0), york_ms(2)]
 assert call('calendarDelete', {'id':york_rows[0]['id']}) == {}
 print('EDS an occurrence changed alone by another app, deleted by its date from the series, passed')
+
+# A split past an occurrence changed on its own is refused before anything is written: EDS would drop
+# that change (its local backend) or leave it to the old series (its server ones). Split after it, or
+# with it dropped in the same change, it goes ahead.
+kept = call('calendarAdd', event(title='Kept series', start=at(10, 2), end=at(10, 2, 60), recurrence=rule(count=8)))
+call('calendarEdit', {'id':kept['id'], 'occurrence':at(14, 2), 'scope':'thisOnly', 'title':'Moved alone', 'start':at(14, 3), 'end':at(14, 3, 60), **unchanged})
+kept_before = rows('Kept series') + rows('Moved alone')
+assert [row['start'] for row in kept_before] == [at(k, 2) for k in range(10, 18) if k != 14] + [at(14, 3)], kept_before
+for extra in [[], [at(11, 2)]]:
+    assert refused('calendarEdit', {'id':kept['id'], 'occurrence':at(12, 2), 'scope':'thisAndFollowing', 'title':'Kept renamed', **{**unchanged, 'exclude':extra}}) == 'unsupportedRecurrence'
+assert rows('Kept series') + rows('Moved alone') == kept_before and rows('Kept renamed') == []
+# From the series' own start the whole series changes, which keeps the changed one.
+call('calendarEdit', {'id':kept['id'], 'occurrence':at(10, 2), 'scope':'thisAndFollowing', 'location':'Room 2', **unchanged})
+assert [(row['start'], row['location']) for row in rows('Kept series')] == [(at(k, 2), 'Room 2') for k in range(10, 18) if k != 14] and len(rows('Moved alone')) == 1
+# Dropping occurrences alone splits nothing, so it goes ahead.
+call('calendarEdit', {'id':kept['id'], 'occurrence':at(12, 2), 'scope':'thisAndFollowing', **{**unchanged, 'exclude':[at(17, 2)]}})
+assert [row['start'] for row in rows('Kept series')] == [at(k, 2) for k in range(10, 17) if k != 14] and len(rows('Moved alone')) == 1
+call('calendarEdit', {'id':kept['id'], 'occurrence':at(15, 2), 'scope':'thisAndFollowing', 'title':'Kept later', **unchanged})
+assert [row['start'] for row in rows('Kept later')] == [at(k, 2) for k in range(15, 17)] and [row['start'] for row in rows('Moved alone')] == [at(14, 3)]
+call('calendarEdit', {'id':kept['id'], 'occurrence':at(12, 2), 'scope':'thisAndFollowing', 'title':'Kept renamed', **{**unchanged, 'exclude':[at(14, 2)]}})
+assert rows('Moved alone') == [] and [row['start'] for row in rows('Kept renamed')] == [at(12, 2), at(13, 2)]
+assert [row['start'] for row in rows('Kept series')] == [at(10, 2), at(11, 2)]
+# One occurrence can't take a rule of its own.
+call('calendarEdit', {'id':kept['id'], 'occurrence':at(10, 2), 'scope':'thisOnly', 'recurrence':rule(count=2), **unchanged}, succeeds=False)
+for title in ['Kept series', 'Kept renamed', 'Kept later']:
+    assert call('calendarDelete', {'id':rows(title)[0]['id']}) == {}
+print('EDS a split past an occurrence changed on its own refused, after it or dropping it made, passed')
+
+# A single event is found at its own start only, has no occurrences to drop, and each change raises its
+# sequence (attendees' calendars take an update by it, RFC 5546).
+single = call('calendarAdd', event(title='Single kept', start=at(20, 3), end=at(20, 3, 60)))
+assert refused('calendarEdit', {'id':single['id'], 'occurrence':at(20, 3, 180), 'scope':'all', 'title':'Single renamed', **unchanged}) == 'noSuchEvent'
+assert refused('calendarEdit', {'id':single['id'], 'occurrence':None, 'scope':'all', 'title':'Single renamed', **{**unchanged, 'exclude':[at(20, 3)]}}) == 'noSuchEvent'
+assert len(rows('Single kept')) == 1 and rows('Single renamed') == []
+single_uid = single['id'].split('|')[1]
+sequence = calendar_client.get_object_sync(single_uid, None, None)[1].get_sequence()
+call('calendarEdit', {'id':single['id'], 'occurrence':None, 'scope':'all', 'title':'Single renamed', **unchanged})
+assert calendar_client.get_object_sync(single_uid, None, None)[1].get_sequence() == sequence + 1
+assert call('calendarDelete', {'id':single['id']}) == {}
+print('EDS a single event found at its start only, nothing to drop, its sequence raised by a change, passed')
+
+# An all-day series split from a later day: both parts stay all day, the new one from that day.
+day = lambda k: ms(first_day + datetime.timedelta(weeks=k, days=5))
+day_split = call('calendarAdd', event(title='Day split', isAllDay=True, start=day(21), end=day(21), recurrence=rule(count=5)))
+call('calendarEdit', {'id':day_split['id'], 'occurrence':day(23), 'scope':'thisAndFollowing', 'title':'Day split later', **unchanged})
+assert [(row['start'], row['isAllDay']) for row in rows('Day split')] == [(day(k), True) for k in range(21, 23)]
+assert [(row['start'], row['isAllDay']) for row in rows('Day split later')] == [(day(k), True) for k in range(23, 26)]
+for title in ['Day split', 'Day split later']:
+    assert call('calendarDelete', {'id':rows(title)[0]['id']}) == {}
+print('EDS an all-day series split from a later day stays all day, passed')
+
+# A series with an end made all day, then timed again: its end is written as its start is (RFC 5545
+# 3.3.10), and the same occurrences stay.
+def until_text(row):
+    rule_text = calendar_client.get_object_sync(row['id'].split('|')[1], None, None)[1].get_first_property(ICalGLib.PropertyKind.RRULE_PROPERTY).as_ical_string()
+    return rule_text.replace('\r\n ', '').split('UNTIL=')[1].split(';')[0].strip()
+until_series = call('calendarAdd', event(title='Until series', start=at(26, 4), end=at(26, 4, 60), recurrence=rule(until=at(28, 4))))
+assert until_text(until_series).endswith('Z')
+call('calendarEdit', {'id':until_series['id'], 'occurrence':at(26, 4), 'scope':'all', 'isAllDay':True, 'start':ms(first_day + datetime.timedelta(weeks=26, days=4)), 'end':ms(first_day + datetime.timedelta(weeks=26, days=4)), **unchanged})
+assert 'T' not in until_text(until_series), until_text(until_series)
+assert [row['start'] for row in rows('Until series')] == [ms(first_day + datetime.timedelta(weeks=k, days=4)) for k in range(26, 29)]
+call('calendarEdit', {'id':until_series['id'], 'occurrence':ms(first_day + datetime.timedelta(weeks=26, days=4)), 'scope':'all', 'isAllDay':False, 'start':at(26, 4), 'end':at(26, 4, 60), **unchanged})
+assert until_text(until_series).endswith('Z') and [row['start'] for row in rows('Until series')] == [at(k, 4) for k in range(26, 29)]
+assert call('calendarDelete', {'id':until_series['id']}) == {}
+print('EDS a series with an end made all day and timed again keeps its end in the start\'s form, passed')

@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import { execFile } from "node:child_process";
+import * as config from "../../core/config.js";
 import { type CalendarEvent, type EventAttendee, type EventCalendar, type EventChanges, type EventEditor, type EventRecurrence, type EventScope, type EventStore, EventStoreError, type ReminderItem } from "../../core/agent/connectors/calendar.js";
 import type { ContactCard, ContactStore } from "../../core/agent/connectors/contacts.js";
 
@@ -14,7 +15,7 @@ const failure = (): Error => new Error("The native data service couldn't complet
 export const productivityRunner = (executable: string): ProductivityRunner => (method, params, signal) => new Promise((resolve, reject) => {
   const input = JSON.stringify({ method, params }) + "\n";
   if (Buffer.byteLength(input) > 256 * 1024) { reject(failure()); return; }
-  const child = execFile(executable, [], { encoding: "utf8", windowsHide: true, timeout: 30_000, signal, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, stdout) => {
+  const child = execFile(executable, [], { encoding: "utf8", windowsHide: true, timeout: 30_000, signal, killSignal: "SIGKILL", maxBuffer: config.productivityReplyMaxBytes }, (error, stdout) => {
     if (error) { reject(failure()); return; }
     try { resolve(JSON.parse(stdout)); }
     catch { reject(failure()); }

@@ -148,6 +148,8 @@ describe("Native event editor boundary (Linux)", () => {
     { availability: "tentative" }, { attendees: [{ email: "a@example.com", name: null, status: "maybe" }] }, { organizer: { email: 4 } },
     { recurrence: { ...weekly, frequency: "HOURLY" } }, { recurrence: { ...weekly, count: 0 } }, { recurrence: { ...weekly, days: [{ weekday: 8, week: 0 }] } },
     { recurrence: { ...weekly, monthDays: [1.5] } }, { isDetached: "no" }, { id: "x\0y" }, { occurrence: "soon" }, { timeZone: 5 },
+    { attendees: {} }, { recurrence: { ...weekly, days: {} } }, { recurrence: { ...weekly, monthDays: {} } },
+    { attendees: [{ email: 4, name: null, status: "accepted" }] },
   ])("refuses a malformed editor row", async (change) => {
     await expect(new NativeEventStore(vi.fn().mockResolvedValue([{ ...row, ...change }]), undefined, true).events(new Date(start - 1), new Date(start + 1))).rejects.toThrow(/native data service/u);
   });
@@ -203,15 +205,13 @@ describe("Native event editor boundary (Linux)", () => {
     expect(run.mock.lastCall?.[1]).toMatchObject({ recurrence: weekly });
   });
   it("lists calendars and deletes by id", async () => {
-    const calendars = [{ id: "system-calendar", title: "Personal", account: "On This Computer", isDefault: true }];
+    const calendars = [{ id: "system-calendar", title: "Personal", account: "On This Computer", isDefault: true }, { id: "work", title: "Work", account: "Office", isDefault: false }];
     const run = vi.fn().mockResolvedValueOnce(calendars).mockResolvedValueOnce({}).mockResolvedValueOnce([{ ...calendars[0], isDefault: "yes" }]).mockResolvedValueOnce([null])
-      .mockResolvedValueOnce([{ ...calendars[0], id: "x\0y" }]);
+      .mockResolvedValueOnce([{ ...calendars[0], id: "x\0y" }]).mockResolvedValueOnce([{ ...calendars[0], title: 4 }]).mockResolvedValueOnce([{ ...calendars[0], account: 4 }]);
     const editor = new NativeEventStore(run, undefined, true).editor;
     expect(await editor?.calendars()).toEqual(calendars);
     await editor?.delete(row.id);
     expect(run).toHaveBeenLastCalledWith("calendarDelete", { id: row.id });
-    await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
-    await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
-    await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
+    for (let refused = 0; refused < 5; refused += 1) await expect(editor?.calendars()).rejects.toThrow(/native data service/u);
   });
 });

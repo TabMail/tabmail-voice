@@ -789,7 +789,7 @@ void expand(const std::vector<Object<ICalComponent>>& components, ECalClient* cl
                     auto row = eventRow(instance.get(), state.stored, state.master, state.client, state.calendar, state.id, occurrence,
                         !state.detachedFrom.is_null());
                     state.bytes += row.dump().size();
-                    if (state.result.size() >= 1000 || state.bytes > 512 * 1024) throw std::runtime_error("too many occurrences");
+                    if (state.result.size() >= 1000 || state.bytes > voice::HelperConfig::calendarEventsMaxBytes) throw std::runtime_error("too many occurrences");
                     state.result.push_back(std::move(row));
                     return TRUE;
                 } catch (...) { state.failed = true; return FALSE; }
@@ -1150,6 +1150,17 @@ void requireEditableSeries(const Found& found) {
         if (range) refuse("unsupportedRecurrence");
     }
 }
+// EDS doesn't carry an occurrence changed on its own into the series a split starts: its local backend
+// deletes one at or after the split, its server backends leave it to the old series, past its new end.
+// So a split with one there not dropped in the same change is refused, before anything is written.
+void requireNothingChangedAfter(const Found& found, const std::vector<std::string>& excluded) {
+    for (const auto& component : found.series) {
+        Object<ICalProperty> rid(i_cal_component_get_first_property(component.get(), I_CAL_RECURRENCEID_PROPERTY), g_object_unref);
+        if (!rid || std::find(excluded.begin(), excluded.end(), recurrenceIDText(component.get())) != excluded.end()) continue;
+        Object<ICalTime> date(i_cal_property_get_recurrenceid(rid.get()), g_object_unref);
+        if (dateToWire(date.get(), rid.get(), found.client.get()) >= found.occurrence) refuse("unsupportedRecurrence");
+    }
+}
 // A timed start with neither a zone nor UTC: read, as EDS reads it, in the user's zone.
 bool floating(ICalComponent* component) {
     Object<ICalTime> start(i_cal_component_get_dtstart(component), g_object_unref);
@@ -1166,8 +1177,9 @@ Object<ICalProperty> splitRecurrenceID(int64_t occurrence, bool allDay, ICalTime
     i_cal_property_take_parameter(property.get(), i_cal_parameter_new_tzid(i_cal_timezone_get_tzid(zone)));
     return property;
 }
-// EDS changes the whole series for a split at its first occurrence (an excluded start doesn't
-// count). Asked as EDS decides it: from the recurrence id as its backend parses it off the wire.
+// EDS changes the whole series for a split at its first occurrence, as it counts one (an excluded
+// start doesn't count, and it looks only within a day of the start). Asked as EDS decides it: from
+// the recurrence id as its backend parses it off the wire.
 bool firstInstance(const Found& found, ICalProperty* rid) {
     String text(i_cal_property_as_ical_string(rid), g_free);
     Object<ICalComponent> parsed(i_cal_component_new_from_string(("BEGIN:VEVENT\r\n" + std::string(text.get()) + "END:VEVENT\r\n").c_str()), g_object_unref);
@@ -1294,14 +1306,11 @@ std::set<std::string> seriesStarting(const Found& before, int64_t start) {
     const auto ok = e_cal_client_get_object_list_sync(client, query.c_str(), &raw, nullptr, &error.value);
     std::unique_ptr<GSList, void(*)(GSList*)> objects(raw, [](GSList* list) { g_slist_free_full(list, g_object_unref); });
     error.check(ok);
-    const auto local = localZone();
     std::set<std::string> result;
     for (auto node = objects.get(); node; node = node->next) {
         const auto component = I_CAL_COMPONENT(node->data);
         const auto uid = bounded(i_cal_component_get_uid(component));
-        if (uid == before.uid || i_cal_component_count_properties(component, I_CAL_RECURRENCEID_PROPERTY)) continue;
-        auto startTime = calendarTime(component, I_CAL_DTSTART_PROPERTY, client, local);
-        if (instant(startTime.get(), local) == start) result.insert(uid);
+        if (uid != before.uid && !i_cal_component_count_properties(component, I_CAL_RECURRENCEID_PROPERTY)) result.insert(uid);
     }
     return result;
 }
@@ -1370,12 +1379,14 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
         if (named.rid.empty() && !(repeating(named.master) && named.row["occurrence"].is_number())) refuse("noSuchEvent");
         excluded.push_back(named.rid.empty() ? ridText(named.occurrence, named.row["isAllDay"].get<bool>()) : named.rid);
     }
+    const auto asked = title || location || notes || availability || start || allDay || ruleChanges || !invited.empty() || !uninvited.empty();
+    // From the series' own start the whole series changes; from a later occurrence it may be split.
+    if (asked && found.generated && scope == "thisAndFollowing" && !found.atStart) requireNothingChangedAfter(found, excluded);
     // Each committed as it goes.
     for (const auto& rid : excluded) removeOccurrence(found.client.get(), found.uid, rid.c_str(), E_CAL_OBJ_MOD_THIS);
     // Found again: the deletions changed the series.
     if (!excluded.empty()) found = find(registry, id, occurrence);
     const auto client = found.client.get();
-    const auto asked = title || location || notes || availability || start || allDay || ruleChanges || !invited.empty() || !uninvited.empty();
     if (!asked) return found.row;
 
     const bool detached = !found.rid.empty();
@@ -1417,6 +1428,9 @@ JSON calendarEdit(ESourceRegistry* registry, const JSON& input) {
     if (ruleChanges) {
         if (rule) setRule(edited.get(), *rule, isAllDay);
         else clearRule(edited.get());
+    } else if (isAllDay != rowAllDay && repeating(edited.get())) {
+        // Its end is written as its start now is, a date or a time (RFC 5545 3.3.10).
+        setRule(edited.get(), ruleFrom(found.row["recurrence"]), isAllDay);
     }
     // A timed event made to repeat (or a day made timed) keeps its time of day in the user's zone across
     // a daylight-saving change; a series stored in UTC is left as it is.
