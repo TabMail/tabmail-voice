@@ -791,7 +791,8 @@ function launch(): void {
   /** The paste history closed. Closed with the focus (Escape, a click on an entry, Cmd-W), on macOS it
    * gives the app the user was in back its focus, unless another of this app's windows is open, or
    * the chat is: hiding the app would hide the chat too, with nothing to show it again while the next
-   * holds talk to it. Closed as it lost the focus (a click elsewhere), the focus is already there. */
+   * holds talk to it. Closed as it lost the focus (a click elsewhere), the focus is already there.
+   * (Quitting with it focused hides the app too, on the way out.) */
   function historyClosed(focused: boolean): void {
     if (!focused || process.platform !== "darwin") return;
     const othersOpen = (["settings", "welcome", "contextDebug"] as const).some((name) => windows.isOpen(name)) || controller.chat !== null;

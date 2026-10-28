@@ -51,9 +51,10 @@ const electron = vi.hoisted(() => {
       this.destroyed = true;
       this.emit("closed");
     }
-    /** Whether it has the focus: what the test says. */
+    /** Whether it has the focus: what the test says. Destroyed (by `closed`), it throws, as Electron's does. */
     focused = false;
     isFocused(): boolean {
+      if (this.destroyed) throw new TypeError("Object has been destroyed");
       return this.focused;
     }
     /** `close` first, then `closed`, as Electron emits them. */
