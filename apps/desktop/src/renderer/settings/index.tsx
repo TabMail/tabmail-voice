@@ -8,7 +8,7 @@ import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { eventDurationLabel } from "../../core/agent/connectors/settings.js";
-import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
+import { offeredAgentToolIDs, switchableAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
@@ -386,8 +386,9 @@ function hasName(state: SettingsState): boolean {
   return (state.userName ?? "").trim() !== "";
 }
 
-/** The user's name, then a switch for each agent tool and each app Answer reaches, alphabetically
- * (owner, 2026-09-28), as the bubbles under the pill first show. */
+/** The user's name, then a switch for each switchable agent tool (Answer, always on, has none) and
+ * each app Answer reaches, alphabetically (owner, 2026-09-28), as the bubbles under the pill first
+ * show. */
 function AgentPane({ state }: { state: SettingsState }) {
   return (
     <>
@@ -404,7 +405,7 @@ function AgentPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
-        {alphabetical([...offeredAgentToolIDs, ...state.connectors]).map((key) =>
+        {alphabetical([...switchableAgentToolIDs, ...state.connectors]).map((key) =>
           isConnectorID(key) ? (
             <Toggle
               key={key}

@@ -270,7 +270,7 @@ export const correctionCommonWords: ReadonlySet<string> = new Set(
 
 /** The backend prompt of agent mode's tool loop (`DesktopAgent.run`). */
 export const agentPrompt = "system_prompt_desktop_agent_loop";
-/** The backend's own tools the loop may call while Answer is on, always listed in its
+/** The backend's own tools the loop may call, through Answer, always listed in its
  * `available_tools`: they run on the server, read nothing of the user's, and answer "what day is next
  * Friday" right. */
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];

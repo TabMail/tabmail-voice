@@ -5,7 +5,7 @@
 import { DebugAccess } from "./backend/account.js";
 import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connectors/index.js";
 import { isEventDuration } from "./agent/connectors/settings.js";
-import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/tools.js";
+import { type AgentToolID, isAgentToolID, switchableAgentToolIDs } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type ExcludedApp, excludedApp, isBuiltInExcludedApp, isSameApp, storedExcludedApps } from "./dictation/excludedApps.js";
 import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dictation/excludedSites.js";
@@ -53,7 +53,7 @@ export interface DictationSettings {
   /** The hosts of the websites the screen is never read on: the built-in web vaults and those the
    * user excludes. A host covers its subdomains. */
   excludedSites: string[];
-  /** Agent mode's tools the user has on. */
+  /** Agent mode's switchable tools the user has on; Answer, always on, is not among them. */
   enabledTools: AgentToolID[];
   /** The apps the Answer tool's tools may reach (`ConnectorTool.connector`) the user has on. */
   enabledConnectors: ConnectorID[];
@@ -421,7 +421,8 @@ export class AppSettings extends Observable {
     return Array.isArray(stored) ? stored.filter(isAgentToolID) : [];
   }
 
-  /** Whether agent mode may use `tool`. Every tool is on unless switched off (owner, 2026-09-26). */
+  /** Whether `tool`'s switch is on. Every switch is on unless switched off (owner, 2026-09-26); Answer,
+   * which has none, is offered whatever this says (owner, 2026-10-27). */
   isEnabled(tool: AgentToolID): boolean {
     return !this.disabledAgentTools.includes(tool);
   }
@@ -432,9 +433,11 @@ export class AppSettings extends Observable {
     this.changed();
   }
 
-  /** Agent mode's offered tools the user has on, in the registry's order. */
+  /** Agent mode's switchable tools the user has on, in the registry's order. Answer, always on, isn't
+   * among them, so an "answer" an earlier version stored switched off is never read (owner,
+   * 2026-10-27). */
   get enabledTools(): AgentToolID[] {
-    return offeredAgentToolIDs.filter((tool) => this.isEnabled(tool));
+    return switchableAgentToolIDs.filter((tool) => this.isEnabled(tool));
   }
 
   /** The apps the Answer tool reaches that the user switched off, stored by name so one added later

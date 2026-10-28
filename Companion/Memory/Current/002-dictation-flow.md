@@ -48,8 +48,8 @@ listening, over the pill when the overlay opened above the caret's line; it is n
 **Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
 recording and transcription, with the tool bubbles around the pill (ADR-DESK-033): Edit when text is selected,
 Compose when not, and Answer (Thunderbird's tool, for when an email app is set up, is off until its
-native connector: ADR-DESK-037); each only while switched on
-in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request,
+native connector: ADR-DESK-037); Edit and Compose only while switched on in Settings, Answer always
+(ADR-DESK-022, amended 2026-10-27), and beside them a bubble for each app switched on. The transcript is a request,
 carried out by one tool loop (`DesktopAgent.run`, the backend's `system_prompt_desktop_agent_loop`, from 0.2.0;
 ADR-DESK-055): the backend's date tools and web search run there, and tools that run on this computer
 (`ConnectorTool`) run in the app, shown in the chat window, asking first before sending or creating.

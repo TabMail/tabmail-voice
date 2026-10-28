@@ -129,3 +129,15 @@ listening, or thinking". This replaces "a click elsewhere does not close it" abo
 follow-up captures its own target under ADR-DESK-042's new rule. Clicking the chat is allowed to
 activate Voice; a later hold over that window reads and pastes into the external window that had
 focus before Voice. A hold over another external window instead selects that window.
+
+**Amendment 2026-10-27 (owner): Answer has no switch and is always on.** Owner, on the Settings
+switch for the Answer tool: "I don't think it should even exist." Edit and Compose keep their switches,
+on by default as above (`switchableAgentToolIDs`, the list Settings' Agent mode section and the
+wizard's Features step draw); Answer has none, and `DesktopAgent.tools` offers it whatever
+`enabledTools` holds. `AppSettings.enabledTools` reads only the switchable tools, so an "answer" an
+earlier version stored in `disabledAgentTools` is never read: a user who had switched it off has it
+back, with nothing rewritten. `setAgentToolEnabled` for `answer` is refused at the IPC boundary. With
+Edit and Compose both off, Answer alone is offered: a request is never left with no tool, so
+`AgentError("noToolEnabled")` and its "Turn on an agent tool in Settings." are gone. The apps Answer
+reaches (`enabledConnectors`), its date tools and the web search are therefore always offered while
+their own switches are on. Supersedes voice issue #279.

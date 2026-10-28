@@ -31,7 +31,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-019](Companion/Decisions/Active/adr-desk-019.md)**: Dictate in the keyboard's language, shown beside the waveform
 - **[ADR-DESK-020](Companion/Decisions/Active/adr-desk-020.md)**: Agent tools one file each, connectors one folder each
 - **[ADR-DESK-021](Companion/Decisions/Active/adr-desk-021.md)**: Tips that retire once learned, and hands-free dictation on a double tap
-- **[ADR-DESK-022](Companion/Decisions/Active/adr-desk-022.md)**: The Answer tool, the chat window, and agent tools switched on and off; a click elsewhere or an app switch closes the idle chat window (closesChatElsewhere, chatMouseDown, chatFocusChanged, dismissChat; amendment 2026-10-25)
+- **[ADR-DESK-022](Companion/Decisions/Active/adr-desk-022.md)**: The Answer tool, the chat window, and agent tools switched on and off; a click elsewhere or an app switch closes the idle chat window (closesChatElsewhere, chatMouseDown, chatFocusChanged, dismissChat; amendment 2026-10-25; amendment 2026-10-27: Answer always on, no switch, switchableAgentToolIDs, noToolEnabled removed, #279)
 - **[ADR-DESK-023](Companion/Decisions/Active/adr-desk-023.md)**: The Answer tool's loop, with tools that run on this computer
 - **[ADR-DESK-024](Companion/Decisions/Active/adr-desk-024.md)**: Calendar and Reminders, the first apps the Answer tool reaches
 - **[ADR-DESK-025](Companion/Decisions/Active/adr-desk-025.md)**: Contacts, the third app the Answer tool reaches

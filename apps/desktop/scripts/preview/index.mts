@@ -97,7 +97,7 @@ const settings = {
   builtInExcludedApps: [{ bundleIdentifier: "com.1password.1password", name: "1Password" }],
   userName: "Alex Example",
   suggestedName: "Alex Example",
-  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"],
+  enabledTools: ["edit", "compose"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"],
   memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: {
     writingStyle: [
@@ -132,7 +132,7 @@ const memory = {
   searchFailed: null,
   status: null,
 };
-const welcome = { fileProblems: [] as StoredFile[], step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
+const welcome = { fileProblems: [] as StoredFile[], step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"] };
 
 /** The paste history: a short entry, a long one clipped to its lines, and an older one. */
 const history = {
@@ -217,11 +217,11 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-tip-double-tap", { phase: { kind: "listening" }, tip: "doubleTap", language: null }],
     ["overlay-tip-hands-free", { phase: { kind: "listening" }, tip: "handsFree" }],
     ["overlay-tip-whats-new", { phase: { kind: "listening" }, tip: "agentKnowledgeBase" }],
-    ["overlay-tip-hands-free-up", { phase: { kind: "listening" }, tip: "handsFree", opensUpward: true, mode: "agent", tools: ["compose", "thunderbird"] }],
+    ["overlay-tip-hands-free-up", { phase: { kind: "listening" }, tip: "handsFree", opensUpward: true, mode: "agent", tools: ["compose", "thunderbird", "answer"] }],
     ["overlay-transcribing", { phase: { kind: "transcribing" } }],
     ["overlay-transcribing-retry", { phase: { kind: "transcribing" }, isRetrying: true }],
-    ["overlay-agent-listening", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird"] }],
-    ["overlay-agent-running", { phase: { kind: "running", tool: "compose" }, mode: "agent", runningBubble: "compose", tools: ["compose", "thunderbird"] }],
+    ["overlay-agent-listening", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"] }],
+    ["overlay-agent-running", { phase: { kind: "running", tool: "compose" }, mode: "agent", runningBubble: "compose", tools: ["compose", "thunderbird", "answer"] }],
     ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "agentAndHistory" }],
     ["overlay-agent-apps-up", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, bubblesFitUnder: false, opensUpward: true, tip: "handsFree" }],
     ["overlay-agent-apps-running", { phase: { kind: "running", tool: null }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], runningBubble: "calendar" }],
