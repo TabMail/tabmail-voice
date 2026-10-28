@@ -180,8 +180,13 @@ struct MemoView {
     std::function<JSON(ICalComponent*)> convert;
     bool done = false;
     bool failed = false;
+    bool changed = false;
     void stop(bool failure) { failed = failed || failure; done = true; g_main_loop_quit(loop); }
 };
+// A source changed while it was read. EDS can also tell a new view of a change saved before the
+// view started (a write of ours just before the read included), so a read refused this way is made
+// again (`run`).
+struct SourceChanged : std::runtime_error { SourceChanged() : std::runtime_error("source changed during read") {} };
 using CalConvert = std::function<JSON(ICalComponent*, ECalClient*, const std::string&)>;
 JSON readCal(ESourceRegistry* registry, const std::string& sexp, const char* extension,
     ECalClientSourceType type, const std::vector<const char*>& requestedFields, CalConvert convert,
@@ -226,7 +231,9 @@ JSON readCal(ESourceRegistry* registry, const std::string& sexp, const char* ext
         // A changing snapshot is refused rather than mixing old and new versions.
         for (const auto signal : {"objects-modified", "objects-removed"})
             g_signal_connect(view.get(), signal, G_CALLBACK(+[](ECalClientView*, const GSList*, gpointer data) {
-                static_cast<MemoView*>(data)->stop(true);
+                auto& state = *static_cast<MemoView*>(data);
+                state.changed = true;
+                state.stop(true);
             }), &state);
         const auto timer = g_timeout_add_seconds(10, +[](gpointer data) -> gboolean {
             static_cast<MemoView*>(data)->stop(true); return G_SOURCE_CONTINUE;
@@ -237,6 +244,7 @@ JSON readCal(ESourceRegistry* registry, const std::string& sexp, const char* ext
         g_signal_handlers_disconnect_by_data(view.get(), &state);
         Error stopError;
         e_cal_client_view_stop(view.get(), &stopError.value);
+        if (state.changed) throw SourceChanged();
         error.check(!state.failed);
         stopError.check();
         if (finish) finish(client.get(), bounded(e_source_get_display_name(source)));
@@ -1408,8 +1416,16 @@ JSON run(const JSON& request) {
     Error error;
     Object<ESourceRegistry> registry(e_source_registry_new_sync(nullptr, &error.value), g_object_unref);
     error.check(registry != nullptr);
+    // A read writes nothing, so one refused for a change is made again from the start.
+    const auto reread = [](const std::function<JSON()>& read) {
+        for (unsigned attempt = 1;; ++attempt) {
+            try { return read(); } catch (const SourceChanged&) { if (attempt >= voice::HelperConfig::calendarReadAttempts) throw; }
+        }
+    };
+    if (method == "reminders") return reread([&] { return reminders(registry.get(), request.at("params")); });
+    if (method == "notesSearch") return reread([&] { return notesSearch(registry.get(), request.at("params")); });
     try {
-        if (method == "calendarEvents") return calendarEvents(registry.get(), request.at("params"));
+        if (method == "calendarEvents") return reread([&] { return calendarEvents(registry.get(), request.at("params")); });
         if (method == "calendarAdd") return calendarAdd(registry.get(), request.at("params"));
         if (method == "calendars") return calendars(registry.get());
         if (method == "calendarEvent") return calendarEventRead(registry.get(), request.at("params"));
@@ -1418,9 +1434,7 @@ JSON run(const JSON& request) {
     } catch (const Refusal& refusal) {
         return {{"refused", refusal.kind}};
     }
-    if (method == "reminders") return reminders(registry.get(), request.at("params"));
     if (method == "reminderAdd") return reminderAdd(registry.get(), request.at("params"));
-    if (method == "notesSearch") return notesSearch(registry.get(), request.at("params"));
     if (method == "notesAdd") return notesAdd(registry.get(), request.at("params"));
     return method == "contactsSearch" ? search(registry.get(), request.at("params")) : add(registry.get(), request.at("params"));
 }

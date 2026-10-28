@@ -250,6 +250,21 @@ for fault in ['timezone', 'uid']:
     assert result.stderr.strip() == 'productivity request failed', result.stderr
 print('EDS UID/timezone failures return no partial or empty-success result')
 
+# A read that a change interrupts is made again: a change notice on its first view (EDS can send one
+# for a change saved just before) gives the rows a quiet read gives, and a source that keeps
+# changing fails with nothing, never a mix of versions.
+def faulted(method, params, fault):
+    return subprocess.run([executable], input=json.dumps({'method':method, 'params':params})+'\n',
+        text=True, capture_output=True, timeout=20, env={**os.environ, 'LD_PRELOAD':sys.argv[2], 'VOICE_PRODUCTIVITY_FAULT':fault})
+for method, params in [('calendarEvents', {'start':start_dst, 'end':start_dst+86400000}), ('reminders', {'dueBefore':None}), ('notesSearch', {'query':'Synthetic memo'})]:
+    quiet = call(method, params)
+    assert quiet, method
+    again = faulted(method, params, 'changed-first')
+    assert again.returncode == 0 and json.loads(again.stdout) == quiet, (method, again.stderr)
+    changing = faulted(method, params, 'changed')
+    assert changing.returncode != 0 and changing.stdout == '' and changing.stderr.strip() == 'productivity request failed', (method, changing.stdout)
+print('EDS reads interrupted by a change are made again, and a source that keeps changing fails with nothing')
+
 # The calendar editor (ADR-DESK-060's Linux amendment): ids, one event, the scopes of a change,
 # deletion and refusals, on dates relative to today, clear of the fixed fixtures above.
 def refused(method, params):

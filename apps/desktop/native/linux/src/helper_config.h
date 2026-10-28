@@ -9,4 +9,6 @@ inline constexpr unsigned targetActivationPollMs = 20;
 // either side (the macOS helper's eventOccurrenceTolerance and eventOccurrenceSearchSpan).
 inline constexpr long long eventOccurrenceToleranceMs = 2LL * 60 * 60 * 1000;
 inline constexpr long long eventOccurrenceSearchSpanMs = 31LL * 24 * 60 * 60 * 1000;
+// A read of calendars, memos or tasks that a change interrupts is made this many times in all.
+inline constexpr unsigned calendarReadAttempts = 3;
 }

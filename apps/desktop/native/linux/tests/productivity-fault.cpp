@@ -25,3 +25,15 @@ extern "C" gboolean e_cal_client_get_objects_for_uid_sync(ECalClient* client, co
     if (!real) std::abort();
     return real(client, id, result, cancel, error);
 }
+// A change notice on a view as it starts: `changed-first` on the first view the process opens (a
+// change saved just before the read), `changed` on every one (a source that keeps changing).
+extern "C" void e_cal_client_view_start(ECalClientView* view, GError** error) {
+    auto real = reinterpret_cast<decltype(&e_cal_client_view_start)>(dlsym(RTLD_NEXT, "e_cal_client_view_start"));
+    if (!real) std::abort();
+    real(view, error);
+    static unsigned views = 0;
+    const char* requested = std::getenv("VOICE_PRODUCTIVITY_FAULT");
+    const bool always = requested && !std::strcmp(requested, "changed");
+    const bool first = requested && !std::strcmp(requested, "changed-first") && views++ == 0;
+    if ((!error || !*error) && (always || first)) g_signal_emit_by_name(view, "objects-modified", static_cast<GSList*>(nullptr));
+}
