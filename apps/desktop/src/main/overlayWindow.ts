@@ -109,9 +109,9 @@ export class OverlayWindowController {
   }
 
   /** The page drew the state of the showing `reveal`: the overlay shows, if that is the showing still
-   * waiting. The chat window waits for its measurement instead (`fitChat`). */
+   * waiting. A chat window opened meanwhile waits for its measurement instead (`showChat`, `fitChat`). */
   drawn(reveal: number): void {
-    if (!this.awaitingDrawing || reveal !== this.revealed || this.chat !== null) return;
+    if (!this.awaitingDrawing || reveal !== this.revealed) return;
     this.awaitingDrawing = false;
     this.window.setOpacity(1);
   }
