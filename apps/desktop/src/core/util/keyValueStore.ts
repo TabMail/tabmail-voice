@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 /** Why a store's file, there at launch, couldn't be read: no permission to read it, damaged (not a JSON
- * object), or another read error. Nothing is saved to it while the app runs (`fileProblems.ts` says
- * what the user can do). */
+ * object), or another read error. Nothing is saved to it while the app runs, unless the user resets it
+ * (`fileProblems.ts` says what the user can do). */
 export interface StoreProblem {
   kind: "permission" | "damaged" | "unreadable";
   path: string;

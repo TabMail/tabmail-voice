@@ -157,4 +157,78 @@ describe("JSONFileStore", () => {
     expect(errors).toEqual([]);
     expect(new JSONFileStore(path).get("readsScreen")).toBe(true);
   });
+  /** The user's factory reset (ADR-DESK-063): the file that couldn't be read is renamed aside, byte
+   * for byte, never deleted, and the store starts again empty and saves from then on. */
+  test.each([
+    ["damaged", (path: string) => writeFileSync(path, "not json")],
+    ["unreadable", (path: string) => mkdirSync(path)],
+  ])("a %s file is kept as the reset copy, and the store saves afresh", (_kind, breakIt) => {
+    const path = join(scratch(), "settings.json");
+    const aside = join(dirname(path), "settings (before reset).json");
+    breakIt(path);
+    const store = new JSONFileStore(path);
+    expect(store.problem).toBeDefined();
+    const before = readdirSync(dirname(path)).length;
+    // A change this session made, held until quit only, goes with the reset.
+    expect(store.set("dictationHotkey", "function")).toBe(false);
+
+    store.moveAside(aside);
+    expect(store.problem).toBeUndefined();
+    expect(store.snapshot()).toEqual({});
+    expect(readdirSync(dirname(path))).toHaveLength(before);
+    expect(readdirSync(dirname(path))).toContain("settings (before reset).json");
+    expect(store.set("readsScreen", false)).toBe(true);
+    expect(new JSONFileStore(path).get("readsScreen")).toBe(false);
+    expect(new JSONFileStore(path).problem).toBeUndefined();
+  });
+
+  test("the reset copy holds the damaged file byte for byte", () => {
+    const path = join(scratch(), "userPrompts.json");
+    const aside = join(dirname(path), "userPrompts (before reset).json");
+    const bytes = Buffer.from([0xff, 0xfe, 0x7b, 0x80, 0x00, 0xc3]);
+    writeFileSync(path, bytes);
+    const store = new JSONFileStore(path);
+    store.moveAside(aside);
+    expect(readFileSync(aside).equals(bytes)).toBe(true);
+    expect(store.setAll({ "user_prompts:user_kb.md": "- Default." })).toBe(true);
+    expect(readFileSync(aside).equals(bytes)).toBe(true);
+  });
+
+  test("a file that was read is never reset", () => {
+    const path = join(scratch(), "settings.json");
+    const store = new JSONFileStore(path);
+    expect(store.set("readsScreen", false)).toBe(true);
+    expect(() => store.moveAside(join(dirname(path), "aside.json"))).toThrow();
+    expect(readdirSync(dirname(path))).toEqual(["settings.json"]);
+    expect(store.get("readsScreen")).toBe(false);
+  });
+
+  /** A copy already under the reset's name is never written over: both files stay, and nothing changes. */
+  test("a reset whose copy's name is taken changes nothing", () => {
+    const path = join(scratch(), "settings.json");
+    const aside = join(dirname(path), "aside.json");
+    writeFileSync(path, "not json");
+    writeFileSync(aside, "kept");
+    const store = new JSONFileStore(path);
+    expect(store.set("readsScreen", true)).toBe(false);
+    expect(() => store.moveAside(aside)).toThrow();
+    expect(readFileSync(path, "utf8")).toBe("not json");
+    expect(readFileSync(aside, "utf8")).toBe("kept");
+    expect(store.problem?.kind).toBe("damaged");
+    expect(store.get("readsScreen")).toBe(true);
+    expect(store.set("readsScreen", false)).toBe(false);
+  });
+
+  test("a reset that can't rename the file changes nothing", () => {
+    const path = join(scratch(), "settings.json");
+    writeFileSync(path, "not json");
+    const store = new JSONFileStore(path);
+    // What the session held until quit stays when the reset fails.
+    expect(store.set("readsScreen", true)).toBe(false);
+    expect(() => store.moveAside(join(dirname(path), "missing folder", "aside.json"))).toThrow();
+    expect(readFileSync(path, "utf8")).toBe("not json");
+    expect(store.problem?.kind).toBe("damaged");
+    expect(store.get("readsScreen")).toBe(true);
+    expect(store.set("readsScreen", false)).toBe(false);
+  });
 });

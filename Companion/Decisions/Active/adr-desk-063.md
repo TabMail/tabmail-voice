@@ -215,3 +215,34 @@ and completions reach no network while signing in does; with the file read, or o
 file unreadable, they do; updates as ever with either file unreadable; Settings › Memory never reaches
 memory, and does with only the knowledge base file unreadable), `tray.test.ts`,
 `core/ui/fileProblems.test.ts`.
+
+**Amendment (2026-10-28, the user's factory reset; owner, issue #287):** fixing the file by hand stays
+the first option the fix dialog gives, and the app still never resets, moves or writes over a file
+on its own. The dialog (at launch, from Fix Settings File… / Fix Knowledge Base File…, and from
+`showWelcome`) now ends each kind's steps with "Or choose Reset to Defaults… to start again; the file is kept, renamed." and has three buttons: Show File, Reset to Defaults…, Close
+(Close the default and cancel). Reset to Defaults… asks one confirmation (`resetConfirmation`): what
+this computer loses (for the settings file its settings, the dictionary and the excluded apps and
+websites among them, and the welcome guide opens again; memory's size limit goes back to the default,
+so the oldest requests past it are removed, as the limit was unknown and memory untrimmed while the file
+couldn't be read; for the knowledge base file the knowledge base, writing style and their history), what stays (sign-in and the other file's contents; for the knowledge base file, settings and memory), and the path the unreadable file is kept at. Cancel is its default. On Reset the file is renamed beside itself to
+`<name> (before reset YYYY-MM-DD HH.MM.SS).json` (local time, `resetCopyPath`), never deleted and never
+written over (`JSONFileStore.moveAside` refuses a taken name, and a store with no problem), and the
+store starts empty at the defaults, written to a new file from its next change. What the session held
+unsaved is dropped with it, except the Globe key's saved action (ADR-DESK-031): while fn is the hotkey
+the system's Globe key is held at Do Nothing with the user's own action in this file, so the reset keeps
+that one value and the hotkey's change to its default hands the key back. A confirmation answered after
+another reset the file (two fix dialogs open at once; one without a window isn't modal on Windows and
+Linux) does nothing. The app is not relaunched (ADR-DESK-050): `AppSettings.resetFile` /
+`UserPrompts.resetFile` tell their observers, a hotkey back at its default is re-registered, the menu
+loses the Fix item and the off line, and after a settings reset the welcome wizard opens as at a first
+launch (consent not given, so nothing is read or sent until the user gives it there). A rename that
+fails changes nothing and says so (`resetFailed`); the steps by hand still apply. Device Sync (PR 3)
+adds one sentence to the confirmation, that sync can restore the knowledge base and writing style from
+the user's other devices and doesn't reset them there, and its test. Tests:
+`main/storage/jsonFileStore.test.ts` (a damaged file kept byte for byte as the copy and an unreadable one moved there, the
+store saving afresh; refused with no problem, a taken name or a failed rename, changing nothing),
+`core/ui/fileProblems.test.ts`, `settings.test.ts`, `personalization/prompts.test.ts`,
+`main/index.test.ts` (nothing moved at launch, on Close or on Cancel; a confirmed settings reset keeps
+the dated copy in the same folder, names it in the confirmation, opens the wizard with consent not
+given and saves again; a knowledge base reset opens no wizard; a failed one changes nothing and says
+so).

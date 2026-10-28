@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { MemoryStore, type StoreProblem } from "../../core/util/keyValueStore.js";
 import { errorName, log } from "../../core/log.js";
@@ -10,15 +10,32 @@ import { errorName, log } from "../../core/log.js";
 /** The app's preferences in a JSON file under its data folder, written whole on every change (they
  * change rarely: a Settings switch, a tip shown, a dictation holding a dictionary word). A file not
  * there yet starts empty. One there that can't be read, for want of permission or because it is
- * damaged, is never written over or moved: the app runs on defaults, every save answers false, and
- * `problem` says why, for the menu to tell the user how to fix it (ADR-DESK-063). */
+ * damaged, is never written over or moved on the app's own: the app runs on defaults, every save
+ * answers false, and `problem` says why, for the menu to tell the user how to fix it, by hand or with
+ * the user's factory reset (`moveAside`; ADR-DESK-063). */
 export class JSONFileStore extends MemoryStore {
-  readonly problem: StoreProblem | undefined;
+  private currentProblem: StoreProblem | undefined;
 
   constructor(private readonly path: string) {
     const contents = read(path);
     super("problem" in contents ? {} : contents.values);
-    this.problem = "problem" in contents ? contents.problem : undefined;
+    this.currentProblem = "problem" in contents ? contents.problem : undefined;
+  }
+
+  get problem(): StoreProblem | undefined {
+    return this.currentProblem;
+  }
+
+  /** The user's factory reset of a file that couldn't be read (owner, 2026-10-27): the file is moved
+   * to `aside`, never deleted, and the store starts afresh at the defaults, written to a new file from
+   * its next change. Throws, changing nothing, when there is no problem, `aside` is taken, or the file
+   * can't be moved. */
+  moveAside(aside: string): void {
+    if (this.currentProblem === undefined) throw new Error("FileStore: only a file that couldn't be read is reset");
+    if (existsSync(aside)) throw new Error("FileStore: the reset copy's name is taken");
+    renameSync(this.path, aside);
+    this.values.clear();
+    this.currentProblem = undefined;
   }
 
   override set(key: string, value: unknown): boolean {
@@ -39,7 +56,7 @@ export class JSONFileStore extends MemoryStore {
 
   /** Whether the file was written: never one that couldn't be read. */
   private save(): boolean {
-    if (this.problem !== undefined) return false;
+    if (this.currentProblem !== undefined) return false;
     try {
       mkdirSync(dirname(this.path), { recursive: true });
       // Written beside it, then moved over it: a crash mid-write never leaves half a file.

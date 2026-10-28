@@ -12,7 +12,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
-import { aiOffLine, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
+import { aiOffLine, resetCopyPath, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
@@ -120,6 +120,12 @@ const app = vi.hoisted(() => ({
   /** For each message box, whether the app's commands were wired by then: launch was done. */
   dialogsAfterLaunch: [] as boolean[],
   dialogResponse: 1,
+  /** Answers for the next dialogs, in order, before `dialogResponse`. */
+  /** Answers held back until a test resolves them, as a dialog left open. */
+  dialogResponses: [] as (number | Promise<number>)[],
+  /** The files the factory reset moved aside, and where. */
+  movedAside: [] as { path: string; aside: string }[],
+  moveAsideFails: false,
   /** The open dialogs shown, and what the user picks in the next one (null: canceled). */
   openDialogs: [] as Record<string, unknown>[],
   pickedPath: null as string | null,
@@ -187,7 +193,7 @@ vi.mock("electron", async () => {
       showMessageBox: async (options: Record<string, unknown>) => {
         app.dialogs.push(options);
         app.dialogsAfterLaunch.push(app.handlers.has(channels.command));
-        return { response: app.dialogResponse };
+        return { response: await (app.dialogResponses.shift() ?? app.dialogResponse) };
       },
       showOpenDialog: async (options: Record<string, unknown>) => {
         app.openDialogs.push(options);
@@ -297,17 +303,30 @@ vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
      * `app.stored`, any other is in `app.files` by its path. As the real store, one that couldn't be
      * read (`app.problems`) starts at the defaults and keeps what is set for this launch only. */
     JSONFileStore: class {
-      private readonly values: Map<string, unknown>;
-      readonly problem: import("../../src/core/util/keyValueStore.js").StoreProblem | undefined;
-      constructor(path: string) {
+      private values: Map<string, unknown>;
+      private readonly file: Map<string, unknown>;
+      private wasReset = false;
+      problem: import("../../src/core/util/keyValueStore.js").StoreProblem | undefined;
+      constructor(private readonly path: string) {
         const file = path === join(app.userData, "settings.json") ? app.stored : (app.files.get(path) ?? new Map<string, unknown>());
         app.files.set(path, file);
+        this.file = file;
         this.problem = app.problems.get(path);
         this.values = this.problem === undefined ? file : new Map<string, unknown>();
       }
+      /** As the real store: the file moved aside (`app.movedAside`), the store afresh and saved again;
+       * `app.moveAsideFails` makes the move fail, changing nothing. */
+      moveAside(aside: string) {
+        if (this.problem === undefined || app.moveAsideFails) throw new Error("not moved");
+        app.movedAside.push({ path: this.path, aside });
+        this.wasReset = true;
+        this.file.clear();
+        this.values = this.file;
+        this.problem = undefined;
+      }
       get(key: string) {
-        // Set up, unless a test stores otherwise.
-        if (key === "hasFinishedWelcome" && this.values === app.stored && !app.stored.has(key)) return true;
+        // Set up, unless a test stores otherwise or the file was reset.
+        if (key === "hasFinishedWelcome" && this.values === app.stored && !app.stored.has(key) && !this.wasReset) return true;
         return this.values.get(key);
       }
       set(key: string, value: unknown) {
@@ -634,6 +653,9 @@ afterEach(() => {
   app.dialogs = [];
   app.dialogsAfterLaunch = [];
   app.dialogResponse = 1;
+  app.dialogResponses = [];
+  app.movedAside = [];
+  app.moveAsideFails = false;
   app.exits = [];
   app.quits = 0;
   app.openDialogs = [];
@@ -2071,13 +2093,13 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   test("a knowledge base file that couldn't be read is told of at launch, and nothing is saved to it", async () => {
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     await launch("darwin");
 
     // Told once launch is done, on a task of its own.
     expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
     expect(app.dialogsAfterLaunch).toEqual([true]);
-    expect(app.dialogs[0]).toMatchObject({ type: "warning", message: "TabMail Voice's knowledge base file is damaged.", buttons: ["Show File", "Close"], cancelId: 1 });
+    expect(app.dialogs[0]).toMatchObject({ type: "warning", message: "TabMail Voice's knowledge base file is damaged.", buttons: ["Show File", "Reset to Defaults…", "Close"], cancelId: 2 });
     expect(app.dialogs[0]?.detail).toContain(path);
     expect(app.trayState?.().fileProblems).toEqual(["knowledgeBase"]);
     expect((app.handlers.get(channels.getState)?.({}, "settings") as SettingsState).fileProblems).toEqual(["knowledgeBase"]);
@@ -2112,7 +2134,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const path = join(app.userData, "settings.json");
     app.problems.set(path, { kind: "permission", path, code: "EACCES" });
     app.stored.set("readsScreen", false);
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     await launch("darwin");
 
     expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
@@ -2388,7 +2410,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   test.each(["permission", "damaged", "unreadable"] as const)("a settings file that can't be read (%s) never opens the welcome wizard, and offers the fix steps instead", async (kind) => {
     const path = join(app.userData, "settings.json");
     app.problems.set(path, { kind, path, code: kind === "damaged" ? "invalid" : "EIO" });
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     await launch("darwin");
 
     expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
@@ -2411,7 +2433,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   test("a settings file that can't be read lets no AI request reach TabMail, and signing in still works", async () => {
     const path = join(app.userData, "settings.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     await launch("darwin");
     expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
 
@@ -2433,7 +2455,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     if (unreadable !== null) {
       const path = join(app.userData, unreadable);
       app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-      app.dialogResponse = 1;
+      app.dialogResponse = 2;
     }
     await launch("darwin");
     await send({ type: "sendCode", email: "user@example.com" });
@@ -2452,7 +2474,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
     const path = join(app.userData, "settings.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     const database = memoryFolders(join(app.userData, "memory")).databaseFile;
     mkdirSync(dirname(database), { recursive: true });
     writeFileSync(database, "");
@@ -2473,7 +2495,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.userData = mkdtempSync(join(tmpdir(), "voice-user-data-"));
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     const database = memoryFolders(join(app.userData, "memory")).databaseFile;
     mkdirSync(dirname(database), { recursive: true });
     writeFileSync(database, "");
@@ -2486,6 +2508,209 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(stats).toHaveBeenCalled();
   });
 
+  /** The user's factory reset (owner, 2026-10-27), offered by the fix dialog after the steps by hand:
+   * never on its own, and nothing moves until its one confirmation is answered Reset. */
+  test("a file that can't be read is never reset unless the user asks and confirms", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    expect(app.dialogs[0]).toMatchObject({ buttons: ["Show File", "Reset to Defaults…", "Close"], defaultId: 2, cancelId: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.movedAside).toEqual([]);
+
+    // Reset to Defaults…, then Cancel.
+    app.dialogResponses = [1, 1];
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.dialogs.length === 3)).toBe(true);
+    expect(app.dialogs[2]).toMatchObject({ message: "Reset your settings to the defaults?", buttons: ["Reset", "Cancel"], defaultId: 1, cancelId: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.movedAside).toEqual([]);
+    expect(app.presented).toEqual([]);
+    expect(app.trayState?.().fileProblems).toEqual(["settings"]);
+  });
+
+  test("a confirmed reset of the settings file keeps it as a dated copy and starts setup as at a first launch", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    // Changes this session made, held until quit only.
+    await send({ type: "setReadsScreen", value: false });
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
+    const [defaultHotkey, otherHotkey] = state().availableHotkeys;
+    await send({ type: "setHotkey", hotkey: otherHotkey });
+    expect(state().hotkey).toBe(otherHotkey);
+    const configured = () => app.helpers.get("voice-hotkey")!.requests.filter((request) => request.method === "configure");
+    const pushed: unknown[] = [];
+    app.listeners.set("voice:state", [...(app.listeners.get("voice:state") ?? []), (_event, name, pushedState) => void (name === "settings" && pushed.push((pushedState as SettingsState).fileProblems))]);
+    const trayUpdates = app.trayUpdates;
+
+    const before = Math.floor(Date.now() / 1_000) * 1_000;
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    const after = Date.now();
+    const moved = app.movedAside[0];
+    if (moved === undefined) throw new Error("not moved");
+    expect(moved.path).toBe(path);
+    // Dated with the time of the reset.
+    const stamps: string[] = [];
+    for (let time = before; time <= after; time += 1_000) stamps.push(resetCopyPath(path, new Date(time)));
+    expect(stamps).toContain(moved.aside);
+    expect(dirname(moved.aside)).toBe(dirname(path));
+    expect(basename(moved.aside)).toMatch(/^settings \(before reset \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}\)\.json$/);
+    // The confirmation said where it is kept.
+    expect(app.dialogs[2]?.detail).toContain(moved.aside);
+    // As at a first launch: the welcome wizard, consent not given, and no Fix item.
+    expect(await eventually(() => app.presented.includes("welcome"))).toBe(true);
+    expect(app.trayState?.().hasConsented).toBe(false);
+    expect(app.trayState?.().fileProblems).toEqual([]);
+    expect(app.trayUpdates).toBeGreaterThan(trayUpdates);
+    // As at a first launch, the wizard's consent page says what's new: the tip that would is learned.
+    expect(app.stored.get("tip.agentKnowledgeBase.learned")).toBe(true);
+    // Settings shows the defaults, and the hotkey the session had changed is the default key again.
+    expect(pushed).toContainEqual([]);
+    expect(state().hotkey).toBe(defaultHotkey);
+    expect(configured().at(-1)).toMatchObject({ params: expect.objectContaining({ hotkey: defaultHotkey }) });
+    // Saved again from now on, on the defaults: the change held in memory is gone.
+    expect(app.stored.has("readsScreen")).toBe(false);
+    expect(await send({ type: "setLearnsWords", value: false })).toEqual({ error: null });
+    expect(app.stored.get("learnsWords")).toBe(false);
+  });
+
+  /** Only the settings file's reset is a first launch: a knowledge base reset leaves setup not yet
+   * finished as it was, the wizard not opened again. */
+  test("a knowledge base reset opens no wizard, setup finished or not", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.stored.set("hasFinishedWelcome", false);
+    app.dialogResponse = 2;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1 && app.presented.includes("welcome"))).toBe(true);
+    const presented = app.presented.length;
+
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("knowledgeBase");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.presented).toHaveLength(presented);
+  });
+
+  test("a confirmed reset of the knowledge base file keeps it as a dated copy, and opens no wizard", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    const trayUpdates = app.trayUpdates;
+    const pushed: unknown[] = [];
+    app.listeners.set("voice:state", [...(app.listeners.get("voice:state") ?? []), (_event, name, pushedState) => void (name === "settings" && pushed.push((pushedState as SettingsState).fileProblems))]);
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("knowledgeBase");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    expect(app.dialogs[2]?.message).toBe("Reset your knowledge base, writing style and their history to the defaults?");
+    expect(basename(app.movedAside[0]?.aside ?? "")).toMatch(/^userPrompts \(before reset .+\)\.json$/);
+    expect(app.trayState?.().fileProblems).toEqual([]);
+    expect(app.trayUpdates).toBeGreaterThan(trayUpdates);
+    expect(pushed).toContainEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.presented).toEqual([]);
+    // Saved again from now on.
+    expect(await send({ type: "resetKnowledgeBase" })).toEqual({ error: null });
+  });
+
+  test("a reset that can't move the file changes nothing, and says so", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    app.moveAsideFails = true;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    const trayUpdates = app.trayUpdates;
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.dialogs.length === 4)).toBe(true);
+    expect(app.dialogs[3]?.message).toBe("TabMail Voice couldn't reset its settings file.");
+    expect(app.trayState?.().fileProblems).toEqual(["settings"]);
+    expect(app.trayUpdates).toBe(trayUpdates);
+    expect(app.presented).toEqual([]);
+  });
+
+  /** Two fix dialogs open at once (the launch one and the menu's; a dialog without a window isn't modal
+   * on Windows and Linux), both confirmed: the first resets, and the second has nothing left to reset. */
+  test("a second confirmation after the reset changes nothing and says nothing", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("linux");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    app.dialogResponses = [1, 1, 0, 0];
+    app.trayActions?.showFileProblem("settings");
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.movedAside.length === 1 && app.presented.includes("welcome"))).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.movedAside).toHaveLength(1);
+    expect(app.dialogs.map((dialog) => dialog.message)).toEqual([
+      "TabMail Voice's settings file is damaged.",
+      "TabMail Voice's settings file is damaged.",
+      "TabMail Voice's settings file is damaged.",
+      "Reset your settings to the defaults?",
+      "Reset your settings to the defaults?",
+    ]);
+  });
+
+  /** A fix dialog left open while another reset the file: its Reset to Defaults… finds nothing to
+   * reset, and asks nothing. */
+  test("a fix dialog answered after the reset asks nothing and changes nothing", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("linux");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+
+    let answer: (response: number) => void = () => {};
+    const held = new Promise<number>((resolve) => (answer = resolve));
+    app.dialogResponses = [1, held, 0];
+    app.trayActions?.showFileProblem("settings");
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    answer(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(app.movedAside).toHaveLength(1);
+    expect(app.dialogs).toHaveLength(4);
+  });
+
+  /** fn as the hotkey holds the Globe key at Do Nothing, the user's own action kept in the settings
+   * file to be put back (ADR-DESK-031): a reset keeps it, and the default hotkey hands the key back. */
+  test("a settings reset while fn is the hotkey puts the Globe key's action back", async () => {
+    const path = join(app.userData, "settings.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("darwin");
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    let globe = 2;
+    const helper = app.helpers.get("voice-macos")!;
+    helper.replies.set("globeRead", () => ({ value: globe }));
+    helper.replies.set("globeUpdate", (params: { value: number }) => {
+      globe = params.value;
+      return {};
+    });
+    await send({ type: "setHotkey", hotkey: "function" });
+    expect(await eventually(() => globe === 0)).toBe(true);
+
+    app.dialogResponses = [1, 0];
+    app.trayActions?.showFileProblem("settings");
+    expect(await eventually(() => app.movedAside.length === 1)).toBe(true);
+    expect(await eventually(() => globe === 2)).toBe(true);
+    expect(app.stored.has("globeKeyActionBeforeFnHotkey")).toBe(false);
+  });
+
   /** Only the settings file keeps the wizard closed: with the knowledge base's file unreadable alone,
    * setup not yet finished opens the wizard at launch and from the menu, and that file's own dialog is
    * the only one shown. */
@@ -2493,7 +2718,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
     app.stored.set("hasFinishedWelcome", false);
-    app.dialogResponse = 1;
+    app.dialogResponse = 2;
     await launch("darwin");
 
     expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
@@ -2823,7 +3048,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       try {
         const path = join(app.userData, file);
         app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-        app.dialogResponse = 1;
+        app.dialogResponse = 2;
         let launched = false;
         void launchPackaged().then(() => (launched = true));
         while (!launched) await vi.advanceTimersByTimeAsync(0);

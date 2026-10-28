@@ -123,9 +123,19 @@ export class AppSettings extends Observable {
     super();
   }
 
-  /** Why the settings file couldn't be read at launch, when it couldn't: nothing is saved to it. */
+  /** Why the settings file couldn't be read at launch, until it is fixed or the user resets it: nothing
+   * is saved to it meanwhile. */
   get fileProblem(): StoreProblem | undefined {
     return this.store.problem;
+  }
+
+  /** The user's factory reset of the settings file (`moveAside`, which throws, changing nothing, when
+   * the file can't be moved): every setting reads its default from here on. */
+  resetFile(moveAside: () => void): void {
+    const before = this.hotkey;
+    moveAside();
+    this.changed();
+    if (this.hotkey !== before) this.onHotkeyChange?.(this.hotkey);
   }
 
   /** The keys Settings offers; the first is the default. */

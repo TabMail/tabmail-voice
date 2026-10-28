@@ -11,7 +11,8 @@ import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector,
 export interface SettingsWriter {
   /** Stores how long a new event lasts (minutes); false when it is out of range or couldn't be saved. */
   setEventDuration(minutes: number): boolean;
-  /** Why the settings file couldn't be read at launch, when it couldn't: nothing is saved to it. */
+  /** Why the settings file couldn't be read at launch, until it is fixed or the user resets it: nothing
+   * is saved to it meanwhile. */
   readonly fileProblem?: StoreProblem;
 }
 

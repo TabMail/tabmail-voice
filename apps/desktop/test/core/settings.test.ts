@@ -268,6 +268,54 @@ test("a dictation reads nothing of the user's while the settings file couldn't b
   expect([readable.readsScreen, readable.learnsWords, readable.enabledConnectors]).toEqual([true, true, [...connectorIDs]]);
 });
 
+/** A store whose file couldn't be read, reset as `JSONFileStore.moveAside` does: what the session held
+ * is cleared and the file reads as fine. */
+class UnreadStore extends MemoryStore {
+  problem: { kind: "damaged"; path: string; code: string } | undefined = { kind: "damaged", path: "/example/settings.json", code: "invalid" };
+  moveAside(): void {
+    this.values.clear();
+    this.problem = undefined;
+  }
+}
+
+/** The user's factory reset (ADR-DESK-063): every setting reads its default, the change is told, and
+ * a hotkey the session had changed goes back to the default key. */
+test("a reset settings file reads its defaults, is told, and moves the hotkey back", () => {
+  const store = new UnreadStore();
+  const app = new AppSettings(store, () => false, ["rightOption", "rightControl"]);
+  const heard: string[] = [];
+  let changes = 0;
+  app.hotkey = "rightControl";
+  app.onHotkeyChange = (hotkey) => heard.push(hotkey);
+  app.observe(() => changes++);
+  expect(app.dictation(null).isAIOff).toBe(true);
+
+  app.resetFile(() => store.moveAside());
+  expect(app.fileProblem).toBeUndefined();
+  expect(app.hotkey).toBe("rightOption");
+  expect(heard).toEqual(["rightOption"]);
+  expect(changes).toBe(1);
+  expect(app.dictation(null).isAIOff).toBe(false);
+});
+
+test("a reset that keeps the hotkey tells no hotkey change, and one that fails changes nothing", () => {
+  const store = new UnreadStore();
+  const app = new AppSettings(store, () => false, ["rightOption", "rightControl"]);
+  const heard: string[] = [];
+  let changes = 0;
+  app.onHotkeyChange = (hotkey) => heard.push(hotkey);
+  app.observe(() => changes++);
+  expect(() =>
+    app.resetFile(() => {
+      throw new Error("not moved");
+    }),
+  ).toThrow("not moved");
+  expect([changes, app.fileProblem?.kind]).toEqual([0, "damaged"]);
+
+  app.resetFile(() => store.moveAside());
+  expect([changes, heard]).toEqual([1, []]);
+});
+
 /** Memory's size limit: 1 GB until the user picks another of the choices, which is kept; any other
  * value is refused and leaves the limit as it was, and a stored value no longer among the choices
  * reads as the default. */
