@@ -111,14 +111,22 @@ describe("what Voice sends (DS-SEND, DS-WIRE, DS-NO-REQUEST)", () => {
     expect(relay.sent).toEqual([]);
   });
 
-  test("a request for the texts gets no answer, and a message that isn't JSON or isn't an object is ignored", async () => {
-    const { relay } = await connected();
+  /** Only a `bullet_state` reaches the bullet fields (DS-VALIDATE): a released peer's request for the
+   * texts, or a snapshot-shaped message of another type, changes nothing and logs no error. */
+  test("a request for the texts gets no answer, and a message that isn't JSON, isn't an object or isn't a bullet_state is ignored", async () => {
+    const { relay, voice } = await connected();
+    const errors: string[] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: () => {}, error: (text) => errors.push(text) } });
     relay.inject("voice", JSON.stringify({ type: "request_state", fields: ["kb"] }));
     relay.inject("voice", JSON.stringify({ type: "request_state" }));
     relay.inject("voice", "{not json");
     relay.inject("voice", JSON.stringify(["bullet_state"]));
+    relay.inject("voice", JSON.stringify({ type: "bullet_snapshot", v: 1, field: "kb", sender: "ffffffffffffffff", snap: "1", part: 1, parts: 1, bullets: [["", "Fact of another type", "ffffffff00000001", 1]], seen: { ffffffff00000001: 1 } }));
     await relay.settle();
     expect(relay.sent).toEqual([]);
+    expect(voice.texts("kb")).toEqual(kbDefaults);
+    expect(errors).toEqual([]);
+    configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
   });
 
   test("an AI cache probe is answered at once, with nothing, under its id", async () => {
