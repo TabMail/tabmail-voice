@@ -2,10 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { withFreshToken } from "../../../src/core/backend/account.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { type CleanupVariables, TranscriptionClient } from "../../../src/core/backend/transcription.js";
+import { configureLog, type LogLevel, setDebugMode } from "../../../src/core/log.js";
 import { base64 } from "../../../src/core/util/text.js";
 import { Fixtures, signedIn, StubTransport } from "../../support/stubs.js";
 
@@ -154,6 +155,74 @@ describe("TranscriptionClient", () => {
     stub.enqueue(status, { error: code });
     const error = await backendError(makeClient(stub).transcribe(flac, null, [], "t"));
     expect([error.kind, error.status]).toEqual([kind, failedStatus]);
+  });
+
+  /** #307: the debug log names the speech model that answered, a hedge, the models skipped, and how
+   * many terms went: names and a count, never the transcript or a term. The development backend alone
+   * reports them; without them, or in a build that doesn't log, nothing is logged, and a malformed field
+   * never fails the dictation. Never the error log either: launch sends that to stderr in every build. */
+  describe("the model that answered", () => {
+    const errors: string[] = [];
+    afterEach(() => {
+      errors.length = 0;
+      configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+    });
+    /** `debugMode`: a packaged build's debug mode, on or off. */
+    const debugLines = (isDebugBuild: boolean, debugMode = false) => {
+      const lines: string[] = [];
+      configureLog({ isDebugBuild, sinks: { file: (level: LogLevel, text: string) => (level === "debug" ? lines.push(text) : 0), error: (text) => errors.push(text) } });
+      setDebugMode(debugMode);
+      return lines;
+    };
+    const served = (lines: string[]) => lines.filter((line) => line.startsWith("Transcription: answered by"));
+
+    test("is logged, debug only, with the hedge, the models skipped and the terms sent", async () => {
+      const lines = debugLines(true);
+      const stub = new StubTransport();
+      stub.enqueue(200, { text: "ask xyvora", duration_seconds: 1, model: "example/stt-two", hedge_started: true, skipped_models: ["example/stt-one"] });
+      stub.enqueue(200, { text: "ask xyvora", duration_seconds: 1, model: "example/stt-one", hedge_started: false, skipped_models: [] });
+      const client = makeClient(stub);
+
+      expect(await client.transcribe(flac, null, ["Xyvora", "Brevalle"], "t")).toEqual({ text: "ask xyvora", cleanedText: null });
+      await client.transcribe(flac, null, [], "t");
+
+      expect(served(lines)).toEqual([
+        'Transcription: answered by "example/stt-two" (a second model was started), skipped ["example/stt-one"]; 2 vocabulary term(s) sent',
+        'Transcription: answered by "example/stt-one"; 0 vocabulary term(s) sent',
+      ]);
+      expect(lines.join("\n")).not.toMatch(/xyvora|Brevalle/i);
+      expect(errors).toEqual([]);
+    });
+
+    test("is not logged without a model, nor in a build that doesn't log, and never fails the dictation", async () => {
+      const stub = new StubTransport();
+      const replies = [
+        { text: "ok" },
+        { text: "ok", model: 7, hedge_started: true, skipped_models: ["example/stt-one"] },
+        { text: "ok", model: "example/stt-one", hedge_started: "yes", skipped_models: "example/stt-two" },
+        { text: "ok", model: "example/stt-one", skipped_models: [3, "example/stt-two", null] },
+      ];
+      for (const reply of replies) stub.enqueue(200, reply);
+      const lines = debugLines(true);
+      const client = makeClient(stub);
+      for (const _ of replies) expect(await client.transcribe(flac, null, [], "t")).toEqual({ text: "ok", cleanedText: null });
+      expect(served(lines)).toEqual([
+        'Transcription: answered by "example/stt-one"; 0 vocabulary term(s) sent',
+        'Transcription: answered by "example/stt-one", skipped ["example/stt-two"]; 0 vocabulary term(s) sent',
+      ]);
+
+      // A packaged build logs it while debug mode is on, and not while it is off.
+      const packaged = debugLines(false, true);
+      stub.enqueue(200, { text: "ok", model: "example/stt-one" });
+      await client.transcribe(flac, null, [], "t");
+      expect(served(packaged)).toEqual(['Transcription: answered by "example/stt-one"; 0 vocabulary term(s) sent']);
+
+      const quiet = debugLines(false);
+      stub.enqueue(200, { text: "ok", model: "example/stt-one" });
+      await client.transcribe(flac, null, [], "t");
+      expect(quiet).toEqual([]);
+      expect(errors).toEqual([]);
+    });
   });
 
   test("rejects a response without text", async () => {
