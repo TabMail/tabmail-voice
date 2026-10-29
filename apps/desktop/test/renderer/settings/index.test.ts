@@ -12,11 +12,20 @@ import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
-import { UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { formatBytes } from "../../../src/core/memory/page.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
+
+const labels = new Map<string, string>();
+/** Bullets as Settings is pushed them: each text with its label (one per text here). */
+function shownBullets(texts: string[]): ShownBullet[] {
+  return texts.map((text) => {
+    if (!labels.has(text)) labels.set(text, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
+    return { text, labels: [[labels.get(text) as string, 1]] };
+  });
+}
 
 const signedIn: SettingsState = {
   email: "person@example.com",
@@ -57,11 +66,11 @@ const signedIn: SettingsState = {
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: {
     writingStyle: [
-      { section: "General writing style", bullets: ["ALWAYS start with a greeting."] },
-      { section: "Language", bullets: ["I write in English Only."] },
-      { section: "Useful links to personal website and other resources", bullets: [] },
+      { section: "general", title: "General writing style", bullets: shownBullets(["ALWAYS start with a greeting."]) },
+      { section: "language", title: "Language", bullets: shownBullets(["I write in English Only."]) },
+      { section: "links", title: "Useful links to personal website and other resources", bullets: [] },
     ],
-    knowledgeBase: ["Prefers morning meetings.", "Works with Sam."],
+    knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
     history: [],
   },
   fileProblems: [],
@@ -499,7 +508,7 @@ describe("Settings page", () => {
   /** Settings › Personalization (ADR-DESK-063): the writing style's sections and the knowledge base
    * as editable lists, Reset, and the history. */
   describe("personalization", () => {
-    const language = "Language";
+    const language = "language";
     const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
 
     async function open(initial: SettingsState = signedIn, reply: Reply = { error: null }): Promise<{ commands: Command[]; push: (state: SettingsState) => Promise<void> }> {
@@ -643,8 +652,8 @@ describe("Settings page", () => {
       await act(async () => type(languageItem, "I write in English and French."));
       await leaveFor(languageItem, "History");
       expect(commands).toEqual([
-        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] },
-        { type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English and French."] },
+        { type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers afternoon meetings.", "Works with Sam."] },
+        { type: "editWritingStyle", section: language, shown: shownBullets(["I write in English Only."]), bullets: ["I write in English and French."] },
       ]);
       await act(async () => tab("Knowledge base").click());
       expect(field("Knowledge base, item 1").value).toBe("Prefers afternoon meetings.");
@@ -678,7 +687,7 @@ describe("Settings page", () => {
       const item = field("Knowledge base, item 1");
       await act(async () => type(item, "Prefers afternoon meetings."));
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
     });
 
     /** An item edited, then removed with its own Remove: the press focuses Remove first, and the
@@ -693,7 +702,7 @@ describe("Settings page", () => {
         const command = sent.at(-1);
         if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
         return { ...signedIn, personalization: personalizationState(prompts) };
-      });
+      }, { ...signedIn, personalization: personalizationState(prompts) });
       sent = page.commands;
       await act(async () => button("Personalization").click());
       const item = field("Knowledge base, item 1");
@@ -709,7 +718,7 @@ describe("Settings page", () => {
      * each field shows its own bullet, what is being typed in a later field stays, and is saved with
      * the list shown now, and a field left untouched saves nothing. */
     test("a knowledge base changed elsewhere keeps what is being typed", async () => {
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase } });
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets(knowledgeBase) } });
       const { commands, push } = await open(withKB(["Alpha.", "Beta.", "Gamma."]));
       const item = field("Knowledge base, item 3");
       await act(async () => type(item, "Gamma, edited."));
@@ -724,7 +733,7 @@ describe("Settings page", () => {
       await act(async () => field("Knowledge base, item 2").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
       expect(commands).toEqual([]);
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Zero.", "Beta.", "Gamma."], bullets: ["Zero.", "Beta.", "Gamma, edited."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Zero.", "Beta.", "Gamma."]), bullets: ["Zero.", "Beta.", "Gamma, edited."] }]);
     });
 
     /** Equal bullets (an Add of one already there stores it twice) are each a row of their own, and a
@@ -737,7 +746,7 @@ describe("Settings page", () => {
     ])("equal bullets %j, changed elsewhere to %j, show as pushed", async (before, after) => {
       const errors: unknown[] = [];
       vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => void errors.push(args[0]));
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase } });
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets(knowledgeBase) } });
       const rows = () => [...document.querySelectorAll<HTMLTextAreaElement>('ul[aria-label="Knowledge base"] textarea')].map((element) => element.value);
       const { push } = await open(withKB(before));
       expect(rows()).toEqual(before);
@@ -757,7 +766,7 @@ describe("Settings page", () => {
       const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
       await act(async () => item.dispatchEvent(enter));
       expect(enter.defaultPrevented).toBe(true);
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
     });
 
     /** An emptied item is sent empty, and the store leaves empty bullets out (`UserPrompts`' test
@@ -768,7 +777,7 @@ describe("Settings page", () => {
       await act(async () => type(item, "   "));
       expect(commands).toEqual([]);
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["", "Works with Sam."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["", "Works with Sam."] }]);
     });
 
     test("Escape puts an item back as it was, and leaving it then saves nothing", async () => {
@@ -784,7 +793,7 @@ describe("Settings page", () => {
     /** A bullet another writer stored with a leading space (Thunderbird or iOS) is
      * shown as stored; leaving it untouched saves nothing. */
     test("an item stored with a leading space and left untouched saves nothing", async () => {
-      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: [" Alice.", "Works with Sam."] } });
+      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets([" Alice.", "Works with Sam."]) } });
       const item = field("Knowledge base, item 1");
       expect(item.value).toBe(" Alice.");
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
@@ -798,8 +807,8 @@ describe("Settings page", () => {
       await act(async () => type(add, "  Likes short replies.  "));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
       expect(commands).toEqual([
-        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Works with Sam."] },
-        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers morning meetings.", "Works with Sam.", "Likes short replies."] },
+        { type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Works with Sam."] },
+        { type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers morning meetings.", "Works with Sam.", "Likes short replies."] },
       ]);
     });
 
@@ -808,7 +817,7 @@ describe("Settings page", () => {
       const add = field("Add to Language");
       await act(async () => type(add, "I also write in French."));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
-      expect(commands).toEqual([{ type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English Only.", "I also write in French."] }]);
+      expect(commands).toEqual([{ type: "editWritingStyle", section: language, shown: shownBullets(["I write in English Only."]), bullets: ["I write in English Only.", "I also write in French."] }]);
     });
 
     /** The general section shows as for emails and formal replies (#301), but its edits still name the
@@ -819,7 +828,7 @@ describe("Settings page", () => {
       const add = field("Add to General writing style for emails and formal replies");
       await act(async () => type(add, "Keep it short."));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
-      expect(commands).toEqual([{ type: "editWritingStyle", section: "General writing style", shown: ["ALWAYS start with a greeting."], bullets: ["ALWAYS start with a greeting.", "Keep it short."] }]);
+      expect(commands).toEqual([{ type: "editWritingStyle", section: "general", shown: shownBullets(["ALWAYS start with a greeting."]), bullets: ["ALWAYS start with a greeting.", "Keep it short."] }]);
     });
 
     /** Reset asks first, in place; Cancel sends nothing. */

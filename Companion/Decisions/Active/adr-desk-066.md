@@ -1,6 +1,86 @@
 ## ADR-DESK-066: Device Sync of the knowledge base and writing style with Thunderbird and iOS
 
+**Revised 2026-10-29: labelled bullets (Device Sync v2).** The first design (kept below under
+*History*) merged whole texts by time with a remembered ancestor. Its fuzz and review rounds kept
+finding orderings where a device lost a bullet or never settled, and Thunderbird and iOS had the same
+class of bug in their own merge. Voice, Thunderbird and iOS now share one design: every bullet carries
+a label, and a merge is a set operation that never depends on time. This PR is Voice's; Thunderbird and
+iOS follow with the same rules, the same test vectors and the same default catalog, byte for byte.
+
 **Context:** Owner, 2026-10-17: Voice joins Device Sync (root ADR-021), the relay Thunderbird and iOS
+sync through, for the knowledge base and the writing style (ADR-DESK-063). Owner-critical rule: a
+device never wipes another device's knowledge base or writing style. The relay forwards each message
+to the user's other connected devices and keeps nothing; messages can be lost, repeated or reordered,
+and devices can be offline for weeks, copied, restored from a backup or reset.
+
+**Decision:**
+- **What is synced.** `kb` and `composition` (DS-VOICE). Thunderbird's action rules use the same
+  format there; Voice ignores them, and every other relay field. Opt Out of AI and the Device Sync
+  switch are this computer's and never sent. `ai_cache_probe` is answered at once with an empty
+  `ai_cache_response` under the same `probeId`.
+- **Labelled bullets.** A field is its own skeleton (the lines around the sections, never synced), its
+  live bullets in order, each `(section, text, label)`, and a seen map: per writer name, the highest
+  counter this device has seen. A label is a writer name and a counter. A writer name is 16 lowercase
+  hex digits, drawn fresh by each process and never stored, so two copies of one store never share
+  one; any failed save, reset or reload abandons it (one name per process for every field). A catalog
+  default's label is `default:<id>` with counter 1, the same on every device
+  (`src/core/sync/device-sync-default-catalog.json`).
+- **Local changes.** An add gets a fresh label (a text already live is not added twice); a delete
+  removes every live label of the text; an edit or a move is a delete and an add. An operation that
+  showed the user (or a model) some bullets and saves later deletes only the labels it showed: a
+  bullet that arrived in between stays. Settings hands back the labels it displayed (`ShownBullet`);
+  `kb_del` deletes from the labels read at key-down. Each commit writes the bullets and the seen map
+  together, in one write.
+- **Merge** of a complete incoming snapshot (bullets and seen map): a local label the sender lacks is
+  dropped only when the sender's seen map covers it (it saw it, so it was deleted there); an incoming
+  label new here is taken only when this device's seen map, as it was before this merge, doesn't cover
+  it; a label holding other text or section here refuses the snapshot; the seen maps take the maximum;
+  then one label per (section, text) is kept, the smallest. No time, no ancestor, no hold decides
+  anything.
+- **Messages** (`bullet_state`): the field's full state on connect, after every local change, and in
+  answer to a merge whose incoming labels differed from this device's. Its seen map carries only the
+  names on its bullets and on the last snapshot merged for that field. Over the relay's budget it is
+  sent in parts, and a snapshot is applied only when every part arrived, agreeing; one bullet alone
+  over the budget holds the field back and Settings says "Too large to sync". A malformed part drops
+  the whole snapshot. Voice never asks for state and never sends the released format.
+- **Released Thunderbird and iOS** (`prompt_state`): imported additions only, an epoch-zero text
+  skipped; nothing is deleted from what they send.
+- **Upgrade.** The texts Voice kept before are parsed once: catalog defaults take their default label,
+  every other bullet a fresh one; the old keys go in the same write. A reset puts back the defaults
+  with a fresh seen map, so nothing it removed is deleted elsewhere: the other devices' bullets come
+  back.
+- **Where it lives.** `src/core/sync/bullets.ts` (parse, render, labels, local operations, merge),
+  `src/core/sync/bulletSync.ts` (`BulletSync`: the writer name, commits, the wire, parts),
+  `src/core/sync/deviceSync.ts` (`DeviceSync`: the connection), `UserPrompts` the store
+  (`bullet_state:<field>`). The transport is `src/main/deviceSyncSocket.ts`. All free of timers that
+  affect what is kept: the only timers keep the connection alive (ping every 30 s) and try it again
+  (5 s doubling to 300 s, ten times, then at the next wake or return online).
+- **When it runs** is unchanged: for the account signed in, from a texts file that could be read,
+  while `AppSettings.deviceSyncAllowed`; another account signing in resets the texts to the defaults
+  (`UserPrompts.claim`).
+
+**Consequences:**
+- A bullet deleted on one device is deleted on the others once they exchange states, however late or
+  in whatever order; a bullet no user deleted is never lost (tested as invariants, below).
+- The seen map grows by one entry per writer name (per process run that wrote). Small: names are
+  never reused.
+- The knowledge base and writing style leave this computer, to the user's other devices through the
+  relay, which keeps nothing (root ADR-004 is about email content; these are the user's own notes).
+- Tests: `test/core/sync/device-sync-vectors.json`, the scenarios and parse cases Thunderbird and iOS
+  run unchanged, run by `test/core/sync/deviceSyncVectors.test.ts` (it pins the vectors' and the
+  catalog's SHA-256); `test/core/sync/deviceSync.fuzz.test.ts`, seeded runs of 3 to 6 devices with
+  edits, resets, restarts, failed saves, copies, restores, legacy peers, lost, repeated and reordered
+  messages and lost parts, asserting no loss at every step, then convergence and quiet
+  (`DEVICE_SYNC_FUZZ_SEEDS` runs more); `test/core/sync/deviceSync.test.ts` (wire, lifecycle, size),
+  `test/core/personalization/prompts.test.ts`, `test/main/deviceSyncSocket.test.ts`, and the Device
+  Sync cases of `test/main/index.test.ts` and the Settings page's tests.
+
+## History: the first design (2026-10-17 to 2026-10-28)
+
+Superseded by the revision above; kept as it was decided.
+
+
+**Context (first design):** Owner, 2026-10-17: Voice joins Device Sync (root ADR-021), the relay Thunderbird and iOS
 already sync through, for the knowledge base and the writing style (ADR-DESK-063). Owner-critical
 rule: Voice must never wipe another device's knowledge base or writing style. The relay forwards each
 message to the user's other connected devices and keeps nothing. Thunderbird and iOS merge a text

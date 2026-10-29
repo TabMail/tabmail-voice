@@ -3,7 +3,6 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { extractBullets } from "../../../src/core/personalization/bulletMerge.js";
 import { KBTools } from "../../../src/core/personalization/kbTools.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { unsavedBecauseOf } from "../../../src/core/ui/fileProblems.js";
@@ -29,13 +28,18 @@ class FailingStore extends MemoryStore {
 function setup(knowledgeBase?: string) {
   const store = new FailingStore(knowledgeBase === undefined ? {} : { [kbKey]: knowledgeBase });
   const prompts = new UserPrompts(store);
+  // An agent request: the knowledge base's labels captured at its key-down (DS-CAPTURE). The text from
+  // before is upgraded by then.
+  let tools = new KBTools(prompts, prompts.captureKnowledgeBase());
   let changes = 0;
   prompts.observe(() => {
     changes += 1;
   });
-  const tools = new KBTools(prompts);
   const run = (name: string, statement: unknown) => JSON.parse(tools.run(name, { statement })) as unknown;
-  return { store, prompts, run, changes: () => changes };
+  const request = () => {
+    tools = new KBTools(prompts, prompts.captureKnowledgeBase());
+  };
+  return { store, prompts, run, request, changes: () => changes };
 }
 
 /** The agent's knowledge-base tools answer as Thunderbird's of the same names. */
@@ -84,7 +88,7 @@ describe("KBTools", () => {
     const { prompts, run } = setup("");
     run("kb_add", "Uses the \u201Cweekly\u201D label");
     // As Thunderbird's, an empty knowledge base keeps its empty line before the first bullet.
-    expect(extractBullets(prompts.knowledgeBase)).toEqual(['[Pinned] Uses the "weekly" label.']);
+    expect(prompts.knowledgeBase).toBe('- [Pinned] Uses the "weekly" label.');
     expect(run("kb_add", 'Uses the "weekly" label')).toBe("No change (duplicate or unchanged).");
   });
 
@@ -92,18 +96,19 @@ describe("KBTools", () => {
    * lines they compare with are made plain too: adding it again changes nothing, and removing it
    * removes it from what is stored. */
   test("a bullet with curly quotes typed in Settings is a duplicate for kb_add and found by kb_del", () => {
-    const { store, prompts, run, changes } = setup("- alpha.");
-    expect(prompts.editKnowledgeBase(["alpha."], ["alpha.", "[Pinned] Uses the \u201Cweekly\u201D label\u2019s color."])).toBe(true);
-    const stored = store.get(kbKey);
-    expect(stored).toContain("\u201Cweekly\u201D");
+    const { store, prompts, run, request, changes } = setup("- alpha.");
+    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha.", "[Pinned] Uses the \u201Cweekly\u201D label\u2019s color."])).toBe(true);
+    request();
+    const stored = structuredClone(store.snapshot());
+    expect(prompts.knowledgeBase).toContain("\u201Cweekly\u201D");
     const changesBefore = changes();
 
     expect(run("kb_add", 'Uses the "weekly" label\'s color')).toBe("No change (duplicate or unchanged).");
-    expect(store.get(kbKey)).toBe(stored);
+    expect(store.snapshot()).toEqual(stored);
     expect(changes()).toBe(changesBefore);
 
     expect(run("kb_del", '[Pinned] Uses the "weekly" label\'s color')).toBe("Removed from knowledge base.");
-    expect(extractBullets(new UserPrompts(new MemoryStore(store.snapshot())).knowledgeBase)).toEqual(["alpha."]);
+    expect(new UserPrompts(new MemoryStore(store.snapshot())).knowledgeBase).toBe("- alpha.");
   });
 
   /** Compatibility forms (a ligature, full-width letters) are made plain too (NFKC), as Thunderbird
@@ -115,12 +120,12 @@ describe("KBTools", () => {
   });
 
   test("a call without a statement is refused", () => {
-    const { store, run } = setup("- alpha.");
+    const { prompts, run } = setup("- alpha.");
     for (const statement of [undefined, "", "   ", 7]) {
       expect(run("kb_add", statement)).toEqual({ error: "missing statement" });
       expect(run("kb_del", statement)).toEqual({ error: "missing statement" });
     }
-    expect(store.get(kbKey)).toBe("- alpha.");
+    expect(prompts.knowledgeBase).toBe("- alpha.");
   });
 
   /** A removal matches the statement however it is cased, with or without its period. */
@@ -136,6 +141,28 @@ describe("KBTools", () => {
     const { prompts, run } = setup("- alpha.\n- [Pinned] Prefers morning meetings.\n- beta.");
     expect(run("kb_del", "- [Pinned] Prefers morning meetings.")).toBe("Removed from knowledge base.");
     expect(prompts.knowledgeBase).toBe("- alpha.\n- beta.");
+  });
+
+  /** DS-CAPTURE: a request removes only what it saw, or what its own kb_add added. */
+  test("kb_del never removes a bullet that arrived after the request began, and removes its own kb_add's", () => {
+    const { prompts, run, request } = setup("- alpha.");
+    prompts.addKnowledge("Arrived meanwhile.");
+    expect(run("kb_del", "Arrived meanwhile")).toEqual({ error: "failed to delete from knowledge base (statement not found)" });
+    expect(prompts.knowledgeBase).toBe("- alpha.\n- Arrived meanwhile.");
+    expect(run("kb_add", "Likes tea")).toBe("Added to knowledge base.");
+    expect(run("kb_del", "[Pinned] Likes tea")).toBe("Removed from knowledge base.");
+    expect(prompts.knowledgeBase).toBe("- alpha.\n- Arrived meanwhile.");
+    request();
+    expect(run("kb_del", "Arrived meanwhile")).toBe("Removed from knowledge base.");
+    expect(prompts.knowledgeBase).toBe("- alpha.");
+  });
+
+  /** A bullet the request saw that another device has since removed is already gone: nothing changes. */
+  test("kb_del of a seen bullet removed since says it isn't there", () => {
+    const { prompts, run } = setup("- alpha.\n- beta.");
+    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["beta."])).toBe(true);
+    expect(run("kb_del", "alpha")).toEqual({ error: "statement not found in knowledge base" });
+    expect(prompts.knowledgeBase).toBe("- beta.");
   });
 
   test("kb_del of a statement not kept changes nothing", () => {

@@ -731,7 +731,7 @@ function MemoryPane({ state }: { state: SettingsState }) {
 /** How a writing style section is shown, where its stored heading would mislead: the style is learned
  * from the user's email and sent with every request offering Compose or Edit (#301). Display only: the heading
  * in the style document, shared with the other TabMail apps, stays as it is. */
-const writingStyleSectionLabels: Readonly<Record<string, string>> = { "General writing style": "General writing style for emails and formal replies" };
+const writingStyleSectionLabels: Readonly<Record<string, string>> = { general: "General writing style for emails and formal replies" };
 
 /** Personalization's tabs, in order. */
 const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
@@ -786,11 +786,11 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
           <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent with requests that may write; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
-          {personalization.writingStyle.map(({ section, bullets }) => (
+          {personalization.writingStyle.map(({ section, title, bullets }) => (
             <section key={section} className="card-section">
-              <h2 className="section-heading">{writingStyleSectionLabels[section] ?? section}</h2>
+              <h2 className="section-heading">{writingStyleSectionLabels[section] ?? title}</h2>
               <div className="group">
-                <BulletEditor title={writingStyleSectionLabels[section] ?? section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
+                <BulletEditor title={writingStyleSectionLabels[section] ?? title} bullets={bullets.map((bullet) => bullet.text)} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
               </div>
             </section>
           ))}
@@ -803,7 +803,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
             <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
           </TabIntro>
           <Group>
-            <BulletEditor title="Knowledge base" bullets={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
+            <BulletEditor title="Knowledge base" bullets={personalization.knowledgeBase.map((bullet) => bullet.text)} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
           </Group>
         </>,
       )}

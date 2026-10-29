@@ -311,3 +311,19 @@ ADR-DESK-066. Settings › Personalization shows Device Sync's switch, "Sync wit
 above its tabs, with the too-large error under it. History labels an entry taken from another device
 "Synced" (`sync_receive`, iOS's source). The factory reset of the knowledge base file says in its
 confirmation that the other devices keep theirs, and that while the switch is on they come back here.
+
+**Amendment 2026-10-29 — labelled bullets (ADR-DESK-066 revision).** The knowledge base and the
+writing style are stored as labelled bullets (`bullet_state:kb`, `bullet_state:composition`: each
+field's skeleton lines, live bullets and seen map in one value), no longer as markdown texts; the
+markdown the prompts send is rendered from them, and the texts kept before are upgraded once, the old
+keys removed in the same write. Every change is per bullet. Settings shows bullets with the labels it
+read (`ShownBullet`) and an edit hands them back, so saving deletes only what the page showed and
+never a bullet that arrived from another device while it was open; `kb_del` likewise deletes only from
+the labels read at key-down (`captureKnowledgeBase`). Restoring a History entry changes only the
+sections Settings shows; a section it doesn't show (one a newer app added) is kept. A save that fails
+changes nothing and the next change draws a fresh writer name. The defaults are the shared catalog's
+(`src/core/sync/device-sync-default-catalog.json`); the writing style's skeleton is the default
+document's lines around its sections, and its "not too formal. " default is stored trimmed ("not too
+formal."), as every bullet is. Tested in `core/personalization/prompts.test.ts`,
+`core/personalization/kbTools.test.ts`, `core/dictation/controller.test.ts` and the Settings page's
+tests. `bulletMerge.ts` (the three-way merge) is deleted; `patchApplier.ts` stays.

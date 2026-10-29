@@ -24,8 +24,7 @@ import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
-import { compositionSections } from "../../../src/core/personalization/bulletMerge.js";
-import { defaultKnowledgeBase } from "../../../src/core/personalization/defaults.js";
+import { defaultCatalog } from "../../../src/core/sync/bullets.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { type MicrophoneStatus, PermissionsModel } from "../../../src/core/onboarding/permissions.js";
 import type { ScreenContext, ScreenRead } from "../../../src/core/dictation/screenContext.js";
@@ -40,6 +39,12 @@ import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
 import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
 import { concat, random, room, speech } from "../../support/speech.js";
+
+/** The knowledge base a new install holds: the catalog's defaults (DS-DEFAULT). */
+const defaultKnowledgeBase = defaultCatalog.defaults
+  .filter((entry) => entry.field === "kb")
+  .map((entry) => `- ${entry.text}`)
+  .join("\n");
 
 vi.mock("electron", () => ({ screen: {} }));
 // These tests use short dictations cut at their pauses, to exercise a long dictation's chunks; the pause cut itself is
@@ -4769,11 +4774,28 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
 
           test("kb_del removes the statement", async () => {
-            prompts.updateKnowledgeBase(() => "- alpha.\n- [Pinned] Prefers morning meetings.");
+            prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha.", "[Pinned] Prefers morning meetings."]);
             const { done } = await ask([], [calling(["kb_del", JSON.stringify({ statement: "[Pinned] prefers morning meetings" })]), reply("Forgotten.")]);
             await done;
             expect(JSON.parse(told(1)[0] ?? "null")).toBe("Removed from knowledge base.");
             expect(prompts.knowledgeBase).toBe("- alpha.");
+          });
+
+          /** DS-CAPTURE: a request removes only what it saw at key-down, never a bullet that arrived
+           * while it ran (from another device, or Settings). */
+          test("kb_del never removes a bullet that arrived after key-down", async () => {
+            const { done } = await ask(
+              [],
+              [calling(["kb_del", JSON.stringify({ statement: "Arrived while held" })]), reply("Not found.")],
+              (controller) => {
+                controller.onPhaseChange = (phase) => {
+                  if (phase.kind === "listening" && !prompts.knowledgeBase.includes("Arrived")) prompts.addKnowledge("Arrived while held.");
+                };
+              },
+            );
+            await done;
+            expect(JSON.parse(told(1)[0] ?? "null")).toEqual({ error: "failed to delete from knowledge base (statement not found)" });
+            expect(prompts.knowledgeBase).toBe(`${defaultKnowledgeBase}\n- Arrived while held.`);
           });
 
           test("arguments that aren't a JSON object are refused without editing the knowledge base", async () => {
@@ -4790,8 +4812,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const { controller } = await openChat((controller) => {
               controller.onPhaseChange = (phase) => {
                 if (phase.kind === "listening") {
-                  prompts.updateKnowledgeBase(() => "- Changed while held.");
-                  prompts.editCompositionSection(compositionSections[1] as string, ["I write in English Only."], ["I write in French."]);
+                  prompts.editKnowledgeBase(prompts.shown("kb", ""), ["Changed while held."]);
+                  prompts.editCompositionSection("language", prompts.shown("composition", "language"), ["I write in French."]);
                 }
               };
             });

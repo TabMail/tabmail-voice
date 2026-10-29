@@ -5,11 +5,8 @@
 import type { AccountModel } from "../backend/account.js";
 import * as config from "../config.js";
 import { errorName, log } from "../log.js";
-import { compositionSections, extractBullets, extractSection, mergeFlatField, mergeSectionedField } from "../personalization/bulletMerge.js";
-import { defaultComposition, defaultKnowledgeBase } from "../personalization/defaults.js";
-import { type PromptField, type PromptSyncChange, promptFields, type UserPrompts } from "../personalization/prompts.js";
+import { type PromptField, promptFields, type UserPrompts } from "../personalization/prompts.js";
 import { Observable } from "../util/observable.js";
-import { ancestorTime, epochZero, isSyncTime, nextSyncTime } from "./time.js";
 
 /** A connection to the Device Sync relay, as the transport opened it. */
 export interface SyncSocket {
@@ -44,43 +41,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function defaultText(field: PromptField): string {
-  return field === "kb" ? defaultKnowledgeBase : defaultComposition;
-}
-
-function merge(field: PromptField, base: string, local: string, remote: string): string {
-  return field === "kb" ? mergeFlatField(base, local, remote) : mergeSectionedField(base, local, remote);
-}
-
-/** Whether `a` and `b` hold the same bullets (in each of the writing style's sections), in any order. */
-function sameBullets(field: PromptField, a: string, b: string): boolean {
-  const bullets = (text: string) =>
-    JSON.stringify(field === "kb" ? [...new Set(extractBullets(text))].sort() : compositionSections.map((section) => [...new Set(extractBullets(extractSection(text, section)))].sort()));
-  return bullets(a) === bullets(b);
-}
-
 /**
- * Device Sync of the knowledge base and the writing style (root ADR-021): this computer joins the
- * user's Thunderbird and iOS apps through the relay, which forwards each message to the user's other
- * connected devices and keeps nothing. Only those two texts are sent and taken; the relay's other
- * fields are Thunderbird's and iOS's.
- *
- * Merged as Thunderbird and iOS merge them, with rules more, so that no device loses a bullet its user
- * didn't remove, and a bullet added on one reaches all (one removed may stay on a device that can't
- * tell a removal from a bullet it never had):
- * - A text never synced here (none, or after a reset) is never offered as the newest: it is sent at
- *   epoch zero, which no device takes over its own, and the first text another device sends is merged
- *   three ways with the default as the common ancestor, so its bullets and this computer's both stay.
- * - Each text sent goes after its merge ancestor (`sendState`), so a device that never synced
- *   merges it rather than taking it whole.
- * - When a merge leaves this computer holding other bullets than the device that sent, the result is
- *   sent back, once for each pair of texts until the next probe.
- * - After sending its edits, or a merge back, it asks for the texts back: what comes back is the
- *   ancestor the next merge needs, so a bullet another device removes afterwards is removed here too.
- * - Thunderbird and iOS send nothing in answer to a text, and this computer sends back only the merge
- *   above: no exchange runs on by itself. It sends no acknowledgement and never sends a text again
- *   under the time it came with: either would have another device take an older text over a newer
- *   one, and lose a bullet.
+ * Device Sync of the knowledge base and the writing style (root ADR-021, ADR-DESK-066): this computer
+ * joins the user's Thunderbird and iOS apps through the relay, which forwards each message to the
+ * user's other connected devices and keeps nothing. The transport of the labelled-bullet sync
+ * (`BulletSync`, through `UserPrompts.sync`): each field's full state is sent on connect, after a
+ * local change, and after a merge whose incoming labels differed from this computer's (DS-SEND); no
+ * request is ever sent (DS-NO-REQUEST, DS-VOICE). A released device's `prompt_state` is imported,
+ * additions only (DS-LEGACY-IN); nothing is sent in that format. No timer decides what is kept: the
+ * only timers keep the connection alive and try it again.
  */
 export class DeviceSync extends Observable {
   private socket: SyncSocket | null = null;
@@ -94,24 +63,20 @@ export class DeviceSync extends Observable {
   private attempts = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
-  private probeTimer: ReturnType<typeof setInterval> | null = null;
-  private sendTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly edited = new Set<PromptField>();
-  /** Each text sent back, with the text it was sent back for, until the next probe. */
-  private readonly sentBack = new Set<string>();
   private updating = false;
   private updateAgain = false;
-  private tooLargeNow = false;
+  /** The fields last held back by DS-OVERSIZE. */
+  private readonly oversize = new Set<PromptField>();
 
   constructor(private readonly options: DeviceSyncOptions) {
     super();
-    options.prompts.onLocalChange = (field, kind) => this.localChange(field, kind);
+    options.prompts.onLocalChange = (field) => this.send(field);
   }
 
-  /** The last time the texts were to be sent, they were over the relay's message size, so weren't:
-   * Settings says so. */
+  /** The last time a field was to be sent, one of its bullets alone was over the relay's message size,
+   * so it wasn't (DS-OVERSIZE): Settings says so. */
   get tooLarge(): boolean {
-    return this.tooLargeNow;
+    return this.oversize.size > 0;
   }
 
   /** Brings the connection in line with the account and the settings: run on every change of either,
@@ -148,7 +113,7 @@ export class DeviceSync extends Observable {
     if (this.retryTimer !== null) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     this.closeSocket();
-    this.setTooLarge(false);
+    this.setOversize(null);
   }
 
   private reconcile(): void {
@@ -238,13 +203,9 @@ export class DeviceSync extends Observable {
   private endConnection(): void {
     this.ready = false;
     if (this.pingTimer !== null) clearInterval(this.pingTimer);
-    if (this.probeTimer !== null) clearInterval(this.probeTimer);
-    if (this.sendTimer !== null) clearTimeout(this.sendTimer);
     this.pingTimer = null;
-    this.probeTimer = null;
-    this.sendTimer = null;
-    this.edited.clear();
-    this.sentBack.clear();
+    // DS-CHUNK: incomplete snapshots are dropped with the connection.
+    this.options.prompts.sync.disconnected();
   }
 
   private received(text: string): void {
@@ -263,21 +224,15 @@ export class DeviceSync extends Observable {
         this.ready = true;
         this.attempts = 0;
         this.pingTimer = setInterval(() => this.sendText(ping), config.deviceSyncPingInterval);
-        this.probeTimer = setInterval(() => {
-          // What another device didn't take before may be taken now: it's sent again once more.
-          this.sentBack.clear();
-          this.requestState(promptFields);
-        }, config.deviceSyncProbeInterval);
-        // Ask before offering anything: what comes back is merged, and only then sent on.
-        this.requestState(promptFields);
+        // DS-SEND: each field's state on connect; a device that holds other labels answers.
+        for (const field of promptFields) this.send(field);
         break;
-      case "request_state": {
-        const asked = Array.isArray(message.fields) && message.fields.length > 0 ? promptFields.filter((field) => (message.fields as unknown[]).includes(field)) : promptFields;
-        if (asked.length > 0) this.sendState(asked);
+      case "bullet_state":
+        this.receiveBullets(message);
         break;
-      }
       case "prompt_state":
-        this.receiveState(message.data);
+        // DS-LEGACY-IN: a released device's texts, additions only; what changed goes on to updated devices.
+        for (const field of this.options.prompts.sync.receiveLegacy(message.data)) this.send(field as PromptField);
         break;
       case "ai_cache_probe":
         // Thunderbird and iOS ask every other device for an AI result they may hold, and wait for each
@@ -289,117 +244,24 @@ export class DeviceSync extends Observable {
     }
   }
 
-  /** Merges what another device sent (Thunderbird's rules, with the ones for a text never synced here),
-   * saves it in one write, then sends back the texts it holds other bullets than. */
-  private receiveState(data: unknown): void {
-    if (!isRecord(data)) return;
-    const changes: Partial<Record<PromptField, PromptSyncChange>> = {};
-    const resend: PromptField[] = [];
-    for (const field of promptFields) {
-      const remote = data[field];
-      if (typeof remote !== "string") continue;
-      const time = data[`${field}_updated_at`] || data.updatedAt || epochZero;
-      if (!isSyncTime(time)) {
-        log.debug(`DeviceSync: ${field} sent without a valid time; ignored`);
-        continue;
-      }
-      // Another computer's merge ancestor, for devices that never synced: this one merges a first text
-      // with the default instead.
-      if (time === ancestorTime) continue;
-      const local = this.options.prompts.syncState(field);
-      // Older than the last text it sent, or that text again. A device keeps the time of the text it
-      // merged in, so another text at that same time is its merge, and new.
-      const stale = time < local.peerBaseTime || (time === local.peerBaseTime && remote === local.peerBase);
-      let merged: string;
-      if (local.peerBase === null) {
-        // The first text another device sent: merged with the default as the common ancestor, so its
-        // bullets and this computer's additions both stay, and taken as sent when it holds them all.
-        merged = merge(field, defaultText(field), local.text, remote);
-        if (sameBullets(field, merged, remote)) merged = remote;
-      } else if (time === epochZero) {
-        // A device's default or reset text: never taken, as Thunderbird and iOS never take it.
-        continue;
-      } else if (stale) {
-        // A text merged already, or older: what it lacks of this computer's is sent again.
-        if (sameBullets(field, local.text, remote)) continue;
-        merged = local.text;
-      } else {
-        merged = local.text === local.peerBase ? remote : merge(field, local.peerBase, local.text, remote);
-      }
-      const change: PromptSyncChange = {};
-      // The next merge's ancestor is what the other device sent, never the merge.
-      if (local.peerBase === null || !stale) change.peerBase = { text: remote, time };
-      if (merged !== local.text) {
-        change.text = merged;
-        change.time = time > local.time ? time : local.time;
-      }
-      // Sent back once for each pair of texts: the other device may have removed those bullets, and
-      // neither takes what the other sends back again, so sending it again would never end.
-      const pair = `${field}\u0000${remote}\u0000${merged}`;
-      const sendBack = !sameBullets(field, merged, remote) && !this.sentBack.has(pair);
-      if (sendBack) {
-        change.time = nextSyncTime(Date.now(), [time, local.time, local.peerBaseTime]);
-        this.sentBack.add(pair);
-        resend.push(field);
-      }
-      log.debug(`DeviceSync: ${field} received (${remote.length} chars): ${merged === local.text ? "unchanged" : "merged"}${sendBack ? ", sent back" : ""}`);
-      changes[field] = change;
-    }
-    if (Object.keys(changes).length === 0) return;
-    if (!this.options.prompts.applySync(changes)) return;
-    if (resend.length > 0) {
-      this.sendState(resend);
-      this.requestState(resend);
-    }
+  private receiveBullets(message: Record<string, unknown>): void {
+    const outcome = this.options.prompts.sync.receive(message);
+    if (outcome.kind !== "merged") return;
+    log.debug(`DeviceSync: ${outcome.field} merged (${outcome.changed ? "changed" : "unchanged"}${outcome.send ? ", answered" : ""})`);
+    if (outcome.send) this.send(outcome.field as PromptField);
   }
 
-  private localChange(field: PromptField, kind: "edit" | "reset"): void {
+  /** Sends `field`'s full state (DS-SEND), in parts when over the relay's budget (DS-CHUNK); nothing,
+   * and Settings says so, when one bullet alone is over it (DS-OVERSIZE). */
+  private send(field: PromptField): void {
     if (!this.ready) return;
-    if (kind === "reset") {
-      // The reset text is never sent: other devices' copy comes back.
-      this.requestState([field]);
+    const outgoing = this.options.prompts.sync.outgoing(field);
+    if (outgoing.kind === "oversize") {
+      this.setOversize(field, true);
       return;
     }
-    this.edited.add(field);
-    if (this.sendTimer !== null) clearTimeout(this.sendTimer);
-    this.sendTimer = setTimeout(() => {
-      this.sendTimer = null;
-      const fields = promptFields.filter((candidate) => this.edited.has(candidate));
-      this.edited.clear();
-      // One never synced is merged with theirs first, and sent on from there.
-      const synced = fields.filter((candidate) => this.options.prompts.syncState(candidate).peerBase !== null);
-      if (synced.length > 0) this.sendState(synced);
-      this.requestState(fields);
-    }, config.deviceSyncSendDelay);
-  }
-
-  private requestState(fields: readonly PromptField[]): void {
-    this.sendText(JSON.stringify({ type: "request_state", fields }));
-  }
-
-  /** Sends `fields` with their times; a text never synced here with epoch zero, so no device takes it
-   * over its own. A synced one goes after its merge ancestor, the last text another device sent, at
-   * `ancestorTime`: a device that never synced would take a newer text whole and lose an edit of its
-   * own, and with the ancestor first it merges instead; every other device skips it. Nothing is sent,
-   * and Settings says so, when a message is over the relay's size. */
-  private sendState(fields: readonly PromptField[]): void {
-    const messages: Record<string, string>[] = [];
-    const data: Record<string, string> = {};
-    for (const field of fields) {
-      const state = this.options.prompts.syncState(field);
-      data[field] = state.text;
-      data[`${field}_updated_at`] = state.peerBase === null ? epochZero : state.time;
-      // One message for each, as each arrived: together they could be over the relay's size.
-      if (state.peerBase !== null) messages.push({ [field]: state.peerBase, [`${field}_updated_at`]: ancestorTime });
-    }
-    const texts = [...messages, data].map((message) => JSON.stringify({ type: "prompt_state", data: message }));
-    const size = Math.max(...texts.map((text) => new TextEncoder().encode(text).length));
-    if (size > config.deviceSyncMessageMaxBytes) {
-      log.error(`DeviceSync: ${fields.join(", ")} not sent: ${size} bytes, over the relay's ${config.deviceSyncMessageMaxBytes}`);
-      this.setTooLarge(true);
-      return;
-    }
-    if (texts.every((text) => this.sendText(text))) this.setTooLarge(false);
+    for (const message of outgoing.messages) if (!this.sendText(JSON.stringify(message))) return;
+    this.setOversize(field, false);
   }
 
   private sendText(text: string): boolean {
@@ -413,9 +275,12 @@ export class DeviceSync extends Observable {
     }
   }
 
-  private setTooLarge(value: boolean): void {
-    if (this.tooLargeNow === value) return;
-    this.tooLargeNow = value;
-    this.changed();
+  /** `field` held back by DS-OVERSIZE or not; null clears every field. */
+  private setOversize(field: PromptField | null, value = false): void {
+    const before = this.oversize.size;
+    if (field === null) this.oversize.clear();
+    else if (value) this.oversize.add(field);
+    else this.oversize.delete(field);
+    if ((before > 0) !== (this.oversize.size > 0)) this.changed();
   }
 }

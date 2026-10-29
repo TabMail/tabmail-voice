@@ -22,6 +22,11 @@ import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
+/** The texts of bullets as Settings shows them. */
+function texts(bullets: readonly { text: string }[] | undefined): string[] {
+  return (bullets ?? []).map((bullet) => bullet.text);
+}
+
 /** The signal a tool runs with: a request never canceled. */
 const signal = new AbortController().signal;
 
@@ -2228,8 +2233,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const defaults = page().knowledgeBase;
     for (const command of [
-      { type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] },
-      { type: "editWritingStyle", section: "Language", shown: ["I write in English Only."], bullets: ["I write in German."] },
+      { type: "editKnowledgeBase", shown: defaults, bullets: [...texts(defaults), "Prefers short replies."] },
+      { type: "editWritingStyle", section: "language", shown: page().writingStyle.find((one) => one.section === "language")?.bullets, bullets: ["I write in German."] },
       { type: "resetKnowledgeBase" },
       { type: "resetWritingStyle" },
       { type: "restorePromptHistory", id: "no-such-entry" },
@@ -2354,29 +2359,30 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       },
     ]);
     const promptsFile = () => app.files.get(join(app.userData, "userPrompts.json"));
-    const storedKB = () => promptsFile()?.get("user_prompts:user_kb.md");
-    const storedStyle = () => promptsFile()?.get("user_prompts:user_composition.md");
-    const language = () => page().writingStyle.find((one) => one.section === "Language")?.bullets;
-    const defaults = page().knowledgeBase;
+    const storedKB = () => JSON.stringify(promptsFile()?.get("bullet_state:kb") ?? null);
+    const storedStyle = () => JSON.stringify(promptsFile()?.get("bullet_state:composition") ?? null);
+    const languageShown = () => page().writingStyle.find((one) => one.section === "language")?.bullets ?? [];
+    const language = () => texts(languageShown());
+    const defaults = texts(page().knowledgeBase);
     expect(defaults).toHaveLength(3);
     expect(language()).toEqual(["I write in English Only."]);
     expect(page().history).toEqual([]);
 
-    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
-    expect(storedKB()).toContain("- Prefers short replies.");
-    expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
-    expect(pushed.at(-1)?.knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(await send({ type: "editKnowledgeBase", shown: page().knowledgeBase, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+    expect(storedKB()).toContain('"Prefers short replies."');
+    expect(texts(page().knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
+    expect(texts(pushed.at(-1)?.knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
 
-    expect(await send({ type: "editWritingStyle", section: "Language", shown: ["I write in English Only."], bullets: ["I write in English and French."] })).toEqual({ error: null });
-    expect(storedStyle()).toContain("- I write in English and French.");
+    expect(await send({ type: "editWritingStyle", section: "language", shown: languageShown(), bullets: ["I write in English and French."] })).toEqual({ error: null });
+    expect(storedStyle()).toContain('"I write in English and French."');
     expect(storedStyle()).not.toContain("English Only");
     expect(language()).toEqual(["I write in English and French."]);
-    expect(pushed.at(-1)?.writingStyle.find((one) => one.section === "Language")?.bullets).toEqual(["I write in English and French."]);
+    expect(texts(pushed.at(-1)?.writingStyle.find((one) => one.section === "language")?.bullets)).toEqual(["I write in English and French."]);
 
     // A reset brings the default back, recording the text as it was first.
     expect(await send({ type: "resetKnowledgeBase" })).toEqual({ error: null });
-    expect(page().knowledgeBase).toEqual(defaults);
-    expect(pushed.at(-1)?.knowledgeBase).toEqual(defaults);
+    expect(texts(page().knowledgeBase)).toEqual(defaults);
+    expect(texts(pushed.at(-1)?.knowledgeBase)).toEqual(defaults);
     const kbReset = page().history[0];
     expect(kbReset).toMatchObject({ source: "reset", fields: ["kb"], restores: ["Prefers short replies."] });
     expect(await send({ type: "resetWritingStyle" })).toEqual({ error: null });
@@ -2384,9 +2390,9 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
     // Restoring the knowledge base's reset puts back both texts as they were then.
     expect(await send({ type: "restorePromptHistory", id: kbReset?.id })).toEqual({ error: null });
-    expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(texts(page().knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
     expect(language()).toEqual(["I write in English and French."]);
-    expect(pushed.at(-1)?.knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(texts(pushed.at(-1)?.knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
 
     // The file can't be written: each command says so, and the texts stay as they are.
     app.savesFail = true;
@@ -2395,10 +2401,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const unsaved = { error: "This couldn't be saved, so nothing changed. Check the disk and try again." };
     for (const command of [
       { type: "editKnowledgeBase", shown: shownBefore.knowledgeBase, bullets: ["Only this."] },
-      { type: "editWritingStyle", section: "Language", shown: ["I write in English and French."], bullets: ["I write in German."] },
+      { type: "editWritingStyle", section: "language", shown: languageShown(), bullets: ["I write in German."] },
       { type: "resetKnowledgeBase" },
       { type: "resetWritingStyle" },
-      { type: "restorePromptHistory", id: kbReset?.id },
+      // An entry whose restore would change the texts (restoring the one just restored changes nothing).
+      { type: "restorePromptHistory", id: page().history.find((item) => item.restores.length + item.removes.length > 0)?.id },
     ]) {
       expect(await send(command), command.type).toEqual(unsaved);
       expect(storedKB(), command.type).toBe(kbBefore);
@@ -2414,10 +2421,10 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const pushed: string[][] = [];
     app.listeners.set("voice:state", [
       (_event, name, pushedState) => {
-        if (name === "settings") pushed.push((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase);
+        if (name === "settings") pushed.push(texts((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase));
       },
     ]);
-    expect(app.prompts?.updateKnowledgeBase((current) => `${current}\n- Learned in a chat.`)).toBe("saved");
+    expect(app.prompts?.addKnowledge("Learned in a chat.").outcome).toBe("saved");
     expect(pushed.at(-1)).toContain("Learned in a chat.");
   });
 
@@ -2427,7 +2434,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await launch("darwin");
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const defaults = page().knowledgeBase;
-    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...texts(defaults), "Prefers short replies."] })).toEqual({ error: null });
     const promptsFile = app.files.get(join(app.userData, "userPrompts.json"));
     expect(promptsFile?.get("prompt_history")).toBeUndefined();
 
@@ -2452,16 +2459,16 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     };
     try {
       await relaunch(first);
-      const defaults = page().knowledgeBase;
-      expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
-      expect(app.files.get(join(first, "userPrompts.json"))?.get("user_prompts:user_kb.md")).toContain("- Prefers short replies.");
-      expect([...app.stored.keys()].filter((key) => key.startsWith("user_prompts:") || key === "prompt_history")).toEqual([]);
+      const defaults = texts(page().knowledgeBase);
+      expect(await send({ type: "editKnowledgeBase", shown: page().knowledgeBase, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+      expect(JSON.stringify(app.files.get(join(first, "userPrompts.json"))?.get("bullet_state:kb"))).toContain('"Prefers short replies."');
+      expect([...app.stored.keys()].filter((key) => key.startsWith("user_prompts:") || key.startsWith("bullet_state:") || key === "prompt_history")).toEqual([]);
 
       await relaunch(second);
-      expect(page().knowledgeBase).toEqual(defaults);
+      expect(texts(page().knowledgeBase)).toEqual(defaults);
 
       await relaunch(first);
-      expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+      expect(texts(page().knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
     } finally {
       app.userData = "/nonexistent";
       for (const folder of [first, second]) rmSync(folder, { recursive: true, force: true });

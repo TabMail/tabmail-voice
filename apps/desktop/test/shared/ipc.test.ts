@@ -6,8 +6,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../../src/core/config.js";
-import { compositionSections } from "../../src/core/personalization/bulletMerge.js";
 import { channels, isAudioReport, isCommand, isWindowName } from "../../src/shared/ipc.js";
+
+const compositionSections = ["general", "language", "links"];
+const shown = (text: string) => ({ text, labels: [["0000000100000001", 1]] });
 
 /** The channel names the preload script writes out, read from its source: a sandboxed preload
  * can't import them. */
@@ -75,10 +77,11 @@ describe("IPC", () => {
       { type: "searchMemory", query: "" },
       { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength) },
       ...compositionSections.map((section) => ({ type: "editWritingStyle", section, shown: [], bullets: ["Short sentences."] })),
-      { type: "editKnowledgeBase", shown: ["a"], bullets: [] },
+      { type: "editKnowledgeBase", shown: [shown("a")], bullets: [] },
+      { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["default:kb-1", 1], ["0000000100000001", 2]] }, { text: "b", labels: [] }], bullets: [] },
       // A bullet longer than the Settings fields take, as kb_add can store, still lets
       // the knowledge base be edited.
-      { type: "editKnowledgeBase", shown: ["x".repeat(config.personalizationBulletMaxLength + 1), "a"], bullets: ["a"] },
+      { type: "editKnowledgeBase", shown: [shown("x".repeat(config.personalizationBulletMaxLength + 1)), shown("a")], bullets: ["a"] },
       { type: "resetWritingStyle" },
       { type: "resetKnowledgeBase" },
       { type: "restorePromptHistory", id: "x".repeat(config.promptHistoryIDMaxLength) },
@@ -151,6 +154,16 @@ describe("IPC", () => {
     { type: "searchMemory", query: 1 },
     { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength + 1) },
     { type: "editWritingStyle", section: "# Not a section", shown: [], bullets: [] },
+    { type: "editWritingStyle", section: "General writing style", shown: [], bullets: [] },
+    { type: "editWritingStyle", section: "", shown: [], bullets: [] },
+    { type: "editKnowledgeBase", shown: ["a"], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a" }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: 1, labels: [] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["NAME", 1]] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 0]] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 1.5]] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001"]] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [null], bullets: [] },
     { type: "editWritingStyle", section: compositionSections[0], shown: [], bullets: "Short sentences." },
     { type: "editWritingStyle", shown: [], bullets: [] },
     { type: "editKnowledgeBase", bullets: [] },
