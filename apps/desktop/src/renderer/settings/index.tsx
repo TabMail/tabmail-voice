@@ -16,6 +16,7 @@ import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { formatBytes, memoryHighlights } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import type { PromptHistoryItem } from "../../core/personalization/page.js";
+import type { ShownBullet } from "../../core/personalization/prompts.js";
 import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
@@ -731,10 +732,12 @@ function MemoryPane({ state }: { state: SettingsState }) {
 /** How a writing style section is shown, where its stored heading would mislead: the style is learned
  * from the user's email and sent with every request offering Compose or Edit (#301). Display only: the heading
  * in the style document, shared with the other TabMail apps, stays as it is. */
-const writingStyleSectionLabels: Readonly<Record<string, string>> = { "General writing style": "General writing style for emails and formal replies" };
+const writingStyleSectionLabels: Readonly<Record<string, string>> = { general: "General writing style for emails and formal replies" };
 
 /** Personalization's tabs, in order. */
 const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
+/** Why Device Sync isn't sending: the texts are over the relay's size. */
+const deviceSyncTooLargeLine = "Too large to sync. Remove some bullets to sync again.";
 type PersonalizationTab = (typeof personalizationTabs)[number];
 
 /** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages,
@@ -743,7 +746,9 @@ type PersonalizationTab = (typeof personalizationTabs)[number];
  * heading, and the knowledge base are lists of bullets to edit, add to and remove from, each text
  * with a reset to its default, confirmed in place; the history lists the newest first, each entry
  * showing what restoring it would change, with Restore, confirmed in place. Every tab stays
- * rendered while another shows, so what is being typed in one is still there on coming back. */
+ * rendered while another shows, so what is being typed in one is still there on coming back. Above
+ * the tabs, Device Sync's switch, with what stops it said under it: a choice that couldn't be saved,
+ * or texts too large for the relay. */
 function PersonalizationPane({ state }: { state: SettingsState }) {
   const personalization = state.personalization;
   const [tab, setTab] = useState<PersonalizationTab>("Writing style");
@@ -754,6 +759,13 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
     const { error } = await send(command);
     setFailure(error);
   };
+  const [syncProblem, setSyncProblem] = useState<string | null>(null);
+  const sync = async (value: boolean) => {
+    setSyncProblem(null);
+    const { error } = await send({ type: "setSyncsDevices", value });
+    setSyncProblem(error);
+  };
+  const syncError = syncProblem ?? (state.syncsDevices && state.deviceSyncTooLarge ? deviceSyncTooLargeLine : null);
   const panel = (name: PersonalizationTab, children: ReactNode) => (
     // A stop in the Tab order of its own: Tab from the chosen tab reaches its panel even when the
     // panel holds no control (an empty History).
@@ -763,6 +775,11 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
   );
   return (
     <>
+      <Group>
+        <Toggle label="Sync with my other devices" checked={state.syncsDevices} onChange={sync} extra={syncError !== null && <span className="error">{syncError}</span>}>
+          Keeps your writing style and knowledge base the same in TabMail on your other devices.
+        </Toggle>
+      </Group>
       <Tabs label="Personalization" id={id} tabs={personalizationTabs} chosen={tab} onChoose={setTab} />
       {panel(
         "Writing style",
@@ -770,11 +787,11 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
           <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent with requests that may write; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
-          {personalization.writingStyle.map(({ section, bullets }) => (
+          {personalization.writingStyle.map(({ section, title, bullets }) => (
             <section key={section} className="card-section">
-              <h2 className="section-heading">{writingStyleSectionLabels[section] ?? section}</h2>
+              <h2 className="section-heading">{writingStyleSectionLabels[section] ?? title}</h2>
               <div className="group">
-                <BulletEditor title={writingStyleSectionLabels[section] ?? section} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
+                <BulletEditor title={writingStyleSectionLabels[section] ?? title} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
               </div>
             </section>
           ))}
@@ -892,8 +909,13 @@ function ResetButton({ what, onReset }: { what: string; onReset: () => void }) {
 
 /** A list of bullets: each one a field, saved as it is left or Return is pressed, with a remove
  * button; then a field to add one. `onChange` is given the whole list as edited. */
-function BulletEditor({ title, bullets, onChange }: { title: string; bullets: string[]; onChange: (bullets: string[]) => Promise<void> }) {
+function BulletEditor({ title, bullets: shown, onChange }: { title: string; bullets: ShownBullet[]; onChange: (bullets: string[]) => Promise<void> }) {
   const [draft, setDraft] = useState("");
+  const bullets = shown.map((bullet) => bullet.text);
+  // A row is its bullet: its text and the labels it carries. The same text under other labels (removed
+  // and added again elsewhere) is another bullet, so a row being typed in then starts afresh, never
+  // saving its edit over the newer one (DS-CAPTURE).
+  const identities = shown.map((bullet) => `${bullet.text}\u0000${JSON.stringify(bullet.labels)}`);
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (draft.trim() === "") return;
@@ -904,11 +926,10 @@ function BulletEditor({ title, bullets, onChange }: { title: string; bullets: st
     <div className="bullet-editor">
       <ul className="dictionary" aria-label={title}>
         {bullets.map((bullet, index) => (
-          // Keyed by the text and how many equal bullets come before it, not by position: a bullet
-          // changed elsewhere (a tool) shows afresh, and one added or removed elsewhere
-          // leaves the other rows, and what is being typed in them, as they are.
+          // Keyed by the bullet (text and labels), not by position: a bullet changed elsewhere (a tool, another device) shows afresh, and one added
+          // or removed elsewhere leaves the other rows, and what is being typed in them, as they are.
           <BulletRow
-            key={`${bullets.slice(0, index).filter((other) => other === bullet).length}:${bullet}`}
+            key={identities[index]}
             bullet={bullet}
             label={`${title}, item ${index + 1}`}
             onSave={(text) => void onChange(bullets.map((other, at) => (at === index ? text : other)))}
@@ -967,7 +988,7 @@ function BulletRow({ bullet, label, onSave, onRemove }: { bullet: string; label:
 }
 
 /** How a history entry came about, as iOS labels it. */
-const historySources: Record<PromptHistoryItem["source"], string> = { local_edit: "Edit", reset: "Reset" };
+const historySources: Record<PromptHistoryItem["source"], string> = { local_edit: "Edit", reset: "Reset", sync_receive: "Synced" };
 
 /** One history entry: how and when, what it changed, and, opened, what restoring it would change,
  * with Restore, confirmed in place. */

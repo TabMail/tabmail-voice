@@ -59,7 +59,8 @@ apps/desktop/
 │   │   ├── backend/                 Sign-in (`account.ts`), the transcription and completions clients, their errors, HTTP
 │   │   ├── dictionary/              The user's dictionary (`entries.ts`); the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
 │   │   ├── memory/                  Memory, every agent-mode request and what came of it, on this computer (ADR-DESK-061): `store.ts` (`AgentMemory`, the row Thunderbird's add-on writes), `tools.ts` (`memory_search` and `memory_read`, answering as Thunderbird's), `page.ts` (Settings › Memory: the usage bar, the size limit, the list, search, remove and Clear All)
-│   │   ├── personalization/         The knowledge base and writing style, on this computer (ADR-DESK-063): `prompts.ts` (`UserPrompts`, their one writer, and their history), `bulletMerge.ts` and `patchApplier.ts` (Thunderbird's bullet, section, three-way merge and KB patch rules, ported), `defaults.ts` (Thunderbird's defaults), `kbTools.ts` (`kb_add` and `kb_del`), `page.ts` (Settings › Personalization)
+│   │   ├── personalization/         The knowledge base and writing style, on this computer (ADR-DESK-063): `prompts.ts` (`UserPrompts`, their one writer and store of labelled bullets, and their history), `patchApplier.ts` (`normalizeUnicode`, the plain characters the KB tools compare by), `defaults.ts` (the writing style's default document, its skeleton), `kbTools.ts` (`kb_add` and `kb_del`), `page.ts` (Settings › Personalization)
+│   │   ├── sync/                    Device Sync of the knowledge base and writing style with Thunderbird and iOS through the relay (ADR-DESK-066): `bullets.ts` (labelled bullets: parse, render, labels, local operations, merge, defaults), `bulletSync.ts` (`BulletSync`: the writer name, commits, `bullet_state` messages and their parts), `deviceSync.ts` (`DeviceSync`: the connection's life, what is sent and when), `device-sync-default-catalog.json` (the defaults every app shares, SHA-256 pinned)
 │   │   ├── hotkey/                  The hotkey, the modes and the gesture's actions (`bindings.ts`); macos/globeKeyAction.ts (the Globe key's own action while fn is it) (ADR-DESK-031)
 │   │   ├── onboarding/              The welcome wizard, permissions, tips (the one-time what's-new tip among them), VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
 │   │   ├── ui/                      Where the overlay sits; what the tray menu shows
@@ -67,6 +68,7 @@ apps/desktop/
 │   ├── main/                The main process (Node + Electron)
 │   │   ├── index.ts                 Wires everything: helpers, controller, windows, IPC, tray
 │   │   ├── audioCapture.ts          The microphone, one session per try of a dictation's start (a failed start is tried again for about two seconds): through `voice-microphone` on macOS, Windows and Linux, the hidden audio window elsewhere
+│   │   ├── deviceSyncSocket.ts      Device Sync's transport: the relay's WebSocket, Node's own (ADR-DESK-066)
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── documents/               A local file the user approved, for agent mode (ADR-DESK-051): `localDocument.ts` (home folder only, no symlinks, the same file read); the PDF parsed in a disposable utility process (`pdfProcess.ts`, `pdfWorker.ts`) inside a fixed-memory interpreter (`pdfRealm.ts`, `pdfRealmPrelude.ts`, `pdfExtraction.ts`); `pdfReader.ts` (its text redacted in the helper)
 │   │   ├── updater.ts               Packaged macOS and Windows builds, and the Linux AppImage: updates from cdn.tabmail.ai: when to look, the download, the states, the question, failures and retries (ADR-DESK-041, ADR-DESK-050); each OS's proof and install in `native/<os>/update.ts` (the Linux package has none: apt updates it, ADR-DESK-058; the AppImage's, ADR-DESK-059)
@@ -87,5 +89,5 @@ apps/desktop/
 │       ├── settings/, welcome/, history/ (the paste history), contextDebug/
 │       ├── audio/                   The microphone off macOS: getUserMedia → captureWorklet
 │       └── shared/                  The bridge to `window.voice`, the brand, the palette's theme as CSS variables (`theme.ts`), the glass every floating surface is made of (`glass.ts`), icons, the name field, form.css
-└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper, a fake memory and memory helper); packaging.test.ts
+└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper, a fake memory and memory helper, a fake Device Sync relay and the vector runner's test devices); packaging.test.ts
 ```

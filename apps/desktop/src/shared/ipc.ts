@@ -14,8 +14,9 @@ import type { DictionaryEntry } from "../core/dictionary/entries.js";
 import type { ExcludedApp } from "../core/dictation/excludedApps.js";
 import type { StoredFile } from "../core/ui/fileProblems.js";
 import type { MemoryPageState } from "../core/memory/page.js";
-import { compositionSections } from "../core/personalization/bulletMerge.js";
 import type { PersonalizationState } from "../core/personalization/page.js";
+import type { ShownBullet } from "../core/personalization/prompts.js";
+import { displayedSections, isName } from "../core/sync/bullets.js";
 import type { UpdateState } from "../core/ui/menuModel.js";
 import type { PasteEntry } from "../core/dictation/pasteHistory.js";
 import type { ScreenContext } from "../core/dictation/screenContext.js";
@@ -119,6 +120,10 @@ export interface SettingsState {
   smartDictation: boolean;
   /** Opt Out of AI (`AppSettings.optsOutOfAI`). */
   optsOutOfAI: boolean;
+  /** Device Sync's switch (`AppSettings.syncsDevices`), and whether the texts were too large to send
+   * (`DeviceSync.tooLarge`). */
+  syncsDevices: boolean;
+  deviceSyncTooLarge: boolean;
   /** Whether a click elsewhere or another app in front closes the idle chat window. */
   closesChatElsewhere: boolean;
   /** How long a new event lasts when no end is given (minutes; `AppSettings.eventDuration`). */
@@ -220,6 +225,7 @@ export type Command =
   | { type: "setLearnsWords"; value: boolean }
   | { type: "setSmartDictation"; value: boolean }
   | { type: "setOptsOutOfAI"; value: boolean }
+  | { type: "setSyncsDevices"; value: boolean }
   | { type: "setClosesChatElsewhere"; value: boolean }
   | { type: "setEventDuration"; value: number }
   /** Asks the user to pick an app, and excludes it from screen reading. */
@@ -245,8 +251,8 @@ export type Command =
   /** Settings › Personalization: a writing style section's or the knowledge base's bullets edited,
    * from those the page showed (`shown`); either text reset to its default; the texts put back as a
    * history entry holds them. */
-  | { type: "editWritingStyle"; section: string; shown: string[]; bullets: string[] }
-  | { type: "editKnowledgeBase"; shown: string[]; bullets: string[] }
+  | { type: "editWritingStyle"; section: string; shown: ShownBullet[]; bullets: string[] }
+  | { type: "editKnowledgeBase"; shown: ShownBullet[]; bullets: string[] }
   | { type: "resetWritingStyle" }
   | { type: "resetKnowledgeBase" }
   | { type: "restorePromptHistory"; id: string }
@@ -348,9 +354,9 @@ export function isCommand(value: unknown): value is Command {
     case "resetKnowledgeBase":
       return true;
     case "editWritingStyle":
-      return typeof command.section === "string" && compositionSections.includes(command.section) && isBulletList(command.shown) && isBulletList(command.bullets);
+      return typeof command.section === "string" && displayedSections("composition").includes(command.section) && isShownList(command.shown) && isBulletList(command.bullets);
     case "editKnowledgeBase":
-      return isBulletList(command.shown) && isBulletList(command.bullets);
+      return isShownList(command.shown) && isBulletList(command.bullets);
     case "restorePromptHistory":
       return typeof command.id === "string" && command.id.length <= config.promptHistoryIDMaxLength;
     case "searchMemory":
@@ -381,6 +387,7 @@ export function isCommand(value: unknown): value is Command {
     case "setLearnsWords":
     case "setSmartDictation":
     case "setOptsOutOfAI":
+    case "setSyncsDevices":
     case "setClosesChatElsewhere":
     case "setOpenAtLogin":
     case "setDebugMode":
@@ -425,6 +432,18 @@ export function isCommand(value: unknown): value is Command {
  * keep a typed bullet within `personalizationBulletMaxLength`). */
 function isBulletList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((bullet) => typeof bullet === "string");
+}
+
+/** Bullets as Settings showed them, each with its labels (`ShownBullet`). */
+function isShownList(value: unknown): value is ShownBullet[] {
+  return (
+    Array.isArray(value) &&
+    value.every((bullet: unknown) => {
+      if (!bullet || typeof bullet !== "object") return false;
+      const { text, labels } = bullet as Record<string, unknown>;
+      return typeof text === "string" && Array.isArray(labels) && labels.every((label: unknown) => Array.isArray(label) && label.length === 2 && isName(label[0]) && Number.isSafeInteger(label[1]) && (label[1] as number) >= 1);
+    })
+  );
 }
 
 /** Whether `value`, as received over IPC, is a well-formed `AudioReport`. */

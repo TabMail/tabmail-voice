@@ -311,6 +311,36 @@ test("Opt Out of AI that couldn't be saved is reported, and is as it was", () =>
   expect([app.optsOutOfAI, app.aiOffLine, changes]).toEqual([false, null, 0]);
 });
 
+/** Device Sync (root ADR-021): on by default, kept; it runs only with the user's consent, and only
+ * while the file its switch is in can be read. Opt Out of AI leaves it as it is. */
+test("Device Sync is on by default, kept, and runs only with consent and a readable file, whatever Opt Out of AI says", () => {
+  const store = new MemoryStore();
+  const app = settings(store);
+  let changes = 0;
+  app.observe(() => changes++);
+  expect([app.syncsDevices, app.deviceSyncAllowed]).toEqual([true, false]);
+  app.hasConsented = true;
+  expect(app.deviceSyncAllowed).toBe(true);
+  app.setOptsOutOfAI(true);
+  expect(app.deviceSyncAllowed).toBe(true);
+  changes = 0;
+  expect(app.setSyncsDevices(false)).toBe(true);
+  expect([app.syncsDevices, app.deviceSyncAllowed, settings(store).syncsDevices, changes]).toEqual([false, false, false, 1]);
+
+  const unreadable = new (class extends MemoryStore {
+    readonly problem = { kind: "damaged" as const, path: "/example/settings.json", code: "invalid" };
+  })({ hasConsentedToDictationData: true, deviceSync: true });
+  expect([settings(unreadable).syncsDevices, settings(unreadable).deviceSyncAllowed]).toEqual([true, false]);
+});
+
+test("Device Sync's switch that couldn't be saved is reported, and is as it was", () => {
+  const app = settings(new UnsavedStore());
+  let changes = 0;
+  app.observe(() => changes++);
+  expect(app.setSyncsDevices(false)).toBe(false);
+  expect([app.syncsDevices, changes]).toEqual([true, 0]);
+});
+
 /** A store whose file couldn't be read, reset as `JSONFileStore.moveAside` does: what the session held
  * is cleared and the file reads as fine. */
 class UnreadStore extends MemoryStore {

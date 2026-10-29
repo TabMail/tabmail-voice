@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-/** The writing style and the knowledge base a new user starts with, and a reset brings back: those of
- * Thunderbird's add-on (its `prompts/user_composition.md` and `prompts/user_kb.md`), as written, so
- * the three apps start alike. A line's spaces at its end are part of it. */
+/** Thunderbird's add-on's writing style (its `prompts/user_composition.md`), as written: the lines
+ * around its sections are the built-in skeleton (DS-SKELETON). Its bullets, and the knowledge base's,
+ * are the shared default catalog's (`sync/device-sync-default-catalog.json`, DS-DEFAULT). */
 
 export const defaultComposition = [
   "# User provided composition instructions",
@@ -30,10 +30,4 @@ export const defaultComposition = [
   "====END USER INSTRUCTIONS====",
   "",
   "Now, acknowledge these user instructions and do not deviate from them.",
-].join("\n");
-
-export const defaultKnowledgeBase = [
-  "- User is using TabMail as their AI assistant for emails.",
-  "- TabMail documentation is available at [TabMail Website's help page](https://tabmail.ai/docs/).",
-  "- TabMail support is available at [TabMail Support](https://tabmail.ai/support).",
 ].join("\n");

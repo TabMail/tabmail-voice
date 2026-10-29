@@ -36,6 +36,8 @@ vi.mock("electron", () => ({
   },
   Menu: { buildFromTemplate: (template: unknown) => template, setApplicationMenu() {} },
   session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+  powerMonitor: { on() {} },
+  net: { isOnline: () => true },
   shell: {},
   systemPreferences: {},
   ipcMain: {
@@ -93,6 +95,10 @@ vi.mock("../../../src/main/storage/jsonFileStore.js", () => ({
     setAll() {}
     remove() {}
   },
+}));
+// Device Sync's relay is never reached.
+vi.mock("../../../src/main/deviceSyncSocket.js", () => ({
+  deviceSyncSocket: () => () => ({ send() {}, close() {} }),
 }));
 vi.mock("../../../src/main/storage/logFile.js", () => ({
   LogFile: class {

@@ -83,7 +83,7 @@ export function resetConfirmation(file: StoredFile, copy: string): { message: st
   const lost =
     file === "settings"
       ? `Your settings on this computer go back to their defaults, your dictionary and excluded apps and websites among them, and the welcome guide opens to set TabMail Voice up again. Your sign-in, memory, knowledge base and writing style stay as they are.`
-      : "Your knowledge base, writing style and their history on this computer go back to the defaults. Your settings and memory stay as they are.";
+      : "Your knowledge base, writing style and their history on this computer go back to the defaults. Your other devices keep theirs, and while Sync with my other devices is on, theirs come back here. Your settings and memory stay as they are.";
   return { message: `Reset ${names[file].held} to the defaults?`, detail: `${lost}\n\nThe file that couldn't be read isn't deleted. It is kept as:\n${copy}` };
 }
 

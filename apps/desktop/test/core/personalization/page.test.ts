@@ -3,7 +3,6 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { compositionSections } from "../../../src/core/personalization/bulletMerge.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
@@ -12,9 +11,13 @@ describe("personalizationState", () => {
   test("Settings shows each writing-style section's bullets and the knowledge base's", () => {
     const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- alpha.\n- beta." }));
     const state = personalizationState(prompts);
-    expect(state.writingStyle.map((group) => group.section)).toEqual(compositionSections);
-    expect(state.writingStyle[1]?.bullets).toEqual(["I write in English Only."]);
-    expect(state.knowledgeBase).toEqual(["alpha.", "beta."]);
+    expect(state.writingStyle.map((group) => [group.section, group.title])).toEqual([
+      ["general", "General writing style"],
+      ["language", "Language"],
+      ["links", "Useful links to personal website and other resources"],
+    ]);
+    expect(state.writingStyle[1]?.bullets).toEqual([{ text: "I write in English Only.", labels: [["default:composition-language-1", 1]] }]);
+    expect(state.knowledgeBase.map((bullet) => bullet.text)).toEqual(["alpha.", "beta."]);
     expect(state.history).toEqual([]);
   });
 
@@ -22,10 +25,10 @@ describe("personalizationState", () => {
    * as they are now. */
   test("the history says what restoring each entry would change", () => {
     const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- alpha." }));
-    prompts.editKnowledgeBase(["alpha."], ["alpha.", "beta."]);
+    prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha.", "beta."]);
     prompts.flushHistory();
     prompts.resetKnowledgeBase();
-    prompts.editCompositionSection(compositionSections[1] as string, ["I write in English Only."], ["I write in French."]);
+    prompts.editCompositionSection("language", prompts.shown("composition", "language"), ["I write in French."]);
     prompts.flushHistory();
 
     const history = personalizationState(prompts).history;

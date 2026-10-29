@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, session, shell } from "electron";
+import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, screen, session, shell } from "electron";
 import { autoUpdater, NsisUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
@@ -25,7 +25,8 @@ import { CorrectionWatch } from "../core/dictionary/correctionWatch.js";
 import { DictationController, isResting } from "../core/dictation/controller.js";
 import { MemoryPage } from "../core/memory/page.js";
 import { personalizationState } from "../core/personalization/page.js";
-import { UserPrompts } from "../core/personalization/prompts.js";
+import { holdsSectionMarker, UserPrompts } from "../core/personalization/prompts.js";
+import { DeviceSync } from "../core/sync/deviceSync.js";
 import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
@@ -58,6 +59,7 @@ import {
   type WindowStates,
 } from "../shared/ipc.js";
 import { SessionAudioCapture } from "./audioCapture.js";
+import { deviceSyncSocket } from "./deviceSyncSocket.js";
 import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
 import { MemoryHelper, memoryFolders } from "./native/memoryHelper.js";
@@ -142,6 +144,7 @@ const commandWrites: Record<Command["type"], StoredFile | null> = {
   setLearnsWords: "settings",
   setSmartDictation: "settings",
   setOptsOutOfAI: "settings",
+  setSyncsDevices: "settings",
   setClosesChatElsewhere: "settings",
   setEventDuration: "settings",
   excludeApp: "settings",
@@ -292,6 +295,16 @@ function launch(): void {
   // memory is (ADR-DESK-063).
   const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));
   const prompts = new UserPrompts(promptsStore);
+  // Device Sync of the writing style and the knowledge base with the user's Thunderbird and iOS apps
+  // (root ADR-021), for the account signed in, while the settings let it run; the development relay
+  // in debug mode.
+  const deviceSync = new DeviceSync({
+    prompts,
+    account,
+    allowed: () => settings.deviceSyncAllowed,
+    url: () => (settings.isDebugMode(account.email) ? config.deviceSyncDevelopmentURL : config.deviceSyncURL),
+    open: deviceSyncSocket(),
+  });
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
 
   let wizard: WelcomeWizard | null = null;
@@ -517,6 +530,8 @@ function launch(): void {
       canLearnWords: nativeAudio,
       smartDictation: settings.smartDictation,
       optsOutOfAI: settings.optsOutOfAI,
+      syncsDevices: settings.syncsDevices,
+      deviceSyncTooLarge: deviceSync.tooLarge,
       closesChatElsewhere: settings.closesChatElsewhere,
       eventDuration: settings.eventDuration,
       excludedApps: settings.excludedApps,
@@ -975,6 +990,20 @@ function launch(): void {
   permissions.observe(pushSettingsWindows);
   memoryPage.observe(() => windows.push("settings"));
   prompts.observe(() => windows.push("settings"));
+  // Device Sync follows the account, the settings and the texts; a wake, or the computer back online,
+  // connects afresh.
+  const syncDevices = () => deviceSync.update();
+  settings.observe(syncDevices);
+  account.observe(syncDevices);
+  prompts.observe(syncDevices);
+  deviceSync.observe(() => windows.push("settings"));
+  powerMonitor.on("resume", () => deviceSync.wake());
+  let online = net.isOnline();
+  setInterval(() => {
+    const now = net.isOnline();
+    if (now && !online) deviceSync.wake();
+    online = now;
+  }, config.deviceSyncOnlineCheckInterval);
 
   // The hotkey's event tap can't be created until Accessibility is granted: configure again once
   // the grant lands.
@@ -1028,6 +1057,7 @@ function launch(): void {
    * handler, `commandWrites`). */
   const exclusionUnsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
   const personalizationUnsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
+  const personalizationMarker = "A line can't contain \"DO NOT EDIT/DELETE THIS SECTION HEADER\" or \"====END USER INSTRUCTIONS====\", so nothing changed.";
   const removalUnsaved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
 
   /** Asks the user for an app, and excludes it from screen reading. */
@@ -1083,6 +1113,9 @@ function launch(): void {
       case "setOptsOutOfAI":
         if (!settings.setOptsOutOfAI(command.value)) throw new Error(personalizationUnsaved);
         return;
+      case "setSyncsDevices":
+        if (!settings.setSyncsDevices(command.value)) throw new Error(personalizationUnsaved);
+        return;
       case "setClosesChatElsewhere":
         settings.closesChatElsewhere = command.value;
         return;
@@ -1102,6 +1135,7 @@ function launch(): void {
       case "clearMemory":
         return memoryPage.clear(memoryListQuery());
       case "editWritingStyle":
+        if (holdsSectionMarker(command.bullets)) throw new Error(personalizationMarker);
         if (!prompts.editCompositionSection(command.section, command.shown, command.bullets)) throw new Error(personalizationUnsaved);
         return;
       case "editKnowledgeBase":
@@ -1251,6 +1285,7 @@ function launch(): void {
         fieldReaderHelper.stop();
         microphoneHelper.stop();
         memory.stop();
+        deviceSync.stop();
         prompts.flushHistory();
         accessibilityActivator?.stop();
         return logFile.flush();
@@ -1269,6 +1304,7 @@ function launch(): void {
   void globeKey?.hotkeyIs(settings.hotkey);
   permissions.startPollingAccessibility();
   updater?.start();
+  syncDevices();
 
   // The welcome wizard asks for consent and the permissions; it opens until finished.
   welcomeIfSetUpNever();

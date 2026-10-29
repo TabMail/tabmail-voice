@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { compositionSections, extractBullets, extractSection } from "./bulletMerge.js";
-import type { PromptField, PromptHistorySource, UserPrompts } from "./prompts.js";
+import { displayedSections, parse, sectionHeaders } from "../sync/bullets.js";
+import type { PromptField, PromptHistorySource, ShownBullet, UserPrompts } from "./prompts.js";
 
 /** One history entry as Settings lists it: when and how it came about, the texts it changed, and what
  * restoring it would do to the texts as they are now. */
@@ -19,25 +19,26 @@ export interface PromptHistoryItem {
 
 /** What Settings › Personalization shows (ADR-DESK-063). */
 export interface PersonalizationState {
-  /** The writing style's sections, in order, each with its bullets. */
-  writingStyle: { section: string; bullets: string[] }[];
-  knowledgeBase: string[];
+  /** The writing style's sections, in order: each one's key, its header and its bullets with the
+   * labels an edit hands back (DS-CAPTURE). */
+  writingStyle: { section: string; title: string; bullets: ShownBullet[] }[];
+  knowledgeBase: ShownBullet[];
   /** The newest first. */
   history: PromptHistoryItem[];
 }
 
-/** Every bullet of the writing style's sections and of the knowledge base: what the user edits. */
+/** Every bullet the user edits in the writing style and the knowledge base, as `composition` and
+ * `knowledgeBase` hold them. */
 function editableBullets(composition: string, knowledgeBase: string): string[] {
-  return [...compositionSections.flatMap((section) => extractBullets(extractSection(composition, section))), ...extractBullets(knowledgeBase)];
+  const sections = displayedSections("composition");
+  return [...parse("composition", composition).bullets.filter((bullet) => sections.includes(bullet.section)), ...parse("kb", knowledgeBase).bullets].map((bullet) => bullet.text);
 }
 
 export function personalizationState(prompts: UserPrompts): PersonalizationState {
-  const composition = prompts.composition;
-  const knowledgeBase = prompts.knowledgeBase;
-  const now = new Set(editableBullets(composition, knowledgeBase));
+  const now = new Set(editableBullets(prompts.composition, prompts.knowledgeBase));
   return {
-    writingStyle: compositionSections.map((section) => ({ section, bullets: extractBullets(extractSection(composition, section)) })),
-    knowledgeBase: extractBullets(knowledgeBase),
+    writingStyle: sectionHeaders.composition.map(([section, title]) => ({ section, title, bullets: prompts.shown("composition", section) })),
+    knowledgeBase: prompts.shown("kb", ""),
     history: prompts.history
       .map((entry) => {
         const then = new Set(editableBullets(entry.composition, entry.kb));

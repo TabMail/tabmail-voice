@@ -12,11 +12,23 @@ import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
-import { UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { formatBytes } from "../../../src/core/memory/page.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
+
+const labels = new Map<string, string>();
+/** Bullets as Settings is pushed them, each text with its label: a text given alone is one bullet
+ * wherever it shows (one label per text), and `{ text, name }` is a bullet of that text under the
+ * label `name`, as a bullet deleted and added again elsewhere comes back under a new one. */
+function shownBullets(bullets: (string | { text: string; name: string })[]): ShownBullet[] {
+  return bullets.map((bullet) => {
+    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
+    if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
+    return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
+  });
+}
 
 const signedIn: SettingsState = {
   email: "person@example.com",
@@ -32,6 +44,8 @@ const signedIn: SettingsState = {
   learnsWords: true,
   smartDictation: true,
   optsOutOfAI: false,
+  syncsDevices: true,
+  deviceSyncTooLarge: false,
   closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,
@@ -55,11 +69,11 @@ const signedIn: SettingsState = {
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: {
     writingStyle: [
-      { section: "General writing style", bullets: ["ALWAYS start with a greeting."] },
-      { section: "Language", bullets: ["I write in English Only."] },
-      { section: "Useful links to personal website and other resources", bullets: [] },
+      { section: "general", title: "General writing style", bullets: shownBullets(["ALWAYS start with a greeting."]) },
+      { section: "language", title: "Language", bullets: shownBullets(["I write in English Only."]) },
+      { section: "links", title: "Useful links to personal website and other resources", bullets: [] },
     ],
-    knowledgeBase: ["Prefers morning meetings.", "Works with Sam."],
+    knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
     history: [],
   },
   fileProblems: [],
@@ -497,7 +511,7 @@ describe("Settings page", () => {
   /** Settings › Personalization (ADR-DESK-063): the writing style's sections and the knowledge base
    * as editable lists, Reset, and the history. */
   describe("personalization", () => {
-    const language = "Language";
+    const language = "language";
     const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
 
     async function open(initial: SettingsState = signedIn, reply: Reply = { error: null }): Promise<{ commands: Command[]; push: (state: SettingsState) => Promise<void> }> {
@@ -505,6 +519,36 @@ describe("Settings page", () => {
       await act(async () => button("Personalization").click());
       return page;
     }
+
+    /** Device Sync's switch, above the tabs: it sends the choice; one that couldn't be saved is said
+     * under it, the switch showing what is saved; texts too large for the relay are said while it is on. */
+    test("the Device Sync switch sends its choice, and says what stops it", async () => {
+      const unsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
+      const tooLarge = "Too large to sync. Remove some bullets to sync again.";
+      let reply: CommandResult = { error: null };
+      let shown: SettingsState = signedIn;
+      const { commands, push } = await settingsPage(() => reply, () => shown, shown);
+      await act(async () => button("Personalization").click());
+      const row = () => toggle("Sync with my other devices").closest(".row")?.textContent ?? "";
+      expect(toggle("Sync with my other devices").checked).toBe(true);
+      await act(async () => toggle("Sync with my other devices").click());
+      expect(commands).toEqual([{ type: "setSyncsDevices", value: false }]);
+
+      reply = { error: unsaved };
+      await act(async () => toggle("Sync with my other devices").click());
+      expect(toggle("Sync with my other devices").checked).toBe(true);
+      expect(row()).toContain(unsaved);
+
+      reply = { error: null };
+      shown = { ...signedIn, deviceSyncTooLarge: true };
+      await act(async () => toggle("Sync with my other devices").click());
+      expect(row()).toContain(tooLarge);
+      expect(row()).not.toContain(unsaved);
+
+      await push({ ...signedIn, syncsDevices: false, deviceSyncTooLarge: true });
+      expect(toggle("Sync with my other devices").checked).toBe(false);
+      expect(row()).not.toContain(tooLarge);
+    });
 
     /** Each section is shown by its name. */
     test("shows the writing style's sections by name and the knowledge base's items", async () => {
@@ -611,8 +655,8 @@ describe("Settings page", () => {
       await act(async () => type(languageItem, "I write in English and French."));
       await leaveFor(languageItem, "History");
       expect(commands).toEqual([
-        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] },
-        { type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English and French."] },
+        { type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers afternoon meetings.", "Works with Sam."] },
+        { type: "editWritingStyle", section: language, shown: shownBullets(["I write in English Only."]), bullets: ["I write in English and French."] },
       ]);
       await act(async () => tab("Knowledge base").click());
       expect(field("Knowledge base, item 1").value).toBe("Prefers afternoon meetings.");
@@ -646,7 +690,7 @@ describe("Settings page", () => {
       const item = field("Knowledge base, item 1");
       await act(async () => type(item, "Prefers afternoon meetings."));
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
     });
 
     /** An item edited, then removed with its own Remove: the press focuses Remove first, and the
@@ -661,7 +705,7 @@ describe("Settings page", () => {
         const command = sent.at(-1);
         if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
         return { ...signedIn, personalization: personalizationState(prompts) };
-      });
+      }, { ...signedIn, personalization: personalizationState(prompts) });
       sent = page.commands;
       await act(async () => button("Personalization").click());
       const item = field("Knowledge base, item 1");
@@ -673,11 +717,62 @@ describe("Settings page", () => {
       expect(prompts.knowledgeBase).toBe("- Works with Sam.");
     });
 
+    /** A bullet deleted and added again on another device, under the same text, is a new bullet: a
+     * draft begun on the old one is dropped when it arrives, so leaving the field saves nothing and
+     * the newer bullet stays, here and on the other device (DS-CAPTURE). Both editors; each device
+     * is a real store, the peer's change reaching this one as Device Sync sends it. */
+    test.each([
+      ["the knowledge base", "kb", "Knowledge base, item 1"],
+      ["a writing-style section", "composition", "Language, item 1"],
+    ] as const)("a bullet replaced elsewhere under the same text drops the draft begun on it, in %s", async (_name, syncField, label) => {
+      const relay = (from: UserPrompts, to: UserPrompts) => {
+        const outgoing = from.sync.outgoing(syncField);
+        if (outgoing.kind !== "messages") throw new Error("oversize");
+        for (const message of outgoing.messages) expect(to.sync.receive(message)).toMatchObject({ kind: "merged" });
+      };
+      const shown = (prompts: UserPrompts) => (syncField === "kb" ? prompts.shown("kb", "") : prompts.shown("composition", language));
+      const edit = (prompts: UserPrompts, bullets: string[]) =>
+        syncField === "kb" ? prompts.editKnowledgeBase(shown(prompts), bullets) : prompts.editCompositionSection(language, shown(prompts), bullets);
+      const here = new UserPrompts(new MemoryStore(), { newName: () => "0000000a00000001" });
+      const there = new UserPrompts(new MemoryStore(), { newName: () => "0000000b00000001" });
+      expect(edit(here, ["Alpha."])).toBe(true);
+      relay(here, there);
+      // The stand-in main process: the command just sent applied to this device's store, then its state pushed.
+      let sent: Command[] = [];
+      const state = (): SettingsState => ({ ...signedIn, personalization: personalizationState(here) });
+      const page = await settingsPage({ error: null }, () => {
+        const command = sent.at(-1);
+        if (command?.type === "editKnowledgeBase") here.editKnowledgeBase(command.shown, command.bullets);
+        if (command?.type === "editWritingStyle") here.editCompositionSection(command.section, command.shown, command.bullets);
+        return state();
+      }, state());
+      sent = page.commands;
+      await act(async () => button("Personalization").click());
+      const item = field(label);
+      expect(item.value).toBe("Alpha.");
+      await act(async () => item.focus());
+      await act(async () => type(item, "Beta."));
+
+      // The other device deletes the bullet and adds it again: the same text under its own label.
+      expect(edit(there, [])).toBe(true);
+      expect(edit(there, ["Alpha."])).toBe(true);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+      relay(there, here);
+      await page.push(state());
+
+      expect(field(label).value).toBe("Alpha.");
+      await act(async () => field(label).dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(page.commands).toEqual([]);
+      expect(shown(here)).toEqual(shown(there));
+      relay(here, there);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+    });
+
     /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:
      * each field shows its own bullet, what is being typed in a later field stays, and is saved with
      * the list shown now, and a field left untouched saves nothing. */
     test("a knowledge base changed elsewhere keeps what is being typed", async () => {
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase } });
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets(knowledgeBase) } });
       const { commands, push } = await open(withKB(["Alpha.", "Beta.", "Gamma."]));
       const item = field("Knowledge base, item 3");
       await act(async () => type(item, "Gamma, edited."));
@@ -692,27 +787,7 @@ describe("Settings page", () => {
       await act(async () => field("Knowledge base, item 2").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
       expect(commands).toEqual([]);
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Zero.", "Beta.", "Gamma."], bullets: ["Zero.", "Beta.", "Gamma, edited."] }]);
-    });
-
-    /** Equal bullets (an Add of one already there stores it twice) are each a row of their own, and a
-     * change made elsewhere around them shows exactly the list pushed. */
-    test.each([
-      [["Alpha.", "Alpha.", "Beta."], ["Gamma.", "Alpha.", "Beta."]],
-      [["Alpha.", "Alpha.", "Beta."], ["Alpha.", "Beta."]],
-      [["Alpha.", "Beta.", "Alpha."], ["Beta.", "Alpha."]],
-      [["Alpha.", "Alpha."], ["Zero.", "Alpha.", "Alpha."]],
-    ])("equal bullets %j, changed elsewhere to %j, show as pushed", async (before, after) => {
-      const errors: unknown[] = [];
-      vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => void errors.push(args[0]));
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase } });
-      const rows = () => [...document.querySelectorAll<HTMLTextAreaElement>('ul[aria-label="Knowledge base"] textarea')].map((element) => element.value);
-      const { push } = await open(withKB(before));
-      expect(rows()).toEqual(before);
-      await push(withKB(after));
-      expect(rows()).toEqual(after);
-      // React reports a key shared by two rows.
-      expect(errors).toEqual([]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Zero.", "Beta.", "Gamma."]), bullets: ["Zero.", "Beta.", "Gamma, edited."] }]);
     });
 
     /** A bullet is one line: Enter leaves the field, which saves it, rather than breaking the line. */
@@ -725,7 +800,7 @@ describe("Settings page", () => {
       const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
       await act(async () => item.dispatchEvent(enter));
       expect(enter.defaultPrevented).toBe(true);
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers afternoon meetings.", "Works with Sam."] }]);
     });
 
     /** An emptied item is sent empty, and the store leaves empty bullets out (`UserPrompts`' test
@@ -736,7 +811,7 @@ describe("Settings page", () => {
       await act(async () => type(item, "   "));
       expect(commands).toEqual([]);
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["", "Works with Sam."] }]);
+      expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["", "Works with Sam."] }]);
     });
 
     test("Escape puts an item back as it was, and leaving it then saves nothing", async () => {
@@ -752,7 +827,7 @@ describe("Settings page", () => {
     /** A bullet another writer stored with a leading space (Thunderbird or iOS) is
      * shown as stored; leaving it untouched saves nothing. */
     test("an item stored with a leading space and left untouched saves nothing", async () => {
-      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: [" Alice.", "Works with Sam."] } });
+      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets([" Alice.", "Works with Sam."]) } });
       const item = field("Knowledge base, item 1");
       expect(item.value).toBe(" Alice.");
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
@@ -766,8 +841,8 @@ describe("Settings page", () => {
       await act(async () => type(add, "  Likes short replies.  "));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
       expect(commands).toEqual([
-        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Works with Sam."] },
-        { type: "editKnowledgeBase", shown: ["Prefers morning meetings.", "Works with Sam."], bullets: ["Prefers morning meetings.", "Works with Sam.", "Likes short replies."] },
+        { type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Works with Sam."] },
+        { type: "editKnowledgeBase", shown: shownBullets(["Prefers morning meetings.", "Works with Sam."]), bullets: ["Prefers morning meetings.", "Works with Sam.", "Likes short replies."] },
       ]);
     });
 
@@ -776,7 +851,7 @@ describe("Settings page", () => {
       const add = field("Add to Language");
       await act(async () => type(add, "I also write in French."));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
-      expect(commands).toEqual([{ type: "editWritingStyle", section: language, shown: ["I write in English Only."], bullets: ["I write in English Only.", "I also write in French."] }]);
+      expect(commands).toEqual([{ type: "editWritingStyle", section: language, shown: shownBullets(["I write in English Only."]), bullets: ["I write in English Only.", "I also write in French."] }]);
     });
 
     /** The general section shows as for emails and formal replies (#301), but its edits still name the
@@ -787,7 +862,7 @@ describe("Settings page", () => {
       const add = field("Add to General writing style for emails and formal replies");
       await act(async () => type(add, "Keep it short."));
       await act(async () => (add.form as HTMLFormElement).requestSubmit());
-      expect(commands).toEqual([{ type: "editWritingStyle", section: "General writing style", shown: ["ALWAYS start with a greeting."], bullets: ["ALWAYS start with a greeting.", "Keep it short."] }]);
+      expect(commands).toEqual([{ type: "editWritingStyle", section: "general", shown: shownBullets(["ALWAYS start with a greeting."]), bullets: ["ALWAYS start with a greeting.", "Keep it short."] }]);
     });
 
     /** Reset asks first, in place; Cancel sends nothing. */
@@ -1241,7 +1316,7 @@ describe("Settings page", () => {
       "Agent mode": ["Your name", "Edit", "Compose", "Close the chat when I click elsewhere"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
       // The tab shown first, Writing style; the other tabs' own text is in the tabs' tests.
-      Personalization: ["Writing style", "General writing style for emails and formal replies", "Knowledge base", "History", "How agent mode writes emails and formal replies for you."],
+      Personalization: ["Sync with my other devices", "Writing style", "General writing style for emails and formal replies", "Knowledge base", "History", "How agent mode writes emails and formal replies for you."],
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
@@ -1568,8 +1643,8 @@ describe("Settings page", () => {
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
     // Smart dictation, screen reading, learning the user's corrections, debug mode, the two agent
-    // tools with a switch, closing the chat window on a click elsewhere, and Opt Out of AI.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(8);
+    // tools with a switch, closing the chat window on a click elsewhere, Opt Out of AI, and Device Sync.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(9);
     expect(page.commands).toEqual([]);
   });
 
@@ -1718,6 +1793,7 @@ describe("Settings page", () => {
       "No requests kept yet.",
       // Personalization's, a port of Thunderbird's writing style and knowledge base (ADR-DESK-063).
       // One short line each (owner, 2026-10-28).
+      "Keeps your writing style and knowledge base the same in TabMail on your other devices.",
       "How agent mode writes emails and formal replies for you. Sent with requests that may write; TabMail doesn’t keep it.",
       "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
       `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,

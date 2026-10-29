@@ -66,6 +66,8 @@ const eventQuestions = {
   ] },
 };
 const eventRequests = { add: "Set up a weekly design review on Wednesdays at 10 in Room 5 with Alex and Sam", change: "Move Thursday's team sync to 3, add Pat, Sam, Jordan and Morgan, and drop Alex and Chris", delete: "Delete my weekly one-on-one" };
+/** Bullets as Settings shows them, each under a label of its own. */
+const shown = (texts: string[]) => texts.map((text, index) => ({ text, labels: [["0000000000000001", index + 1] as [string, number]] }));
 const settings = {
   availableHotkeys: ["rightOption", "function"],
   email: null,
@@ -88,6 +90,8 @@ const settings = {
   learnsWords: true,
   smartDictation: false,
   optsOutOfAI: false,
+  syncsDevices: true,
+  deviceSyncTooLarge: false,
   closesChatElsewhere: true,
   eventDuration: 45,
   canLearnWords: true,
@@ -101,11 +105,11 @@ const settings = {
   memory: { sizeLimit: gigabyte, usage: null, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: {
     writingStyle: [
-      { section: "General writing style", bullets: ["ALWAYS sign off as the user using the **First Name Only**.", "I want to sound friendly and professional, but not too formal.", "ALWAYS start with a greeting.", "I generally use Cheers or Best, depending on the context."] },
-      { section: "Language", bullets: ["I write in English Only."] },
-      { section: "Useful links to personal website and other resources", bullets: ["[Example Website](https://example.com)"] },
+      { section: "general", title: "General writing style", bullets: shown(["ALWAYS sign off as the user using the **First Name Only**.", "I want to sound friendly and professional, but not too formal.", "ALWAYS start with a greeting.", "I generally use Cheers or Best, depending on the context."]) },
+      { section: "language", title: "Language", bullets: shown(["I write in English Only."]) },
+      { section: "links", title: "Useful links to personal website and other resources", bullets: shown(["[Example Website](https://example.com)"]) },
     ],
-    knowledgeBase: ["User is using TabMail as their AI assistant for emails.", "[Pinned] Prefers meetings in the morning.", "Works with Sam on the launch review."],
+    knowledgeBase: shown(["User is using TabMail as their AI assistant for emails.", "[Pinned] Prefers meetings in the morning.", "Works with Sam on the launch review."]),
     history: [],
   },
   fileProblems: [],

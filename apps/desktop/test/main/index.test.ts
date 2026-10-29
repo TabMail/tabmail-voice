@@ -22,6 +22,11 @@ import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
+/** The texts of bullets as Settings shows them. */
+function texts(bullets: readonly { text: string }[] | undefined): string[] {
+  return (bullets ?? []).map((bullet) => bullet.text);
+}
+
 /** The signal a tool runs with: a request never canceled. */
 const signal = new AbortController().signal;
 
@@ -137,6 +142,11 @@ const app = vi.hoisted(() => ({
   /** The open dialogs shown, and what the user picks in the next one (null: canceled). */
   openDialogs: [] as Record<string, unknown>[],
   pickedPath: null as string | null,
+  /** The relay connections Device Sync opened, in order; whether the app closed each. */
+  syncSockets: [] as { url: string; closed: boolean }[],
+  /** Electron's `powerMonitor` events, by name, and what `net.isOnline` says. */
+  powerEvents: new Map<string, () => void>(),
+  online: true,
 }));
 
 vi.mock("electron", async () => {
@@ -189,6 +199,8 @@ vi.mock("electron", async () => {
     },
     screen: { screenToDipRect: (_window: unknown, rect: Rect) => rect, getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+    powerMonitor: { on: (event: string, handler: () => void) => app.powerEvents.set(event, handler) },
+    net: { isOnline: () => app.online },
     shell: {
       showItemInFolder: (path: string) => void app.shownFiles.push(path),
       openExternal: async (url: string) => {
@@ -362,6 +374,14 @@ vi.mock("../../src/main/native/macos/osascript.js", () => ({
       app.scripts.push({ source, args });
       return "";
     },
+  },
+}));
+// Device Sync's relay is never reached: each connection is noted.
+vi.mock("../../src/main/deviceSyncSocket.js", () => ({
+  deviceSyncSocket: () => (url: string) => {
+    const socket = { url, closed: false };
+    app.syncSockets.push(socket);
+    return { send() {}, close: () => void (socket.closed = true) };
   },
 }));
 vi.mock("../../src/main/storage/logFile.js", () => ({
@@ -686,6 +706,9 @@ afterEach(() => {
   app.quits = 0;
   app.openDialogs = [];
   app.pickedPath = null;
+  app.syncSockets = [];
+  app.powerEvents.clear();
+  app.online = true;
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -1424,6 +1447,60 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.stored.get("userName")).toBe(" Alex Example");
   });
 
+  /** Device Sync (root ADR-021) as the app wires it: for the account signed in, once the user
+   * consented, to the development relay in debug mode; a wake and the computer back online connect
+   * afresh, its switch turns it off and on, and quitting closes it. */
+  test("Device Sync connects with consent, follows debug mode, a wake, the network and its switch, and stops at quit", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { syncsDevices: boolean; deviceSyncTooLarge: boolean };
+      const relays = () => app.syncSockets.map((socket) => `${socket.url.split("?")[0]}${socket.closed ? " closed" : ""}`);
+      app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@tabmail.ai" } });
+      await launch("darwin");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(relays()).toEqual([]);
+
+      expect(await send({ type: "setConsent", value: true })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays()).toEqual([config.deviceSyncURL]));
+      expect(app.syncSockets[0]?.url).toBe(`${config.deviceSyncURL}?token=access`);
+      expect(state()).toMatchObject({ syncsDevices: true, deviceSyncTooLarge: false });
+
+      expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays()).toEqual([`${config.deviceSyncURL} closed`, config.deviceSyncDevelopmentURL]));
+      expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays().at(-1)).toBe(config.deviceSyncURL));
+
+      app.powerEvents.get("resume")?.();
+      await vi.waitFor(() => expect(relays().slice(2)).toEqual([`${config.deviceSyncURL} closed`, config.deviceSyncURL]));
+
+      app.online = false;
+      vi.advanceTimersByTime(config.deviceSyncOnlineCheckInterval);
+      app.online = true;
+      vi.advanceTimersByTime(config.deviceSyncOnlineCheckInterval);
+      await vi.waitFor(() => expect(relays().slice(3)).toEqual([`${config.deviceSyncURL} closed`, config.deviceSyncURL]));
+      vi.advanceTimersByTime(config.deviceSyncOnlineCheckInterval);
+      expect(relays()).toHaveLength(5);
+
+      expect(await send({ type: "setSyncsDevices", value: false })).toEqual({ error: null });
+      expect([relays().at(-1), state().syncsDevices, app.stored.get("deviceSync")]).toEqual([`${config.deviceSyncURL} closed`, false, false]);
+      expect(await send({ type: "setSyncsDevices", value: true })).toEqual({ error: null });
+      await vi.waitFor(() => expect(relays()).toHaveLength(6));
+
+      app.appEvents.get("before-quit")?.({ preventDefault() {} });
+      await vi.waitFor(() => expect(relays().at(-1)).toBe(`${config.deviceSyncURL} closed`));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** Signed in, with consent given before, Device Sync connects at launch. */
+  test("Device Sync connects at launch for an account signed in that consented before", async () => {
+    app.stored.set("hasConsentedToDictationData", true);
+    app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@example.com" } });
+    await launch("darwin");
+    await vi.waitFor(() => expect(app.syncSockets.map((socket) => socket.url)).toEqual([`${config.deviceSyncURL}?token=access`]));
+  });
+
   /** A packaged build writes the debug log while debug mode is on for an account allowed it: on at
    * launch when stored on, off when switched off, off once the account signs out, and off for an
    * account not allowed it. */
@@ -2156,8 +2233,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const defaults = page().knowledgeBase;
     for (const command of [
-      { type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] },
-      { type: "editWritingStyle", section: "Language", shown: ["I write in English Only."], bullets: ["I write in German."] },
+      { type: "editKnowledgeBase", shown: defaults, bullets: [...texts(defaults), "Prefers short replies."] },
+      { type: "editWritingStyle", section: "language", shown: page().writingStyle.find((one) => one.section === "language")?.bullets, bullets: ["I write in German."] },
       { type: "resetKnowledgeBase" },
       { type: "resetWritingStyle" },
       { type: "restorePromptHistory", id: "no-such-entry" },
@@ -2282,29 +2359,41 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       },
     ]);
     const promptsFile = () => app.files.get(join(app.userData, "userPrompts.json"));
-    const storedKB = () => promptsFile()?.get("user_prompts:user_kb.md");
-    const storedStyle = () => promptsFile()?.get("user_prompts:user_composition.md");
-    const language = () => page().writingStyle.find((one) => one.section === "Language")?.bullets;
-    const defaults = page().knowledgeBase;
+    const storedKB = () => JSON.stringify(promptsFile()?.get("bullet_state:kb") ?? null);
+    const storedStyle = () => JSON.stringify(promptsFile()?.get("bullet_state:composition") ?? null);
+    const languageShown = () => page().writingStyle.find((one) => one.section === "language")?.bullets ?? [];
+    const language = () => texts(languageShown());
+    const defaults = texts(page().knowledgeBase);
     expect(defaults).toHaveLength(3);
     expect(language()).toEqual(["I write in English Only."]);
     expect(page().history).toEqual([]);
 
-    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
-    expect(storedKB()).toContain("- Prefers short replies.");
-    expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
-    expect(pushed.at(-1)?.knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(await send({ type: "editKnowledgeBase", shown: page().knowledgeBase, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+    expect(storedKB()).toContain('"Prefers short replies."');
+    expect(texts(page().knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
+    expect(texts(pushed.at(-1)?.knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
 
-    expect(await send({ type: "editWritingStyle", section: "Language", shown: ["I write in English Only."], bullets: ["I write in English and French."] })).toEqual({ error: null });
-    expect(storedStyle()).toContain("- I write in English and French.");
+    expect(await send({ type: "editWritingStyle", section: "language", shown: languageShown(), bullets: ["I write in English and French."] })).toEqual({ error: null });
+    expect(storedStyle()).toContain('"I write in English and French."');
     expect(storedStyle()).not.toContain("English Only");
     expect(language()).toEqual(["I write in English and French."]);
-    expect(pushed.at(-1)?.writingStyle.find((one) => one.section === "Language")?.bullets).toEqual(["I write in English and French."]);
+    expect(texts(pushed.at(-1)?.writingStyle.find((one) => one.section === "language")?.bullets)).toEqual(["I write in English and French."]);
+
+    // R23: a line holding a section marker, on any line of a pasted bullet, is refused with a message that
+    // says why; nothing changes.
+    const styleBeforeMarker = storedStyle();
+    for (const line of ["Keep ====END USER INSTRUCTIONS==== here", "Language (DO NOT EDIT/DELETE THIS SECTION HEADER)", "First line\nKeep DO NOT EDIT/DELETE THIS SECTION HEADER here"]) {
+      expect(await send({ type: "editWritingStyle", section: "language", shown: languageShown(), bullets: ["I write in English and French.", line] })).toEqual({
+        error: 'A line can\'t contain "DO NOT EDIT/DELETE THIS SECTION HEADER" or "====END USER INSTRUCTIONS====", so nothing changed.',
+      });
+      expect(storedStyle()).toBe(styleBeforeMarker);
+      expect(language()).toEqual(["I write in English and French."]);
+    }
 
     // A reset brings the default back, recording the text as it was first.
     expect(await send({ type: "resetKnowledgeBase" })).toEqual({ error: null });
-    expect(page().knowledgeBase).toEqual(defaults);
-    expect(pushed.at(-1)?.knowledgeBase).toEqual(defaults);
+    expect(texts(page().knowledgeBase)).toEqual(defaults);
+    expect(texts(pushed.at(-1)?.knowledgeBase)).toEqual(defaults);
     const kbReset = page().history[0];
     expect(kbReset).toMatchObject({ source: "reset", fields: ["kb"], restores: ["Prefers short replies."] });
     expect(await send({ type: "resetWritingStyle" })).toEqual({ error: null });
@@ -2312,9 +2401,9 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
     // Restoring the knowledge base's reset puts back both texts as they were then.
     expect(await send({ type: "restorePromptHistory", id: kbReset?.id })).toEqual({ error: null });
-    expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(texts(page().knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
     expect(language()).toEqual(["I write in English and French."]);
-    expect(pushed.at(-1)?.knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+    expect(texts(pushed.at(-1)?.knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
 
     // The file can't be written: each command says so, and the texts stay as they are.
     app.savesFail = true;
@@ -2323,10 +2412,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const unsaved = { error: "This couldn't be saved, so nothing changed. Check the disk and try again." };
     for (const command of [
       { type: "editKnowledgeBase", shown: shownBefore.knowledgeBase, bullets: ["Only this."] },
-      { type: "editWritingStyle", section: "Language", shown: ["I write in English and French."], bullets: ["I write in German."] },
+      { type: "editWritingStyle", section: "language", shown: languageShown(), bullets: ["I write in German."] },
       { type: "resetKnowledgeBase" },
       { type: "resetWritingStyle" },
-      { type: "restorePromptHistory", id: kbReset?.id },
+      // An entry whose restore would change the texts (restoring the one just restored changes nothing).
+      { type: "restorePromptHistory", id: page().history.find((item) => item.restores.length + item.removes.length > 0)?.id },
     ]) {
       expect(await send(command), command.type).toEqual(unsaved);
       expect(storedKB(), command.type).toBe(kbBefore);
@@ -2342,10 +2432,10 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const pushed: string[][] = [];
     app.listeners.set("voice:state", [
       (_event, name, pushedState) => {
-        if (name === "settings") pushed.push((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase);
+        if (name === "settings") pushed.push(texts((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase));
       },
     ]);
-    expect(app.prompts?.updateKnowledgeBase((current) => `${current}\n- Learned in a chat.`)).toBe("saved");
+    expect(app.prompts?.addKnowledge("Learned in a chat.").outcome).toBe("saved");
     expect(pushed.at(-1)).toContain("Learned in a chat.");
   });
 
@@ -2355,7 +2445,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await launch("darwin");
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const defaults = page().knowledgeBase;
-    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+    expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...texts(defaults), "Prefers short replies."] })).toEqual({ error: null });
     const promptsFile = app.files.get(join(app.userData, "userPrompts.json"));
     expect(promptsFile?.get("prompt_history")).toBeUndefined();
 
@@ -2380,16 +2470,16 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     };
     try {
       await relaunch(first);
-      const defaults = page().knowledgeBase;
-      expect(await send({ type: "editKnowledgeBase", shown: defaults, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
-      expect(app.files.get(join(first, "userPrompts.json"))?.get("user_prompts:user_kb.md")).toContain("- Prefers short replies.");
-      expect([...app.stored.keys()].filter((key) => key.startsWith("user_prompts:") || key === "prompt_history")).toEqual([]);
+      const defaults = texts(page().knowledgeBase);
+      expect(await send({ type: "editKnowledgeBase", shown: page().knowledgeBase, bullets: [...defaults, "Prefers short replies."] })).toEqual({ error: null });
+      expect(JSON.stringify(app.files.get(join(first, "userPrompts.json"))?.get("bullet_state:kb"))).toContain('"Prefers short replies."');
+      expect([...app.stored.keys()].filter((key) => key.startsWith("user_prompts:") || key.startsWith("bullet_state:") || key === "prompt_history")).toEqual([]);
 
       await relaunch(second);
-      expect(page().knowledgeBase).toEqual(defaults);
+      expect(texts(page().knowledgeBase)).toEqual(defaults);
 
       await relaunch(first);
-      expect(page().knowledgeBase).toEqual([...defaults, "Prefers short replies."]);
+      expect(texts(page().knowledgeBase)).toEqual([...defaults, "Prefers short replies."]);
     } finally {
       app.userData = "/nonexistent";
       for (const folder of [first, second]) rmSync(folder, { recursive: true, force: true });
