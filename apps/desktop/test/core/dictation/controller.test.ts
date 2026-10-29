@@ -283,7 +283,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(transcription.authorizations).toEqual(["Bearer access-1"]);
   });
 
-  /** Smart dictation off (Settings, the default): the recording goes with no cleanup, and the
+  /** Smart dictation off (Settings): the recording goes with no cleanup, and the
    * transcript is pasted as heard, whatever the backend answers as `cleaned_text`. */
   test("pastes the transcript as heard, with no cleanup sent, when smart dictation is off", async () => {
     prefs.value = { ...defaultSettings(), smartDictation: false };
@@ -843,7 +843,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
     });
 
-    /** Smart dictation off (the default): the transcript as heard is spaced the same way, the screen
+    /** Smart dictation off: the transcript as heard is spaced the same way, the screen
      * read still taken at key-down though nothing waits for it. */
     test("with Smart dictation off, the transcript after a delimiter is pasted a space after it", async () => {
       prefs.value = { ...defaultSettings(), smartDictation: false };

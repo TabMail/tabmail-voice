@@ -103,7 +103,7 @@ is placed: the dictation replaces it, so the cleanup gets the caret alone, and t
 counts no selected text. A caret line that is also another whole field line lower on screen places
 the marker there; the owner asked for the line search.
 
-**Amendment 2026-10-05 — Smart dictation, a setting, off by default (owner).** The cleanup costs about
+**Amendment 2026-10-05 — Smart dictation, a setting, off by default (owner; default superseded 2026-10-29, #313, below).** The cleanup costs about
 a second per dictation (0.4–1.8 s measured on 2026-10-05). Owner: "default off, but an option to have
 that cleanup on"; in Settings › Dictation, a switch noting it delays each dictation by a second or more.
 `smartDictation` (stored, default false) is part of the dictation's settings snapshot taken at key-down.
@@ -175,3 +175,9 @@ their captured screen context to the controller's shared paste function, just as
 The existing `spacedFromCaret` rule applies on both sides of their output too; Edit still preserves
 the selection's boundary whitespace, so existing blanks and line breaks are not doubled. History
 and text copied from an unpasted note remain as written. No additional screen read is made.
+
+**Amendment 2026-10-29 — Smart dictation on by default (owner, #313).** `smartDictation` now defaults to
+true: the backend's cleanup handles most typos, so a new install, and a user who never touched the
+switch, gets it. A choice the user saved is kept, so whoever switched it off stays off. Opt Out of AI
+still means no cleanup: it starts no dictation at all. The switch in Settings › Dictation now adds that
+turning it off gives faster, word-for-word dictation. Everything else in the 2026-10-05 amendment stands.

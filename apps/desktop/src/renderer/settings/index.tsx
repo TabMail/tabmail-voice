@@ -172,7 +172,7 @@ function DictationPane({ state }: { state: SettingsState }) {
       </Group>
       <Group>
         <Toggle label="Smart dictation" checked={state.smartDictation} onChange={(value) => send({ type: "setSmartDictation", value })}>
-          Lets AI clean up your dictation: names and terms spelled as on screen, filler words removed, grammar fixed. Adds a delay of a second or more to each dictation.
+          Lets AI clean up your dictation: names and terms spelled as on screen, filler words removed, grammar fixed. Adds a delay of a second or more to each dictation; turn it off for faster, word-for-word dictation.
         </Toggle>
       </Group>
       <Group>
