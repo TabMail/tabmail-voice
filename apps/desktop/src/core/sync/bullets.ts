@@ -102,8 +102,6 @@ function bulletText(line: string): string {
   return line.startsWith("- ") ? trim(line.slice(2)) : line;
 }
 
-/** The section key whose header `line` is (R3): it holds the header's name and the marker; the first
- * in order when several match. */
 /** R23: in the sectioned fields a text holding the header mark or the END marker would be read back as
  * a header or the skeleton, so it is not a bullet: no writer makes one, and a snapshot carrying one is
  * dropped. The knowledge base has neither (R1). */
@@ -111,6 +109,8 @@ export function isMarkerText(field: SyncField, text: string): boolean {
   return field !== "kb" && (text.includes(headerMark) || text.includes(instructionsEnd));
 }
 
+/** The section key whose header `line` is (R3): it holds the header's name and the marker; the first
+ * in order when several match. */
 function headerOf(field: SyncField, line: string): string | undefined {
   if (!line.includes(headerMark)) return undefined;
   return sectionHeaders[field].find(([, name]) => line.includes(name))?.[0];
@@ -269,7 +269,8 @@ function withLabel(state: FieldState, item: BulletText, labels: LabelSource): vo
   state.seen.set(name, Math.max(state.seen.get(name) ?? 0, n));
 }
 
-/** DS-ADD: `items` added, each not already live, under fresh labels; then DS-DEDUP. */
+/** DS-ADD: `items` added, each not already live, under fresh labels (a fresh label is the only one of
+ * its text, so nothing is left for DS-DEDUP). */
 export function add(state: FieldState, items: readonly BulletText[], labels: LabelSource): FieldState {
   const next = cloneState(state);
   for (const item of items) if (!isLive(next, item)) withLabel(next, item, labels);

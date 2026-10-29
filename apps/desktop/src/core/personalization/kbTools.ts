@@ -67,7 +67,6 @@ export class KBTools {
     const { outcome } = this.prompts.addKnowledge(text);
     log.debug(`KBTools: ${config.kbAddTool} ${outcome}`);
     if (outcome === "unsaved") return { error: this.unsaved() };
-    if (outcome === "unchanged") return "No change (duplicate or unchanged).";
     // What it added is the request's own, for a `kb_del` after it.
     this.captured?.push(...this.prompts.sync.state("kb").bullets.filter((bullet) => bullet.section === "" && bullet.text === text));
     return "Added to knowledge base.";

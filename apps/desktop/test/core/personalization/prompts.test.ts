@@ -521,6 +521,49 @@ describe("UserPrompts", () => {
     expect(holdsSectionMarker(["Plain rule", "DO NOT EDIT this"])).toBe(false);
   });
 
+  /** DS-SKELETON: the lines around the sections of a released app's writing style, the user's own
+   * among them, are kept by its upgrade and by every merge after it (a snapshot carries no skeleton). */
+  test("the writing style's own title and closing lines are kept by its upgrade and by a merge", () => {
+    const custom = defaultStyle
+      .replace("# User provided composition instructions", "# My own composition notes\n- A line I typed before the sections.")
+      .replace("Now, acknowledge these user instructions and do not deviate from them.", "Now acknowledge these, my way.");
+    const { store, prompts } = setup({ [compositionKey]: custom }, names());
+    expect(prompts.composition).toBe(custom);
+    expect(store.get(compositionKey)).toBeUndefined();
+
+    const message = { type: "bullet_state", v: 1, field: "composition", sender: "ffffffffffffffff", snap: "1", part: 1, parts: 1, bullets: [["general", "Peer rule", "ffffffff00000001", 1]], seen: { ffffffff00000001: 1 } };
+    expect(prompts.sync.receive(message)).toMatchObject({ kind: "merged", changed: true });
+    expect(texts(shownSection(prompts, general))).toContain("Peer rule");
+    expect(prompts.composition.startsWith("# My own composition notes\n- A line I typed before the sections.\n")).toBe(true);
+    expect(prompts.composition.endsWith("\nNow acknowledge these, my way.")).toBe(true);
+    expect(new UserPrompts(store).composition).toBe(prompts.composition);
+  });
+
+  /** DS-DEDUP and DS-RENDER: a text this device holds, arriving under a smaller label, keeps its place
+   * in the order the user left it. */
+  test("a text arriving under a smaller label keeps its place", () => {
+    const { prompts } = setup({ [kbKey]: "- alpha\n- beta\n- gamma" }, names());
+    const message = { type: "bullet_state", v: 1, field: "kb", sender: "ffffffffffffffff", snap: "1", part: 1, parts: 1, bullets: [["", "beta", "0000000000000001", 1]], seen: { "0000000000000001": 1 } };
+    prompts.sync.receive(message);
+    expect(prompts.shown("kb", "")).toEqual([
+      { text: "alpha", labels: [["0000000100000001", 1]] },
+      { text: "beta", labels: [["0000000000000001", 1]] },
+      { text: "gamma", labels: [["0000000100000001", 3]] },
+    ]);
+    expect(prompts.knowledgeBase).toBe("- alpha\n- beta\n- gamma");
+  });
+
+  /** R23: a typed bullet is one line once saved, so a marker on any of its lines is found and the edit
+   * refused, never saved without that line. */
+  test("a pasted bullet with a section marker on its second line is refused (R23)", () => {
+    const { prompts } = setup();
+    const before = prompts.composition;
+    const pasted = "First line\nKeep DO NOT EDIT/DELETE THIS SECTION HEADER here";
+    expect(holdsSectionMarker(["Plain rule", pasted])).toBe(true);
+    expect(prompts.editCompositionSection(general, shownSection(prompts, general), ["Plain rule", pasted])).toBe(false);
+    expect(prompts.composition).toBe(before);
+  });
+
   /** R23: a history entry recorded before, holding a line with the header mark in a section, restores
    * every other line and makes no bullet of that one. */
   test("a restore makes no bullet of a line holding the header mark (R23)", () => {
@@ -609,7 +652,7 @@ describe("UserPrompts", () => {
       [kbStateKey]: {
         head: "not lines",
         tail: [],
-        bullets: [["", "Good", "0000000100000001", 1], ["", " Padded", "0000000100000001", 2], ["", "Bad name", "NAME", 1], ["", "Bad n", "0000000100000001", 0], "not a bullet"],
+        bullets: [["", "Good", "0000000100000001", 1], ["", " Padded", "0000000100000001", 2], ["", "Bad name", "NAME", 1], ["", "Bad n", "0000000100000001", 0], ["", "Line\nbreak", "0000000100000001", 3], "not a bullet"],
         seen: { "0000000100000001": 1, other: -1 },
       },
     });

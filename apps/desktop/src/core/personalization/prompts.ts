@@ -259,10 +259,8 @@ export class UserPrompts extends Observable implements BulletStore {
     return this.local(this.sync.add("kb", [{ section: "", text }]));
   }
 
-  /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE); unsaved
-   * when its read was refused (R22). */
-  removeKnowledge(captured: readonly Bullet[] | null, item: BulletText): CommitResult {
-    if (captured === null) return { outcome: "unsaved", fields: [] };
+  /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE). */
+  removeKnowledge(captured: readonly Bullet[], item: BulletText): CommitResult {
     const labels = captured.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
     return this.local(this.sync.commitCapture([{ field: "kb", captured: labels, result: [] }]));
   }

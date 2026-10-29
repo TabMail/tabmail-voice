@@ -252,7 +252,7 @@ export class BulletSync {
     for (const field of this.options.fields) {
       const text = data[field];
       if (typeof text !== "string") continue;
-      // Released Thunderbird's and iOS's own reading of the time.
+      // Released Thunderbird's reading of the time (iOS's `??` differs only on "", which none sends).
       const time = data[`${field}_updated_at`] || data.updatedAt || epochZero;
       if (time === epochZero) continue;
       if (this.commit([[field, (state) => importLegacy(field, state, text, this.labels(), this.catalog)]], "sync").outcome === "saved") changed.push(field);
