@@ -4986,7 +4986,7 @@
             "sender": "ffffffffffffffff",
             "snap": "00000000000000a3",
             "part": 1,
-            "parts": 2,
+            "parts": 3,
             "bullets": [
               [
                 "",
@@ -5010,7 +5010,7 @@
             "sender": "ffffffffffffffff",
             "snap": "00000000000000a3",
             "part": 2,
-            "parts": 3,
+            "parts": 2,
             "bullets": [
               [
                 "",
@@ -5023,7 +5023,7 @@
               "ffffffff00000001": 2
             }
           },
-          "note": "another part count"
+          "note": "another part count, fewer: two parts in would complete it"
         },
         {
           "op": "expect",

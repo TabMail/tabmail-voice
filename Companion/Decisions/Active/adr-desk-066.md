@@ -42,7 +42,10 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   names on its bullets and on the last snapshot merged for that field. Over the relay's budget it is
   sent in parts, and a snapshot is applied only when every part arrived, agreeing; one bullet alone
   over the budget holds the field back and Settings says "Too large to sync". A malformed part drops
-  the whole snapshot. Voice never asks for state and never sends the released format.
+  the whole snapshot. Voice never asks for state and never sends the released format. The relay
+  also limits how many messages a connection sends a minute, and every part counts: a field of
+  dozens of parts (megabytes, far beyond a real knowledge base) would be cut off on each connect.
+  Left as it is (2026-10-29).
 - **Released Thunderbird and iOS** (`prompt_state`): imported additions only, an epoch-zero text
   skipped; nothing is deleted from what they send.
 - **Upgrade.** The texts Voice kept before are parsed once: catalog defaults take their default label,

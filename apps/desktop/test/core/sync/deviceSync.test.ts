@@ -4,10 +4,11 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
+import { UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { defaultCatalog, epochZero } from "../../../src/core/sync/bullets.js";
 import { MemoryStore, type StoreProblem } from "../../../src/core/util/keyValueStore.js";
-import { BulletDevice, BulletRelay, ownedStore } from "../../support/bulletDevices.js";
+import { BulletDevice, BulletRelay, DeviceStore, ownedStore } from "../../support/bulletDevices.js";
 import { FakeRelay, VoiceDevice } from "../../support/fakeDeviceSync.js";
 
 const peerName = "ffffffff00000001";
@@ -247,6 +248,20 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     expect(receiver.texts("kb")).toEqual(sender.texts("kb"));
   });
 
+  test("a field in ten parts or more keeps every part within it, whatever the budget", () => {
+    let most = 0;
+    for (let budget = 360; budget <= 440; budget += 1) {
+      const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
+      for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(`Fact number ${index} of thirty`);
+      const outgoing = prompts.sync.outgoing("kb");
+      if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
+      most = Math.max(most, outgoing.messages.length);
+      for (const message of outgoing.messages) expect(new TextEncoder().encode(JSON.stringify(message)).length, `budget ${budget}`).toBeLessThanOrEqual(budget);
+      expect(outgoing.messages.flatMap((message) => message.bullets).map((bullet) => bullet[1])).toEqual(prompts.sync.state("kb").bullets.map((bullet) => bullet.text));
+    }
+    expect(most).toBeGreaterThanOrEqual(10);
+  });
+
   test("one bullet over it holds the field back: logged with sizes only, shown, and cleared once it fits", async () => {
     const { relay, voice } = await connected();
     const errors: string[] = [];
@@ -331,6 +346,58 @@ describe("an in-process reload of the texts (DS-NAME-ABANDON, R7)", () => {
     const beta = a.state("kb").bullets.find((bullet) => bullet.text === "Beta");
     expect(beta?.name).not.toBe(before?.name);
     expect(texts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+  });
+});
+
+describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
+  /** A store whose writes all fail while `failing` is set, as a full disk's. */
+  class FullDiskStore extends DeviceStore {
+    failing = false;
+
+    override setAll(values: Readonly<Record<string, unknown>>): boolean {
+      return !this.failing && super.setAll(values);
+    }
+  }
+
+  function legacyStore(): FullDiskStore {
+    const store = new FullDiskStore(ownedStore().snapshot());
+    store.set("user_prompts:user_kb.md", "- Alpha\n- Beta");
+    return store;
+  }
+
+  function device(id: string, store: DeviceStore, relay: BulletRelay): BulletDevice {
+    return new BulletDevice(id, store, relay, { name: (k) => `0000000${id.toLowerCase()}${k.toString(16).padStart(8, "0")}` });
+  }
+
+  const kbTexts = (device: BulletDevice) => device.state("kb").bullets.map((bullet) => bullet.text);
+
+  test("is sent nothing of until it is saved, then everything it holds", async () => {
+    const relay = new BulletRelay();
+    const store = legacyStore();
+    store.failing = true;
+    const a = device("A", store, relay);
+    const b = device("B", ownedStore(), relay);
+    await b.connect();
+    await a.connect();
+
+    expect(kbTexts(a)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+    for (const field of ["kb", "composition", "action"]) expect(relay.sent("A", field)).toBe(0);
+
+    store.failing = false;
+    a.disconnect();
+    await a.connect();
+    while (relay.deliverOldest());
+    expect(kbTexts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+  });
+
+  test("takes no snapshot in before it is saved, so no text it held is lost", () => {
+    const relay = new BulletRelay();
+    const store = legacyStore();
+    const a = device("A", store, relay);
+    a.receive(JSON.parse(bulletState("kb", [["", "Gamma", peerName, 1]], { [peerName]: 1 })));
+
+    expect(kbTexts(a)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+    expect(store.get("user_prompts:user_kb.md")).toBeUndefined();
   });
 });
 
