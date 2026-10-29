@@ -306,6 +306,26 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     }
   });
 
+  /** The whole field as one message is measured in UTF-8 bytes too: a field of owls that fits the
+   * budget by its length, but not by its bytes, goes in parts within it. */
+  test("a field that fits by its length but not its UTF-8 bytes goes in parts within it", () => {
+    let budget = config.deviceSyncMessageMaxBytes;
+    const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
+    prompts.addKnowledge("\u{1F989}".repeat(40));
+    prompts.addKnowledge("\u{1F989}".repeat(41));
+    const whole = prompts.sync.outgoing("kb");
+    if (whole.kind !== "messages" || whole.messages.length !== 1) throw new Error(`one message expected: ${whole.kind}`);
+    const text = JSON.stringify(whole.messages[0]);
+    budget = text.length;
+    expect(new TextEncoder().encode(text).length).toBeGreaterThan(budget);
+
+    const outgoing = prompts.sync.outgoing("kb");
+    if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
+    expect(outgoing.messages.length).toBeGreaterThan(1);
+    for (const message of outgoing.messages) expect(new TextEncoder().encode(JSON.stringify(message)).length).toBeLessThanOrEqual(budget);
+    expect(outgoing.messages.flatMap((message) => message.bullets).map((bullet) => bullet[1])).toEqual(prompts.sync.state("kb").bullets.map((bullet) => bullet.text));
+  });
+
   /** A bullet fits by its UTF-8 bytes, not its length: 80 ASCII characters go, while 80 owls (160
    * UTF-16 units, 320 bytes) make one bullet over the budget, held back and kept. */
   test("one bullet of multibyte text over it in UTF-8 bytes is held back and kept, though its length fits", () => {
