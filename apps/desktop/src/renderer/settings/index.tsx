@@ -212,7 +212,7 @@ function DictionaryPane({ state }: { state: SettingsState }) {
   };
   return (
     <>
-      <Group captions={["Names and terms spelled your way, kept on this computer. The ones you use most are sent with each dictation so they come out right, and TabMail doesn’t keep them."]}>
+      <Group captions={["Names and terms spelled your way, kept on this computer. They’re sent adaptively with each dictation so they come out right, and TabMail doesn’t keep them."]}>
         <form className="row" onSubmit={add}>
           <input
             type="text"
