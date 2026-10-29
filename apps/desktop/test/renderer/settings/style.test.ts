@@ -23,6 +23,17 @@ function mediaBlock(query: string, text: string = css): string {
   return "";
 }
 
+/** Every block `@media <query>` opens, joined, and the stylesheet outside them. */
+function mediaBlocks(query: string): { inside: string; outside: string } {
+  let outside = css;
+  let inside = "";
+  for (let block = mediaBlock(query, outside); block !== ""; block = mediaBlock(query, outside)) {
+    inside += block;
+    outside = outside.replace(`@media ${query}`, "").replace(block, "");
+  }
+  return { inside, outside };
+}
+
 /** Each rule in `text`: its selectors and its declarations. */
 function rules(text: string): { selectors: string[]; body: string }[] {
   return [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selectors = "", body = ""]) => ({ selectors: selectors.split(",").map((selector) => selector.trim()), body }));
@@ -114,13 +125,7 @@ describe("Settings stylesheet", () => {
    * a contrast theme, where the chosen section and the chosen tab need their own ring in a system
    * color, set off from their fill. */
   test("focus shows on every background", () => {
-    const query = "(forced-colors: active)";
-    let outside = css;
-    let forced = "";
-    for (let block = mediaBlock(query, outside); block !== ""; block = mediaBlock(query, outside)) {
-      forced += block;
-      outside = outside.replace(`@media ${query}`, "").replace(block, "");
-    }
+    const { inside: forced, outside } = mediaBlocks("(forced-colors: active)");
     expect(outside).not.toMatch(/:focus-visible/);
     for (const selector of [".sidebar button.nav:focus-visible", ".tabs button.tab:focus-visible"]) {
       expect(value(forced, selector, "outline")).toBe("2px solid CanvasText");
@@ -152,6 +157,25 @@ describe("Settings stylesheet", () => {
     expect(declaring(forced, /background:\s*SelectedItem;/)).toContain(".sidebar button.nav.selected");
     expect(declaring(forced, /background:\s*CanvasText/)).toContain(".attention");
     expect(declaring(forced, /background:\s*SelectedItemText/)).toContain(".nav.selected .attention");
+  });
+
+  /** Settings › Memory marks the search words in a wash of the accent under text in its own color,
+   * which keeps small text's 4.5:1 on the cards and the window in both themes; in a contrast theme
+   * they take the system's Mark colors, which the forced colors would otherwise wipe out. */
+  test("the search words' marks stay legible, in contrast themes too", () => {
+    expect(value(css, ".memory-match", "background")).toBe("var(--search-match)");
+    expect(value(css, ".memory-match", "color")).toBe("inherit");
+    for (const theme of [palette.light, palette.dark]) {
+      for (const background of [theme.window, theme.group]) {
+        for (const color of [theme.text, theme.secondary]) expect(contrast(color, opaque(theme.searchMatch, background)), `${color} on ${theme.searchMatch} over ${background}`).toBeGreaterThanOrEqual(4.5);
+        // And the wash is seen: it stands apart from what it lies on.
+        expect(contrast(opaque(theme.searchMatch, background), background), `${theme.searchMatch} over ${background}`).toBeGreaterThan(1.1);
+      }
+    }
+    const forced = mediaBlocks("(forced-colors: active)").inside;
+    expect(value(forced, ".memory-match", "background")).toBe("Mark");
+    expect(value(forced, ".memory-match", "color")).toBe("MarkText");
+    expect(value(forced, ".memory-match", "forced-color-adjust")).toBe("none");
   });
 
   /** The chosen section's label is white on its gradient, and hovering it keeps that gradient: the

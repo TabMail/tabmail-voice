@@ -13,7 +13,7 @@ import * as config from "../../core/config.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
-import { formatBytes } from "../../core/memory/page.js";
+import { formatBytes, memoryHighlights } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import type { PromptHistoryItem } from "../../core/personalization/page.js";
 import { fileProblemLine } from "../../core/ui/fileProblems.js";
@@ -526,6 +526,17 @@ function MemoryPane({ state }: { state: SettingsState }) {
       void run({ type: "setMemorySizeLimit", value });
     }
   };
+  /** `text` with the search's words marked, as Thunderbird's Chat History marks them (#246). */
+  const marked = (text: string) =>
+    memoryHighlights(text, memory.query).map((part, index) =>
+      part.match ? (
+        <mark key={index} className="memory-match">
+          {part.text}
+        </mark>
+      ) : (
+        part.text
+      ),
+    );
   const used = memory.usage?.usedBytes;
   /** Null, "Not set", while the user's limit is unknown: no request is kept until one is chosen. */
   const limit = memory.sizeLimit;
@@ -641,8 +652,8 @@ function MemoryPane({ state }: { state: SettingsState }) {
                 <li key={entry.memId} className="row memory-entry">
                   <div className="memory-text">
                     <span className="caption">{memoryDate(entry.dateMs)}</span>
-                    {request !== "" && <span className="memory-request">{request}</span>}
-                    <span className="memory-reply">{agent}</span>
+                    {request !== "" && <span className="memory-request">{marked(request)}</span>}
+                    <span className="memory-reply">{marked(agent)}</span>
                   </div>
                   <button className="link" aria-label={`Remove the request from ${memoryDate(entry.dateMs)}`} disabled={removing.has(entry.memId)} onClick={() => void remove(entry.memId)}>
                     {removing.has(entry.memId) ? "Removing…" : "Remove"}

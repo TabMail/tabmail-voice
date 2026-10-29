@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
-import { formatBytes, MemoryPage } from "../../../src/core/memory/page.js";
+import { formatBytes, MemoryPage, memoryHighlights } from "../../../src/core/memory/page.js";
 import { AppSettings } from "../../../src/core/settings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import { MemoryError, type MemoryHit, type MemoryStats, memoryRow } from "../../../src/core/memory/store.js";
@@ -300,5 +300,52 @@ describe("MemoryPage", () => {
     expect(page.state.entries.map((entry) => entry.memId)).toEqual(["turn:after"]);
     expect(error).toHaveBeenCalledWith("MemoryPage: memory couldn't be cleared: HelperError.exited(memoryClear)");
     error.mockRestore();
+  });
+});
+
+/** The search's words marked in a listed request or reply (#246), as Thunderbird's Chat History marks
+ * them. */
+describe("memoryHighlights", () => {
+  /** The parts, a marked one in brackets. */
+  const shown = (text: string, query: string) => memoryHighlights(text, query).map((part) => (part.match ? `[${part.text}]` : part.text)).join("");
+
+  test("marks each search word wherever it occurs, whatever its case, keeping the text's own", () => {
+    expect(shown("The quick brown fox, the Fox.", "fox quick")).toBe("The [quick] brown [fox], the [Fox].");
+    expect(memoryHighlights("say hello", "HELLO")).toEqual([
+      { text: "say ", match: false },
+      { text: "hello", match: true },
+    ]);
+  });
+
+  test("the search's words are split at any white space, as Thunderbird splits them", () => {
+    expect(shown("friday review", "friday\treview")).toBe("[friday] [review]");
+    expect(shown("friday review", "friday\u00a0review")).toBe("[friday] [review]");
+  });
+
+  test("a word shorter than the shortest marked is not marked", () => {
+    const short = "x".repeat(config.memoryHighlightMinLength - 1);
+    const long = "y".repeat(config.memoryHighlightMinLength);
+    expect(shown(`${short} ${long}`, `${short} ${long}`)).toBe(`${short} [${long}]`);
+    // Two letters, as Thunderbird: a word of two is marked, a lone letter isn't.
+    expect(shown("Go do it", "go d")).toBe("[Go] do it");
+  });
+
+  test("without a word to mark, or with none found, the text is one unmarked part", () => {
+    for (const query of ["", "   ", "a", "absent"]) expect(memoryHighlights("hello world", query)).toEqual([{ text: "hello world", match: false }]);
+    expect(memoryHighlights("", "hello")).toEqual([]);
+  });
+
+  test("a word is matched as written, its regular-expression characters too", () => {
+    expect(shown("It was $10.99, not $10199.", "$10.99")).toBe("It was [$10.99], not $10199.");
+    expect(shown("a (b) and a|b", "(b) a|b")).toBe("a [(b)] and [a|b]");
+    for (const path of [String.raw`C:\temp`, "folder\\"]) expect(shown(`${path} C:temp`, path)).toBe(`[${path}] C:temp`);
+  });
+
+  test("where two words start at one place, the longer is marked", () => {
+    expect(shown("planning the plan", "plan planning")).toBe("[planning] the [plan]");
+  });
+
+  test("letters beyond ASCII match whatever their case", () => {
+    expect(shown("Über die Straße", "über STRASSE straße")).toBe("[Über] die [Straße]");
   });
 });

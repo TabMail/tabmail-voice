@@ -402,6 +402,11 @@ export const memoryReadToleranceMinutes = 10;
 export const memoryReadMaxTurns = 20;
 /** Settings' Memory list: how many exchanges it shows, newest first or best match first. */
 export const memoryListLimit = 200;
+
+/** The shortest search word Settings › Memory marks in a listed request and reply (#246), as
+ * Thunderbird's Chat History, in UTF-16 code units (JavaScript's length): a lone letter would mark
+ * most of every entry. */
+export const memoryHighlightMinLength = 2;
 /** The longest search Settings' Memory field takes (characters), and the longest exchange id it may
  * name to remove (`turn:` and a UUID, with room). */
 export const memorySearchMaxLength = 500;

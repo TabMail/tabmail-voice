@@ -201,3 +201,17 @@ Thunderbird's copy or its files.
 > database written before 0.12.0 gets its date index once, on the helper's next open (#45). Voice
 > sends no `hello` and no `previewChars`, so the new capability flags and previews change nothing
 > here. Checked with Voice's own requests against the built helper.
+
+> **Amended (2026-10-29, #246): Settings › Memory marks the search's words.** As Thunderbird's Chat
+> History does, a search's words are marked in each listed request and reply, so it shows why an entry
+> matched: each word of the search shown (split at white space) of at least `memoryHighlightMinLength` (2)
+> characters, every occurrence, whatever its case, the text keeping its own case; where two words start
+> at one place, the longer (Thunderbird marks the words in the search's order; `memoryHighlights` in
+> `src/core/memory/page.ts`). The marks are text parts
+> the page renders as `<mark>`, never markup made from the entry, so an entry's own `<`, `&` or `amp` is
+> shown and matched as text (Thunderbird marks over escaped HTML, where a search for `amp` matches
+> inside `&amp;`). The newest requests, listed without a search, have nothing marked. The mark is a
+> wash of the accent (`searchMatch`, ADR-DESK-048) under text in its own color, faint enough that the
+> text and the replies' caption gray keep small text's 4.5:1 on it in both themes, Mark and MarkText in
+> forced colors; the request's 2-line and the reply's 3-line clamps stand. Tests: see `TESTS.md`
+> (`memoryHighlights`, `renderer/settings` › `memory`, `renderer/settings/style.test.ts`).
