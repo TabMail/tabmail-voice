@@ -7,6 +7,7 @@ import * as config from "../../../src/core/config.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { defaultCatalog, epochZero } from "../../../src/core/sync/bullets.js";
 import { MemoryStore, type StoreProblem } from "../../../src/core/util/keyValueStore.js";
+import { BulletDevice, BulletRelay, ownedStore } from "../../support/bulletDevices.js";
 import { FakeRelay, VoiceDevice } from "../../support/fakeDeviceSync.js";
 
 const peerName = "ffffffff00000001";
@@ -282,6 +283,54 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     relay.inject("voice", JSON.stringify({ ...part, part: 2, parts: 2, bullets: [["", "Other half", peerName, 2]] }));
     await relay.settle();
     expect(voice.texts("kb")).toEqual(kbDefaults);
+  });
+});
+
+describe("an in-process reload of the texts (DS-NAME-ABANDON, R7)", () => {
+  /** Two devices that both hold "Alpha", added on A. */
+  async function alphaOnBoth(): Promise<{ relay: BulletRelay; a: BulletDevice; b: BulletDevice }> {
+    const relay = new BulletRelay();
+    const a = new BulletDevice("A", ownedStore(), relay, { name: (k) => `0000000a${k.toString(16).padStart(8, "0")}` });
+    const b = new BulletDevice("B", ownedStore(), relay, { name: (k) => `0000000b${k.toString(16).padStart(8, "0")}` });
+    await a.connect();
+    await b.connect();
+    a.add("kb", "", "Alpha");
+    while (relay.deliverOldest());
+    expect(b.state("kb").bullets.map((bullet) => bullet.text)).toContain("Alpha");
+    return { relay, a, b };
+  }
+
+  function texts(device: BulletDevice): string[] {
+    return device.state("kb").bullets.map((bullet) => bullet.text);
+  }
+
+  test("after the user's factory reset, the next bullet is under a fresh name, and no peer loses a bullet", async () => {
+    const { relay, a, b } = await alphaOnBoth();
+    const before = a.state("kb").bullets.find((bullet) => bullet.text === "Alpha");
+    a.prompts.resetFile(() => a.store.replaceWith(ownedStore()));
+    a.add("kb", "", "Beta");
+    while (relay.deliverOldest());
+
+    const beta = a.state("kb").bullets.find((bullet) => bullet.text === "Beta");
+    expect(beta?.name).not.toBe(before?.name);
+    expect(texts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+    expect(texts(a)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+  });
+
+  test("after another account's texts are cleared on sign-in, the same", async () => {
+    const { relay, a, b } = await alphaOnBoth();
+    const before = a.state("kb").bullets.find((bullet) => bullet.text === "Alpha");
+    a.disconnect();
+    // The file is another account's now, as when someone else signed in on A since.
+    a.store.replaceWith(ownedStore("user-elsewhere"));
+    await a.connect();
+    expect(a.prompts.owner).not.toBe("user-elsewhere");
+    a.add("kb", "", "Beta");
+    while (relay.deliverOldest());
+
+    const beta = a.state("kb").bullets.find((bullet) => bullet.text === "Beta");
+    expect(beta?.name).not.toBe(before?.name);
+    expect(texts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
   });
 });
 

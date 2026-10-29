@@ -10,7 +10,6 @@ import {
   commitCapture,
   defaultCatalog,
   defaultState,
-  edit,
   epochZero,
   type FieldState,
   hasLineBreak,
@@ -18,7 +17,6 @@ import {
   isName,
   type LabelSource,
   merge,
-  remove,
   sameState,
   type SyncField,
   syncFields,
@@ -100,7 +98,8 @@ export type ReceiveOutcome =
   | { kind: "merged"; field: SyncField; changed: boolean; send: boolean };
 
 interface PartBuffer {
-  snap: string;
+  /** The snapshot's id as the sender gave it (DS-VALIDATE puts no rule on it). */
+  snap: unknown;
   parts: number;
   seen: string;
   received: Map<number, string>;
@@ -176,10 +175,6 @@ export class BulletSync {
     this.catalog = options.catalog ?? defaultCatalog;
   }
 
-  get fields(): readonly SyncField[] {
-    return this.options.fields;
-  }
-
   /** `field` as it is now, after DS-UPGRADE when it hasn't run; a new install's defaults when nothing
    * is stored (DS-DEFAULT). */
   state(field: SyncField): FieldState {
@@ -205,16 +200,6 @@ export class BulletSync {
     return this.commit([[field, (state) => add(state, items, this.labels())]], "edit");
   }
 
-  /** DS-DELETE of `items`. */
-  remove(field: SyncField, items: readonly BulletText[]): CommitResult {
-    return this.commit([[field, (state) => remove(state, items)]], "edit");
-  }
-
-  /** DS-EDIT. */
-  edit(field: SyncField, from: BulletText, to: BulletText): CommitResult {
-    return this.commit([[field, (state) => edit(state, from, to, this.labels())]], "edit");
-  }
-
   /** DS-CAPTURE: the live labels of `sections` (all when not given), to commit against later. */
   capture(field: SyncField, sections?: readonly string[]): Bullet[] {
     return this.state(field).bullets.filter((bullet) => sections === undefined || sections.includes(bullet.section));
@@ -234,10 +219,7 @@ export class BulletSync {
   reset(fields: readonly SyncField[]): CommitResult {
     this.abandonName();
     const states: Partial<Record<SyncField, FieldState>> = {};
-    for (const field of fields) {
-      states[field] = defaultState(field, this.options.skeleton(field), this.catalog);
-      this.lastMerged.delete(field);
-    }
+    for (const field of fields) states[field] = defaultState(field, this.options.skeleton(field), this.catalog);
     return this.write(states, "reset") ? { outcome: "saved", fields: [...fields] } : { outcome: "unsaved", fields: [] };
   }
 
@@ -279,15 +261,13 @@ export class BulletSync {
     if (!this.options.fields.includes(field)) return { kind: "ignored" };
     if (message.v !== 1) return this.invalid(field, "version");
     const { sender, snap, part, parts } = message;
-    if (typeof sender !== "string" || sender === "") return this.invalid(field, "sender");
-    if (typeof snap !== "string" || snap === "") return this.invalid(field, "snap");
     if (!isCount(parts, 1) || !isCount(part, 1) || part > parts) return this.invalid(field, "part");
     const bullets = validBullets(message.bullets);
     if (typeof bullets === "string") return this.invalid(field, bullets);
     const seen = validSeen(message.seen);
     if (seen === null) return this.invalid(field, "seen");
 
-    const key = `${sender}\u0000${field}`;
+    const key = `${String(sender)}\u0000${field}`;
     let buffer = this.buffers.get(key);
     // A part of another snapshot from the same sender for the field replaces what was buffered.
     if (buffer === undefined || buffer.snap !== snap) {
@@ -312,7 +292,9 @@ export class BulletSync {
   /** What to send for `field` now (DS-WIRE, DS-SEEN-OUT, DS-CHUNK), or that one bullet alone is over the
    * budget (DS-OVERSIZE). */
   outgoing(field: SyncField): Outgoing {
-    const state = this.state(field);
+    // DS-UPGRADE step 6: commit, then send. An upgrade not saved yet is shown, never sent.
+    if (Object.keys(this.upgraded()).length > 0) return { kind: "messages", messages: [] };
+    const state = this.stored(field);
     const names = new Set(state.bullets.map((bullet) => bullet.name));
     for (const name of this.lastMerged.get(field) ?? []) names.add(name);
     const seen = Object.fromEntries([...names].flatMap((name) => (state.seen.has(name) ? [[name, state.seen.get(name) as number]] : [])));
@@ -358,7 +340,9 @@ export class BulletSync {
   }
 
   private mergeSnapshot(field: SyncField, bullets: Bullet[], seen: Map<string, number>): ReceiveOutcome {
-    const local = this.state(field);
+    // Nothing is merged into an upgrade not saved yet: the upgrade commits all its fields at once.
+    if (Object.keys(this.upgraded()).length > 0) return { kind: "unsaved", field };
+    const local = this.stored(field);
     const result = merge(local, { bullets, seen });
     if (result.kind === "conflict") {
       this.options.error(`DeviceSync: ${field} refused: label ${result.label.name}/${result.label.n} holds another text or section`);

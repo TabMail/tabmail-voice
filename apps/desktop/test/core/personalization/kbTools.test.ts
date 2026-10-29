@@ -87,7 +87,6 @@ describe("KBTools", () => {
   test("kb_add makes the statement's characters plain", () => {
     const { prompts, run } = setup("");
     run("kb_add", "Uses the \u201Cweekly\u201D label");
-    // As Thunderbird's, an empty knowledge base keeps its empty line before the first bullet.
     expect(prompts.knowledgeBase).toBe('- [Pinned] Uses the "weekly" label.');
     expect(run("kb_add", 'Uses the "weekly" label')).toBe("No change (duplicate or unchanged).");
   });

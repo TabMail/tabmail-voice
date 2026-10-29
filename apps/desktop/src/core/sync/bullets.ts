@@ -269,21 +269,10 @@ export function add(state: FieldState, items: readonly BulletText[], labels: Lab
   return next;
 }
 
-/** DS-DELETE: every live label of each of `items` removed. */
-export function remove(state: FieldState, items: readonly BulletText[]): FieldState {
-  const gone = new Set(items.map(textKey));
-  return { ...cloneState(state), bullets: state.bullets.filter((bullet) => !gone.has(textKey(bullet))) };
-}
-
-/** DS-EDIT: the old text deleted, the new one added under a new label (a moved bullet too). */
-export function edit(state: FieldState, from: BulletText, to: BulletText, labels: LabelSource): FieldState {
-  if (from.section === to.section && from.text === to.text) return state;
-  return add(remove(state, [from]), [to], labels);
-}
-
-/** DS-CAPTURE commit: of the `captured` labels, those whose (section, text) `result` lacks are deleted
- * when still live; a captured text `result` keeps its label; every other text of `result` is
- * added (DS-ADD). A bullet that arrived since the capture is never deleted. */
+/** DS-CAPTURE commit, and with it DS-DELETE and DS-EDIT (a deleted or reworded bullet is a captured
+ * text `result` lacks; a reworded or moved one's new text is added under a new label): of the
+ * `captured` labels, those whose (section, text) `result` lacks are deleted when still live; a
+ * captured text `result` keeps its label; every other text of `result` is added (DS-ADD). A bullet that arrived since the capture is never deleted. */
 export function commitCapture(state: FieldState, captured: readonly Bullet[], result: readonly BulletText[], labels: LabelSource): FieldState {
   const kept = new Set(result.map(textKey));
   const capturedTexts = new Set(captured.map(textKey));

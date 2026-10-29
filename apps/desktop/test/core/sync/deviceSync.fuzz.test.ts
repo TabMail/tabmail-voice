@@ -9,16 +9,17 @@ import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } 
 
 /**
  * Device Sync between three to six Voice devices, driven by a seeded generator: adds, deletions,
- * rewords, moves between sections, Settings edits committed from an older capture, resets, restarts,
- * failed saves, a copied data folder, a restored backup, a released device's texts, connections
- * coming and going, and the relay delivering, reordering, repeating and losing parts. A model of
- * every label checks the spec's invariants:
+ * rewords, moves between sections, Settings edits committed from an older capture, resets, the user's
+ * factory reset of the texts' file, restarts, failed saves, a copied data folder, a restored backup, a
+ * released device's texts, connections coming and going, and the relay delivering, reordering,
+ * repeating and losing parts. A model of every label checks these invariants:
  *
  * - I1 (no loss): when a delivery makes a bullet's text gone from every device, each label it had was
- *   deleted by a user (its deletion travelled), checked at every step; at the end every label still
- *   held somewhere is held everywhere.
+ *   deleted by a user (its deletion travelled), or was put aside by DS-DEDUP for a label that was,
+ *   checked at every step; at the end every label still held somewhere is held everywhere.
  * - I2 (convergence): connected and settled, every device holds the same labels.
- * - I3 (bounded messages): settling ends.
+ * - I3 (bounded messages): each message's `seen` names only the bullets it carries and the ones in a
+ *   snapshot the sender got whole since it started (DS-SEEN-OUT), and settling ends.
  *
  * A failure names its seed and step; `DEVICE_SYNC_FUZZ_SEEDS` runs more seeds.
  */
@@ -60,8 +61,19 @@ class Fuzz {
   readonly devices: BulletDevice[] = [];
   /** Labels a user deleted, by any device: a delete, a reword or move, an edit committed from a capture. */
   readonly deleted = new Set<string>();
-  /** Their texts: a label dedup put another in place of (DS-DEDUP) goes with the deletion of that one. */
-  readonly deletedItems = new Set<string>();
+  /** For a label a device dropped while its text stayed live there under another (DS-DEDUP), those
+   * others: the dropped label goes with a user's deletion of one of them. */
+  private readonly aliases = new Map<string, Set<string>>();
+  /** For each device and field, the names on bullets in every snapshot it got whole since its process
+   * started or its texts were reloaded: what its `seen` may name besides its own bullets (DS-SEEN-OUT). */
+  private readonly merged = new Map<string, Set<string>>();
+  /** Parts each device has of a sender's snapshot: by device, the message's sender and field, as it
+   * buffers them. */
+  private readonly buffers = new Map<string, { snap: string; parts: Set<number> }>();
+  /** Whether this step put a device's texts aside (a reset, a restore, the file's reset): no dedup. */
+  private cleared = false;
+  /** Messages whose `seen` broke DS-SEEN-OUT: kept for the test, as a throw would land in the sender. */
+  readonly violations: string[] = [];
   private readonly captures = new Map<BulletDevice, { field: PromptField; section: string; captured: Bullet[] }>();
   private readonly backups = new Map<BulletDevice, DeviceStore>();
   private unique = 0;
@@ -73,6 +85,77 @@ class Fuzz {
   ) {
     const count = 3 + this.int(4);
     for (let index = 0; index < count; index += 1) this.create(this.initialStore());
+    const send = this.relay.send.bind(this.relay);
+    this.relay.send = (from, text) => {
+      this.checkSeen(from, text);
+      send(from, text);
+    };
+    const deliver = this.relay.deliver.bind(this.relay);
+    this.relay.deliver = (id, to, part) => {
+      const device = this.devices.find((other) => other.id === to);
+      const before = device === undefined ? undefined : this.labelsOf(device);
+      // Noted before the device merges it: its answer, sent during the delivery, may name them.
+      const whole = this.arrived(id, to, part);
+      deliver(id, to, part);
+      if (device === undefined || before === undefined) return;
+      this.dropped(device, before);
+      if (whole !== undefined) this.mergedAside(device, whole);
+    };
+    const leave = this.relay.leave.bind(this.relay);
+    this.relay.leave = (device) => {
+      leave(device);
+      // DS-CHUNK: incomplete snapshots are dropped on disconnect.
+      for (const buffer of [...this.buffers.keys()]) if (buffer.startsWith(`${device}|`)) this.buffers.delete(buffer);
+    };
+  }
+
+  /** DS-SEEN-OUT, I3: `seen` names only the bullets the sender holds and those merged since it started. */
+  private checkSeen(from: string, text: string): void {
+    const message = JSON.parse(text) as { field: PromptField; seen: Record<string, number> };
+    const device = this.devices.find((other) => other.id === from);
+    if (device === undefined) throw new Error(`${from} isn't a device`);
+    const own = new Set(device.state(message.field).bullets.map((bullet) => bullet.name));
+    const merged = this.merged.get(`${from}|${message.field}`) ?? new Set();
+    const extra = Object.keys(message.seen).filter((name) => !own.has(name) && !merged.has(name));
+    if (extra.length > 0) this.violations.push(`I3: ${from}'s ${message.field} message names ${extra.join(", ")} in seen, on no bullet it holds or merged`);
+  }
+
+  /** A part arriving at `to`, buffered as the device buffers it: once its snapshot is whole, the
+   * snapshot's names are noted as merged there, and its field and bullets returned. */
+  private arrived(id: string, to: string, part: number): { field: PromptField; bullets: [string, string, string, number][] } | undefined {
+    const snapshot = this.relay.snapshots.get(id);
+    if (snapshot === undefined) return undefined;
+    const first = JSON.parse(snapshot.parts[part - 1] as string) as { sender: string; snap: string; parts: number };
+    const buffer = `${to}|${first.sender}|${snapshot.field}`;
+    let parts = this.buffers.get(buffer);
+    if (parts === undefined || parts.snap !== first.snap) {
+      parts = { snap: first.snap, parts: new Set() };
+      this.buffers.set(buffer, parts);
+    }
+    parts.parts.add(part);
+    if (parts.parts.size < first.parts) return undefined;
+    this.buffers.delete(buffer);
+    const field = snapshot.field as PromptField;
+    const bullets = snapshot.parts.flatMap((text) => (JSON.parse(text as string) as { bullets: [string, string, string, number][] }).bullets);
+    const names = this.merged.get(`${to}|${field}`) ?? new Set<string>();
+    for (const [, , name] of bullets) names.add(name);
+    this.merged.set(`${to}|${field}`, names);
+    return { field, bullets };
+  }
+
+  /** DS-DEDUP on merge: an incoming label `device` didn't keep, its text held there under another. */
+  private mergedAside(device: BulletDevice, { field, bullets }: { field: PromptField; bullets: [string, string, string, number][] }): void {
+    const held = new Map(device.state(field).bullets.map((bullet) => [itemKey(field, bullet), key(field, bullet)]));
+    for (const [section, text, name, n] of bullets) {
+      const label = key(field, { name, n });
+      const other = held.get(itemKey(field, { section, text }));
+      if (other !== undefined && other !== label) this.aliases.set(label, (this.aliases.get(label) ?? new Set()).add(other));
+    }
+  }
+
+  /** `device`'s process started afresh, or its texts were reloaded: nothing merged since. */
+  private forgetMerged(device: BulletDevice): void {
+    for (const field of promptFields) this.merged.delete(`${device.id}|${field}`);
   }
 
   int(below: number): number {
@@ -130,8 +213,35 @@ class Fuzz {
     return all;
   }
 
+  /** `device`'s labels, with their texts. */
+  private labelsOf(device: BulletDevice): Map<string, string> {
+    const labels = new Map<string, string>();
+    for (const field of promptFields) for (const bullet of device.state(field).bullets) labels.set(key(field, bullet), itemKey(field, bullet));
+    return labels;
+  }
+
+  /** DS-DEDUP: a label `device` held `before` and dropped while its text stayed live there under another. */
+  private dropped(device: BulletDevice, before: Map<string, string>): void {
+    const now = this.labelsOf(device);
+    const byItem = new Map<string, string>();
+    for (const [label, item] of now) byItem.set(item, label);
+    for (const [label, item] of before) {
+      const other = byItem.get(item);
+      if (now.has(label) || other === undefined) continue;
+      this.aliases.set(label, (this.aliases.get(label) ?? new Set()).add(other));
+    }
+  }
+
   /** One step; true when it delivered parts (merges), whose disappearances I1 checks. */
   async step(): Promise<boolean> {
+    const before = new Map(this.devices.map((device) => [device, this.labelsOf(device)]));
+    this.cleared = false;
+    const delivered = await this.act();
+    if (!this.cleared) for (const [device, labels] of before) this.dropped(device, labels);
+    return delivered;
+  }
+
+  private async act(): Promise<boolean> {
     const device = this.pick(this.devices);
     const field = this.pick(promptFields);
     const roll = this.next();
@@ -219,12 +329,14 @@ class Fuzz {
     }
     if (roll < 0.85) {
       this.log.push(`${device.id} reset ${field}`);
+      this.cleared = true;
       device.reset(field);
       return false;
     }
     if (roll < 0.88) {
       this.log.push(`${device.id} restart`);
       this.captures.delete(device);
+      this.forgetMerged(device);
       device.restart();
       return false;
     }
@@ -248,10 +360,20 @@ class Fuzz {
         return false;
       }
       this.log.push(`${device.id} restore`);
+      this.cleared = true;
       this.captures.delete(device);
+      this.forgetMerged(device);
       device.disconnect();
       device.store.replaceWith(backup);
       device.restart();
+      return false;
+    }
+    if (roll < 0.97) {
+      this.log.push(`${device.id} reset of the texts' file`);
+      this.cleared = true;
+      this.captures.delete(device);
+      this.forgetMerged(device);
+      device.prompts.resetFile(() => device.store.replaceWith(ownedStore()));
       return false;
     }
     const texts = [this.text(), this.text()];
@@ -268,12 +390,20 @@ class Fuzz {
 
   private markLabel(field: PromptField, bullet: Bullet): void {
     this.deleted.add(key(field, bullet));
-    this.deletedItems.add(itemKey(field, bullet));
   }
 
-  /** A label no device holds any more went with a user's deletion. */
+  /** A label no device holds any more went with a user's deletion: its own, or that of a label DS-DEDUP
+   * kept in its place. */
   justified(field: PromptField, bullet: Bullet): boolean {
-    return this.deleted.has(key(field, bullet)) || this.deletedItems.has(itemKey(field, bullet));
+    const seen = new Set<string>();
+    const pending = [key(field, bullet)];
+    for (let label = pending.pop(); label !== undefined; label = pending.pop()) {
+      if (this.deleted.has(label)) return true;
+      if (seen.has(label)) continue;
+      seen.add(label);
+      pending.push(...(this.aliases.get(label) ?? []));
+    }
+    return false;
   }
 
   /** Every device connected afresh, and everything delivered (I3). */
@@ -308,6 +438,7 @@ test(`Device Sync keeps every bullet no user deleted, converges, and goes quiet 
       for (let index = 0; index < steps; index += 1) {
         const bullets = fuzz.bulletsHeld();
         const delivered = await fuzz.step();
+        if (fuzz.violations.length > 0) fail(`step ${index + 1}: ${fuzz.violations.join("; ")}`);
         if (!delivered) continue;
         // I1 at every merge: a text gone from every device lost only labels a user deleted.
         const after = fuzz.held();
@@ -318,6 +449,7 @@ test(`Device Sync keeps every bullet no user deleted, converges, and goes quiet 
       }
       const bullets = fuzz.bulletsHeld();
       await fuzz.settle();
+      if (fuzz.violations.length > 0) fail(`settling: ${fuzz.violations.join("; ")}`);
       const after = fuzz.held();
       for (const [label, { field, bullet }] of bullets) {
         if (after.labels.has(label) || after.items.has(itemKey(field, bullet)) || fuzz.justified(field, bullet)) continue;

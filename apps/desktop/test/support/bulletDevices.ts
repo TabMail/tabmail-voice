@@ -36,9 +36,10 @@ export class DeviceStore extends MemoryStore {
   }
 }
 
-/** A store of the signed-in fixture account's texts, with nothing else in it: a new install. */
-export function ownedStore(): DeviceStore {
-  return new DeviceStore({ [ownerKey]: Fixtures.userID });
+/** A store of `userID`'s texts (the signed-in fixture account's by default), with nothing else in it:
+ * a new install. */
+export function ownedStore(userID: string = Fixtures.userID): DeviceStore {
+  return new DeviceStore({ [ownerKey]: userID });
 }
 
 /** One snapshot a device sent: every part, and who has yet to get each. */

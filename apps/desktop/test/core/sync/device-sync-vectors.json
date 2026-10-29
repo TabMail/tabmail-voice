@@ -4066,6 +4066,131 @@
       ]
     },
     {
+      "id": "legacy-text-never-revives-a-deleted-default",
+      "rules": [
+        "DS-LEGACY-IN",
+        "DS-DEFAULT",
+        "DS-MERGE-1"
+      ],
+      "fields": [
+        "kb"
+      ],
+      "note": "The default's text from a released device comes under the default's own label: A has seen it, so it stays deleted; C, which never has, gets it under that label.",
+      "devices": [
+        {
+          "id": "A",
+          "init": "new"
+        },
+        {
+          "id": "B",
+          "init": "new"
+        },
+        {
+          "id": "C",
+          "init": "empty"
+        }
+      ],
+      "steps": [
+        {
+          "op": "connect",
+          "device": "A"
+        },
+        {
+          "op": "connect",
+          "device": "B"
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "delete",
+          "device": "B",
+          "field": "kb",
+          "section": "",
+          "text": "User is using TabMail as their AI assistant for emails."
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "legacy",
+          "to": "A",
+          "data": {
+            "kb": "- User is using TabMail as their AI assistant for emails.",
+            "kb_updated_at": "2099-01-01T00:00:00.000Z"
+          }
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "live": [
+            [
+              "",
+              "TabMail documentation is available at [TabMail Website's help page](https://tabmail.ai/docs/).",
+              "default:kb-2",
+              1
+            ],
+            [
+              "",
+              "TabMail support is available at [TabMail Support](https://tabmail.ai/support).",
+              "default:kb-3",
+              1
+            ]
+          ]
+        },
+        {
+          "op": "expect",
+          "device": "B",
+          "field": "kb",
+          "live": [
+            [
+              "",
+              "TabMail documentation is available at [TabMail Website's help page](https://tabmail.ai/docs/).",
+              "default:kb-2",
+              1
+            ],
+            [
+              "",
+              "TabMail support is available at [TabMail Support](https://tabmail.ai/support).",
+              "default:kb-3",
+              1
+            ]
+          ]
+        },
+        {
+          "op": "expect_quiet"
+        },
+        {
+          "op": "legacy",
+          "to": "C",
+          "data": {
+            "kb": "- User is using TabMail as their AI assistant for emails.",
+            "kb_updated_at": "2099-01-01T00:00:00.000Z"
+          }
+        },
+        {
+          "op": "expect",
+          "device": "C",
+          "field": "kb",
+          "live": [
+            [
+              "",
+              "User is using TabMail as their AI assistant for emails.",
+              "default:kb-1",
+              1
+            ]
+          ],
+          "seen": {
+            "default:kb-1": 1
+          }
+        }
+      ]
+    },
+    {
       "id": "legacy-out-precheck",
       "rules": [
         "DS-LEGACY-OUT"
@@ -4693,6 +4818,446 @@
               "Y9 a bullet of some forty characters long"
             ]
           ]
+        },
+        {
+          "op": "expect_quiet"
+        }
+      ]
+    },
+    {
+      "id": "chunk-parts-that-disagree-drop-the-snapshot",
+      "rules": [
+        "R5",
+        "DS-CHUNK",
+        "DS-CHUNK-APPLY"
+      ],
+      "fields": [
+        "kb"
+      ],
+      "note": "Each disagreeing snapshot is dropped whole, and its remaining part starts a new incomplete one; the control merges.",
+      "devices": [
+        {
+          "id": "A",
+          "init": "empty"
+        }
+      ],
+      "steps": [
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a1",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a1",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "W",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          },
+          "note": "part 1 again, other bullets"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a1",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a2",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a2",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 3
+            }
+          },
+          "note": "another seen map"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a3",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a3",
+            "part": 2,
+            "parts": 3,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          },
+          "note": "another part count"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a4",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a4",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          },
+          "note": "an identical duplicate"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000a4",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "live": [
+            [
+              "",
+              "X",
+              "ffffffff00000001",
+              1
+            ],
+            [
+              "",
+              "Y",
+              "ffffffff00000001",
+              2
+            ]
+          ],
+          "seen": {
+            "ffffffff00000001": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "capture-spares-a-same-text-label-that-arrived-later",
+      "rules": [
+        "DS-CAPTURE",
+        "DS-DELETE",
+        "I1"
+      ],
+      "fields": [
+        "kb"
+      ],
+      "note": "A's delete removes only the label it showed (P/1, already gone); the same text under B's new label arrived after the capture and stays.",
+      "devices": [
+        {
+          "id": "A",
+          "init": {
+            "state": {
+              "kb": {
+                "bullets": [
+                  [
+                    "",
+                    "X",
+                    "ffffffff00000001",
+                    1
+                  ]
+                ],
+                "seen": {
+                  "ffffffff00000001": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "B",
+          "init": {
+            "state": {
+              "kb": {
+                "bullets": [
+                  [
+                    "",
+                    "X",
+                    "ffffffff00000001",
+                    1
+                  ]
+                ],
+                "seen": {
+                  "ffffffff00000001": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "connect",
+          "device": "A"
+        },
+        {
+          "op": "connect",
+          "device": "B"
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "capture",
+          "device": "A",
+          "field": "kb",
+          "section": "",
+          "as": "c1"
+        },
+        {
+          "op": "delete",
+          "device": "B",
+          "field": "kb",
+          "section": "",
+          "text": "X"
+        },
+        {
+          "op": "add",
+          "device": "B",
+          "field": "kb",
+          "section": "",
+          "text": "X"
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "commit",
+          "capture": "c1",
+          "result": []
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "live": [
+            [
+              "",
+              "X",
+              "0000000200000001",
+              1
+            ]
+          ],
+          "seen": {
+            "ffffffff00000001": 1,
+            "0000000200000001": 1
+          }
+        },
+        {
+          "op": "expect",
+          "device": "B",
+          "field": "kb",
+          "live": [
+            [
+              "",
+              "X",
+              "0000000200000001",
+              1
+            ]
+          ],
+          "seen": {
+            "ffffffff00000001": 1,
+            "0000000200000001": 1
+          }
         },
         {
           "op": "expect_quiet"

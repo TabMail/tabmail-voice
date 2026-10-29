@@ -12,7 +12,7 @@ import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } 
 
 // The shared conformance vectors and default catalog, byte-identical in TabMail for Thunderbird, iOS and
 // Voice: a change to either is made in all three, and these hashes with it.
-const vectorsSha256 = "b686a31e7727c036e4fb12af7ce71093b6f6dfede6ef493ab56add96f95ff9eb";
+const vectorsSha256 = "e45b41641f00f3f956bf834e62b1e7cf274c3aa0a6cc96833b0c2b94ba6a3afb";
 const catalogSha256 = "1ca6383ba9af86b42e13736b453cc3932297da32141aaf21a08c2055d9339f5f";
 
 const vectorsBytes = readFileSync(join(__dirname, "device-sync-vectors.json"));
