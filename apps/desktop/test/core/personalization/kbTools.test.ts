@@ -112,6 +112,22 @@ describe("KBTools", () => {
     expect(changes()).toBe(0);
   });
 
+  /** A newer device's bullet in a section this version doesn't show is kept, never shown, and never
+   * makes kb_add of the same statement a duplicate: the check covers what the knowledge base shows. */
+  test("a bullet in a section this version doesn't show never blocks kb_add, and is kept", () => {
+    const { store, prompts, run, request } = setup("- alpha.");
+    const writer = "ffffffff00000001";
+    const snapshot = { type: "bullet_state", v: 1, field: "kb", sender: "ffffffffffffffff", snap: "1", part: 1, parts: 1, bullets: [["future", "[Pinned] Uses ABC.", writer, 1]], seen: { [writer]: 1 } };
+    expect(prompts.sync.receive(snapshot)).toMatchObject({ kind: "merged", changed: true });
+    request();
+    expect(prompts.knowledgeBase).toBe("- alpha.");
+
+    expect(run("kb_add", "Uses ABC.")).toBe("Added to knowledge base.");
+    const fresh = new UserPrompts(new MemoryStore(store.snapshot()));
+    expect(fresh.knowledgeBase).toBe("- alpha.\n- [Pinned] Uses ABC.");
+    expect(fresh.sync.state("kb").bullets.filter((bullet) => bullet.section === "future")).toEqual([{ section: "future", text: "[Pinned] Uses ABC.", name: writer, n: 1 }]);
+  });
+
   /** Curly quotes and the like are made plain first, as Thunderbird does, so a duplicate written
    * with them is still one. */
   test("kb_add makes the statement's characters plain", () => {

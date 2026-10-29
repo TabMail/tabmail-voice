@@ -57,10 +57,12 @@ export class KBTools {
   private add(statement: string): unknown {
     // Pinned: the user asked for it, so the knowledge-base refine Thunderbird and iOS run never edits or removes it.
     const text = bulletText(statement.startsWith("[Pinned]") ? statement : `[Pinned] ${statement}`);
-    // A statement there already, whatever its case, is not added again.
+    // A statement the knowledge base shows already, whatever its case, is not added again, as
+    // Thunderbird's patch applier decides (writer policy; a bullet's identity stays exact, R25). Only
+    // what it shows: a bullet in a section this version doesn't show never blocks an add.
     const wanted = `- ${text}`.toLowerCase();
-    const live = this.prompts.sync.state("kb").bullets;
-    if (live.some((bullet) => normalizeUnicode(`- ${bullet.text}`).toLowerCase() === wanted)) {
+    const shown = this.prompts.sync.state("kb").bullets.filter((bullet) => bullet.section === "");
+    if (shown.some((bullet) => normalizeUnicode(`- ${bullet.text}`).toLowerCase() === wanted)) {
       log.debug(`KBTools: ${config.kbAddTool} unchanged`);
       return "No change (duplicate or unchanged).";
     }

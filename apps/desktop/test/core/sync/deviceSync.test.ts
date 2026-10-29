@@ -293,6 +293,37 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     expect(most).toBeGreaterThanOrEqual(10);
   });
 
+  /** The budget counts UTF-8 bytes, which the relay limits: text whose characters take two or four
+   * bytes, here accented letters and owls (two UTF-16 units each), splits as its bytes require. */
+  test("a field of multibyte text keeps every part within it in UTF-8 bytes, whatever the budget", () => {
+    for (let budget = 360; budget <= 440; budget += 1) {
+      const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
+      for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(`Fait numéro ${index} \u{1F989}\u{1F989}\u{1F989}`);
+      const outgoing = prompts.sync.outgoing("kb");
+      if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
+      for (const message of outgoing.messages) expect(new TextEncoder().encode(JSON.stringify(message)).length, `budget ${budget}`).toBeLessThanOrEqual(budget);
+      expect(outgoing.messages.flatMap((message) => message.bullets).map((bullet) => bullet[1])).toEqual(prompts.sync.state("kb").bullets.map((bullet) => bullet.text));
+    }
+  });
+
+  /** A bullet fits by its UTF-8 bytes, not its length: 80 ASCII characters go, while 80 owls (160
+   * UTF-16 units, 320 bytes) make one bullet over the budget, held back and kept. */
+  test("one bullet of multibyte text over it in UTF-8 bytes is held back and kept, though its length fits", () => {
+    const budget = 420;
+    const ascii = new UserPrompts(new MemoryStore(), { budget: () => budget });
+    ascii.addKnowledge("a".repeat(80));
+    const sent = ascii.sync.outgoing("kb");
+    if (sent.kind !== "messages") throw new Error(`ascii: ${sent.kind}`);
+    for (const message of sent.messages) expect(new TextEncoder().encode(JSON.stringify(message)).length).toBeLessThanOrEqual(budget);
+    expect(sent.messages.flatMap((message) => message.bullets).map((bullet) => bullet[1])).toContain("a".repeat(80));
+
+    const store = new MemoryStore();
+    const owls = new UserPrompts(store, { budget: () => budget });
+    owls.addKnowledge("\u{1F989}".repeat(80));
+    expect(owls.sync.outgoing("kb")).toMatchObject({ kind: "oversize", budget });
+    expect(new UserPrompts(new MemoryStore(store.snapshot())).sync.state("kb").bullets.map((bullet) => bullet.text)).toContain("\u{1F989}".repeat(80));
+  });
+
   test("one bullet over it holds the field back: logged with sizes only, shown, and cleared once it fits", async () => {
     const { relay, voice } = await connected();
     const errors: string[] = [];

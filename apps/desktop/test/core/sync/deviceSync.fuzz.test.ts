@@ -78,6 +78,8 @@ class Fuzz {
   private readonly captures = new Map<BulletDevice, { field: PromptField; section: string; captured: Bullet[] | null }>();
   private readonly backups = new Map<BulletDevice, DeviceStore>();
   private unique = 0;
+  /** Labels given to bullets in a section this version doesn't show, one each. */
+  newerLabels = 0;
   readonly log: string[] = [];
 
   constructor(
@@ -186,9 +188,20 @@ class Fuzz {
 
   private initialStore(): DeviceStore {
     const store = ownedStore();
-    const kind = this.int(3);
+    const kind = this.int(4);
     if (kind === 1) storeStates(store, {});
     if (kind === 2) store.set("user_prompts:user_kb.md", [this.text(), this.text(), "plain line"].map((text) => `- ${text}`).join("\n"));
+    if (kind === 3) {
+      // Bullets merged from a newer version's device, in a section this version doesn't show (DS-SECTION):
+      // kept, sent on and never shown, each with a label of its own.
+      const newer = (): [Bullet, [string, number]] => {
+        const name = `ffffffff${hex(++this.newerLabels)}`;
+        return [{ section: "future", text: this.text(), name, n: 1 }, [name, 1]];
+      };
+      const [kb, kbSeen] = newer();
+      const [composition, compositionSeen] = newer();
+      storeStates(store, { kb: { bullets: [kb], seen: new Map([kbSeen]) }, composition: { bullets: [composition], seen: new Map([compositionSeen]) } });
+    }
     return store;
   }
 
@@ -447,6 +460,8 @@ afterEach(() => {
 });
 
 test(`Device Sync keeps every bullet no user deleted, converges, and goes quiet (${seeds} seeds)`, { timeout: 600_000 }, async () => {
+  // Seeds that end with a bullet in a section this version doesn't show held everywhere (DS-SECTION).
+  let reached = 0;
   for (let seed = 1; seed <= seeds; seed += 1) {
     const next = random(seed);
     const fuzz = new Fuzz(next, next() < 0.3 ? 1_500 + Math.floor(next() * 1_500) : undefined);
@@ -494,10 +509,12 @@ test(`Device Sync keeps every bullet no user deleted, converges, and goes quiet 
           if (labels !== first) fail(`I2: ${device.id}'s ${field} ${labels} differs from A's ${first}`);
         }
       }
+      if (fuzz.devices.every((device) => promptFields.some((field) => device.state(field).bullets.some((bullet) => bullet.section === "future")))) reached += 1;
     } catch (error) {
       if (error instanceof Error && error.message.startsWith(`seed ${seed}:`)) throw error;
       fail(error instanceof Error ? (error.stack ?? error.message) : String(error));
     }
   }
   expect(seeds).toBeGreaterThan(0);
+  expect(reached).toBeGreaterThan(0);
 });

@@ -21,8 +21,9 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
 - **Labelled bullets.** A field is its own skeleton (the lines around the sections, never synced), its
   live bullets in order, each `(section, text, label)`, and a seen map: per writer name, the highest
   counter this device has seen. A label is a writer name and a counter. A writer name is 16 lowercase
-  hex digits, drawn fresh by each process and never stored, so two copies of one store never share
-  one; any failed save, reset or reload abandons it (one name per process for every field). A catalog
+  hex digits, drawn fresh by each process; the labels carrying it are stored, but no process keeps it
+  as its own name, so two copies of one store never share one; any failed save, reset or reload
+  abandons it (one name per process for every field). A catalog
   default's label is `default:<id>` with counter 1, the same on every device
   (`src/core/sync/device-sync-default-catalog.json`).
 - **Local changes.** An add gets a fresh label (a text already live is not added twice); a delete
