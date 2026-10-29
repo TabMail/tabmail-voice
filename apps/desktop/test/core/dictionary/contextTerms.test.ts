@@ -9,7 +9,7 @@ import { contextTerms } from "../../../src/core/dictionary/contextTerms.js";
 /** The names and terms picked from the screen read at key-down (ADR-DESK-038), sent with a dictation
  * beside the user's dictionary. */
 describe("contextTerms", () => {
-  const terms = (text: string, excluding: string[] = [], max = config.vocabularyMaxTerms) => contextTerms(text, excluding, max);
+  const terms = (text: string, max = config.vocabularyMaxTerms) => contextTerms(text, max);
 
   test("picks names and terms, not everyday words", () => {
     expect(terms("I spoke with Xyvora about the launch plan.")).toEqual(["Xyvora"]);
@@ -60,15 +60,12 @@ describe("contextTerms", () => {
     expect(terms("a Kaelthorne Drake note, from Brevalle Xyvora Labs")).toEqual(["Kaelthorne Drake", "Brevalle Xyvora Labs"]);
   });
 
-  /** The most frequent first, then the earliest; none twice, whatever its case; none already in the
-   * user's dictionary; at most `max`. */
+  /** The most frequent first, then the earliest; none twice, whatever its case; at most `max`. */
   test("the most frequent first, distinct, and capped", () => {
     const text = "ask Brevalle and Xyvora. then Xyvora again, and XYVORA, and Kaelthorne";
     expect(terms(text)).toEqual(["Xyvora", "Brevalle", "Kaelthorne"]);
-    expect(terms(text, ["xyvora"])).toEqual(["Brevalle", "Kaelthorne"]);
-    expect(terms(text, [], 1)).toEqual(["Xyvora"]);
-    // A dictionary word on screen takes none of the room: the cap counts only the terms sent.
-    expect(terms(text, ["xyvora"], 2)).toEqual(["Brevalle", "Kaelthorne"]);
+    expect(terms(text, 1)).toEqual(["Xyvora"]);
+    expect(terms(text, 2)).toEqual(["Xyvora", "Brevalle"]);
   });
 
   test("picks in any script", () => {

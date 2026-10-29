@@ -125,7 +125,8 @@ the 50 bound … we send basically as many phrases or words as possible." The fi
 (50) is gone: `vocabularyMaxTerms` (200, the backend's limit) less the dictionary's words at key-down
 is how many screen terms `contextTerms` may pick, so a dictation sends up to 200 words whatever the
 dictionary holds: all 200 from the screen with no dictionary, at least 50 beside a full one
-(`dictionaryMaxEntries` stays 150, all of it always sent, first).
+(`dictionaryMaxEntries` stays 150, all of it always sent, first). *Superseded 2026-10-28 (#309): the
+speech model's first 100 are chosen in shares, see the amendment below.*
 - Consequence: a screen read with many names sends a longer list than before; the measured 200 real
   words or names did not blunt the speech model, and fewer terms on screen send just those.
 
@@ -135,7 +136,9 @@ to what the model takes, keeping the first ones (backend ADR-025 amendment 2026-
 takes 100). The order sent is now: the typed words, then the learned, each most recently used first
 (`prioritizedWords`; the stored order for a tie), then the screen's terms, most frequent first, as
 before. This supersedes "the words are sent in the order stored" above; the cleanup's `dictionary`
-gets the same order. Settings' list and the stored order are unchanged.
+gets the same order. Settings' list and the stored order are unchanged. *Superseded 2026-10-28
+(#309): the order sent is the typed words, the screen's terms, the learned words, then the whole
+window's, in shares; see the amendment below.*
 
 **Amendment 2026-10-07 — a terminal's field is the box around its cursor (issue #130).** Learning did
 nothing in a terminal on any platform: the field read asks for the focused field's whole text, which in
@@ -179,4 +182,39 @@ and *"for off screen keywords, i meant if there is room"*. The screen's terms (`
 from what the window shows first, as before, in the room the dictionary leaves of
 `vocabularyMaxTerms`; then the whole window's (ADR-DESK-016's second read, 2026-10-25), none the same
 word as the dictionary's or the shown ones, in the room still left, only if that read is done by the
-upload. It is never waited for, so a long page never holds up a dictation.
+upload. It is never waited for, so a long page never holds up a dictation. *Amended 2026-10-28
+(#309): the whole window's terms take the room left in the first 100, and with the cleanup follow
+the rest; see below.*
+
+**Amendment 2026-10-28 (#309, owner): the 100 most important words first; the rest only for the
+cleanup.** The backend gives a speech model only the first terms it takes (AssemblyAI 100, Whisper
+about 200 bytes, some 20 terms; its ADR-025) and the cleanup every term. Sending the whole dictionary
+first, up to 150, left a full dictionary no room for the screen's terms within what the model reads.
+`dictationVocabulary` (`dictionary/vocabulary.ts`) now chooses the first `vocabularyModelMaxTerms`
+(100) in shares:
+- the screen's terms (what the window shows) keep up to `vocabularyScreenShare` (30);
+- of the dictionary's room, the typed words take at most `vocabularyTypedShare` (50) and the learned
+  words the rest;
+- a share a group can't fill passes on: no learned words lets the typed take the dictionary's whole
+  room, no screen terms gives the dictionary all 100, a small dictionary leaves the screen and then
+  the whole window all the room left.
+In order: the typed words, the screen's terms, the learned words, the whole window's terms. When the
+dictionary holds more than its share, the words used most recently go (the order the app keeps, most
+recently used first; Settings' order and the stored order are unchanged). For example, 100 typed, 50
+learned and 80 screen terms send 50 typed, 30 screen and 20 learned; 100 typed, no learned and 80
+screen terms send 70 typed and 30 screen.
+
+Owner, the same day: only the speech model is limited to 100, not the cleanup. With the cleanup (Smart
+Dictation on, in dictation mode or for a long dictation's chunks, whatever mode it ends in), the words that didn't fit follow the first 100, up to
+`vocabularyMaxTerms` (200, the backend's limit): the rest of the dictionary (typed, then learned, each
+most recently used first), the rest of the screen's terms, the rest of the whole window's. Without it
+(Smart Dictation off, an agent request, a spoken answer) only the first 100 go. The cleanup's `dictionary`
+still holds every typed and learned word. No term goes twice, whatever its case. The screen's terms
+leave out every dictionary word, so the shares are computed once: an on-screen dictionary word past
+its share reaches the cleanup in its dictionary, not the speech model as a screen term. The cleanup
+setting is read from the dictation's settings snapshot taken at key-down.
+- Tests: `dictionary/vocabulary.test.ts` (50/30/20, 70/30, no screen, room passed on, the cleanup's
+  first 100 equal to the list without it, then the rest up to 200, no term twice), `dictation/
+  controller.test.ts` ("dictation with the cleanup / without the cleanup / agent mode sends the most
+  important terms first", the whole window's terms, the spoken answer's first 100), `settings.test.ts`
+  (typed and learned apart, each most recently used first).

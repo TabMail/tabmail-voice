@@ -224,14 +224,22 @@ export const completionsRequestTimeout = 30_000;
 
 // MARK: Dictionary (ADR-DESK-038)
 
-/** The words sent with each dictation: the backend takes at most 200 (its ADR-025), and the speech
- * model heeds a list of 200 real words or names (measured 2026-10-02, `Scripts/stt-compare/
- * vocabulary_limit.py`). The user's dictionary goes first, at most 150 words, all of it sent: at most
- * 100 typed words, and learned words in the rest, all 150 when none is typed; the names and terms
- * picked from the screen (`contextTerms`) fill the rest, at least 50 and all 200 when the dictionary
- * is empty, so every dictation sends as many as it can (owner, 2026-10-02). Each word is at most this
- * many characters and this many space-separated words, the backend's limits. */
+/** The terms sent with each dictation (`dictationVocabulary`, ADR-DESK-038, #309). The backend takes
+ * at most `vocabularyMaxTerms` (its ADR-025), and gives a speech model only the first ones it takes:
+ * AssemblyAI at most 100, Whisper about 20 (200 bytes). So the first `vocabularyModelMaxTerms` are the
+ * most important, in shares (owner, 2026-10-28): the screen's terms keep up to `vocabularyScreenShare`,
+ * and of the rest the typed words take at most `vocabularyTypedShare` while learned words fill the
+ * others; room a group can't fill passes on. Only with the cleanup (which reads every term) do the
+ * terms that didn't fit follow, up to `vocabularyMaxTerms`. (The 2026-10-02 measurement, `Scripts/
+ * stt-compare/vocabulary_limit.py`, found a model heeding a list of 200; the providers' own limits
+ * are lower.) */
 export const vocabularyMaxTerms = 200;
+export const vocabularyModelMaxTerms = 100;
+export const vocabularyScreenShare = 30;
+export const vocabularyTypedShare = 50;
+/** The dictionary keeps at most this many words, at most `dictionaryMaxTypedWords` of them typed, and
+ * learned words in the rest. Each word is at most `dictionaryWordMaxChars` characters and
+ * `dictionaryWordMaxWords` space-separated words, the backend's limits. */
 export const dictionaryMaxEntries = 150;
 export const dictionaryMaxTypedWords = 100;
 export const dictionaryWordMaxChars = 50;
