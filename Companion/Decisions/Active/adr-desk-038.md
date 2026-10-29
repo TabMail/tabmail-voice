@@ -206,7 +206,8 @@ screen terms send 70 typed and 30 screen.
 
 Owner, the same day: only the speech model is limited to 100, not the cleanup. *Amended 2026-10-29
 (#310), below: the dictionary's words past the first 100 now go only in the cleanup's own dictionary,
-and the screen's terms run to 500.* With the cleanup (Smart
+and the screen's terms run to 500; those in the first 100 are counted apart since a later 2026-10-29
+amendment, below.* With the cleanup (Smart
 Dictation on, in dictation mode or for a long dictation's chunks, whatever mode it ends in), the words that didn't fit follow the first 100, up to
 `vocabularyMaxTerms` (200, the backend's limit): the rest of the dictionary (typed, then learned, each
 most recently used first), the rest of the screen's terms, the rest of the whole window's. Without it
@@ -224,7 +225,8 @@ setting is read from the dictation's settings snapshot taken at key-down.
 **Amendment 2026-10-29 — a far larger learned dictionary, and more for the cleanup (owner, #310).** The
 cleanup can take far more than the speech model's 100 terms. Measured 2026-10-28: the cleanup gets
 slower and fixes fewer words as its lists grow (several seconds per cleanup past 2,000 dictionary
-words), so each list stops at 500. The backend raised its limits first (`vocabulary.maxTerms` 1,000,
+words), so each list stops at 500 (*the screen's terms at 500 past the first 100 since 2026-10-29
+(owner), see below*). The backend raised its limits first (`vocabulary.maxTerms` 1,000,
 `cleanup.maxFieldChars` 30,000, live in production 2026-10-29); the app never sends more than it takes.
 - **Storage:** `dictionaryMaxEntries` 150 → 5,000. Typed words keep their cap (100); learned words fill
   the rest, and a full dictionary still drops the learned word used least recently. Reading the stored
@@ -241,7 +243,7 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
   long-unused learned word on screen is a screen term there, as below). With the cleanup, the rest of the
   screen's terms follow, then the rest of the whole window's, up to `cleanupScreenMaxTerms` (500) of
   theirs in all, those in the first 100 counted (the owner's "at most 500 screen and whole-window
-  terms"). The dictionary's words past the first 100 are not sent there any more: they reach the
+  terms"). *Superseded 2026-10-29 (owner): those in the first 100 are not counted, see below.* The dictionary's words past the first 100 are not sent there any more: they reach the
   cleanup in its own dictionary. Without the cleanup, only the first 100, as before.
 - **`contextTerms`** returns every term on screen, most frequent first, and no longer takes a `max`:
   `dictationVocabulary` drops the cleanup's dictionary words and takes as many as it has room for, so
@@ -261,9 +263,20 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
   500 screen terms with no dictionary; the user's words on screen taking none of the screen terms'
   room), `dictionary/contextTerms.test.ts` (every term, however many), `settings.test.ts` (5,000 words,
   a full dictionary read in one pass within a loose time bound), `renderer/settings/index.test.ts`
-  (counts and the filter).
+  (counts and the filter). *The counting tests are superseded 2026-10-29 (owner): the screen terms in the
+  first 100 are not counted, see the amendment below.*
 
 **Amendment 2026-10-29 (owner): the dictionary's caption makes no claim about which words go.**
 Settings › Dictionary's caption reads "Names and terms spelled your way, kept on this computer.
 They’re sent adaptively with each dictation so they come out right, and TabMail doesn’t keep them."
 Test: `renderer/settings/index.test.ts` › the notes are the Swift app's.
+
+**Amendment 2026-10-29 (owner): the cleanup's screen terms are counted apart from the first 100.**
+With the cleanup, up to `cleanupScreenMaxTerms` (500) more of the screen's and the whole window's
+terms follow the first 100; those already among the first 100 (up to `vocabularyScreenShare`, 30, or
+more where the dictionary leaves room) no longer count toward the 500. The owner: counting separately
+"creates a simpler logic and would not be a big deal". At most 600 terms go, within the backend's
+`vocabulary.maxTerms` of 1,000. Tests: `dictionary/vocabulary.test.ts` › the cleanup gets the rest of
+the screen after the same first 100, up to 500 more screen terms; the whole window's terms in the
+first 100 don't count toward the 500; `dictation/controller.test.ts` › with no dictionary sends as many
+screen terms as there is room for; dictionary words on screen take none of the screen terms' room.

@@ -11,7 +11,7 @@ const words = (prefix: string, count: number) => Array.from({ length: count }, (
 /** The terms a dictation sends (ADR-DESK-038, #309): the first 100, which a speech model heeds, in
  * shares (screen up to 30, typed at most 50 of the dictionary's room, learned the rest), passing on
  * room a group can't fill; then, for the cleanup only, the rest of the screen's and the whole window's
- * terms, up to 500 of theirs in all (#310). */
+ * terms, up to 500 more of theirs, counted apart from those in the first 100 (#310; owner, 2026-10-29). */
 describe("dictationVocabulary", () => {
   test("the numbers are the owner's", () => {
     expect([config.vocabularyModelMaxTerms, config.vocabularyScreenShare, config.vocabularyTypedShare, config.cleanupScreenMaxTerms, config.cleanupDictionaryMaxWords]).toEqual([100, 30, 50, 500, 500]);
@@ -54,28 +54,30 @@ describe("dictationVocabulary", () => {
   });
 
   /** With the cleanup, the 100 come first exactly as without it, then the rest of the screen's terms
-   * and the whole window's, up to 500 of theirs in all (#310), those in the first 100 counted. The
-   * dictionary's words past the first 100 are not sent: they go in the cleanup's own dictionary. */
-  test("the cleanup gets the rest of the screen after the same first 100, up to 500 screen terms", () => {
+   * and the whole window's, up to 500 more (#310), those in the first 100 not counted (owner,
+   * 2026-10-29). The dictionary's words past the first 100 are not sent: they go in the cleanup's own
+   * dictionary. */
+  test("the cleanup gets the rest of the screen after the same first 100, up to 500 more screen terms", () => {
     const [typed, learned, shown, window] = [words("Typed", 100), words("Learned", 50), words("Shown", 400), words("Window", 400)];
     const without = dictationVocabulary({ typed, learned }, shown, window, false);
     const withCleanup = dictationVocabulary({ typed, learned }, shown, window, true);
     expect(without).toHaveLength(100);
     expect(withCleanup.slice(0, 100)).toEqual(without);
-    // 30 of the screen's terms in the first 100, then 470 more: the shown ones' rest, then the window's.
-    expect(withCleanup.slice(100)).toEqual([...shown.slice(30), ...window.slice(0, 100)]);
-    // Fewer than 500 in all: every screen term, the whole window's last.
+    // 30 of the screen's terms in the first 100, then 500 more: the shown ones' rest, then the window's.
+    expect(withCleanup.slice(100)).toEqual([...shown.slice(30), ...window.slice(0, 130)]);
+    // Fewer than 500 more: every screen term, the whole window's last.
     const small = dictationVocabulary({ typed: words("Typed", 60), learned: words("Learned", 10) }, words("Shown", 40), words("Window", 5), true);
     expect(small).toEqual([...words("Typed", 60), ...words("Shown", 30), ...words("Learned", 10), ...words("Shown", 40).slice(30), ...words("Window", 5)]);
     // No screen: only the first 100 dictionary words go, as without the cleanup.
     expect(dictationVocabulary({ typed, learned }, [], [], true)).toEqual(dictationVocabulary({ typed, learned }, [], [], false));
   });
 
-  /** The whole window's terms in the first 100 count toward the 500 too. */
-  test("the whole window's terms in the first 100 count toward the 500", () => {
+  /** The whole window's terms in the first 100 don't count toward the 500 either (owner, 2026-10-29). */
+  test("the whole window's terms in the first 100 don't count toward the 500", () => {
     const window = words("Window", 700);
     const sent = dictationVocabulary({ typed: ["Typed"], learned: [] }, words("Shown", 10), window, true);
-    expect(sent).toEqual(["Typed", ...words("Shown", 10), ...window.slice(0, 490)]);
+    // 89 of the window's in the first 100, then 500 more.
+    expect(sent).toEqual(["Typed", ...words("Shown", 10), ...window.slice(0, 589)]);
   });
 
   /** A screen term that is a dictionary word, whatever its case, goes as the dictionary's (if it fits)
