@@ -241,7 +241,7 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
   long-unused learned word on screen is a screen term there, as below). With the cleanup, the rest of the
   screen's terms follow, then the rest of the whole window's, up to `cleanupScreenMaxTerms` (500) of
   theirs in all, those in the first 100 counted (the owner's "at most 500 screen and whole-window
-  terms"). The dictionary's words past the first 100 are not sent there any more: they reach the
+  terms"). *Superseded 2026-10-29 (owner): those in the first 100 are not counted, see below.* The dictionary's words past the first 100 are not sent there any more: they reach the
   cleanup in its own dictionary. Without the cleanup, only the first 100, as before.
 - **`contextTerms`** returns every term on screen, most frequent first, and no longer takes a `max`:
   `dictationVocabulary` drops the cleanup's dictionary words and takes as many as it has room for, so
@@ -267,3 +267,13 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
 Settings › Dictionary's caption reads "Names and terms spelled your way, kept on this computer.
 They’re sent adaptively with each dictation so they come out right, and TabMail doesn’t keep them."
 Test: `renderer/settings/index.test.ts` › the notes are the Swift app's.
+
+**Amendment 2026-10-29 (owner): the cleanup's screen terms are counted apart from the first 100.**
+With the cleanup, up to `cleanupScreenMaxTerms` (500) more of the screen's and the whole window's
+terms follow the first 100; those already among the first 100 (up to `vocabularyScreenShare`, 30, or
+more where the dictionary leaves room) no longer count toward the 500. The owner: counting separately
+"creates a simpler logic and would not be a big deal". At most 600 terms go, within the backend's
+`vocabulary.maxTerms` of 1,000. Tests: `dictionary/vocabulary.test.ts` › the cleanup gets the rest of
+the screen after the same first 100, up to 500 more screen terms; the whole window's terms in the
+first 100 don't count toward the 500; `dictation/controller.test.ts` › with no dictionary sends as many
+screen terms as there is room for; dictionary words on screen take none of the screen terms' room.

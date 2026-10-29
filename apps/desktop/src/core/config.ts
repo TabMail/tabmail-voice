@@ -231,7 +231,8 @@ export const completionsRequestTimeout = 30_000;
  * 2026-10-28): the screen's terms keep up to `vocabularyScreenShare`, and of the rest the typed words
  * take at most `vocabularyTypedShare` while learned words fill the others; room a group can't fill
  * passes on. Only with the cleanup do more follow: the rest of the screen's and the whole window's
- * terms, up to `cleanupScreenMaxTerms` of theirs in all, and the cleanup's own dictionary gets up to
+ * terms, up to `cleanupScreenMaxTerms` more of theirs (counted apart from those in the first ones,
+ * owner 2026-10-29), and the cleanup's own dictionary gets up to
  * `cleanupDictionaryMaxWords` of the user's words (typed, then learned, each most recently used
  * first). Measured 2026-10-28 (#310): the cleanup gets slower and fixes fewer words as its lists
  * grow, several seconds past 2,000 dictionary words, so each list stops at 500. Both stay under the

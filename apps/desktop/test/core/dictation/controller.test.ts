@@ -567,7 +567,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     ["dictation without the cleanup", "dictation", false],
     ["agent mode", "agent", true],
   ])("%s with no dictionary sends as many screen terms as there is room for", async (_, mode, smartDictation) => {
-    const names = Array.from({ length: config.cleanupScreenMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
+    const names = Array.from({ length: config.vocabularyModelMaxTerms + config.cleanupScreenMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
     prefs.value = { ...defaultSettings(), smartDictation, enabledTools: ["compose"] };
     transcription.enqueue(200, mode === "dictation" && smartDictation ? cleanedReply : { text: request });
     if (mode === "agent") completions.enqueue(200, writes("compose", "Synthetic composed result."));
@@ -578,14 +578,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
     const cleans = mode === "dictation" && smartDictation;
-    expect(transcription.body(0).vocabulary).toEqual(names.slice(0, cleans ? config.cleanupScreenMaxTerms : config.vocabularyModelMaxTerms));
+    expect(transcription.body(0).vocabulary).toEqual(names.slice(0, cleans ? config.vocabularyModelMaxTerms + config.cleanupScreenMaxTerms : config.vocabularyModelMaxTerms));
   });
 
   /** The user's words on screen (the cleanup's 500), however often shown, take none of the screen terms'
-   * room (#310): the cleanup still gets 500 terms from the screen that aren't dictionary words. */
+   * room (#310): after the first 100, the cleanup still gets 500 more terms from the screen that aren't
+   * dictionary words. */
   test("dictionary words on screen take none of the screen terms' room", async () => {
     const learned = Array.from({ length: config.cleanupDictionaryMaxWords }, (_, index) => `Zephrin${index}`);
-    const names = Array.from({ length: config.cleanupScreenMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
+    const names = Array.from({ length: config.vocabularyModelMaxTerms + config.cleanupScreenMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
     prefs.value = { ...defaultSettings(), dictionary: { typed: [], learned } };
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -595,7 +596,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     await holdAndRelease(controller);
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-    expect(transcription.body(0).vocabulary).toEqual([...names.slice(0, config.vocabularyScreenShare), ...learned.slice(0, config.vocabularyModelMaxTerms - config.vocabularyScreenShare), ...names.slice(config.vocabularyScreenShare, config.cleanupScreenMaxTerms)]);
+    expect(transcription.body(0).vocabulary).toEqual([...names.slice(0, config.vocabularyScreenShare), ...learned.slice(0, config.vocabularyModelMaxTerms - config.vocabularyScreenShare), ...names.slice(config.vocabularyScreenShare, config.vocabularyScreenShare + config.cleanupScreenMaxTerms)]);
   });
 
   /** The recording waits at most `contextWait` for the screen read: one not done by then adds no terms. */
