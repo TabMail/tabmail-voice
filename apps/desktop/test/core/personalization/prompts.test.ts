@@ -518,6 +518,22 @@ describe("UserPrompts", () => {
     expect([prompts.owner, prompts.knowledgeBase, prompts.history]).toEqual(["user-2", defaultKB, []]);
   });
 
+  /** Another account's texts from before, not upgraded yet (nothing read them since it claimed them), are
+   * cleared with its states: they never become the new account's bullets or reach its devices. */
+  test("another account's texts from before go with its claim", () => {
+    const { store, prompts } = setup({
+      device_sync_owner_user_id: "user-1",
+      [kbKey]: "- one's private note",
+      [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style",
+    });
+    expect(prompts.claim("user-2")).toBe(true);
+    const relaunched = new UserPrompts(new MemoryStore(store.snapshot()));
+    for (const reader of [prompts, relaunched]) {
+      expect([reader.knowledgeBase, reader.composition]).toEqual([defaultKB, defaultStyle]);
+    }
+    expect(Object.keys(store.snapshot()).filter((key) => key.startsWith("user_prompts:"))).toEqual([]);
+  });
+
   test("the history keeps the newest entries only", () => {
     const { prompts } = setup();
     for (let index = 0; index <= config.promptHistoryMax; index += 1) {

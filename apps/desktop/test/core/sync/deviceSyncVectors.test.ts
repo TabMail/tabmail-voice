@@ -7,12 +7,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { PromptField } from "../../../src/core/personalization/prompts.js";
-import { type Bullet, type Catalog, type CatalogEntry, defaultCatalog, parse, render, type SyncField } from "../../../src/core/sync/bullets.js";
+import { type Bullet, type Catalog, type CatalogEntry, defaultCatalog, parse, render, type SyncField, trim } from "../../../src/core/sync/bullets.js";
 import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } from "../../support/bulletDevices.js";
 
 // The shared conformance vectors and default catalog, byte-identical in TabMail for Thunderbird, iOS and
 // Voice: a change to either is made in all three, and these hashes with it.
-const vectorsSha256 = "600e72ac3a9bb29c6b8aae8d2e6f51661a577cf7bfef68c61e878ce41938e11f";
+const vectorsSha256 = "0fba57bf1d6f46a3af168d703d0c26b78513fbf7a371fa96b175426371a6f5f8";
 const catalogSha256 = "1ca6383ba9af86b42e13736b453cc3932297da32141aaf21a08c2055d9339f5f";
 
 const vectorsBytes = readFileSync(join(__dirname, "device-sync-vectors.json"));
@@ -54,6 +54,7 @@ interface Scenario {
 
 interface Vectors {
   catalogSha256: string;
+  conventions: { trim: string[] };
   parse: ParseVector[];
   scenarios: Scenario[];
 }
@@ -268,6 +269,17 @@ describe("the shared conformance vectors", () => {
     expect(createHash("sha256").update(catalogBytes).digest("hex")).toBe(catalogSha256);
     expect(createHash("sha256").update(vectorsBytes).digest("hex")).toBe(vectorsSha256);
     expect(vectors.catalogSha256).toBe(catalogSha256);
+  });
+
+  // R2: the same characters are trimmed on every platform, or a text one stores is one another refuses.
+  test.each(vectors.conventions.trim)("trims U+%s at both ends and keeps it inside", (hex) => {
+    const character = String.fromCharCode(Number.parseInt(hex, 16));
+    expect(trim(`${character}${character}a${character}b${character}`)).toBe(`a${character}b`);
+  });
+
+  test("trims nothing outside the R2 list", () => {
+    expect(vectors.conventions.trim).toHaveLength(25);
+    expect(trim("\u200Ba\u0085\u180E")).toBe("\u200Ba\u0085\u180E");
   });
 
   test.each(vectors.parse)("parse $id", (vector) => {

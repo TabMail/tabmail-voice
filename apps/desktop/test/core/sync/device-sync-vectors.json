@@ -3893,6 +3893,7 @@
       "fields": [
         "kb"
       ],
+      "note": "Mine, live here, is not added again: it keeps its label and takes no counter.",
       "devices": [
         {
           "id": "A",
@@ -3922,7 +3923,7 @@
           "op": "legacy",
           "to": "A",
           "data": {
-            "kb": "- Legacy one\n- User is using TabMail as their AI assistant for emails.\n- TabMail support is available at [TabMail Support](https://tabmail.ai/support).",
+            "kb": "- Mine\n- Legacy one\n- User is using TabMail as their AI assistant for emails.\n- TabMail support is available at [TabMail Support](https://tabmail.ai/support).",
             "kb_updated_at": "2099-01-01T00:00:00.000Z"
           }
         },
@@ -3955,13 +3956,227 @@
               "0000000100000001",
               2
             ]
-          ]
+          ],
+          "seen": {
+            "default:kb-1": 1,
+            "default:kb-2": 1,
+            "default:kb-3": 1,
+            "0000000100000001": 2
+          }
         },
         {
           "op": "expect_sent",
           "device": "A",
           "field": "kb",
           "count": 4
+        }
+      ]
+    },
+    {
+      "id": "default-text-in-another-section-gets-a-fresh-label",
+      "rules": [
+        "DS-UPGRADE",
+        "DS-LEGACY-IN",
+        "DS-DEFAULT",
+        "DS-MERGE-3"
+      ],
+      "fields": [
+        "composition"
+      ],
+      "note": "A default matches by field, section and text: its text under another section is the user's own bullet, never the default's label in the wrong section, which every peer would refuse (DS-MERGE-3).",
+      "devices": [
+        {
+          "id": "A",
+          "init": {
+            "legacy": {
+              "composition": "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- ALWAYS sign off as the user using the **First Name Only**."
+            }
+          }
+        },
+        {
+          "id": "B",
+          "init": "new"
+        },
+        {
+          "id": "C",
+          "init": "empty"
+        }
+      ],
+      "steps": [
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "composition",
+          "live": [
+            [
+              "language",
+              "ALWAYS sign off as the user using the **First Name Only**.",
+              "0000000100000001",
+              1
+            ]
+          ],
+          "seen": {
+            "0000000100000001": 1
+          }
+        },
+        {
+          "op": "legacy",
+          "to": "C",
+          "data": {
+            "composition": "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- ALWAYS sign off as the user using the **First Name Only**.",
+            "composition_updated_at": "2099-01-01T00:00:00.000Z"
+          }
+        },
+        {
+          "op": "expect",
+          "device": "C",
+          "field": "composition",
+          "live": [
+            [
+              "language",
+              "ALWAYS sign off as the user using the **First Name Only**.",
+              "0000000300000001",
+              1
+            ]
+          ],
+          "seen": {
+            "0000000300000001": 1
+          }
+        },
+        {
+          "op": "connect",
+          "device": "A"
+        },
+        {
+          "op": "connect",
+          "device": "B"
+        },
+        {
+          "op": "connect",
+          "device": "C"
+        },
+        {
+          "op": "quiesce"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "composition",
+          "texts": [
+            [
+              "general",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ],
+            [
+              "general",
+              "I want to sound friendly and professional, but not too formal."
+            ],
+            [
+              "general",
+              "ALWAYS start with a greeting."
+            ],
+            [
+              "general",
+              "I generally use Cheers or Best, depending on the context. Or if I really want to be formal, I use Sincerely or Best regards. For replying to application enquiries, I use Best wishes."
+            ],
+            [
+              "language",
+              "I write in English Only."
+            ],
+            [
+              "links",
+              "[TabMail Website](https://tabmail.ai)"
+            ],
+            [
+              "links",
+              "[TabMail Support](https://tabmail.ai/support)"
+            ],
+            [
+              "language",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ]
+          ]
+        },
+        {
+          "op": "expect",
+          "device": "B",
+          "field": "composition",
+          "texts": [
+            [
+              "general",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ],
+            [
+              "general",
+              "I want to sound friendly and professional, but not too formal."
+            ],
+            [
+              "general",
+              "ALWAYS start with a greeting."
+            ],
+            [
+              "general",
+              "I generally use Cheers or Best, depending on the context. Or if I really want to be formal, I use Sincerely or Best regards. For replying to application enquiries, I use Best wishes."
+            ],
+            [
+              "language",
+              "I write in English Only."
+            ],
+            [
+              "links",
+              "[TabMail Website](https://tabmail.ai)"
+            ],
+            [
+              "links",
+              "[TabMail Support](https://tabmail.ai/support)"
+            ],
+            [
+              "language",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ]
+          ]
+        },
+        {
+          "op": "expect",
+          "device": "C",
+          "field": "composition",
+          "texts": [
+            [
+              "general",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ],
+            [
+              "general",
+              "I want to sound friendly and professional, but not too formal."
+            ],
+            [
+              "general",
+              "ALWAYS start with a greeting."
+            ],
+            [
+              "general",
+              "I generally use Cheers or Best, depending on the context. Or if I really want to be formal, I use Sincerely or Best regards. For replying to application enquiries, I use Best wishes."
+            ],
+            [
+              "language",
+              "I write in English Only."
+            ],
+            [
+              "links",
+              "[TabMail Website](https://tabmail.ai)"
+            ],
+            [
+              "links",
+              "[TabMail Support](https://tabmail.ai/support)"
+            ],
+            [
+              "language",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ]
+          ]
+        },
+        {
+          "op": "expect_quiet"
         }
       ]
     },
