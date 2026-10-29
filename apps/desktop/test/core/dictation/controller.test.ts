@@ -4781,6 +4781,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(prompts.knowledgeBase).toBe("- alpha.");
           });
 
+          /** DS-CAPTURE: what a request may remove is captured afresh at each key-down, so a fact added
+           * after the app started (in Settings, or from another device) can be removed by voice. */
+          test("kb_del removes a statement added after the app started", async () => {
+            const { done } = await ask([], [calling(["kb_del", JSON.stringify({ statement: "Added after launch" })]), reply("Forgotten.")], () => {
+              prompts.addKnowledge("Added after launch.");
+            });
+            await done;
+            expect(JSON.parse(told(1)[0] ?? "null")).toBe("Removed from knowledge base.");
+            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
+          });
+
           /** DS-CAPTURE: a request removes only what it saw at key-down, never a bullet that arrived
            * while it ran (from another device, or Settings). */
           test("kb_del never removes a bullet that arrived after key-down", async () => {

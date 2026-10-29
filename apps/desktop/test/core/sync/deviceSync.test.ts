@@ -311,6 +311,17 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
   });
 
+  /** R19 discards by (sender, field) only when the refused part's sender is a string: an array of that
+   * sender's id reads as the same key, and is not that sender. */
+  test("a refused part whose sender is not a string drops no snapshot", () => {
+    const prompts = new UserPrompts(new MemoryStore());
+    const part = (fields: Record<string, unknown>) => ({ ...JSON.parse(bulletState("kb", [["", "Half fact", peerName, 1]], { [peerName]: 2 })), parts: 2, ...fields });
+    expect(prompts.sync.receive(part({}))).toEqual({ kind: "partial" });
+    expect(prompts.sync.receive(part({ sender: ["ffffffffffffffff"], snap: "0000000000000002", v: 2 }))).toMatchObject({ kind: "invalid" });
+    expect(prompts.sync.receive(part({ part: 2, bullets: [["", "Other half", peerName, 2]] }))).toMatchObject({ kind: "merged", changed: true });
+    expect(prompts.shown("kb", "").map((bullet) => bullet.text)).toEqual(expect.arrayContaining(["Half fact", "Other half"]));
+  });
+
   test("an incomplete snapshot is dropped with the connection", async () => {
     const { relay, voice } = await connected();
     const part = JSON.parse(bulletState("kb", [["", "Half fact", peerName, 1]], { [peerName]: 1 })) as Record<string, unknown>;
@@ -411,6 +422,62 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     await a.connect();
     while (relay.deliverOldest());
     expect(kbTexts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+  });
+
+  /** R20: the upgrade's write failed on connect, and a later read saves it: sent then, not at the next
+   * connect. */
+  test("saved by a read after a failed write on connect, is sent at once, every field it saved", async () => {
+    const relay = new BulletRelay();
+    const store = legacyStore();
+    store.set("user_prompts:user_composition.md", "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- Write in French.");
+    store.failing = true;
+    const a = device("A", store, relay);
+    const b = device("B", ownedStore(), relay);
+    await b.connect();
+    await a.connect();
+    while (relay.deliverOldest());
+    expect(relay.sent("A", "kb")).toBe(0);
+
+    store.failing = false;
+    expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
+    expect(store.get("user_prompts:user_kb.md")).toBeUndefined();
+    expect(store.get("user_prompts:user_composition.md")).toBeUndefined();
+    while (relay.deliverOldest());
+    expect(kbTexts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+    expect(b.state("composition").bullets.map((bullet) => bullet.text)).toContain("Write in French.");
+  });
+
+  /** R20: an upgrade saved by a commit of another field sends the upgraded field too. */
+  test("saved by an edit of another field, is sent with it", async () => {
+    const relay = new BulletRelay();
+    const store = legacyStore();
+    store.failing = true;
+    const a = device("A", store, relay);
+    const b = device("B", ownedStore(), relay);
+    await b.connect();
+    await a.connect();
+    while (relay.deliverOldest());
+
+    store.failing = false;
+    a.add("composition", "general", "Sign off briefly.");
+    while (relay.deliverOldest());
+    expect(b.state("composition").bullets.map((bullet) => bullet.text)).toContain("Sign off briefly.");
+    expect(kbTexts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
+  });
+
+  /** The upgrade's write fails, so a local add in the same commit is refused: saving it would make the
+   * field upgraded with the defaults alone, and the texts from before would never be read again (I1). */
+  test("takes no local edit in before it is saved, so no text it held is lost", () => {
+    const relay = new BulletRelay();
+    const store = legacyStore();
+    const a = device("A", store, relay);
+    store.failNext = true;
+    expect(a.prompts.addKnowledge("Gamma")).toEqual({ outcome: "unsaved", fields: [] });
+    expect(store.failNext).toBe(false);
+
+    const reader = new UserPrompts(new MemoryStore(store.snapshot()));
+    expect(reader.shown("kb", "").map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
+    expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
   });
 
   /** The upgrade's write fails and the next would succeed: the snapshot is refused rather than merged

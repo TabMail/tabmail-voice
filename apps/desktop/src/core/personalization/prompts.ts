@@ -167,8 +167,8 @@ export class UserPrompts extends Observable implements BulletStore {
   private historyTimer: ReturnType<typeof setTimeout> | null = null;
   /** The engine every change goes through. */
   readonly sync: BulletSync;
-  /** Called after the user, the agent's tools, a history restore or a reset changed a field here:
-   * Device Sync sends it (DS-SEND). Never for what Device Sync merged. */
+  /** Called after the user, the agent's tools, a history restore, a reset or a saved upgrade changed a
+   * field here: Device Sync sends it (DS-SEND, R20). Never for what Device Sync merged. */
   onLocalChange: ((field: PromptField) => void) | undefined;
 
   constructor(
@@ -351,6 +351,8 @@ export class UserPrompts extends Observable implements BulletStore {
     if (!this.writeValues(written)) return false;
     log.debug(`UserPrompts: ${fields.join(", ")} saved (${kind})`);
     this.changed();
+    // R20: an upgrade saved on whichever read or commit ran it sends every field it saved.
+    if (kind === "upgrade") for (const field of fields) this.onLocalChange?.(field);
     return true;
   }
 

@@ -19,8 +19,8 @@ import type { ReceiveOutcome } from "../../../src/core/sync/bulletSync.js";
  *   deleted by a user (its deletion travelled), or was put aside by DS-DEDUP for a label that was,
  *   checked at every step; at the end every label still held somewhere is held everywhere.
  * - I2 (convergence): connected and settled, every device holds the same labels.
- * - I3 (bounded messages): each message's `seen` names only the bullets it carries and the ones in a
- *   snapshot the sender got whole since it started (DS-SEEN-OUT), and settling ends.
+ * - I3 (bounded messages): each message's `seen` names every bullet it carries, and otherwise only
+ *   the ones in the last snapshot of that field the sender merged (DS-SEEN-OUT); settling ends.
  *
  * A failure names its seed and step; `DEVICE_SYNC_FUZZ_SEEDS` runs more seeds.
  */

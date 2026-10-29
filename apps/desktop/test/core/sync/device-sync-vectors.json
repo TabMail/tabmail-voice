@@ -5139,7 +5139,7 @@
       "fields": [
         "kb"
       ],
-      "note": "A refused part discards the snapshot it belongs to; its valid remaining part starts a new incomplete one. The control merges.",
+      "note": "A refused part (any reason: a bad counter, a seen key, the version, the part number) discards the incomplete snapshot buffered for its sender and field, whatever its snap; a valid remaining part starts a new incomplete one. The control merges.",
       "devices": [
         {
           "id": "A",
@@ -5285,6 +5285,243 @@
             "field": "kb",
             "sender": "ffffffffffffffff",
             "snap": "00000000000000b2",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b4",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 2,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b4",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          },
+          "note": "part 2 of another version"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b4",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b5",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b5",
+            "part": 3,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          },
+          "note": "a part number above the part count"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b5",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "ffffffff00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b6",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b7",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "X",
+                "ffffffff00000001",
+                0
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 2
+            }
+          },
+          "note": "a refused part of another snapshot from the same sender for the same field"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "00000000000000b6",
             "part": 2,
             "parts": 2,
             "bullets": [

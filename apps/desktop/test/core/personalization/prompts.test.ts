@@ -224,9 +224,11 @@ describe("UserPrompts", () => {
   /** DS-TEXT: the bullets are kept in the order the user left them, each one line, trimmed, an empty
    * one left out. */
   test("an edit keeps the user's order and makes each bullet one line", () => {
-    const { prompts } = setup({ [kbKey]: "- alpha\n- beta" });
+    const { store, prompts } = setup({ [kbKey]: "- alpha\n- beta" });
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["beta", "  ", "gamma\r\nwith a second line ", "alpha"])).toBe(true);
     expect(texts(prompts.shown("kb", ""))).toEqual(["alpha", "beta", "gamma with a second line"]);
+    // The emptied row is not stored as a bullet with no text.
+    expect((store.get("bullet_state:kb") as { bullets: [string, string, string, number][] }).bullets.map((bullet) => bullet[1])).toEqual(["alpha", "beta", "gamma with a second line"]);
   });
 
   /** DS-CAPTURE: what `kb_add` kept after Settings showed the knowledge base survives the user's
@@ -311,6 +313,8 @@ describe("UserPrompts", () => {
   test("an edit that couldn't be saved changes nothing, and the next one uses a fresh name", () => {
     const { store, prompts, changes, sent } = setup({ [kbKey]: "- alpha" }, names());
     expect(texts(prompts.shown("kb", ""))).toEqual(["alpha"]);
+    // R20: the upgrade the first read saved is sent.
+    expect(sent.splice(0)).toEqual(["kb"]);
     store.failing = true;
 
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["beta"])).toBe(false);
@@ -353,6 +357,8 @@ describe("UserPrompts", () => {
   /** DS-RESET: a reset records the texts as they were, then puts the defaults back, and is sent. */
   test("a reset records the text it replaces, and is sent", () => {
     const { prompts, sent } = setup({ [kbKey]: "- alpha" });
+    expect(prompts.knowledgeBase).toBe("- alpha");
+    expect(sent.splice(0)).toEqual(["kb"]);
     expect(prompts.resetKnowledgeBase()).toBe(true);
 
     expect(prompts.knowledgeBase).toBe(defaultKB);
@@ -368,6 +374,7 @@ describe("UserPrompts", () => {
   test("a reset that couldn't be saved changes nothing and sends nothing", () => {
     const { store, prompts, sent } = setup({ [kbKey]: "- alpha" });
     expect(prompts.knowledgeBase).toBe("- alpha");
+    expect(sent.splice(0)).toEqual(["kb"]);
     store.failing = true;
     expect(prompts.resetKnowledgeBase()).toBe(false);
     expect(prompts.knowledgeBase).toBe("- alpha");

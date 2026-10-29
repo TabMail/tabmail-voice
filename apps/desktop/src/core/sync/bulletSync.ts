@@ -229,7 +229,6 @@ export class BulletSync {
   reload(): void {
     this.abandonName();
     this.lastMerged.clear();
-    this.buffers.clear();
   }
 
   /** The connection ended: incomplete snapshots are dropped (DS-CHUNK). */
@@ -262,9 +261,9 @@ export class BulletSync {
     if (!this.options.fields.includes(field)) return { kind: "ignored" };
     const { sender, snap, part, parts } = message;
     const key = `${String(sender)}\u0000${field}`;
-    // R19: a refused part drops the snapshot it belongs to, so no later part can complete it.
+    // R19: a refused part drops the incomplete snapshot buffered for its sender and field, whatever its snap.
     const refuse = (reason: string): ReceiveOutcome => {
-      if (this.buffers.get(key)?.snap === snap) this.buffers.delete(key);
+      if (typeof sender === "string") this.buffers.delete(key);
       return this.invalid(field, reason);
     };
     if (message.v !== 1) return refuse("version");
