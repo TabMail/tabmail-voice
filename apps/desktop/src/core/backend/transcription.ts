@@ -72,7 +72,22 @@ export class TranscriptionClient {
     }
     const cleanedText = "cleaned_text" in result ? result.cleaned_text : null;
     if (cleanedText !== null && typeof cleanedText !== "string") throw new BackendError("invalidResponse");
+    TranscriptionClient.logServedBy(result as Record<string, unknown>, vocabulary.length);
     return { text: result.text, cleanedText };
+  }
+
+  /** Logs (debug only) the speech model that answered, whether a second one was started (the hedge),
+   * the models the backend's latency gate skipped, and how many terms were sent: names and a count,
+   * no content (#307). Only the development backend reports them; a reply without a model logs
+   * nothing, and these fields never fail a dictation. */
+  private static logServedBy(reply: Record<string, unknown>, terms: number): void {
+    const { model, hedge_started: hedgeStarted, skipped_models: skipped } = reply;
+    if (typeof model !== "string") return;
+    const skippedModels = Array.isArray(skipped) ? skipped.filter((name): name is string => typeof name === "string") : [];
+    log.debug(
+      () =>
+        `Transcription: answered by ${JSON.stringify(model)}${hedgeStarted === true ? " (a second model was started)" : ""}${skippedModels.length > 0 ? `, skipped ${JSON.stringify(skippedModels)}` : ""}; ${terms} vocabulary term(s) sent`,
+    );
   }
 
   /** `GET /whoami` with the sign-in, its reply unread. Sent at key-down, while the user speaks, it
