@@ -185,7 +185,12 @@ turning it off gives faster, word-for-word dictation. Everything else in the 202
 **Amendment 2026-10-29 — more of the screen for the cleanup (owner, #310).** Measured 2026-10-28 with
 the cleanup's other lists: `screen_text` may run to 8,000 characters around the caret,
 `cleanupContextBefore` 6,000 (was 500) and `cleanupContextAfter` 2,000 (was 200), most of it before
-the caret, where what the dictation follows is. `cleanupFieldMaxLength` follows the backend's
+the caret, where what the dictation follows is (*the split is superseded 2026-10-29 by the owner: 4,000
+and 4,000, see below*). `cleanupFieldMaxLength` follows the backend's
 `cleanup.maxFieldChars` to 30,000, which also fits the cleanup's dictionary of 500 words (ADR-DESK-038,
 #310). Agent mode still gets the whole screen. The rest of the 2026-09-28 amendment stands.
 
+**Amendment 2026-10-29 — the cleanup's screen text split evenly around the caret (owner).** The
+8,000 characters stay, now `cleanupContextBefore` 4,000 and `cleanupContextAfter` 4,000 (were 6,000
+and 2,000). Agent mode still gets the whole screen. Test: `dictation/cleanup.test.ts` › the numbers
+are the owner's.

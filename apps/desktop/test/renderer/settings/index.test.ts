@@ -1700,7 +1700,7 @@ describe("Settings page", () => {
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       // Closing the chat window on a click elsewhere, which the Swift app never had (owner, 2026-10-25).
       "It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.",
-      "Names and terms spelled your way, kept on this computer. The ones you use most are sent with each dictation so they come out right, and TabMail doesn’t keep them.",
+      "Names and terms spelled your way, kept on this computer. They’re sent adaptively with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
       `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries.toLocaleString("en-US")} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,
       // Privacy's, which the Swift app never had (owner, 2026-09-30); Opt Out of AI as Thunderbird's and iOS's (owner, 2026-10-28).
