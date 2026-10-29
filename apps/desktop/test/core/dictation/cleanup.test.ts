@@ -75,8 +75,7 @@ describe("DictationCleanup.variables", () => {
  * slow); agent mode still gets the whole screen. */
 describe("the cleanup's screen text", () => {
   /** #310, measured: up to 8,000 characters in all, half before the caret and half after (owner,
-   * 2026-10-29); the backend's field limit
-   * (raised with it) is far above that. */
+   * 2026-10-29); the backend's field limit (raised with it) is far above that. */
   test("the numbers are the owner's", () => {
     expect([config.cleanupContextBefore, config.cleanupContextAfter, config.cleanupFieldMaxLength]).toEqual([4_000, 4_000, 30_000]);
   });

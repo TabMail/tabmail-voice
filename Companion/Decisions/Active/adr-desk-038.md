@@ -266,4 +266,4 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
 **Amendment 2026-10-29 (owner): the dictionary's caption makes no claim about which words go.**
 Settings › Dictionary's caption reads "Names and terms spelled your way, kept on this computer.
 They’re sent adaptively with each dictation so they come out right, and TabMail doesn’t keep them."
-Test: `renderer/settings/index.test.ts` › the notes.
+Test: `renderer/settings/index.test.ts` › the notes are the Swift app's.
