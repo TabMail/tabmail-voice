@@ -19,11 +19,14 @@ import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
 
 const labels = new Map<string, string>();
-/** Bullets as Settings is pushed them: each text with its label (one per text here). */
-function shownBullets(texts: string[]): ShownBullet[] {
-  return texts.map((text) => {
-    if (!labels.has(text)) labels.set(text, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
-    return { text, labels: [[labels.get(text) as string, 1]] };
+/** Bullets as Settings is pushed them, each text with its label: a text given alone is one bullet
+ * wherever it shows (one label per text), and `{ text, name }` is a bullet of that text under the
+ * label `name`, as a bullet deleted and added again elsewhere comes back under a new one. */
+function shownBullets(bullets: (string | { text: string; name: string })[]): ShownBullet[] {
+  return bullets.map((bullet) => {
+    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
+    if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
+    return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
   });
 }
 
@@ -712,6 +715,57 @@ describe("Settings page", () => {
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: remove })));
       await act(async () => remove.click());
       expect(prompts.knowledgeBase).toBe("- Works with Sam.");
+    });
+
+    /** A bullet deleted and added again on another device, under the same text, is a new bullet: a
+     * draft begun on the old one is dropped when it arrives, so leaving the field saves nothing and
+     * the newer bullet stays, here and on the other device (DS-CAPTURE). Both editors; each device
+     * is a real store, the peer's change reaching this one as Device Sync sends it. */
+    test.each([
+      ["the knowledge base", "kb", "Knowledge base, item 1"],
+      ["a writing-style section", "composition", "Language, item 1"],
+    ] as const)("a bullet replaced elsewhere under the same text drops the draft begun on it, in %s", async (_name, syncField, label) => {
+      const relay = (from: UserPrompts, to: UserPrompts) => {
+        const outgoing = from.sync.outgoing(syncField);
+        if (outgoing.kind !== "messages") throw new Error("oversize");
+        for (const message of outgoing.messages) expect(to.sync.receive(message)).toMatchObject({ kind: "merged" });
+      };
+      const shown = (prompts: UserPrompts) => (syncField === "kb" ? prompts.shown("kb", "") : prompts.shown("composition", language));
+      const edit = (prompts: UserPrompts, bullets: string[]) =>
+        syncField === "kb" ? prompts.editKnowledgeBase(shown(prompts), bullets) : prompts.editCompositionSection(language, shown(prompts), bullets);
+      const here = new UserPrompts(new MemoryStore(), { newName: () => "0000000a00000001" });
+      const there = new UserPrompts(new MemoryStore(), { newName: () => "0000000b00000001" });
+      expect(edit(here, ["Alpha."])).toBe(true);
+      relay(here, there);
+      // The stand-in main process: the command just sent applied to this device's store, then its state pushed.
+      let sent: Command[] = [];
+      const state = (): SettingsState => ({ ...signedIn, personalization: personalizationState(here) });
+      const page = await settingsPage({ error: null }, () => {
+        const command = sent.at(-1);
+        if (command?.type === "editKnowledgeBase") here.editKnowledgeBase(command.shown, command.bullets);
+        if (command?.type === "editWritingStyle") here.editCompositionSection(command.section, command.shown, command.bullets);
+        return state();
+      }, state());
+      sent = page.commands;
+      await act(async () => button("Personalization").click());
+      const item = field(label);
+      expect(item.value).toBe("Alpha.");
+      await act(async () => item.focus());
+      await act(async () => type(item, "Beta."));
+
+      // The other device deletes the bullet and adds it again: the same text under its own label.
+      expect(edit(there, [])).toBe(true);
+      expect(edit(there, ["Alpha."])).toBe(true);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+      relay(there, here);
+      await page.push(state());
+
+      expect(field(label).value).toBe("Alpha.");
+      await act(async () => field(label).dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(page.commands).toEqual([]);
+      expect(shown(here)).toEqual(shown(there));
+      relay(here, there);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
     });
 
     /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:

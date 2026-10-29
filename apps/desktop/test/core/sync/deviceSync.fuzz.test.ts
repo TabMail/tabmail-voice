@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { type PromptField, promptFields } from "../../../src/core/personalization/prompts.js";
 import { type Bullet, displayedSections, labelKey } from "../../../src/core/sync/bullets.js";
 import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } from "../../support/bulletDevices.js";
+import type { ReceiveOutcome } from "../../../src/core/sync/bulletSync.js";
 
 /**
  * Device Sync between three to six Voice devices, driven by a seeded generator: adds, deletions,
@@ -64,7 +65,7 @@ class Fuzz {
   /** For a label a device dropped while its text stayed live there under another (DS-DEDUP), those
    * others: the dropped label goes with a user's deletion of one of them. */
   private readonly aliases = new Map<string, Set<string>>();
-  /** For each device and field, the names on bullets in every snapshot it got whole since its process
+  /** For each device and field, the names on bullets in the last snapshot it merged since its process
    * started or its texts were reloaded: what its `seen` may name besides its own bullets (DS-SEEN-OUT). */
   private readonly merged = new Map<string, Set<string>>();
   /** Parts each device has of a sender's snapshot: by device, the message's sender and field, as it
@@ -94,12 +95,25 @@ class Fuzz {
     this.relay.deliver = (id, to, part) => {
       const device = this.devices.find((other) => other.id === to);
       const before = device === undefined ? undefined : this.labelsOf(device);
-      // Noted before the device merges it: its answer, sent during the delivery, may name them.
       const whole = this.arrived(id, to, part);
+      if (device === undefined || before === undefined || whole === undefined) {
+        deliver(id, to, part);
+        if (device !== undefined && before !== undefined) this.dropped(device, before);
+        return;
+      }
+      // Its answer, sent during the delivery, names this snapshot's names once merged, the last one's
+      // until then: either is allowed meanwhile, and after it, this one's only if it was merged.
+      const merged = `${to}|${whole.field}`;
+      const last = this.merged.get(merged) ?? new Set<string>();
+      const names = new Set(whole.bullets.map(([, , name]) => name));
+      this.merged.set(merged, new Set([...last, ...names]));
+      const receive = vi.spyOn(device.prompts.sync, "receive");
       deliver(id, to, part);
-      if (device === undefined || before === undefined) return;
+      const outcome = receive.mock.results.at(-1);
+      receive.mockRestore();
+      this.merged.set(merged, outcome?.type === "return" && (outcome.value as ReceiveOutcome).kind === "merged" ? names : last);
       this.dropped(device, before);
-      if (whole !== undefined) this.mergedAside(device, whole);
+      this.mergedAside(device, whole);
     };
     const leave = this.relay.leave.bind(this.relay);
     this.relay.leave = (device) => {
@@ -109,7 +123,8 @@ class Fuzz {
     };
   }
 
-  /** DS-SEEN-OUT, I3: `seen` names only the bullets the sender holds and those merged since it started. */
+  /** DS-SEEN-OUT, I3: `seen` names every bullet the sender sends, and besides them only those of the
+   * last snapshot it merged. */
   private checkSeen(from: string, text: string): void {
     const message = JSON.parse(text) as { field: PromptField; seen: Record<string, number> };
     const device = this.devices.find((other) => other.id === from);
@@ -117,11 +132,13 @@ class Fuzz {
     const own = new Set(device.state(message.field).bullets.map((bullet) => bullet.name));
     const merged = this.merged.get(`${from}|${message.field}`) ?? new Set();
     const extra = Object.keys(message.seen).filter((name) => !own.has(name) && !merged.has(name));
-    if (extra.length > 0) this.violations.push(`I3: ${from}'s ${message.field} message names ${extra.join(", ")} in seen, on no bullet it holds or merged`);
+    if (extra.length > 0) this.violations.push(`I3: ${from}'s ${message.field} message names ${extra.join(", ")} in seen, on no bullet it holds or merged last`);
+    const missing = [...own].filter((name) => !(name in message.seen));
+    if (missing.length > 0) this.violations.push(`DS-SEEN-OUT: ${from}'s ${message.field} message leaves ${missing.join(", ")} of its own bullets out of seen`);
   }
 
-  /** A part arriving at `to`, buffered as the device buffers it: once its snapshot is whole, the
-   * snapshot's names are noted as merged there, and its field and bullets returned. */
+  /** A part arriving at `to`, buffered as the device buffers it: once its snapshot is whole, its field
+   * and bullets. */
   private arrived(id: string, to: string, part: number): { field: PromptField; bullets: [string, string, string, number][] } | undefined {
     const snapshot = this.relay.snapshots.get(id);
     if (snapshot === undefined) return undefined;
@@ -137,9 +154,6 @@ class Fuzz {
     this.buffers.delete(buffer);
     const field = snapshot.field as PromptField;
     const bullets = snapshot.parts.flatMap((text) => (JSON.parse(text as string) as { bullets: [string, string, string, number][] }).bullets);
-    const names = this.merged.get(`${to}|${field}`) ?? new Set<string>();
-    for (const [, , name] of bullets) names.add(name);
-    this.merged.set(`${to}|${field}`, names);
     return { field, bullets };
   }
 

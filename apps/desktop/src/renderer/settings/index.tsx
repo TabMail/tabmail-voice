@@ -16,6 +16,7 @@ import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { formatBytes, memoryHighlights } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import type { PromptHistoryItem } from "../../core/personalization/page.js";
+import type { ShownBullet } from "../../core/personalization/prompts.js";
 import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
@@ -790,7 +791,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
             <section key={section} className="card-section">
               <h2 className="section-heading">{writingStyleSectionLabels[section] ?? title}</h2>
               <div className="group">
-                <BulletEditor title={writingStyleSectionLabels[section] ?? title} bullets={bullets.map((bullet) => bullet.text)} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
+                <BulletEditor title={writingStyleSectionLabels[section] ?? title} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
               </div>
             </section>
           ))}
@@ -803,7 +804,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
             <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
           </TabIntro>
           <Group>
-            <BulletEditor title="Knowledge base" bullets={personalization.knowledgeBase.map((bullet) => bullet.text)} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
+            <BulletEditor title="Knowledge base" bullets={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
           </Group>
         </>,
       )}
@@ -908,8 +909,13 @@ function ResetButton({ what, onReset }: { what: string; onReset: () => void }) {
 
 /** A list of bullets: each one a field, saved as it is left or Return is pressed, with a remove
  * button; then a field to add one. `onChange` is given the whole list as edited. */
-function BulletEditor({ title, bullets, onChange }: { title: string; bullets: string[]; onChange: (bullets: string[]) => Promise<void> }) {
+function BulletEditor({ title, bullets: shown, onChange }: { title: string; bullets: ShownBullet[]; onChange: (bullets: string[]) => Promise<void> }) {
   const [draft, setDraft] = useState("");
+  const bullets = shown.map((bullet) => bullet.text);
+  // A row is its bullet: its text and the labels it carries. The same text under other labels (removed
+  // and added again elsewhere) is another bullet, so a row being typed in then starts afresh, never
+  // saving its edit over the newer one (DS-CAPTURE).
+  const identities = shown.map((bullet) => `${bullet.text}\u0000${JSON.stringify(bullet.labels)}`);
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (draft.trim() === "") return;
@@ -920,11 +926,11 @@ function BulletEditor({ title, bullets, onChange }: { title: string; bullets: st
     <div className="bullet-editor">
       <ul className="dictionary" aria-label={title}>
         {bullets.map((bullet, index) => (
-          // Keyed by the text and how many equal bullets come before it, not by position: a bullet
-          // changed elsewhere (a tool) shows afresh, and one added or removed elsewhere
-          // leaves the other rows, and what is being typed in them, as they are.
+          // Keyed by the bullet (text and labels) and how many equal ones come before it, not by
+          // position: a bullet changed elsewhere (a tool, another device) shows afresh, and one added
+          // or removed elsewhere leaves the other rows, and what is being typed in them, as they are.
           <BulletRow
-            key={`${bullets.slice(0, index).filter((other) => other === bullet).length}:${bullet}`}
+            key={`${identities.slice(0, index).filter((other) => other === identities[index]).length}:${identities[index]}`}
             bullet={bullet}
             label={`${title}, item ${index + 1}`}
             onSave={(text) => void onChange(bullets.map((other, at) => (at === index ? text : other)))}

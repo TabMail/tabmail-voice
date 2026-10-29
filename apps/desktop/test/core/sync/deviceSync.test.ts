@@ -233,6 +233,29 @@ describe("when sync runs", () => {
 });
 
 describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
+  /** DS-SEEN-OUT, I3: `seen` names the bullets sent and those of the last snapshot merged only, so
+   * what is sent does not grow with the snapshots merged before it. Each round a peer adds a bullet
+   * under a writer of its own, then deletes it. */
+  test("what is sent does not grow with the snapshots merged before", () => {
+    const prompts = new UserPrompts(new MemoryStore());
+    const sent = () => {
+      const outgoing = prompts.sync.outgoing("kb");
+      if (outgoing.kind !== "messages") throw new Error(outgoing.kind);
+      return outgoing.messages.map((message) => ({ ...message, snap: "" }));
+    };
+    const empty = sent();
+    // The knowledge base's defaults: its own bullets.
+    const ownNames = empty.flatMap((message) => Object.keys(message.seen));
+    expect(ownNames.length).toBeGreaterThan(0);
+    for (let round = 1; round <= 30; round += 1) {
+      const writer = `${round.toString(16).padStart(8, "0")}00000001`;
+      expect(prompts.sync.receive(JSON.parse(bulletState("kb", [["", `Fact ${round}`, writer, 1]], { [writer]: 1 })))).toMatchObject({ kind: "merged", changed: true });
+      expect(new Set(sent().flatMap((message) => Object.keys(message.seen)))).toEqual(new Set([...ownNames, writer]));
+      expect(prompts.sync.receive(JSON.parse(bulletState("kb", [], { [writer]: 1 })))).toMatchObject({ kind: "merged", changed: true });
+      expect(sent()).toEqual(empty);
+    }
+  });
+
   test("a field over it goes in parts that the other device takes whole", async () => {
     const relay = new FakeRelay();
     const sender = new VoiceDevice(relay, new MemoryStore(), "voice", undefined, { budget: () => 600 });
@@ -390,14 +413,20 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     expect(kbTexts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
   });
 
+  /** The upgrade's write fails and the next would succeed: the snapshot is refused rather than merged
+   * into the empty state a field not upgraded yet reads as, which would save over the texts. */
   test("takes no snapshot in before it is saved, so no text it held is lost", () => {
     const relay = new BulletRelay();
     const store = legacyStore();
     const a = device("A", store, relay);
-    a.receive(JSON.parse(bulletState("kb", [["", "Gamma", peerName, 1]], { [peerName]: 1 })));
+    store.failNext = true;
+    expect(a.prompts.sync.receive(JSON.parse(bulletState("kb", [["", "Gamma", peerName, 1]], { [peerName]: 1 })))).toEqual({ kind: "unsaved", field: "kb" });
+    expect(store.failNext).toBe(false);
 
-    expect(kbTexts(a)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
-    expect(store.get("user_prompts:user_kb.md")).toBeUndefined();
+    // A later reader of the store finds the texts as they were, upgraded then.
+    const reader = new UserPrompts(new MemoryStore(store.snapshot()));
+    expect(reader.shown("kb", "").map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
+    expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
   });
 });
 

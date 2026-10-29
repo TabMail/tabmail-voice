@@ -139,7 +139,8 @@ function validSeen(value: unknown): Map<string, number> | null {
   if (!isRecord(value)) return null;
   const seen = new Map<string, number>();
   for (const [name, n] of Object.entries(value)) {
-    if (!isCount(n, 0)) return null;
+    // R18: a key is a name as a bullet's is.
+    if (!isName(name) || !isCount(n, 0)) return null;
     seen.set(name, n);
   }
   return seen;
@@ -259,15 +260,20 @@ export class BulletSync {
     const field = message.field;
     if (!isField(field)) return this.invalid(String(typeof field === "string" ? "unknown" : typeof field), "field");
     if (!this.options.fields.includes(field)) return { kind: "ignored" };
-    if (message.v !== 1) return this.invalid(field, "version");
     const { sender, snap, part, parts } = message;
-    if (!isCount(parts, 1) || !isCount(part, 1) || part > parts) return this.invalid(field, "part");
-    const bullets = validBullets(message.bullets);
-    if (typeof bullets === "string") return this.invalid(field, bullets);
-    const seen = validSeen(message.seen);
-    if (seen === null) return this.invalid(field, "seen");
-
     const key = `${String(sender)}\u0000${field}`;
+    // R19: a refused part drops the snapshot it belongs to, so no later part can complete it.
+    const refuse = (reason: string): ReceiveOutcome => {
+      if (this.buffers.get(key)?.snap === snap) this.buffers.delete(key);
+      return this.invalid(field, reason);
+    };
+    if (message.v !== 1) return refuse("version");
+    if (!isCount(parts, 1) || !isCount(part, 1) || part > parts) return refuse("part");
+    const bullets = validBullets(message.bullets);
+    if (typeof bullets === "string") return refuse(bullets);
+    const seen = validSeen(message.seen);
+    if (seen === null) return refuse("seen");
+
     let buffer = this.buffers.get(key);
     // A part of another snapshot from the same sender for the field replaces what was buffered.
     if (buffer === undefined || buffer.snap !== snap) {
