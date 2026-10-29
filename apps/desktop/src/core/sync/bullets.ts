@@ -104,6 +104,13 @@ function bulletText(line: string): string {
 
 /** The section key whose header `line` is (R3): it holds the header's name and the marker; the first
  * in order when several match. */
+/** R23: in the sectioned fields a text holding the header mark or the END marker would be read back as
+ * a header or the skeleton, so it is not a bullet: no writer makes one, and a snapshot carrying one is
+ * dropped. The knowledge base has neither (R1). */
+export function isMarkerText(field: SyncField, text: string): boolean {
+  return field !== "kb" && (text.includes(headerMark) || text.includes(instructionsEnd));
+}
+
 function headerOf(field: SyncField, line: string): string | undefined {
   if (!line.includes(headerMark)) return undefined;
   return sectionHeaders[field].find(([, name]) => line.includes(name))?.[0];
@@ -287,6 +294,7 @@ export function upgrade(field: SyncField, text: string, labels: LabelSource, cat
   const parsed = parse(field, text);
   const state: FieldState = { head: parsed.head, tail: parsed.tail, bullets: [], seen: new Map() };
   for (const item of parsed.bullets) {
+    if (isMarkerText(field, item.text)) continue;
     const entry = catalogMatch(field, item, catalog);
     if (entry === undefined) {
       withLabel(state, item, labels);
@@ -305,7 +313,7 @@ export function upgrade(field: SyncField, text: string, labels: LabelSource, cat
 export function importLegacy(field: SyncField, state: FieldState, text: string, labels: LabelSource, catalog: Catalog = defaultCatalog): FieldState {
   const next = cloneState(state);
   for (const item of parse(field, text).bullets) {
-    if (isLive(next, item)) continue;
+    if (isLive(next, item) || isMarkerText(field, item.text)) continue;
     const entry = catalogMatch(field, item, catalog);
     if (entry === undefined) {
       withLabel(next, item, labels);

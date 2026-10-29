@@ -3766,6 +3766,36 @@
       ]
     },
     {
+      "id": "upgrade-of-an-empty-text-is-empty",
+      "rules": [
+        "DS-UPGRADE",
+        "DS-DEFAULT"
+      ],
+      "fields": [
+        "kb"
+      ],
+      "note": "A text from before that the user emptied is a text: the upgrade stores no bullets and claims no default, never the defaults of a new install.",
+      "devices": [
+        {
+          "id": "A",
+          "init": {
+            "legacy": {
+              "kb": ""
+            }
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "live": [],
+          "seen": {}
+        }
+      ]
+    },
+    {
       "id": "upgrade-duplicate-lines",
       "rules": [
         "DS-UPGRADE",
@@ -6967,6 +6997,7 @@
             "seen": {
               "ffffffff00000001": 1,
               "ffffffff00000002": 2,
+              "default:zz-9": 1,
               "ffffffff00000003": 0,
               "default:gone-1": 0
             },
@@ -7003,6 +7034,350 @@
               2
             ]
           ]
+        }
+      ]
+    },
+    {
+      "id": "marker-text-in-a-sectioned-field-is-not-a-bullet-R23",
+      "rules": [
+        "R23",
+        "DS-VALIDATE",
+        "DS-TEXT",
+        "DS-LEGACY-IN",
+        "R1"
+      ],
+      "fields": [
+        "kb",
+        "composition"
+      ],
+      "note": "A composition or action bullet holding the section-header mark (with or without its parentheses) or the END marker would be read back as a header or the skeleton: a snapshot carrying one is dropped whole, and a text from before keeps none. In the knowledge base they are ordinary text (R1).",
+      "devices": [
+        {
+          "id": "A",
+          "init": "new"
+        }
+      ],
+      "steps": [
+        {
+          "op": "connect",
+          "device": "A"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "composition",
+            "sender": "ffffffffffffffff",
+            "snap": "0000000000000001",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "general",
+                "Language (DO NOT EDIT/DELETE THIS SECTION HEADER)",
+                "ffffffff00000002",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000002": 1
+            }
+          },
+          "note": "header-mark"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "composition",
+            "sender": "ffffffffffffffff",
+            "snap": "0000000000000002",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "general",
+                "Keep DO NOT EDIT/DELETE THIS SECTION HEADER here",
+                "ffffffff00000002",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000002": 1
+            }
+          },
+          "note": "header-mark-bare"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "composition",
+            "sender": "ffffffffffffffff",
+            "snap": "0000000000000003",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "general",
+                "Use ====END USER INSTRUCTIONS==== here",
+                "ffffffff00000002",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000002": 1
+            }
+          },
+          "note": "end-marker"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "composition",
+          "texts": [
+            [
+              "general",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ],
+            [
+              "general",
+              "I want to sound friendly and professional, but not too formal."
+            ],
+            [
+              "general",
+              "ALWAYS start with a greeting."
+            ],
+            [
+              "general",
+              "I generally use Cheers or Best, depending on the context. Or if I really want to be formal, I use Sincerely or Best regards. For replying to application enquiries, I use Best wishes."
+            ],
+            [
+              "language",
+              "I write in English Only."
+            ],
+            [
+              "links",
+              "[TabMail Website](https://tabmail.ai)"
+            ],
+            [
+              "links",
+              "[TabMail Support](https://tabmail.ai/support)"
+            ]
+          ]
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "ffffffffffffffff",
+            "snap": "0000000000000010",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "Language (DO NOT EDIT/DELETE THIS SECTION HEADER)",
+                "ffffffff00000002",
+                1
+              ],
+              [
+                "",
+                "Keep DO NOT EDIT/DELETE THIS SECTION HEADER here",
+                "ffffffff00000002",
+                2
+              ],
+              [
+                "",
+                "Use ====END USER INSTRUCTIONS==== here",
+                "ffffffff00000002",
+                3
+              ]
+            ],
+            "seen": {
+              "ffffffff00000002": 3
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "has": [
+            [
+              "",
+              "Language (DO NOT EDIT/DELETE THIS SECTION HEADER)"
+            ],
+            [
+              "",
+              "Keep DO NOT EDIT/DELETE THIS SECTION HEADER here"
+            ],
+            [
+              "",
+              "Use ====END USER INSTRUCTIONS==== here"
+            ]
+          ]
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "composition",
+            "sender": "ffffffffffffffff",
+            "snap": "0000000000000011",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "general",
+                "Plain rule",
+                "ffffffff00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "ffffffff00000001": 1
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "composition",
+          "texts": [
+            [
+              "general",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ],
+            [
+              "general",
+              "I want to sound friendly and professional, but not too formal."
+            ],
+            [
+              "general",
+              "ALWAYS start with a greeting."
+            ],
+            [
+              "general",
+              "I generally use Cheers or Best, depending on the context. Or if I really want to be formal, I use Sincerely or Best regards. For replying to application enquiries, I use Best wishes."
+            ],
+            [
+              "language",
+              "I write in English Only."
+            ],
+            [
+              "links",
+              "[TabMail Website](https://tabmail.ai)"
+            ],
+            [
+              "links",
+              "[TabMail Support](https://tabmail.ai/support)"
+            ],
+            [
+              "general",
+              "Plain rule"
+            ]
+          ]
+        },
+        {
+          "op": "legacy",
+          "to": "A",
+          "data": {
+            "composition": "# General writing style (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- Legacy rule\n- Keep DO NOT EDIT/DELETE THIS SECTION HEADER here",
+            "composition_updated_at": "2099-01-01T00:00:00.000Z"
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "composition",
+          "texts": [
+            [
+              "general",
+              "ALWAYS sign off as the user using the **First Name Only**."
+            ],
+            [
+              "general",
+              "I want to sound friendly and professional, but not too formal."
+            ],
+            [
+              "general",
+              "ALWAYS start with a greeting."
+            ],
+            [
+              "general",
+              "I generally use Cheers or Best, depending on the context. Or if I really want to be formal, I use Sincerely or Best regards. For replying to application enquiries, I use Best wishes."
+            ],
+            [
+              "language",
+              "I write in English Only."
+            ],
+            [
+              "links",
+              "[TabMail Website](https://tabmail.ai)"
+            ],
+            [
+              "links",
+              "[TabMail Support](https://tabmail.ai/support)"
+            ],
+            [
+              "general",
+              "Plain rule"
+            ],
+            [
+              "general",
+              "Legacy rule"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "upgrade-keeps-no-marker-text-R23",
+      "rules": [
+        "R23",
+        "DS-UPGRADE"
+      ],
+      "fields": [
+        "composition"
+      ],
+      "devices": [
+        {
+          "id": "A",
+          "init": {
+            "legacy": {
+              "composition": "# General writing style (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- Plain rule\n- Keep DO NOT EDIT/DELETE THIS SECTION HEADER here"
+            }
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "composition",
+          "live": [
+            [
+              "general",
+              "Plain rule",
+              "0000000100000001",
+              1
+            ]
+          ],
+          "seen": {
+            "0000000100000001": 1
+          }
         }
       ]
     },

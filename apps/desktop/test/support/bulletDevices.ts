@@ -228,7 +228,9 @@ export class BulletDevice {
   }
 
   /** A section's edit committed from what `captured` held then (DS-CAPTURE). */
-  commit(field: PromptField, section: string, captured: readonly Bullet[], result: readonly string[]): void {
+  commit(field: PromptField, section: string, captured: readonly Bullet[] | null, result: readonly string[]): void {
+    // A capture refused while an upgrade was unsaved saves nothing (R22).
+    if (captured === null) return;
     const shown: ShownBullet[] = captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
     if (field === "kb") this.prompts.editKnowledgeBase(shown, result);
     else this.prompts.editCompositionSection(section, shown, result);

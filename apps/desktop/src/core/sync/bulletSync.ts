@@ -14,6 +14,7 @@ import {
   type FieldState,
   hasLineBreak,
   importLegacy,
+  isMarkerText,
   isName,
   type LabelSource,
   merge,
@@ -118,8 +119,8 @@ function isField(value: unknown): value is SyncField {
   return typeof value === "string" && (syncFields as readonly string[]).includes(value);
 }
 
-/** The bullets of a part, or the DS-VALIDATE reason they are dropped. */
-function validBullets(value: unknown): Bullet[] | string {
+/** The bullets of a part of `field`, or the DS-VALIDATE reason they are dropped. */
+function validBullets(field: SyncField, value: unknown): Bullet[] | string {
   if (!Array.isArray(value)) return "bullets";
   const bullets: Bullet[] = [];
   for (const entry of value) {
@@ -127,6 +128,7 @@ function validBullets(value: unknown): Bullet[] | string {
     const [section, text, name, n] = entry as unknown[];
     if (typeof section !== "string") return "section";
     if (typeof text !== "string" || text === "" || trim(text) !== text || hasLineBreak(text)) return "text";
+    if (isMarkerText(field, text)) return "marker";
     if (!isName(name)) return "name";
     if (!isCount(n, 1)) return "counter";
     bullets.push({ section, text, name, n });
@@ -201,16 +203,22 @@ export class BulletSync {
     return this.commit([[field, (state) => add(state, items, this.labels())]], "edit");
   }
 
-  /** DS-CAPTURE: the live labels of `sections` (all when not given), to commit against later. */
-  capture(field: SyncField, sections?: readonly string[]): Bullet[] {
-    return this.state(field).bullets.filter((bullet) => sections === undefined || sections.includes(bullet.section));
+  /** DS-CAPTURE: the live labels of `sections` (all when not given), to commit against later; null
+   * while a DS-UPGRADE is unsaved (R22), whose save names its bullets anew. */
+  capture(field: SyncField, sections?: readonly string[]): Bullet[] | null {
+    if (Object.keys(this.upgraded()).length > 0) return null;
+    return this.stored(field).bullets.filter((bullet) => sections === undefined || sections.includes(bullet.section));
   }
 
   /** DS-CAPTURE's commit, of one or more fields in one write: each `result` the operation's bullets for
    * what it captured. */
   commitCapture(changes: readonly CapturedChange[]): CommitResult {
     return this.commit(
-      changes.map((change): [SyncField, (state: FieldState) => FieldState] => [change.field, (state) => commitCapture(state, change.captured, change.result, this.labels())]),
+      changes.map((change): [SyncField, (state: FieldState) => FieldState] => {
+        // R23: no writer makes a marker text a bullet.
+        const result = change.result.filter((item) => !isMarkerText(change.field, item.text));
+        return [change.field, (state) => commitCapture(state, change.captured, result, this.labels())];
+      }),
       "edit",
     );
   }
@@ -268,7 +276,7 @@ export class BulletSync {
     };
     if (message.v !== 1) return refuse("version");
     if (!isCount(parts, 1) || !isCount(part, 1) || part > parts) return refuse("part");
-    const bullets = validBullets(message.bullets);
+    const bullets = validBullets(field, message.bullets);
     if (typeof bullets === "string") return refuse(bullets);
     const seen = validSeen(message.seen);
     if (seen === null) return refuse("seen");

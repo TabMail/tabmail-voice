@@ -36,7 +36,7 @@ export class KBTools {
 
   constructor(
     private readonly prompts: UserPrompts,
-    private readonly captured: Bullet[],
+    private readonly captured: Bullet[] | null,
   ) {}
 
   /** Runs the tool `name` with `args` (the call's parsed arguments), and returns what the model reads. */
@@ -69,7 +69,7 @@ export class KBTools {
     if (outcome === "unsaved") return { error: this.unsaved() };
     if (outcome === "unchanged") return "No change (duplicate or unchanged).";
     // What it added is the request's own, for a `kb_del` after it.
-    this.captured.push(...this.prompts.sync.state("kb").bullets.filter((bullet) => bullet.section === "" && bullet.text === text));
+    this.captured?.push(...this.prompts.sync.state("kb").bullets.filter((bullet) => bullet.section === "" && bullet.text === text));
     return "Added to knowledge base.";
   }
 
@@ -78,6 +78,8 @@ export class KBTools {
       log.debug(`KBTools: ${config.kbDelTool} on an empty knowledge base`);
       return { error: "knowledge base is empty" };
     }
+    // R22: the request's read was refused while the knowledge base's upgrade was unsaved.
+    if (this.captured === null) return { error: this.unsaved() };
     const wanted = deletionKey(bulletText(statement));
     const match = this.captured.find((bullet) => bullet.section === "" && deletionKey(bullet.text) === wanted);
     if (match === undefined) {

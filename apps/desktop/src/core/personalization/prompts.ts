@@ -5,8 +5,8 @@
 import type { Personalization } from "../agent/requests.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
-import { type Bullet, type BulletText, type Catalog, displayedSections, type FieldState, hasLineBreak, isName, parse, render, sectionHeaders, trim } from "../sync/bullets.js";
-import { BulletSync, type BulletStore, type CommitKind, type CommitResult } from "../sync/bulletSync.js";
+import { type Bullet, type BulletText, type Catalog, displayedSections, type FieldState, hasLineBreak, isMarkerText, isName, parse, render, sectionHeaders, trim } from "../sync/bullets.js";
+import { BulletSync, type BulletStore, type CapturedChange, type CommitKind, type CommitResult } from "../sync/bulletSync.js";
 import { type KeyValueStore, type StoreProblem, storedString } from "../util/keyValueStore.js";
 import { Observable } from "../util/observable.js";
 import { defaultComposition } from "./defaults.js";
@@ -89,6 +89,12 @@ function bulletText(typed: string): string {
     .map(trim)
     .filter((line) => line !== "")
     .join(" ");
+}
+
+/** Whether a line typed for the writing style holds the section-header mark or the END marker, which
+ * would be read back as a header or the skeleton (R23): Settings refuses the edit. */
+export function holdsSectionMarker(edited: readonly string[]): boolean {
+  return edited.some((typed) => isMarkerText("composition", bulletText(typed)));
 }
 
 /** How a history entry came about: edits (in Settings or by the agent's tools), recorded
@@ -220,13 +226,17 @@ export class UserPrompts extends Observable implements BulletStore {
     return { knowledgeBase: this.knowledgeBase, writingStyle: sentWritingStyle(this.sync.state("composition")) };
   }
 
-  /** The live bullets of `field`'s `section`, in order, as Settings shows them. */
+  /** The live bullets of `field`'s `section`, in order, as Settings shows them. While an upgrade is
+   * unsaved they carry no labels, and an edit of them is refused (R22). */
   shown(field: PromptField, section: string): ShownBullet[] {
-    return this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
+    const captured = this.sync.capture(field, [section]);
+    if (captured === null) return this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [] }));
+    return captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
   }
 
-  /** The knowledge base's live labels now, for an agent request to delete from (DS-CAPTURE). */
-  captureKnowledgeBase(): Bullet[] {
+  /** The knowledge base's live labels now, for an agent request to delete from (DS-CAPTURE); null while
+   * its upgrade is unsaved (R22), when nothing can be deleted from it. */
+  captureKnowledgeBase(): Bullet[] | null {
     return this.sync.capture("kb", [""]);
   }
 
@@ -235,6 +245,7 @@ export class UserPrompts extends Observable implements BulletStore {
    * is no such section. */
   editCompositionSection(section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
     if (!displayedSections("composition").includes(section)) return false;
+    if (holdsSectionMarker(edited)) return false;
     return this.editSection("composition", section, shown, edited);
   }
 
@@ -248,8 +259,10 @@ export class UserPrompts extends Observable implements BulletStore {
     return this.local(this.sync.add("kb", [{ section: "", text }]));
   }
 
-  /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE). */
-  removeKnowledge(captured: readonly Bullet[], item: BulletText): CommitResult {
+  /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE); unsaved
+   * when its read was refused (R22). */
+  removeKnowledge(captured: readonly Bullet[] | null, item: BulletText): CommitResult {
+    if (captured === null) return { outcome: "unsaved", fields: [] };
     const labels = captured.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
     return this.local(this.sync.commitCapture([{ field: "kb", captured: labels, result: [] }]));
   }
@@ -278,14 +291,14 @@ export class UserPrompts extends Observable implements BulletStore {
     if (entry === undefined) return false;
     this.flushHistory();
     this.record("reset", [...promptFields]);
-    const changes = promptFields.map((field) => {
+    const changes: CapturedChange[] = [];
+    for (const field of promptFields) {
       const sections = displayedSections(field);
-      return {
-        field,
-        captured: this.sync.capture(field, sections),
-        result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)),
-      };
-    });
+      const captured = this.sync.capture(field, sections);
+      // R22: refused while an upgrade is unsaved.
+      if (captured === null) return false;
+      changes.push({ field, captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
+    }
     return this.local(this.sync.commitCapture(changes)).outcome !== "unsaved";
   }
 
@@ -359,6 +372,8 @@ export class UserPrompts extends Observable implements BulletStore {
   // MARK: Private
 
   private editSection(field: PromptField, section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
+    // R22: bullets shown while an upgrade was unsaved carry no labels, and nothing is saved from them.
+    if (shown.some((bullet) => bullet.labels.length === 0)) return false;
     const captured = shown.flatMap((bullet) => bullet.labels.map(([name, n]) => ({ section, text: bullet.text, name, n })));
     const result = edited.map((typed) => ({ section, text: bulletText(typed) })).filter((bullet) => bullet.text !== "");
     return this.local(this.sync.commitCapture([{ field, captured, result }])).outcome !== "unsaved";

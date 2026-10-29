@@ -25,7 +25,7 @@ import { CorrectionWatch } from "../core/dictionary/correctionWatch.js";
 import { DictationController, isResting } from "../core/dictation/controller.js";
 import { MemoryPage } from "../core/memory/page.js";
 import { personalizationState } from "../core/personalization/page.js";
-import { UserPrompts } from "../core/personalization/prompts.js";
+import { holdsSectionMarker, UserPrompts } from "../core/personalization/prompts.js";
 import { DeviceSync } from "../core/sync/deviceSync.js";
 import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
@@ -1057,6 +1057,7 @@ function launch(): void {
    * handler, `commandWrites`). */
   const exclusionUnsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
   const personalizationUnsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
+  const personalizationMarker = "A line can't contain \"DO NOT EDIT/DELETE THIS SECTION HEADER\" or \"====END USER INSTRUCTIONS====\", so nothing changed.";
   const removalUnsaved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
 
   /** Asks the user for an app, and excludes it from screen reading. */
@@ -1134,6 +1135,7 @@ function launch(): void {
       case "clearMemory":
         return memoryPage.clear(memoryListQuery());
       case "editWritingStyle":
+        if (holdsSectionMarker(command.bullets)) throw new Error(personalizationMarker);
         if (!prompts.editCompositionSection(command.section, command.shown, command.bullets)) throw new Error(personalizationUnsaved);
         return;
       case "editKnowledgeBase":

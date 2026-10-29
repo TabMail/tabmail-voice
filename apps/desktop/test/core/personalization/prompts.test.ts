@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { defaultComposition } from "../../../src/core/personalization/defaults.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
-import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { holdsSectionMarker, type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { defaultCatalog } from "../../../src/core/sync/bullets.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 
@@ -25,6 +25,28 @@ class FailingStore extends MemoryStore {
   override setAll(values: Readonly<Record<string, unknown>>): boolean {
     if (this.failing) return false;
     this.writes += 1;
+    return super.setAll(values);
+  }
+}
+
+/** A store whose first `refusals` writes are refused, nothing written, as a disk with room again
+ * after them. */
+class RecoveringStore extends MemoryStore {
+  refusals = 0;
+
+  override set(key: string, value: unknown): boolean {
+    if (this.refusals > 0) {
+      this.refusals -= 1;
+      return false;
+    }
+    return super.set(key, value);
+  }
+
+  override setAll(values: Readonly<Record<string, unknown>>): boolean {
+    if (this.refusals > 0) {
+      this.refusals -= 1;
+      return false;
+    }
     return super.setAll(values);
   }
 }
@@ -178,6 +200,64 @@ describe("UserPrompts", () => {
     expect(prompts.addKnowledge("beta").outcome).toBe("saved");
     expect(texts(prompts.shown("kb", ""))).toEqual(["alpha", "beta"]);
     expect(store.get(kbKey)).toBeUndefined();
+  });
+
+  /** R22: bullets Settings showed while the upgrade was unsaved carry labels its later save does not
+   * use, and an edit from them would be reported saved and delete nothing. They carry none then, the
+   * edit is refused, and one from bullets shown once the upgrade is saved is applied. */
+  test("an edit of bullets shown while an upgrade was unsaved is refused, and one shown once it is saved is applied (R22)", () => {
+    const { store, prompts } = setup({ [kbKey]: "- alpha\n- beta" });
+    store.failing = true;
+    const shown = prompts.shown("kb", "");
+    expect(texts(shown)).toEqual(["alpha", "beta"]);
+    store.failing = false;
+
+    const edited = prompts.editKnowledgeBase(shown, ["alpha"]);
+    expect(edited && texts(prompts.shown("kb", "")).includes("beta")).toBe(false);
+    expect(edited).toBe(false);
+    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha"])).toBe(true);
+    expect(texts(prompts.shown("kb", ""))).toEqual(["alpha"]);
+  });
+
+  /** R22: a restore whose read found the upgrade unsaved is refused, at whichever write the store has
+   * room again: one reported saved has put the entry's texts back. */
+  test.each(Array.from({ length: 8 }, (_, refusals) => refusals))("a restore with the first %i writes refused is reported saved only with the entry's texts back (R22)", (refusals) => {
+    const entry = { id: "a", timestamp: new Date().toISOString(), source: "reset", fields: ["kb"], composition: defaultStyle, kb: "- alpha" };
+    const store = new RecoveringStore({ [kbKey]: "- alpha\n- beta", prompt_history: [entry] });
+    store.refusals = refusals;
+    const prompts = new UserPrompts(store);
+
+    const restored = prompts.restore("a");
+    expect(restored && prompts.knowledgeBase !== "- alpha").toBe(false);
+    store.refusals = 0;
+    expect(prompts.restore("a")).toBe(true);
+    expect(prompts.knowledgeBase).toBe("- alpha");
+  });
+
+  /** DS-NAME with the app's own writer names (nothing injected): independent devices, one restarted and
+   * one copied from another's store each add under a name of their own, so every addition reaches every
+   * device. */
+  test("the app's own writer names keep every device's additions, after a restart and from a copy (DS-NAME)", () => {
+    const aStore = new MemoryStore();
+    const bStore = new MemoryStore();
+    const a = new UserPrompts(aStore);
+    expect(new UserPrompts(bStore).addKnowledge("Second note").outcome).toBe("saved");
+    expect(a.addKnowledge("First note").outcome).toBe("saved");
+    const copy = new UserPrompts(new MemoryStore(structuredClone(aStore.snapshot())));
+    expect(copy.addKnowledge("Copied note").outcome).toBe("saved");
+    const b = new UserPrompts(bStore);
+    expect(b.addKnowledge("After restart").outcome).toBe("saved");
+    const devices = [a, b, copy];
+    for (let round = 0; round < 3; round += 1) {
+      for (const from of devices) {
+        const outgoing = from.sync.outgoing("kb");
+        if (outgoing.kind !== "messages") throw new Error(outgoing.kind);
+        for (const to of devices) if (to !== from) for (const message of outgoing.messages) to.sync.receive(message);
+      }
+    }
+    for (const device of devices) {
+      expect(texts(device.shown("kb", "")).filter((text) => text.includes("note") || text === "After restart").sort()).toEqual(["After restart", "Copied note", "First note", "Second note"]);
+    }
   });
 
   /** The style document is shared with Thunderbird and iOS, which find its sections by these exact
@@ -416,6 +496,43 @@ describe("UserPrompts", () => {
     expect(history.map((item) => item.source)).toEqual(["local_edit", "local_edit", "reset"]);
     expect(history[2]).toMatchObject({ fields: ["kb", "composition"], kb: "- gamma", composition });
     expect(prompts.restore("no-such-entry")).toBe(false);
+  });
+
+  /** R23: a writing-style line holding the section-header mark or the END marker would be read back as a
+   * header or the skeleton, so a history entry holding it restored as other bullets: Settings refuses
+   * it, and restoring the version just recorded changes nothing. */
+  test.each([
+    ["the header mark", "Language (DO NOT EDIT/DELETE THIS SECTION HEADER)"],
+    ["the header mark without its parentheses", "Keep DO NOT EDIT/DELETE THIS SECTION HEADER here"],
+    ["the END marker", "Use ====END USER INSTRUCTIONS==== in the example"],
+  ])("a line holding %s is refused, and restoring the version just recorded changes nothing (R23)", (_, line) => {
+    const { prompts } = setup();
+    const pairs = () => prompts.sync.state("composition").bullets.map((bullet) => [bullet.section, bullet.text]);
+    expect(prompts.editCompositionSection(general, shownSection(prompts, general), ["Plain rule"])).toBe(true);
+    prompts.flushHistory();
+
+    expect(holdsSectionMarker([line])).toBe(true);
+    const edited = prompts.editCompositionSection(general, shownSection(prompts, general), ["Plain rule", line, "Keep this in general"]);
+    expect(edited).toBe(false);
+    prompts.flushHistory();
+    const saved = pairs();
+    expect(prompts.restore(prompts.history.at(-1)?.id ?? "")).toBe(true);
+    expect(pairs()).toEqual(saved);
+    expect(holdsSectionMarker(["Plain rule", "DO NOT EDIT this"])).toBe(false);
+  });
+
+  /** R23: a history entry recorded before, holding a line with the header mark in a section, restores
+   * every other line and makes no bullet of that one. */
+  test("a restore makes no bullet of a line holding the header mark (R23)", () => {
+    const line = "Keep DO NOT EDIT/DELETE THIS SECTION HEADER here";
+    const composition = defaultStyle.replace("- I write in English Only.", `- I write in English Only.\n- ${line}\n- Plain rule`);
+    const entry = { id: "a", timestamp: new Date().toISOString(), source: "reset", fields: ["composition"], composition, kb: "" };
+    const { prompts } = setup({ prompt_history: [entry] });
+
+    expect(prompts.restore("a")).toBe(true);
+    const texts = prompts.sync.state("composition").bullets.map((bullet) => bullet.text);
+    expect(texts).toContain("Plain rule");
+    expect(texts.filter((text) => text.includes("DO NOT EDIT"))).toEqual([]);
   });
 
   /** R6: a bullet in a section Settings doesn't show (a newer app's) is kept by a restore. */

@@ -75,7 +75,7 @@ class Fuzz {
   private cleared = false;
   /** Messages whose `seen` broke DS-SEEN-OUT: kept for the test, as a throw would land in the sender. */
   readonly violations: string[] = [];
-  private readonly captures = new Map<BulletDevice, { field: PromptField; section: string; captured: Bullet[] }>();
+  private readonly captures = new Map<BulletDevice, { field: PromptField; section: string; captured: Bullet[] | null }>();
   private readonly backups = new Map<BulletDevice, DeviceStore>();
   private unique = 0;
   readonly log: string[] = [];
@@ -334,10 +334,11 @@ class Fuzz {
         return false;
       }
       this.captures.delete(device);
-      const result = capture.captured.filter(() => this.next() < 0.6).map((bullet) => bullet.text);
+      const captured = capture.captured ?? [];
+      const result = captured.filter(() => this.next() < 0.6).map((bullet) => bullet.text);
       if (this.next() < 0.5) result.push(this.text());
       this.log.push(`${device.id} commit ${capture.field}/${capture.section} [${result.join(", ")}]`);
-      for (const bullet of capture.captured) if (!result.includes(bullet.text)) this.markLabel(capture.field, bullet);
+      for (const bullet of captured) if (!result.includes(bullet.text)) this.markLabel(capture.field, bullet);
       device.commit(capture.field, capture.section, capture.captured, result);
       return false;
     }

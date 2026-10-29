@@ -240,8 +240,9 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** The knowledge base and writing style this dictation started with, read with its settings. */
   private dictationPersonalization: Personalization;
-  /** The knowledge base's labels read with it, which `kb_del` deletes from (DS-CAPTURE). */
-  private dictationKBCapture: Bullet[];
+  /** The knowledge base's labels read with it, which `kb_del` deletes from (DS-CAPTURE); null when the
+   * read was refused while its upgrade was unsaved (R22). */
+  private dictationKBCapture: Bullet[] | null;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
   /** The app in front at key-down: the paste goes there only, and the corrections are learned from

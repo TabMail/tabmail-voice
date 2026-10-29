@@ -25,6 +25,19 @@ class FailingStore extends MemoryStore {
   }
 }
 
+/** A store whose writes are refused while `refusing`, nothing written. */
+class RefusingStore extends MemoryStore {
+  refusing = false;
+
+  override set(key: string, value: unknown): boolean {
+    return !this.refusing && super.set(key, value);
+  }
+
+  override setAll(values: Readonly<Record<string, unknown>>): boolean {
+    return !this.refusing && super.setAll(values);
+  }
+}
+
 function setup(knowledgeBase?: string) {
   const store = new FailingStore(knowledgeBase === undefined ? {} : { [kbKey]: knowledgeBase });
   const prompts = new UserPrompts(store);
@@ -46,6 +59,23 @@ function setup(knowledgeBase?: string) {
 describe("KBTools", () => {
   test("they are the loop's kb_add and kb_del", () => {
     expect(KBTools.names).toEqual(["kb_add", "kb_del"]);
+  });
+
+  /** R22: a request whose key-down read found the knowledge base's upgrade unsaved holds no labels: its
+   * kb_del reports the knowledge base could not be saved, never a deletion against labels the upgrade's
+   * save does not use. A request read once it is saved deletes. */
+  test("kb_del of a request read while the upgrade was unsaved reports it could not be saved (R22)", () => {
+    const store = new RefusingStore({ [kbKey]: "- alpha.\n- beta." });
+    store.refusing = true;
+    const prompts = new UserPrompts(store);
+    const refused = new KBTools(prompts, prompts.captureKnowledgeBase());
+    store.refusing = false;
+
+    expect(JSON.parse(refused.run("kb_del", { statement: "beta." }))).toEqual({ error: "failed to persist knowledge base" });
+    expect(prompts.knowledgeBase).toBe("- alpha.\n- beta.");
+    const next = new KBTools(prompts, prompts.captureKnowledgeBase());
+    expect(JSON.parse(next.run("kb_del", { statement: "beta." }))).toBe("Removed from knowledge base.");
+    expect(prompts.knowledgeBase).toBe("- alpha.");
   });
 
   /** What the user asked to be remembered is pinned, so the refine Thunderbird and iOS run never edits or removes it. */
