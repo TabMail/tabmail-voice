@@ -38,7 +38,7 @@ try {
     controller.update({ kind: "listening" });
     await window.loadFile(join(root, "dist/renderer/overlay/index.html"));
     await window.webContents.executeJavaScript(`new Promise((resolve, reject) => { const started = Date.now(); const check = () => { if (window.placementReady) resolve(true); else if (Date.now() - started > 5000) reject(new Error('Renderer subscription not ready')); else setTimeout(check, 10); }; check(); })`);
-    const base = { phase: { kind: "listening" }, mode: "agent", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: "handsFree", hotkey: "rightOption", tools: ["compose", "answer"], readsWindow: true, connectors: ["calendar"], emailAppIcon: null, recentBubbles: [], runningBubble: null, chat: null, chatPlacement: null };
+    const base = { reveal: controller.reveal, phase: { kind: "listening" }, mode: "agent", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: "handsFree", hotkey: "rightOption", tools: ["compose", "answer"], readsWindow: true, connectors: ["calendar"], emailAppIcon: null, recentBubbles: [], runningBubble: null, chat: null, chatPlacement: null };
     const publish = async (extra = {}) => {
       const state = { ...base, overlayPlacement: controller.overlayPlacement, opensUpward: controller.opensUpward, bubblesFitUnder: controller.bubblesFitUnder, ...extra };
       await window.webContents.executeJavaScript(`window.setPlacementState(${JSON.stringify(state)})`);

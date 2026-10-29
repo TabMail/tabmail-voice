@@ -17,7 +17,7 @@ const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
 /** `config.memorySizeLimitDefault`. */
 const gigabyte = 1_024 * 1_024 * 1_024;
-const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, hotkey: "rightOption", tools: [], readsWindow: false, connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
+const overlay = { reveal: 1, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, hotkey: "rightOption", tools: [], readsWindow: false, connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
 const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web", "settings"];

@@ -15,7 +15,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-003](Companion/Decisions/Active/adr-desk-003.md)**: Not sandboxed; Developer ID distribution
 - **[ADR-DESK-004](Companion/Decisions/Superseded/adr-desk-004.md)**: Phase 1 needs no account and no backend *(superseded by ADR-DESK-005)*
 - **[ADR-DESK-005](Companion/Decisions/Active/adr-desk-005.md)**: Speech-to-text on the TabMail backend (OpenRouter), shared by all platforms
-- **[ADR-DESK-006](Companion/Decisions/Active/adr-desk-006.md)**: Boot the microphone at key-down, reveal the overlay at the caret after the hold
+- **[ADR-DESK-006](Companion/Decisions/Active/adr-desk-006.md)**: Boot the microphone at key-down, reveal the overlay at the caret after the hold; amended 2026-10-28 (#304): every showing afresh stays transparent until the page says it drew it (`OverlayState.reveal`, `overlayDrawn`, `OverlayWindowController.drawn`), so a re-shown window never flashes the last answer/frame it kept
 - **[ADR-DESK-007](Companion/Decisions/Active/adr-desk-007.md)**: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 - **[ADR-DESK-008](Companion/Decisions/Active/adr-desk-008.md)**: Agent Compose/Edit share dictation caret spacing; Clean up every transcript with the screen context, on the backend
 - **[ADR-DESK-009](Companion/Decisions/Active/adr-desk-009.md)**: The app identifies itself to the backend as `voice` (was `macos`)

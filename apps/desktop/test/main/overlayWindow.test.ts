@@ -395,7 +395,8 @@ describe("OverlayWindowController", () => {
 
   /** Opening the chat window moves and grows the overlay before its page has laid the chat out: it
    * stays transparent until the page has measured the chat, so the pill never shows a frame away from
-   * where it is (red-verified); closed before that, it is not left transparent. */
+   * where it is (red-verified); closed before that, it is not left transparent: the next pill shows
+   * once its page has drawn it. */
   test("the chat window shows only once measured", async () => {
     const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
     const overlay = recordingWindow();
@@ -429,6 +430,7 @@ describe("OverlayWindowController", () => {
     await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     expect(overlay.visible()).toBe(true);
+    controller.drawn(controller.reveal);
     expect(overlay.opacity()).toBe(1);
   });
 
@@ -733,8 +735,171 @@ describe("OverlayWindowController", () => {
       await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       expect(overlay.visible()).toBe(true);
+      controller.drawn(controller.reveal);
       expect(overlay.opacity()).toBe(1);
       expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A window shown again keeps its last frame until its page draws the next one, so the overlay hidden
+   * after an agent request's answer showed that answer for a moment as the next hold's pill appeared
+   * (owner, 2026-10-28, #304). Shown afresh, after a chat window or a pill alike, it stays transparent
+   * until its page says it has drawn the state it is shown for (`drawn`), never on an earlier showing's
+   * word. */
+  test("a hold's pill shows only once its page has drawn it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      const hold = async () => {
+        controller.update({ kind: "arming" });
+        await new Promise<void>(queueMicrotask);
+        controller.update({ kind: "listening" });
+      };
+      const done = () => {
+        controller.update({ kind: "idle" }, false);
+        vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000 + config.overlayDismissDuration);
+        expect(overlay.visible()).toBe(false);
+      };
+      // An answer in the chat window, closed and drawn away; the overlay hidden.
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      done();
+
+      let earlier: number | null = null;
+      for (const after of ["the chat window", "a pill"]) {
+        await hold();
+        expect(overlay.visible(), after).toBe(true);
+        expect(overlay.opacity(), after).toBe(0);
+        if (earlier !== null) controller.drawn(earlier);
+        expect(overlay.opacity(), `${after}: an earlier showing's drawing`).toBe(0);
+        controller.drawn(controller.reveal);
+        expect(overlay.opacity(), after).toBe(1);
+        earlier = controller.reveal;
+        done();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** Once drawn, the pill stays shown through its hold, under the same showing: the next phase, or a
+   * placing again, doesn't make it transparent; and the next hold starts hidden, as ever. Placed again
+   * before its page drew it, it waits for the page to draw it there: each placing pushes the page the
+   * showing it waits for, and an earlier one's drawing does nothing. */
+  test("a pill shown after a chat window stays shown until its hold ends, and waits for each placing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      const pushed: number[] = [];
+      controller.onPlace = () => pushed.push(controller.reveal);
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+      controller.update({ kind: "idle" }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
+      // Transparent while the closed chat is drawn away: a drawing then shows nothing.
+      controller.drawn(controller.reveal);
+      expect(overlay.opacity()).toBe(0);
+      vi.advanceTimersByTime(config.overlayDismissDuration);
+
+      controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
+      controller.update({ kind: "listening" });
+      expect(pushed.at(-1)).toBe(controller.reveal);
+      const first = controller.reveal;
+      controller.refreshPlacement();
+      expect(pushed.at(-1)).toBe(controller.reveal);
+      controller.drawn(first);
+      expect(overlay.opacity()).toBe(0);
+      controller.drawn(controller.reveal);
+      expect(overlay.opacity()).toBe(1);
+
+      const shown = controller.reveal;
+      controller.refreshPlacement();
+      controller.update({ kind: "transcribing" });
+      expect(overlay.opacity()).toBe(1);
+      expect(controller.reveal).toBe(shown);
+      controller.update({ kind: "idle" });
+      controller.update({ kind: "arming" });
+      expect(overlay.visible()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The chat window opening before the pill's page has drawn it still shows only once measured: the
+   * pill's drawing doesn't show the chat window's frame. */
+  test("a chat window opened as the pill shows still waits to be measured", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    const reveal = controller.reveal;
+    controller.update({ kind: "running", tool: "answer" }, true);
+    controller.drawn(reveal);
+    expect(overlay.opacity()).toBe(0);
+    controller.fitChat(120);
+    expect(overlay.opacity()).toBe(1);
+  });
+
+  /** A chat window closed before it was measured leaves the overlay transparent while it is drawn away:
+   * the pill's drawing, arriving late, shows nothing then; and the next hold still shows once drawn. */
+  test("a pill's late drawing shows nothing once a chat window opened over it has closed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      const hold = async () => {
+        controller.update({ kind: "arming" });
+        await new Promise<void>(queueMicrotask);
+        controller.update({ kind: "listening" });
+      };
+      await hold();
+      const pill = controller.reveal;
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.update({ kind: "idle" }, false);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.visible()).toBe(true);
+      controller.drawn(pill);
+      expect(overlay.opacity()).toBe(0);
+      vi.advanceTimersByTime(config.overlayDismissDuration);
+      expect(overlay.visible()).toBe(false);
+
+      await hold();
+      controller.drawn(controller.reveal);
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The note for a text not pasted, shown as the chat window it followed closes, waits for its page's
+   * drawing as a pill does, and then shows, taking its click (ADR-DESK-042). */
+  test("the not-pasted note after a chat window shows once its page has drawn it", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => null);
+      controller.update({ kind: "running", tool: "compose" }, true);
+      controller.fitChat(120);
+      controller.update({ kind: "notPasted", message: "Couldn't paste. Click to copy.", text: "Synthetic reply." }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(0);
+      controller.drawn(controller.reveal);
+      expect(overlay.opacity()).toBe(1);
+      controller.pointerOver(true);
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.update({ kind: "idle" });
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.overlayDismissDuration);
+      expect(overlay.visible()).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -785,6 +950,7 @@ describe("OverlayWindowController", () => {
     expect(overlay.opacity()).toBe(0);
     await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
+    controller.drawn(controller.reveal);
     expect(overlay.opacity()).toBe(1);
     expect(overlay.opaqueFrames().slice(opaque)).toEqual([overlay.bounds()]);
     expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);

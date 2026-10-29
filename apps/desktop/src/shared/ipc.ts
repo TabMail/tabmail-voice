@@ -29,6 +29,9 @@ import type { WelcomeStep } from "../core/onboarding/welcomeWizard.js";
 export interface OverlayState {
   /** Standalone pill anchor inside the actual native surface; transparent canvas edges are not anchors. */
   overlayPlacement?: { anchor: { x: number; y: number }; canvas: { width: number; height: number } };
+  /** The overlay's latest showing afresh (`OverlayWindowController.reveal`): it stays transparent until
+   * the page says it has drawn the state carrying it (`overlayDrawn`). */
+  reveal: number;
   phase: Phase;
   mode: DictationMode;
   level: number;
@@ -265,6 +268,8 @@ export type Command =
   | { type: "answerConfirmation"; confirmed: boolean }
   | { type: "chatHeight"; height: number }
   | { type: "pointerOver"; over: boolean }
+  /** The overlay page drew the state of its showing `reveal` (`OverlayState.reveal`). */
+  | { type: "overlayDrawn"; reveal: number }
   /** The chat window is dragged, its pill and bubbles with it: the drag started, and how far it has
    * gone since (points, across and down). */
   | { type: "chatDragStart" }
@@ -398,6 +403,8 @@ export function isCommand(value: unknown): value is Command {
       return isConnectorID(command.connector) && typeof command.value === "boolean";
     case "pointerOver":
       return typeof command.over === "boolean";
+    case "overlayDrawn":
+      return typeof command.reveal === "number" && Number.isSafeInteger(command.reveal) && command.reveal >= 0;
     case "dragChat":
       return typeof command.dx === "number" && Number.isFinite(command.dx) && typeof command.dy === "number" && Number.isFinite(command.dy);
     case "chatHeight":
