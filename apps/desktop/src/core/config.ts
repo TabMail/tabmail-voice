@@ -235,7 +235,8 @@ export const completionsRequestTimeout = 30_000;
  * owner 2026-10-29), and the cleanup's own dictionary gets up to
  * `cleanupDictionaryMaxWords` of the user's words (typed, then learned, each most recently used
  * first). Measured 2026-10-28 (#310): the cleanup gets slower and fixes fewer words as its lists
- * grow, several seconds past 2,000 dictionary words, so each list stops at 500. Both stay under the
+ * grow, several seconds past 2,000 dictionary words, so each list stops at 500 (the screen's terms
+ * at 500 past the first ones, owner 2026-10-29). Both stay under the
  * backend's limits (`vocabulary.maxTerms` 1,000; 500 words of at most `dictionaryWordMaxChars`, one
  * per line, under `cleanupFieldMaxLength`). */
 export const vocabularyModelMaxTerms = 100;

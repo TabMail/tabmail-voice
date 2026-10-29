@@ -225,7 +225,8 @@ setting is read from the dictation's settings snapshot taken at key-down.
 **Amendment 2026-10-29 — a far larger learned dictionary, and more for the cleanup (owner, #310).** The
 cleanup can take far more than the speech model's 100 terms. Measured 2026-10-28: the cleanup gets
 slower and fixes fewer words as its lists grow (several seconds per cleanup past 2,000 dictionary
-words), so each list stops at 500. The backend raised its limits first (`vocabulary.maxTerms` 1,000,
+words), so each list stops at 500 (*the screen's terms at 500 past the first 100 since 2026-10-29
+(owner), see below*). The backend raised its limits first (`vocabulary.maxTerms` 1,000,
 `cleanup.maxFieldChars` 30,000, live in production 2026-10-29); the app never sends more than it takes.
 - **Storage:** `dictionaryMaxEntries` 150 → 5,000. Typed words keep their cap (100); learned words fill
   the rest, and a full dictionary still drops the learned word used least recently. Reading the stored

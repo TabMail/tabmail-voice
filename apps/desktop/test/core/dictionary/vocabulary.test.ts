@@ -65,7 +65,7 @@ describe("dictationVocabulary", () => {
     expect(withCleanup.slice(0, 100)).toEqual(without);
     // 30 of the screen's terms in the first 100, then 500 more: the shown ones' rest, then the window's.
     expect(withCleanup.slice(100)).toEqual([...shown.slice(30), ...window.slice(0, 130)]);
-    // Fewer than 500 in all: every screen term, the whole window's last.
+    // Fewer than 500 more: every screen term, the whole window's last.
     const small = dictationVocabulary({ typed: words("Typed", 60), learned: words("Learned", 10) }, words("Shown", 40), words("Window", 5), true);
     expect(small).toEqual([...words("Typed", 60), ...words("Shown", 30), ...words("Learned", 10), ...words("Shown", 40).slice(30), ...words("Window", 5)]);
     // No screen: only the first 100 dictionary words go, as without the cleanup.
