@@ -18,13 +18,14 @@ int main() {
     Error error;
     auto bus = own(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.value)); require(bus && !error.value);
     auto named = g_dbus_connection_call_sync(bus.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", g_variant_new("(su)", "org.gnome.Shell", 0u), nullptr, G_DBUS_CALL_FLAGS_NONE, 1000, nullptr, &error.value); require(named && !error.value); g_variant_unref(named);
-    auto info = g_dbus_node_info_new_for_xml(R"xml(<node><interface name="ai.tabmail.Voice.Caret"><method name="Read"><arg type="s" direction="out"/></method><method name="FromWindow"><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="s" direction="out"/></method><method name="Target"><arg type="u" direction="in"/><arg type="t" direction="out"/><arg type="u" direction="out"/></method><method name="Activate"><arg type="t" direction="in"/><arg type="b" direction="out"/></method><method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method></interface></node>)xml", &error.value); require(info && !error.value);
-    struct Fixture { std::string value = R"({"x":-50,"y":200,"width":1,"height":20,"source":"wayland"})"; bool fail = false, delay = false, malformed = false; unsigned calls = 0; guint64 window = 0; guint32 pid = 0; Object<GDBusMethodInvocation> pending; std::string method; std::array<double, 4> args{}; } fixture;
+    auto info = g_dbus_node_info_new_for_xml(R"xml(<node><interface name="ai.tabmail.Voice.Caret"><method name="Version"><arg type="u" direction="out"/></method><method name="Read"><arg type="s" direction="out"/></method><method name="FromWindow"><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="s" direction="out"/></method><method name="Target"><arg type="u" direction="in"/><arg type="t" direction="out"/><arg type="u" direction="out"/></method><method name="Activate"><arg type="t" direction="in"/><arg type="b" direction="out"/></method><method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method></interface></node>)xml", &error.value); require(info && !error.value);
+    struct Fixture { std::string value = R"({"x":-50,"y":200,"width":1,"height":20,"source":"wayland"})"; bool fail = false, delay = false, malformed = false; unsigned calls = 0, version = 4; guint64 window = 0; guint32 pid = 0; Object<GDBusMethodInvocation> pending; std::string method; std::array<double, 4> args{}; } fixture;
     const GDBusInterfaceVTable table{[](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* method, GVariant* args, GDBusMethodInvocation* call, gpointer data) {
         auto f = static_cast<Fixture*>(data); ++f->calls; f->method = method;
         if (f->method == "FromWindow") g_variant_get(args, "(dddd)", &f->args[0], &f->args[1], &f->args[2], &f->args[3]);
         if (f->delay) { f->pending = own(static_cast<GDBusMethodInvocation*>(g_object_ref(call))); return; }
         if (f->fail) { g_dbus_method_invocation_return_dbus_error(call, "ai.tabmail.Voice.Caret.Unavailable", "Unavailable"); return; }
+        if (f->method == "Version") { g_dbus_method_invocation_return_value(call, g_variant_new("(u)", f->version)); return; }
         if (f->method == "Activate") {
             guint64 window = 0; g_variant_get(args, "(t)", &window);
             g_dbus_method_invocation_return_value(call, g_variant_new("(b)", window == f->window));
@@ -46,10 +47,22 @@ int main() {
         while (!done) g_main_context_iteration(nullptr, true);
         return value;
     };
-    for (unsigned i = 0; i < 500 && fixture.calls == 0; ++i) {
-        read(); while (g_main_context_iteration(nullptr, false)) {} g_usleep(1000);
-    }
-    require(fixture.calls > 0 && read() == JSON({{"x", -50}, {"y", 200}, {"width", 1}, {"height", 20}}));
+    const auto integration = [&] {
+        bool done = false, value = false;
+        caret->integration([&](JSON result, bool success) { require(success); value = result.get<bool>(); done = true; });
+        while (!done) g_main_context_iteration(nullptr, true);
+        return value;
+    };
+    // Asked the moment the helper starts, as the app does at launch, the Shell is asked and answers
+    // (#262): the helper doesn't answer for it before it is connected. Whichever is asked first: a
+    // caret, then, on a helper started afresh, the integration.
+    require(read() == JSON({{"x", -50}, {"y", 200}, {"width", 1}, {"height", 20}}) && fixture.calls == 1 && fixture.method == "Read");
+    caret = std::make_unique<GnomeCaret>();
+    require(integration() && fixture.calls == 2 && fixture.method == "Version");
+    require(read() == JSON({{"x", -50}, {"y", 200}, {"width", 1}, {"height", 20}}) && fixture.calls == 3);
+    // A Shell still running an older extension (until the next login) is not ready.
+    fixture.version = 3; require(!integration()); fixture.version = 4;
+    fixture.fail = true; require(!integration()); fixture.fail = false;
     // A window-relative caret goes to the Shell as it is, and comes back as a screen rectangle. The
     // answer is the call's own return value: the helper replies before handling its next request (a
     // screen read that holds the main loop). The Shell's side is served here, on the main loop, while
@@ -121,7 +134,6 @@ int main() {
     fixture.pending.reset();
     g_dbus_connection_unregister_object(bus.get(), registration);
     caret = std::make_unique<GnomeCaret>();
-    for (unsigned i = 0; i < 10; ++i) { while (g_main_context_iteration(nullptr, false)) {} g_usleep(1000); }
-    require(read().is_null()); // Extension absent: normal fallback, not an error.
+    require(read().is_null() && !integration()); // Extension absent: normal fallback, not an error.
     std::cout << "GNOME caret service contract passed\n";
 }
