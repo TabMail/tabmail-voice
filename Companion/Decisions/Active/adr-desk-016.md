@@ -136,7 +136,8 @@ there is room".
   selection-only caret block sent a selected secret unredacted.) The same gap in what the window
   shows for a selection in a focused page (not a field) predates this and is tabmail-voice #263.
 - **What each takes.** Dictation takes the terms of what the window shows first, then the whole window's in
-  the room left in the vocabulary, only if that read is done by the upload: it is never waited for
+  the room left in the vocabulary (with the cleanup, the rest of each after the speech model's first
+  100: ADR-DESK-038, #309), only if that read is done by the upload: it is never waited for
   (ADR-DESK-038). Agent mode's request carries what the window shows (`screen_text`); the model reads
   the whole window only by calling `screen_read` (ADR-DESK-061's local-tool pattern, below), so a
   long page costs its tokens only when the request needs it.

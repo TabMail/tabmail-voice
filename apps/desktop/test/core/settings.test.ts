@@ -228,13 +228,13 @@ describe("AppSettings", () => {
       emailClient: null,
       hasTabMail: true,
       userName: "",
-      dictionary: [],
+      dictionary: { typed: [], learned: [] },
       learnsWords: true,
       smartDictation: true,
       memorySizeLimit: config.memorySizeLimitDefault,
       eventDuration: config.eventDurationDefault,
     });
-    expect(app.dictation(null)).toMatchObject({ enabledTools: ["edit"], dictionary: ["Xyvora"], learnsWords: false, smartDictation: false, memorySizeLimit: lower, eventDuration: 20 });
+    expect(app.dictation(null)).toMatchObject({ enabledTools: ["edit"], dictionary: { typed: ["Xyvora"], learned: [] }, learnsWords: false, smartDictation: false, memorySizeLimit: lower, eventDuration: 20 });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
   });
@@ -822,7 +822,7 @@ describe("dictionary", () => {
     const app = settings();
     expect(app.dictionary).toEqual([]);
     expect(app.learnsWords).toBe(true);
-    expect(app.dictation(null)).toMatchObject({ dictionary: [], learnsWords: true });
+    expect(app.dictation(null)).toMatchObject({ dictionary: { typed: [], learned: [] }, learnsWords: true });
   });
 
   test("keeps typed and learned words, in order, across a relaunch", () => {
@@ -838,7 +838,7 @@ describe("dictionary", () => {
     const relaunched = settings(store);
     expect(relaunched.dictionary).toEqual([{ word: "Xyvora", learned: false, lastUsed: 1 }, { word: "Kaelthorne Draszek", learned: true, lastUsed: 2 }]);
     expect(relaunched.learnsWords).toBe(false);
-    expect(relaunched.dictation(null).dictionary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
+    expect(relaunched.dictation(null).dictionary).toEqual({ typed: ["Xyvora"], learned: ["Kaelthorne Draszek"] });
   });
 
   test("a word already there isn't added twice, whatever its case", () => {
@@ -903,10 +903,10 @@ describe("dictionary", () => {
     expect(app.dictionary).toEqual([{ word: "Xyvora", learned: false, lastUsed: 3 }, { word: "TabMail", learned: true, lastUsed: 2 }]);
   });
 
-  /** Owner, 2026-10-07: a dictation sends the words most important first, since the backend gives a
-   * model that takes fewer the first ones (its ADR-025): the typed, then the learned, each most
-   * recently used first. */
-  test("sends the typed words, then the learned, each most recently used first", () => {
+  /** Owner, 2026-10-07: a dictation takes the typed words and the learned apart, each most recently used
+   * first, so that when the dictionary has more than its share of the words sent the ones used last go
+   * (`dictationVocabulary`, #309). */
+  test("takes the typed words and the learned, each most recently used first", () => {
     const app = settings();
     app.learnWords(["Brevalle"]);
     app.addWord("Xyvora");
@@ -916,25 +916,25 @@ describe("dictionary", () => {
     app.useWords(["a note on Brevalle"]);
     app.addWord("xyvora");
     expect(app.dictionary.map((entry) => entry.word)).toEqual(["Brevalle", "xyvora", "Kaelthorne Draszek", "TabMail", "Zorblax"]);
-    expect(app.dictation(null).dictionary).toEqual(["xyvora", "TabMail", "Brevalle", "Zorblax", "Kaelthorne Draszek"]);
+    expect(app.dictation(null).dictionary).toEqual({ typed: ["xyvora", "TabMail"], learned: ["Brevalle", "Zorblax", "Kaelthorne Draszek"] });
   });
 
   /** Words used at once (learned in one correction, or in one dictation's text) keep their stored
    * order when sent, whichever way round they were stored. */
   test.each([
-    [["Brevalle", "Zorblax"], ["Xyvora", "Brevalle", "Zorblax"]],
-    [["Zorblax", "Brevalle"], ["Xyvora", "Zorblax", "Brevalle"]],
-  ])("sends words used at once in their stored order: learned %j", (learned, sent) => {
+    [["Brevalle", "Zorblax"]],
+    [["Zorblax", "Brevalle"]],
+  ])("takes words used at once in their stored order: learned %j", (learned) => {
     const app = settings();
     app.learnWords(learned);
     app.addWord("Xyvora");
-    expect(app.dictation(null).dictionary).toEqual(sent);
+    expect(app.dictation(null).dictionary).toEqual({ typed: ["Xyvora"], learned });
   });
 
-  /** Owner, 2026-10-02: of the 200 words the backend takes with a dictation, the dictionary's come
-   * first, at most 150, at most 100 of them typed; learned words fill the rest, all 150 when none is
-   * typed; the screen's terms fill what the dictionary leaves. */
-  test("holds the words sent beside the screen's, at most 100 typed", () => {
+  /** Owner, 2026-10-02: the dictionary holds at most 150 words, at most 100 of them typed; learned words
+   * fill the rest, all 150 when none is typed. Which of them a dictation sends is
+   * `dictationVocabulary`'s (#309). */
+  test("holds at most 150 words, at most 100 typed", () => {
     expect([config.vocabularyMaxTerms, config.dictionaryMaxEntries, config.dictionaryMaxTypedWords]).toEqual([200, 150, 100]);
     const app = settings();
     const learned = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `learned${index}`);

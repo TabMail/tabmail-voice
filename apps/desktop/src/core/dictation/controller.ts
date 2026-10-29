@@ -21,6 +21,8 @@ import { joinChunkTexts } from "./chunkJoin.js";
 import { DictationCleanup, spacedFromCaret } from "./cleanup.js";
 import * as config from "../config.js";
 import { contextTerms } from "../dictionary/contextTerms.js";
+import type { DictionaryWords } from "../dictionary/entries.js";
+import { dictationVocabulary } from "../dictionary/vocabulary.js";
 import { type DictationMode, type HotkeyAction, toggled } from "../hotkey/bindings.js";
 import { TransportError } from "../backend/http.js";
 import { LevelEnvelope } from "../audio/levelEnvelope.js";
@@ -680,19 +682,17 @@ export class DictationController extends Observable {
     }
   }
 
-  /** The names and terms on the screen read at key-down (`contextTerms`), sent with the recording
-   * after the dictionary's words, as many as the vocabulary has room for (ADR-DESK-038): those of what
-   * the window shows first, only if that read is done by the upload (a dictation waits `contextWait`
-   * for it, agent mode not at all), then those of the whole window in the room left, only if it is
-   * done by then too (never waited for: ADR-DESK-016, 2026-10-25); none when the screen is not read. */
-  private screenTerms(dictionary: readonly string[]): string[] {
-    const termsOf = (screen: ScreenContext | null, excluding: readonly string[], max: number) =>
-      screen && max > 0 ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, excluding, max) : [];
-    const room = config.vocabularyMaxTerms - dictionary.length;
-    const shown = termsOf(this.screenRead, dictionary, room);
-    const window = termsOf(this.screenRead && this.windowScreen, [...dictionary, ...shown], room - shown.length);
-    log.debug(() => `DictationController: sending ${dictionary.length} dictionary word(s), ${shown.length} screen term(s) and ${window.length} from the whole window`);
-    return [...shown, ...window];
+  /** The terms sent with the recording (`dictationVocabulary`, ADR-DESK-038): the dictionary's words
+   * and the names and terms on the screen read at key-down (`contextTerms`), those of what the window
+   * shows only if that read is done by the upload (a dictation waits `contextWait` for it, agent mode
+   * not at all), those of the whole window only if it is done by then too (never waited for:
+   * ADR-DESK-016, 2026-10-25); none when the screen is not read. With `cleans`, the terms that don't
+   * fit the speech model's share follow, for the cleanup. */
+  private vocabulary(dictionary: DictionaryWords, cleans: boolean): string[] {
+    const termsOf = (screen: ScreenContext | null) => (screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, config.vocabularyMaxTerms) : []);
+    const vocabulary = dictationVocabulary(dictionary, termsOf(this.screenRead), termsOf(this.screenRead && this.windowScreen), cleans);
+    log.debug(() => `DictationController: sending ${vocabulary.length} term(s) of ${dictionary.typed.length} typed and ${dictionary.learned.length} learned word(s)${cleans ? ", for the speech model and the cleanup" : ""}`);
+    return vocabulary;
   }
 
   /** Transcribes one recording, cleaned up in the same request, and inserts it (dictation), or
@@ -759,10 +759,10 @@ export class DictationController extends Observable {
       if (waited?.late) log.debug(`DictationController: screen read not done in time (waited ${elapsed(waiting)}); continuing without it`);
       else if (waited) log.debug(() => `DictationController: waited ${elapsed(waiting)} for the screen read${waited.stopped ? ", stopped with what it had read" : ""}`);
     }
-    const cleanup = cleans ? DictationCleanup.variables(context, settings.dictionary) : undefined;
+    const cleanup = cleans ? DictationCleanup.variables(context, [...settings.dictionary.typed, ...settings.dictionary.learned]) : undefined;
     const client = this.deps.makeTranscriptionClient(settings.backendURL);
     const completions = this.deps.makeCompletionsClient(settings.backendURL);
-    const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
+    const vocabulary = this.vocabulary(settings.dictionary, cleans);
     return {
       send: (flac, signal) => withFreshToken(account, userID, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)),
       polish: cleanup
@@ -1449,7 +1449,7 @@ export class DictationController extends Observable {
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
       // Past the deadline the answer is abandoned below, which calls off its request and waits.
       const transcription = await this.withinDeadline(deadline, () =>
-        this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, settings.dictionary, token, signal)), isCurrent, signal),
+        this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, dictationVocabulary(settings.dictionary, [], [], false), token, signal)), isCurrent, signal),
       );
       if (!isCurrent()) return;
       const transcript = trimWhitespace(transcription.text);

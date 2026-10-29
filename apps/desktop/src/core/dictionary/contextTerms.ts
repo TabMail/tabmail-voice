@@ -11,11 +11,11 @@ import { dictionaryWord } from "./entries.js";
  * there. A dictionary built on the fly from the screen, picked on this Mac; only the words picked are
  * sent. A term is a word with a capital letter anywhere but at the start of a sentence (a name,
  * "TabMail", "OKR"); runs of them are kept together ("Kaelthorne Drake"); not everyday words, no
- * addresses. The most frequent first, then the earliest; none the same word as one in `excluding` or
- * another; each a valid dictionary word; at most `max`. TabMail on iOS picks them by the same rules
+ * addresses. The most frequent first, then the earliest; none the same word as another; each a valid
+ * dictionary word; at most `max`. TabMail on iOS picks them by the same rules
  * (its ADR-IOS-086).
  */
-export function contextTerms(text: string, excluding: readonly string[], max: number): string[] {
+export function contextTerms(text: string, max: number): string[] {
   const tallies = new Map<string, { term: string; count: number; first: number }>();
   const tally = (term: string) => {
     const word = dictionaryWord(term);
@@ -49,9 +49,7 @@ export function contextTerms(text: string, excluding: readonly string[], max: nu
     }
     endRun();
   }
-  const excluded = new Set(excluding.map((word) => word.toLowerCase()));
   return [...tallies.values()]
-    .filter(({ term }) => !excluded.has(term.toLowerCase()))
     .sort((a, b) => (a.count !== b.count ? b.count - a.count : a.first - b.first))
     .slice(0, max)
     .map(({ term }) => term);

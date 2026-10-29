@@ -9,7 +9,7 @@ import { type AgentToolID, isAgentToolID, switchableAgentToolIDs } from "./agent
 import * as config from "./config.js";
 import { type ExcludedApp, excludedApp, isBuiltInExcludedApp, isSameApp, storedExcludedApps } from "./dictation/excludedApps.js";
 import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dictation/excludedSites.js";
-import { type DictionaryEntry, dictionaryWord, isSameWord, leastRecentlyUsedLearned, nextUse, prioritizedWords, storedDictionary } from "./dictionary/entries.js";
+import { type DictionaryEntry, type DictionaryWords, dictionaryWord, dictionaryWords, isSameWord, leastRecentlyUsedLearned, nextUse, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { log } from "./log.js";
 import { aiOffLine } from "./ui/fileProblems.js";
@@ -78,9 +78,9 @@ export interface DictationSettings {
   /** The user's name, sent with agent mode's requests so the backend can tell the user's own messages
    * on screen from other people's; empty when not set. */
   userName: string;
-  /** The user's dictionary words (ADR-DESK-038), sent with the transcription and the cleanup, most
-   * important first (`prioritizedWords`). */
-  dictionary: string[];
+  /** The user's dictionary words (ADR-DESK-038), typed and learned, each most recently used first: all
+   * of them for the cleanup, the most important for the speech model (`dictationVocabulary`). */
+  dictionary: DictionaryWords;
   /** Whether the dictation's paste is watched to learn the user's corrections. */
   learnsWords: boolean;
   /** Whether the dictation asks for the backend's cleanup (and a long dictation for its final polish);
@@ -565,7 +565,7 @@ export class AppSettings extends Observable {
       emailClient: this.emailClient,
       hasTabMail: this.hasTabMail(),
       userName: this.sentUserName,
-      dictionary: prioritizedWords(this.dictionary),
+      dictionary: dictionaryWords(this.dictionary),
       learnsWords: readable && this.learnsWords,
       smartDictation: this.smartDictation,
       memorySizeLimit: this.memorySizeLimit,

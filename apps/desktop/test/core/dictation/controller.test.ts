@@ -70,7 +70,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const switchedOnTools: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
+  return { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: { typed: [], learned: [] }, learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -402,7 +402,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** The dictionary's words go with the transcription, for the speech model, and with the cleanup, one
    * per line (ADR-DESK-038). */
   test("sends the dictionary with the transcription and the cleanup", async () => {
-    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora", "Kaelthorne Draszek"] };
+    prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora", "Kaelthorne Draszek"], learned: [] } };
     transcription.enqueue(200, cleanedReply);
 
     const { pasted } = await dictate();
@@ -477,7 +477,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** The screen read is asked with the apps excluded at key-down; when the app in front is one of
    * them the read is null, and the dictation goes through with no screen context and no terms. */
   test("a dictation in an excluded app is pasted with no screen context and no screen terms", async () => {
-    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"], excludedApps: ["org.example.vault"], excludedSites: ["example.com"] };
+    prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] }, excludedApps: ["org.example.vault"], excludedSites: ["example.com"] };
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     const asked: ScreenExclusions[] = [];
@@ -499,7 +499,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A screen the helper hides for privacy is, to a dictation, no screen: its cleanup gets none,
    * and nothing is said of it (the note is for agent mode's tools). */
   test("a dictation with the screen hidden for privacy is pasted with no screen context", async () => {
-    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+    prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     controller.captureContext = async () => ({ hidden: true });
@@ -513,7 +513,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   });
 
   test("sends the screen's names and terms after the dictionary", async () => {
-    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+    prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     controller.captureContext = async () =>
@@ -526,43 +526,58 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(cleanupVars(0)?.dictionary).toBe("Xyvora");
   });
 
-  /** The screen's terms fill what the dictionary leaves of the 200 words a dictation sends: all 200
-   * with no dictionary, the rest beside a full one (owner, 2026-10-02). */
-  test.each<[DictationMode, number]>([
-    ["dictation", 0], ["dictation", 1], ["dictation", 150],
-    ["agent", 0], ["agent", 1], ["agent", 150],
-  ])("%s with %i dictionary words fills the rest of the vocabulary", async (mode, count) => {
-    const dictionary = Array.from({ length: count }, (_, index) => `Xyvora${index}`);
-    const names = Array.from({ length: config.vocabularyMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
-    prefs.value = { ...defaultSettings(), dictionary, enabledTools: ["compose"] };
+  /** #309 (owner, 2026-10-28): the speech model takes only the first 100 terms, so those are the most
+   * important (50 typed, 30 from the screen, 20 learned here); the cleanup reads every term, so with it
+   * the rest follow up to 200, and its dictionary holds every word. Without the cleanup (Smart
+   * Dictation off, or agent mode), only the first 100 go. */
+  test.each<[string, DictationMode, boolean]>([
+    ["dictation with the cleanup", "dictation", true],
+    ["dictation without the cleanup", "dictation", false],
+    ["agent mode", "agent", true],
+  ])("%s sends the most important terms first", async (_, mode, smartDictation) => {
+    const typed = Array.from({ length: 100 }, (_, index) => `Xyvora${index}`);
+    const learned = Array.from({ length: 50 }, (_, index) => `Zephrin${index}`);
+    const names = Array.from({ length: 80 }, (_, index) => `Brevalle${index}`);
+    prefs.value = { ...defaultSettings(), dictionary: { typed, learned }, smartDictation, enabledTools: ["compose"] };
     const written = "Synthetic composed result.";
-    transcription.enqueue(200, mode === "dictation" ? cleanedReply : { text: request });
+    transcription.enqueue(200, mode === "dictation" && smartDictation ? cleanedReply : { text: request });
     if (mode === "agent") completions.enqueue(200, writes("compose", written));
-    const { controller, pastes, copies, history } = makeController({ capture: new CountingCapture(true) });
-    let reads = 0;
-    controller.captureContext = async () => {
-      reads += 1;
-      return blankScreen({ appName: "Example Mail", renderedText: `ask ${names.join(", ")}` });
-    };
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    controller.captureContext = async () => blankScreen({ appName: "Example Mail", renderedText: `ask ${names.join(", ")}` });
 
     await holdAndRelease(controller, mode);
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-    expect(controller.mode).toBe(mode);
-    expect(reads).toBe(1);
-    expect(transcription.requests).toHaveLength(1);
-    expect(transcription.body(0).vocabulary).toEqual([...dictionary, ...names.slice(0, config.vocabularyMaxTerms - count)]);
-    expect(cleanupVars(0)?.dictionary).toBe(mode === "dictation" ? dictionary.join("\n") : undefined);
-    const delivered = mode === "dictation" ? cleaned : written;
-    expect(pastes).toEqual([delivered]);
-    expect(copies).toEqual([]);
-    expect(history.entries.map((entry) => entry.text)).toEqual([delivered]);
-    expect(completions.requests).toHaveLength(mode === "dictation" ? 0 : 1);
+    const first = [...typed.slice(0, 50), ...names.slice(0, 30), ...learned.slice(0, 20)];
+    const cleans = mode === "dictation" && smartDictation;
+    expect(transcription.body(0).vocabulary).toEqual(cleans ? [...first, ...typed.slice(50), ...learned.slice(20), ...names.slice(30, 50)] : first);
+    expect(cleanupVars(0)?.dictionary).toBe(cleans ? [...typed, ...learned].join("\n") : undefined);
+  });
+
+  /** With no dictionary the screen's terms take all the room: the first 200 with the cleanup, the
+   * first 100 without it. */
+  test.each<[string, DictationMode, boolean]>([
+    ["dictation with the cleanup", "dictation", true],
+    ["dictation without the cleanup", "dictation", false],
+    ["agent mode", "agent", true],
+  ])("%s with no dictionary sends as many screen terms as there is room for", async (_, mode, smartDictation) => {
+    const names = Array.from({ length: config.vocabularyMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
+    prefs.value = { ...defaultSettings(), smartDictation, enabledTools: ["compose"] };
+    transcription.enqueue(200, mode === "dictation" && smartDictation ? cleanedReply : { text: request });
+    if (mode === "agent") completions.enqueue(200, writes("compose", "Synthetic composed result."));
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    controller.captureContext = async () => blankScreen({ appName: "Example Mail", renderedText: `ask ${names.join(", ")}` });
+
+    await holdAndRelease(controller, mode);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    const cleans = mode === "dictation" && smartDictation;
+    expect(transcription.body(0).vocabulary).toEqual(names.slice(0, cleans ? config.vocabularyMaxTerms : config.vocabularyModelMaxTerms));
   });
 
   /** The recording waits at most `contextWait` for the screen read: one not done by then adds no terms. */
   test("a screen read not done yet adds no terms", async () => {
-    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+    prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     const read = deferred<ScreenContext | null>();
@@ -583,7 +598,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     const whole = blankScreen({ appName: "Example Mail", renderedText: "Earlier from Brevalle Labs\nAsk Kaelthorne Drake about Xyvora and Quillon" });
 
     test("fill the room the window's shown terms leave", async () => {
-      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const captured: Promise<ScreenRead | null>[] = [];
@@ -605,9 +620,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Drake", "Brevalle Labs", "Quillon"]);
     });
 
-    test("only as many as there is room for", async () => {
-      const dictionary = Array.from({ length: config.vocabularyMaxTerms - 2 }, (_, index) => `Zephrin${index}`);
-      prefs.value = { ...defaultSettings(), dictionary };
+    test("only as many as there is room for in the first 100, the rest for the cleanup", async () => {
+      const dictionary = Array.from({ length: config.vocabularyModelMaxTerms - 2 }, (_, index) => `Zephrin${index}`);
+      prefs.value = { ...defaultSettings(), dictionary: { typed: dictionary, learned: [] } };
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.captureContext = async () => shown;
@@ -616,7 +631,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await holdAndRelease(controller);
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-      expect(transcription.body(0).vocabulary).toEqual([...dictionary, "Kaelthorne Drake", "Brevalle Labs"]);
+      // The first 100: the dictionary, the shown term, one from the whole window; the cleanup gets the rest.
+      expect(transcription.body(0).vocabulary).toEqual([...dictionary, "Kaelthorne Drake", "Brevalle Labs", "Xyvora", "Quillon"]);
     });
 
     test.each<[string, Promise<ScreenRead | null>]>([
@@ -624,7 +640,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["hidden", Promise.resolve({ hidden: true })],
       ["not read", Promise.resolve(null)],
     ])("none from a whole window %s", async (_, window) => {
-      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.captureContext = async () => shown;
@@ -639,7 +655,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** An earlier dictation's whole window answering once a newer one has started and read its own
      * gives the newer one none of its terms: only the newer whole window's are sent. */
     test("an earlier dictation's whole window answering late gives a newer one none of its terms", async () => {
-      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
       transcription.enqueue(200, cleanedReply);
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -3283,7 +3299,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
+          prefs.value = { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", keepsRecording: false, readsScreen: false, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: { typed: ["Xyvora"], learned: [] }, learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitChoices[0] ?? 0, eventDuration: config.eventDurationChoices[0] ?? 0 };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions, target) => {
@@ -5784,14 +5800,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           /** The answer is transcribed with the request's settings as they were when it started (the
            * backend, the keyboard's language, the dictionary), not as they were changed while the question
-           * showed, and with no cleanup. */
+           * showed, and with no cleanup: so only the first 100 dictionary words (#309). */
           test("the answer is transcribed with the request's language and dictionary", async () => {
             keyboard.language = "ko";
-            prefs.value = { ...prefs.value, backendURL: "https://first.example.com", dictionary: ["Xyvora"] };
+            const typed = ["Xyvora", ...Array.from({ length: 79 }, (_, index) => `Typed${index}`)];
+            const learned = Array.from({ length: 80 }, (_, index) => `Learned${index}`);
+            prefs.value = { ...prefs.value, backendURL: "https://first.example.com", dictionary: { typed, learned } };
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
-            prefs.value = { ...prefs.value, backendURL: "https://second.example.com", dictionary: ["Changed"] };
+            prefs.value = { ...prefs.value, backendURL: "https://second.example.com", dictionary: { typed: ["Changed"], learned: [] } };
             keyboard.language = "fr";
 
             await sayAloud(controller, "Yes, add Xyvora.");
@@ -5800,7 +5818,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(transcription.requests).toHaveLength(2);
             expect(hosts(transcription)).toEqual(["first.example.com", "first.example.com"]);
             expect(transcription.body(1).language).toBe("ko");
-            expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
+            expect(transcription.body(1).vocabulary).toEqual([...typed.slice(0, 50), ...learned.slice(0, 50)]);
             expect(transcription.body(1).cleanup).toBeUndefined();
             expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
           });
@@ -7933,7 +7951,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * cleanups, joined, go through the cleanup prompt once more as a whole, with the dictation's cleanup
      * variables, and its reply is pasted. */
     test("is polished as a whole once its chunks are in, and the polish is pasted", async () => {
-      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      prefs.value = { ...defaultSettings(), dictionary: { typed: ["Xyvora"], learned: [] } };
       completions.enqueue(200, reply("Part zero, part one and part two."));
       const backend = new ChunkBackend(part);
       const { controller, capture, pastes } = makeLong(backend);
