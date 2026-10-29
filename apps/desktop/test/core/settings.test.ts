@@ -931,11 +931,11 @@ describe("dictionary", () => {
     expect(app.dictation(null).dictionary).toEqual({ typed: ["Xyvora"], learned });
   });
 
-  /** Owner, 2026-10-02: the dictionary holds at most 150 words, at most 100 of them typed; learned words
-   * fill the rest, all 150 when none is typed. Which of them a dictation sends is
-   * `dictationVocabulary`'s (#309). */
-  test("holds at most 150 words, at most 100 typed", () => {
-    expect([config.vocabularyMaxTerms, config.dictionaryMaxEntries, config.dictionaryMaxTypedWords]).toEqual([200, 150, 100]);
+  /** Owner, 2026-10-28 (#310): the dictionary holds at most 5,000 words (150 before), at most 100 of
+   * them typed; learned words fill the rest, all 5,000 when none is typed. Which of them a dictation
+   * sends is `dictationVocabulary`'s (#309) and the cleanup's 500 (`cleanupDictionaryMaxWords`). */
+  test("holds at most 5,000 words, at most 100 typed", () => {
+    expect([config.dictionaryMaxEntries, config.dictionaryMaxTypedWords]).toEqual([5_000, 100]);
     const app = settings();
     const learned = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `learned${index}`);
     expect(app.learnWords(learned)).toHaveLength(config.dictionaryMaxEntries);
@@ -967,11 +967,13 @@ describe("dictionary", () => {
    * typed cap), takes the place of the learned word used least recently (not the one learned first),
    * and a typed word is never dropped. */
   describe("when full", () => {
-    /** A dictionary of typed words, then learned ones, each used once, in order. */
+    /** A dictionary of typed words, then learned ones, each used once, in order: as stored by adding
+     * and learning them one at a time, without the thousands of writes. */
     function full(typed: number): AppSettings {
-      const app = settings();
-      for (let index = 0; index < typed; index += 1) app.addWord(`typed${index}`);
-      for (let index = typed; index < config.dictionaryMaxEntries; index += 1) app.learnWords([`learned${index}`]);
+      const stored = Array.from({ length: config.dictionaryMaxEntries }, (_, index) =>
+        index < typed ? { word: `typed${index}`, learned: false, lastUsed: index + 1 } : { word: `learned${index}`, learned: true, lastUsed: index + 1 },
+      );
+      const app = settings(new MemoryStore({ dictionary: stored }));
       expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
       return app;
     }
@@ -1016,7 +1018,8 @@ describe("dictionary", () => {
       const app = full(config.dictionaryMaxTypedWords);
       expect(app.addWord("Xyvora")).toBe("full");
       const learned = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `later${index}`);
-      for (const word of learned) expect(app.learnWords([word])).toEqual([word]);
+      // Learned a hundred at a time, each correction after the last.
+      for (let start = 0; start < learned.length; start += 100) expect(app.learnWords(learned.slice(start, start + 100))).toEqual(learned.slice(start, start + 100));
       expect(words(app)).toHaveLength(config.dictionaryMaxEntries);
       expect(words(app).slice(0, config.dictionaryMaxTypedWords)).toEqual(Array.from({ length: config.dictionaryMaxTypedWords }, (_, index) => `typed${index}`));
       expect(words(app).slice(config.dictionaryMaxTypedWords)).toEqual(learned.slice(-(config.dictionaryMaxEntries - config.dictionaryMaxTypedWords)));
@@ -1130,6 +1133,26 @@ describe("dictionary", () => {
     ]);
     expect(dictionary).toHaveLength(config.dictionaryMaxEntries);
     expect(settings(new MemoryStore({ dictionary: "Xyvora" })).dictionary).toEqual([]);
+  });
+
+  /** #310: the dictionary is read several times a dictation, and holds thousands of words; each stored
+   * word is looked up once among those kept, not compared with each of them. A full dictionary, each
+   * word stored four times in other cases, reads back once each, well within the bound. */
+  test("reads a full dictionary in one pass", () => {
+    const stored = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => [
+      { word: `Word${index}`, learned: true, lastUsed: index + 1 },
+      { word: `WORD${index}`, learned: true, lastUsed: index + 1 },
+      { word: `word${index}`, learned: true, lastUsed: index + 1 },
+      { word: `wORD${index}`, learned: true, lastUsed: index + 1 },
+    ]).flat();
+    const app = settings(new MemoryStore({ dictionary: stored }));
+    // Loose, for a busy machine: one pass takes milliseconds, the pairwise one well over a second.
+    const bound = 500;
+    const start = performance.now();
+    const dictionary = app.dictionary;
+    const elapsed = performance.now() - start;
+    expect(dictionary.map((entry) => entry.word)).toEqual(Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `Word${index}`));
+    expect(elapsed).toBeLessThan(bound);
   });
 });
 

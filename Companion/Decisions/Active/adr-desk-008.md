@@ -81,7 +81,7 @@ deadline) or absent (a backend from before this change) (`DictationCleanup.paste
   the upload, as this ADR required).
 - Agent mode's transcription sends no `cleanup` and is unchanged.
 - Every field is cut to the backend's per-field limit (`config.cleanupFieldMaxLength`, 20,000 UTF-16
-  code units, its `cleanup.maxFieldChars`), its start kept, between characters. Over the limit the
+  code units, its `cleanup.maxFieldChars`; 30,000 from 2026-10-29, #310), its start kept, between characters. Over the limit the
   backend refuses the whole request, the transcription included, and a window title is whatever the
   app or web page sets. The cut bounds the cleanup model's input only.
 
@@ -181,3 +181,11 @@ true: the backend's cleanup handles most typos, so a new install, and a user who
 switch, gets it. A choice the user saved is kept, so whoever switched it off stays off. Opt Out of AI
 still means no cleanup: it starts no dictation at all. The switch in Settings › Dictation now adds that
 turning it off gives faster, word-for-word dictation. Everything else in the 2026-10-05 amendment stands.
+
+**Amendment 2026-10-29 — more of the screen for the cleanup (owner, #310).** Measured 2026-10-28 with
+the cleanup's other lists: `screen_text` may run to 8,000 characters around the caret,
+`cleanupContextBefore` 6,000 (was 500) and `cleanupContextAfter` 2,000 (was 200), most of it before
+the caret, where what the dictation follows is. `cleanupFieldMaxLength` follows the backend's
+`cleanup.maxFieldChars` to 30,000, which also fits the cleanup's dictionary of 500 words (ADR-DESK-038,
+#310). Agent mode still gets the whole screen. The rest of the 2026-09-28 amendment stands.
+

@@ -204,7 +204,9 @@ recently used first; Settings' order and the stored order are unchanged). For ex
 learned and 80 screen terms send 50 typed, 30 screen and 20 learned; 100 typed, no learned and 80
 screen terms send 70 typed and 30 screen.
 
-Owner, the same day: only the speech model is limited to 100, not the cleanup. With the cleanup (Smart
+Owner, the same day: only the speech model is limited to 100, not the cleanup. *Amended 2026-10-29
+(#310), below: the dictionary's words past the first 100 now go only in the cleanup's own dictionary,
+and the screen's terms run to 500.* With the cleanup (Smart
 Dictation on, in dictation mode or for a long dictation's chunks, whatever mode it ends in), the words that didn't fit follow the first 100, up to
 `vocabularyMaxTerms` (200, the backend's limit): the rest of the dictionary (typed, then learned, each
 most recently used first), the rest of the screen's terms, the rest of the whole window's. Without it
@@ -218,3 +220,44 @@ setting is read from the dictation's settings snapshot taken at key-down.
   controller.test.ts` ("dictation with the cleanup / without the cleanup / agent mode sends the most
   important terms first", the whole window's terms, the spoken answer's first 100), `settings.test.ts`
   (typed and learned apart, each most recently used first).
+
+**Amendment 2026-10-29 — a far larger learned dictionary, and more for the cleanup (owner, #310).** The
+cleanup can take far more than the speech model's 100 terms. Measured 2026-10-28: the cleanup gets
+slower and fixes fewer words as its lists grow (several seconds per cleanup past 2,000 dictionary
+words), so each list stops at 500. The backend raised its limits first (`vocabulary.maxTerms` 1,000,
+`cleanup.maxFieldChars` 30,000, live in production 2026-10-29); the app never sends more than it takes.
+- **Storage:** `dictionaryMaxEntries` 150 → 5,000. Typed words keep their cap (100); learned words fill
+  the rest, and a full dictionary still drops the learned word used least recently. Reading the stored
+  list looks each word up once in a set of those kept (`storedDictionary`), one pass however long: a
+  pairwise comparison took about 400 ms at 5,000 words, read several times a dictation.
+- **The cleanup's dictionary** (`cleanupDictionary`): at most `cleanupDictionaryMaxWords` (500) of the
+  user's words, typed first, then learned, each most recently used first. Every typed word fits (at
+  most 100), and so does every dictionary word in the first 100. The screen's terms now leave out only
+  these words, not the whole dictionary: an on-screen word among them reaches the cleanup in its
+  dictionary, and one past them (a learned word long unused) is sent as a screen term like any other,
+  so it reaches the cleanup in one list or the other. The backend's `cleanupScreenTerms` (the
+  vocabulary less the cleanup's dictionary) stays the screen's terms alone.
+- **The vocabulary:** the first 100 chosen as #309 does (with more than 500 dictionary words, a
+  long-unused learned word on screen is a screen term there, as below). With the cleanup, the rest of the
+  screen's terms follow, then the rest of the whole window's, up to `cleanupScreenMaxTerms` (500) of
+  theirs in all, those in the first 100 counted (the owner's "at most 500 screen and whole-window
+  terms"). The dictionary's words past the first 100 are not sent there any more: they reach the
+  cleanup in its own dictionary. Without the cleanup, only the first 100, as before.
+- **`contextTerms`** returns every term on screen, most frequent first, and no longer takes a `max`:
+  `dictationVocabulary` drops the cleanup's dictionary words and takes as many as it has room for, so
+  the user's words on screen, however many and however often shown, take none of the screen terms'
+  room.
+- **Settings › Dictionary** shows how many words the user added and how many were learned, and a
+  field that shows only the words containing what is typed in it, whatever the case, so a word can be
+  found and removed in a list of thousands. The learning switch's note says up to 5,000 words, and the
+  dictionary's caption that the ones used most are sent with each dictation.
+- Device Sync does not carry the dictionary, so the larger cap changes nothing there.
+- Tests: `dictionary/vocabulary.test.ts` (the cleanup's first 100 equal to the list without it, then
+  the screen's rest up to 500, the whole window's terms in the first 100 counted, no dictionary words
+  past the first 100, a word past the cleanup's 500 on screen sent as a screen term, the cleanup's
+  dictionary and the numbers within the backend's limits), `dictation/controller.test.ts` (the
+  cleanup's dictionary of 500, typed first;
+  500 screen terms with no dictionary; the user's words on screen taking none of the screen terms'
+  room), `dictionary/contextTerms.test.ts` (every term, however many), `settings.test.ts` (5,000 words,
+  a full dictionary read in one pass within a loose time bound), `renderer/settings/index.test.ts`
+  (counts and the filter).

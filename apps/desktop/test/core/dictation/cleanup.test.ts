@@ -74,6 +74,12 @@ describe("DictationCleanup.variables", () => {
 /** The cleanup gets only the text around the caret (owner, 2026-09-28: the whole screen made it
  * slow); agent mode still gets the whole screen. */
 describe("the cleanup's screen text", () => {
+  /** #310, measured: up to 8,000 characters in all, 6,000 before the caret; the backend's field limit
+   * (raised with it) is far above that. */
+  test("the numbers are the owner's", () => {
+    expect([config.cleanupContextBefore, config.cleanupContextAfter, config.cleanupFieldMaxLength]).toEqual([6_000, 2_000, 30_000]);
+  });
+
   const before = "b".repeat(config.cleanupContextBefore);
   const after = "a".repeat(config.cleanupContextAfter);
   const page = `## Inbox\n${"An earlier message on screen.\n".repeat(200)}`;
@@ -128,7 +134,7 @@ describe("the cleanup's screen text", () => {
   test("takes the marker on the focused field only", () => {
     expect(around("A page about the ‸ character\n» Hello ‸")).toBe("A page about the ‸ character\n» Hello ‸");
     const tail = " ‸ in the page\n» Hello ";
-    expect(around(`${"x".repeat(1_000)}${tail}‸`)).toBe(`${"x".repeat(config.cleanupContextBefore - tail.length)}${tail}‸`);
+    expect(around(`${"x".repeat(config.cleanupContextBefore * 2)}${tail}‸`)).toBe(`${"x".repeat(config.cleanupContextBefore - tail.length)}${tail}‸`);
   });
 
   /** Without the helper's marker (a terminal without tmux keeps its lines as a plain field), the
@@ -183,8 +189,8 @@ describe("the cleanup's screen text", () => {
     expect(around("## Chat", { textBeforeCaret: "Dear Sam,\r\nThanks for the", textAfterCaret: " notes" })).toBe("## Chat\n» Dear Sam,\r\nThanks for the‸ notes");
     expect(around("## Inbox\nA page with no field")).toBe("## Inbox\nA page with no field\n» ‸");
     expect(around("")).toBe("» ‸");
-    const long = "x".repeat(1_000);
-    expect(around(long, { textAfterCaret: "y".repeat(1_000) })).toBe(`${"x".repeat(config.cleanupContextBefore - 3)}\n» ‸${"y".repeat(config.cleanupContextAfter)}`);
+    const long = "x".repeat(config.cleanupContextBefore * 2);
+    expect(around(long, { textAfterCaret: "y".repeat(config.cleanupContextAfter * 2) })).toBe(`${"x".repeat(config.cleanupContextBefore - 3)}\n» ‸${"y".repeat(config.cleanupContextAfter)}`);
   });
 
   test("is empty without a screen read", () => {

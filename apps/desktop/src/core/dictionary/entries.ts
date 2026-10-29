@@ -72,12 +72,15 @@ export function leastRecentlyUsedLearned(entries: readonly DictionaryEntry[], us
 export function storedDictionary(stored: unknown): DictionaryEntry[] {
   if (!Array.isArray(stored)) return [];
   const entries: DictionaryEntry[] = [];
+  // The words kept, as `isSameWord` compares them: one look each, however long the list (#310).
+  const kept = new Set<string>();
   for (const item of stored) {
     if (entries.length === config.dictionaryMaxEntries) break;
     if (!item || typeof item !== "object") continue;
     const { word, learned, lastUsed } = item as Record<string, unknown>;
     if (typeof word !== "string" || typeof learned !== "boolean" || dictionaryWord(word) !== word) continue;
-    if (entries.some((entry) => isSameWord(entry.word, word))) continue;
+    if (kept.has(word.toLowerCase())) continue;
+    kept.add(word.toLowerCase());
     entries.push({ word, learned, lastUsed: typeof lastUsed === "number" && Number.isSafeInteger(lastUsed) && lastUsed > 0 ? lastUsed : 0 });
   }
   return entries;
