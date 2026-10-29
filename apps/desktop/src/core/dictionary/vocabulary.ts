@@ -34,16 +34,14 @@ export function dictationVocabulary(dictionary: DictionaryWords, shown: readonly
 
   const sent: string[] = [];
   const seen = new Set<string>();
-  /** Adds `terms` not sent yet while fewer than `max` are; how many it added. */
+  /** Adds `terms` not sent yet while fewer than `max` are. */
   const add = (terms: readonly string[], max: number) => {
-    const before = sent.length;
     for (const term of terms) {
       if (sent.length >= max) break;
       if (seen.has(key(term))) continue;
       seen.add(key(term));
       sent.push(term);
     }
-    return sent.length - before;
   };
   add(typed.slice(0, typedSent), config.vocabularyModelMaxTerms);
   // The screen's terms go before the learned words, in the room those leave.

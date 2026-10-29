@@ -560,8 +560,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(cleanupVars(0)?.dictionary).toBe(cleans ? [...typed, ...learned.slice(0, config.cleanupDictionaryMaxWords - typed.length)].join("\n") : undefined);
   });
 
-  /** With no dictionary the screen's terms take all the room: the first 500 with the cleanup (#310),
-   * the first 100 without it. */
+  /** With no dictionary the screen's terms take all the room: the first 100 and 500 more with the
+   * cleanup (#310; owner, 2026-10-29), the first 100 without it. */
   test.each<[string, DictationMode, boolean]>([
     ["dictation with the cleanup", "dictation", true],
     ["dictation without the cleanup", "dictation", false],

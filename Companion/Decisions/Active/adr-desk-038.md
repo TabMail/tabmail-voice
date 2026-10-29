@@ -206,7 +206,8 @@ screen terms send 70 typed and 30 screen.
 
 Owner, the same day: only the speech model is limited to 100, not the cleanup. *Amended 2026-10-29
 (#310), below: the dictionary's words past the first 100 now go only in the cleanup's own dictionary,
-and the screen's terms run to 500.* With the cleanup (Smart
+and the screen's terms run to 500; those in the first 100 are counted apart since a later 2026-10-29
+amendment, below.* With the cleanup (Smart
 Dictation on, in dictation mode or for a long dictation's chunks, whatever mode it ends in), the words that didn't fit follow the first 100, up to
 `vocabularyMaxTerms` (200, the backend's limit): the rest of the dictionary (typed, then learned, each
 most recently used first), the rest of the screen's terms, the rest of the whole window's. Without it
@@ -261,7 +262,8 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
   500 screen terms with no dictionary; the user's words on screen taking none of the screen terms'
   room), `dictionary/contextTerms.test.ts` (every term, however many), `settings.test.ts` (5,000 words,
   a full dictionary read in one pass within a loose time bound), `renderer/settings/index.test.ts`
-  (counts and the filter).
+  (counts and the filter). *The counting tests are superseded 2026-10-29 (owner): the screen terms in the
+  first 100 are not counted, see the amendment below.*
 
 **Amendment 2026-10-29 (owner): the dictionary's caption makes no claim about which words go.**
 Settings › Dictionary's caption reads "Names and terms spelled your way, kept on this computer.
