@@ -88,6 +88,8 @@ describe("IPC", () => {
       { type: "setEventDuration", value: config.eventDurationMax },
       { type: "removeMemory", memId: "turn:example" },
       { type: "removeMemory", memId: "x".repeat(config.memoryIDMaxLength) },
+      { type: "removeOldMemory", days: 1 },
+      { type: "removeOldMemory", days: config.memoryRemoveOldDaysMax },
     ]) {
       expect(isCommand(command), command.type).toBe(true);
     }
@@ -169,6 +171,12 @@ describe("IPC", () => {
     { type: "removeMemory" },
     { type: "removeMemory", memId: 1 },
     { type: "removeMemory", memId: "x".repeat(config.memoryIDMaxLength + 1) },
+    { type: "removeOldMemory" },
+    { type: "removeOldMemory", days: "30" },
+    { type: "removeOldMemory", days: 0 },
+    { type: "removeOldMemory", days: config.memoryRemoveOldDaysMax + 1 },
+    { type: "removeOldMemory", days: 1.5 },
+    { type: "removeOldMemory", days: Number.NaN },
   ])("a malformed command is refused (%j)", (command) => {
     expect(isCommand(command)).toBe(false);
   });

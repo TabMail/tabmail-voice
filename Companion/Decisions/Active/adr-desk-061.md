@@ -200,7 +200,8 @@ Thunderbird's copy or its files.
 > `memoryRemoveBatch`). The schema version is unchanged, so nothing is indexed again; a memory
 > database written before 0.12.0 gets its date index once, on the helper's next open (#45). Voice
 > sends no `hello` and no `previewChars`, so the new capability flags and previews change nothing
-> here. Checked with Voice's own requests against the built helper.
+> here. Checked with Voice's own requests against the built helper. (Since #247, Remove Old sends
+> `previewChars`; see the amendment below.)
 
 > **Amended (2026-10-29, #246): Settings › Memory marks the search's words.** As Thunderbird's Chat
 > History does, a search's words are marked in each listed request and reply, so it shows why an entry
@@ -215,3 +216,23 @@ Thunderbird's copy or its files.
 > text and the replies' caption gray keep small text's 4.5:1 on it in both themes, Mark and MarkText in
 > forced colors; the request's 2-line and the reply's 3-line clamps stand. Tests: see `TESTS.md`
 > (`memoryHighlights`, `renderer/settings` › `memory`, `renderer/settings/style.test.ts`).
+
+> **Amended (2026-10-29, #247): Settings › Memory removes the requests older than a number of days.**
+> As Thunderbird's Chat History's Delete Old does, "Remove Old…" beside Clear All asks, in place as
+> Clear All asks, "Remove every request older than [days] days? This can't be undone.", the days a
+> field taking whole numbers from 1 to `memoryRemoveOldDaysMax` (365), `memoryRemoveOldDaysDefault`
+> (30) each time it opens; "Remove Old" is off while the field holds anything else, and the main
+> process refuses any other `removeOldMemory` days. The cutoff is Thunderbird's: entries dated before
+> now less the days (`to` one millisecond before it, the helper's bound being inclusive). The
+> requests are listed by date, newest first (`memorySearch` with no words), `memoryRemoveOldFetchRows`
+> (500) at a time with `previewChars` at `memoryRemoveOldPreviewChars` (1), so a page's reply never
+> carries whole entries, and each page is removed (`memoryRemoveBatch`) before the next is listed.
+> Thunderbird lists the next page from a cursor at the last date it listed; Voice needs none, because
+> the page it removed is gone from the next listing. A page shorter than the fetch ends it; a full page
+> of which nothing was removed ends it as a failure, so it never asks for the same page forever. It
+> says "Removed N requests older than D days." or "No requests older than D days."; when it fails
+> after removing some, "Removed N requests older than D days, then stopped. Try again.", and when
+> before, "Requests older than D days couldn't be removed. Try again." Either way the usage and the
+> list shown are read again. Thunderbird says "Delete" for its history; Voice's Memory says
+> "Remove" throughout. Tests: see `TESTS.md` (`memory/page.test.ts` › removing the old requests,
+> `renderer/settings` › `memory`, `shared/ipc`, `main/index`, `main/native/memoryHelper`).

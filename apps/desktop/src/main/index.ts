@@ -157,6 +157,7 @@ const commandWrites: Record<Command["type"], StoredFile | null> = {
   searchMemory: null,
   setMemorySizeLimit: "settings",
   removeMemory: null,
+  removeOldMemory: null,
   clearMemory: null,
   editWritingStyle: "knowledgeBase",
   editKnowledgeBase: "knowledgeBase",
@@ -1096,6 +1097,8 @@ function launch(): void {
         return memoryPage.setSizeLimit(command.value);
       case "removeMemory":
         return memoryPage.remove(command.memId, memoryListQuery());
+      case "removeOldMemory":
+        return memoryPage.removeOlderThan(command.days, memoryListQuery());
       case "clearMemory":
         return memoryPage.clear(memoryListQuery());
       case "editWritingStyle":

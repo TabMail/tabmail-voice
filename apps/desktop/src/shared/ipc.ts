@@ -239,6 +239,8 @@ export type Command =
   | { type: "searchMemory"; query: string }
   | { type: "setMemorySizeLimit"; value: number }
   | { type: "removeMemory"; memId: string }
+  /** Removes every exchange older than `days` days (#247). */
+  | { type: "removeOldMemory"; days: number }
   | { type: "clearMemory" }
   /** Settings › Personalization: a writing style section's or the knowledge base's bullets edited,
    * from those the page showed (`shown`); either text reset to its default; the texts put back as a
@@ -359,6 +361,8 @@ export function isCommand(value: unknown): value is Command {
       return typeof command.value === "number" && isEventDuration(command.value);
     case "removeMemory":
       return typeof command.memId === "string" && command.memId.length <= config.memoryIDMaxLength;
+    case "removeOldMemory":
+      return typeof command.days === "number" && Number.isInteger(command.days) && command.days >= 1 && command.days <= config.memoryRemoveOldDaysMax;
     case "removeExcludedApp":
       return typeof command.bundleIdentifier === "string" && command.bundleIdentifier.length <= config.bundleIdentifierMaxLength;
     case "excludeSite":

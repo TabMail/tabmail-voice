@@ -113,6 +113,7 @@ button.link:active:not(:disabled) {
 
 input[type="email"],
 input[type="text"],
+input[type="number"],
 select {
   box-sizing: border-box;
   padding: 3px 6px;

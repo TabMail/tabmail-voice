@@ -1112,6 +1112,65 @@ describe("Settings page", () => {
       expect(sent(commands)).toEqual([{ type: "clearMemory" }]);
     });
 
+    /** Remove Old (#247), as Thunderbird's Delete Old: the days asked for, then confirmed in place. */
+    test("Remove Old asks first with the days, the default to start; Cancel sends nothing, Remove Old sends the days", async () => {
+      const removeOld = () => button("Remove Old…");
+      const days = () => document.querySelector<HTMLInputElement>('input[aria-label="Days"]') as HTMLInputElement;
+      const { commands } = await open(kept);
+      await act(async () => removeOld().click());
+      expect(visibleText()).toContain("Remove every request older than");
+      expect(visibleText()).toContain("days? This can’t be undone.");
+      expect(days().value).toBe(String(config.memoryRemoveOldDaysDefault));
+      await act(async () => button("Cancel").click());
+      expect(sent(commands)).toEqual([]);
+      await act(async () => removeOld().click());
+      await act(async () => button("Remove Old").click());
+      await act(async () => removeOld().click());
+      await act(async () => type(days(), "7"));
+      await act(async () => button("Remove Old").click());
+      expect(sent(commands)).toEqual([
+        { type: "removeOldMemory", days: config.memoryRemoveOldDaysDefault },
+        { type: "removeOldMemory", days: 7 },
+      ]);
+      // Opened again, it starts from the default.
+      await act(async () => removeOld().click());
+      expect(days().value).toBe(String(config.memoryRemoveOldDaysDefault));
+    });
+
+    test.each(["", "0", String(config.memoryRemoveOldDaysMax + 1), "1.5", "-3", "abc"])("Remove Old takes no days of %j", async (typed) => {
+      const { commands } = await open(kept);
+      await act(async () => button("Remove Old…").click());
+      await act(async () => type(document.querySelector<HTMLInputElement>('input[aria-label="Days"]') as HTMLInputElement, typed));
+      expect(button("Remove Old").disabled).toBe(true);
+      await act(async () => button("Remove Old").click());
+      expect(sent(commands)).toEqual([]);
+    });
+
+    test("Remove Old takes one day and the most it offers", async () => {
+      const { commands } = await open(kept);
+      for (const typed of ["1", String(config.memoryRemoveOldDaysMax)]) {
+        await act(async () => button("Remove Old…").click());
+        await act(async () => type(document.querySelector<HTMLInputElement>('input[aria-label="Days"]') as HTMLInputElement, typed));
+        await act(async () => button("Remove Old").click());
+      }
+      expect(sent(commands)).toEqual([
+        { type: "removeOldMemory", days: 1 },
+        { type: "removeOldMemory", days: config.memoryRemoveOldDaysMax },
+      ]);
+    });
+
+    test("Remove Old says what it did", async () => {
+      await open(withMemory({ status: "Removed 12 requests older than 30 days." }));
+      expect(visibleText()).toContain("Removed 12 requests older than 30 days.");
+    });
+
+    test("Remove Old says why it stopped", async () => {
+      await open(kept, { error: "Removed 500 requests older than 30 days, then stopped. Try again." });
+      await act(async () => button("Remove Old…").click());
+      await act(async () => button("Remove Old").click());
+      expect(document.querySelector(".error")?.textContent).toBe("Removed 500 requests older than 30 days, then stopped. Try again.");
+    });
+
     test("Clear All shows why it failed", async () => {
       await open(kept, { error: "Memory couldn't be cleared. Try again." });
       await act(async () => clearAll().click());

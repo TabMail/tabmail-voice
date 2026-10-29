@@ -144,6 +144,35 @@ export class MemoryPage extends Observable {
     await this.load(query);
   }
 
+  /** Removes every exchange older than `days` days (#247), as Thunderbird's Delete Old: the newest of
+   * them listed by date `config.memoryRemoveOldFetchRows` at a time, with the shortest preview (only
+   * their ids are read), and each page removed before the next is listed, so the next listing is the
+   * next page; until a page comes short, or one removes nothing (what is left can't be removed). Says
+   * how many went; stopped by a failure, says how many went before it. The list is read again for
+   * `query` (the one shown when omitted). */
+  async removeOlderThan(days: number, query?: string): Promise<void> {
+    const to = new Date(Date.now() - days * 24 * 60 * 60 * 1_000 - 1).toISOString();
+    const older = `older than ${days} ${days === 1 ? "day" : "days"}`;
+    let removed = 0;
+    try {
+      while (this.exists()) {
+        const limit = config.memoryRemoveOldFetchRows;
+        const page = await this.store.search({ query: "", from: "", to, limit, previewChars: config.memoryRemoveOldPreviewChars });
+        const count = page.length === 0 ? 0 : await this.store.remove(page.map((hit) => hit.memId));
+        removed += count;
+        if (page.length < limit) break;
+        if (count === 0) throw new Error("nothing removed");
+      }
+    } catch (error) {
+      log.error(`MemoryPage: old requests couldn't be removed: ${errorName(error)}`);
+      this.update({ status: null });
+      await this.load(query);
+      throw new Error(removed === 0 ? `Requests ${older} couldn't be removed. Try again.` : `Removed ${requests(removed)} ${older}, then stopped. Try again.`, { cause: error });
+    }
+    this.update({ status: removed === 0 ? `No requests ${older}.` : `Removed ${requests(removed)} ${older}.` });
+    await this.load(query);
+  }
+
   /** Removes everything memory holds; says so only once it is done. Asked of memory whether or not
    * its database exists: a clear cut short can have deleted the database file and left its
    * write-ahead log, which holds the latest exchanges, and the next Clear All must remove it. The list
@@ -165,4 +194,9 @@ export class MemoryPage extends Observable {
     this.current = { ...this.current, ...change };
     this.changed();
   }
+}
+
+/** "1 request", "12 requests". */
+function requests(count: number): string {
+  return `${count} ${count === 1 ? "request" : "requests"}`;
 }

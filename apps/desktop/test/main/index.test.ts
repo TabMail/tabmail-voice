@@ -17,7 +17,7 @@ import { optedOutOfAIMemoryLine } from "../../src/core/settings.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
-import { memoryRow } from "../../src/core/memory/store.js";
+import { memoryRow, type MemorySearch } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
@@ -2094,6 +2094,9 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await send({ type: "removeMemory", memId: "turn:2" });
     expect(memory.rows.map((row) => row.memId)).toEqual(["turn:1"]);
 
+    await send({ type: "removeOldMemory", days: 1 });
+    expect(page().status).toBe("No requests older than 1 day.");
+
     await send({ type: "clearMemory" });
     expect(memory.rows).toEqual([]);
     expect(page().status).toBe("Memory cleared.");
@@ -2228,6 +2231,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       { type: "loadMemory" },
       { type: "searchMemory", query: "example" },
       { type: "removeMemory", memId: "example" },
+      { type: "removeOldMemory", days: 30 },
       { type: "clearMemory" },
       { type: "requestMicrophone" },
       { type: "requestAccessibility" },
@@ -2541,12 +2545,13 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // The size limit is kept in the settings file: it says how to fix it, as every such command does.
     expect(await send({ type: "setMemorySizeLimit", value: config.memorySizeLimitChoices.find((value) => value !== config.memorySizeLimitDefault) ?? 0 })).toEqual({ error: unsavedBecauseOf("settings") });
     expect([search?.mock.calls.length, trim?.mock.calls.length]).toEqual([0, 0]);
-    for (const command of [{ type: "loadMemory" }, { type: "removeMemory", memId: "turn:1" }, { type: "clearMemory" }] as const) {
+    for (const command of [{ type: "loadMemory" }, { type: "removeMemory", memId: "turn:1" }, { type: "removeOldMemory", days: 30 }, { type: "clearMemory" }] as const) {
       expect(await send(command)).toEqual({ error: null });
     }
     expect(remove?.mock.calls).toEqual([[["turn:1"]]]);
     expect(clear).toHaveBeenCalledTimes(1);
-    expect(search?.mock.calls.map(([asked]) => (asked as { query: string }).query)).toEqual(["", "", ""]);
+    const listed = search?.mock.calls.map(([asked]) => asked as { query: string; previewChars?: number }).filter((asked) => asked.previewChars === undefined);
+    expect(listed?.map((asked) => asked.query)).toEqual(["", "", "", ""]);
     expect([trim?.mock.calls.length, app.requests.length]).toEqual([0, 0]);
   });
 
@@ -2563,7 +2568,12 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const memory = app.memory;
     if (memory === null) throw new Error("no memory");
     const [search, trim, remove, clear] = (["search", "trim", "remove", "clear"] as const).map((method) => vi.spyOn(memory, method));
-    const queries = () => search?.mock.calls.map(([asked]) => (asked as { query: string }).query);
+    // The searches that list memory for Settings (Remove Old's own listings, asked with a preview, left out).
+    const queries = () =>
+      search?.mock.calls
+        .map(([asked]) => asked as { query: string; previewChars?: number })
+        .filter((asked) => asked.previewChars === undefined)
+        .map((asked) => asked.query);
     const settingsState = () => app.handlers.get(channels.getState)?.({}, "settings") as SettingsState;
     expect([settingsState().optsOutOfAI, app.trayState?.().optsOutOfAI]).toEqual([false, false]);
     // With AI on, the list keeps the search typed: after a removal, Clear All and a reload.
@@ -2585,11 +2595,22 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     }
     expect([app.stored.has("memorySizeLimit"), queries(), trim?.mock.calls.length]).toEqual([false, [], 0]);
     // Each command that reads the list again, run right after a search typed while AI was on, reads
-    // the newest: opening the section, a removal, Clear All, and a Clear All that failed.
+    // the newest: opening the section, a removal, Remove Old, Clear All, and a Remove Old and a Clear
+    // All that failed.
     clear?.mockRejectedValueOnce(new Error("busy"));
+    let failsOld = true;
+    search?.mockImplementation(async (asked: MemorySearch) => {
+      if (asked.previewChars !== undefined && failsOld) {
+        failsOld = false;
+        throw new Error("busy");
+      }
+      return (Object.getPrototypeOf(memory) as typeof memory).search.call(memory, asked);
+    });
     for (const [command, error] of [
       [{ type: "loadMemory" }, null],
       [{ type: "removeMemory", memId: "turn:1" }, null],
+      [{ type: "removeOldMemory", days: 30 }, "Requests older than 30 days couldn't be removed. Try again."],
+      [{ type: "removeOldMemory", days: 30 }, null],
       [{ type: "clearMemory" }, "Memory couldn't be cleared. Try again."],
       [{ type: "clearMemory" }, null],
     ] as const) {

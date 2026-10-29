@@ -107,7 +107,7 @@ function answer(method, params) {
         .filter((row) => (from === null || row.dateMs >= from) && (to === null || row.dateMs <= to))
         .sort((a, b) => b.dateMs - a.dateMs)
         .slice(0, params.limit)
-        .map(({ memId, content, dateMs }) => ({ memId, content, dateMs }));
+        .map(({ memId, content, dateMs }) => ({ memId, content: params.previewChars === undefined ? content : content.slice(0, params.previewChars), dateMs }));
     }
     case "memoryRead":
       return rows
