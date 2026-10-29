@@ -70,6 +70,9 @@ const light = {
   cardShadow: "0 1px 2px rgba(0, 0, 0, 0.06)",
   /** A usage bar's track (Settings › Memory), faint, so the accent filling it reads as the amount. */
   usageTrack: "rgba(0, 0, 0, 0.1)",
+  /** A search word marked in Settings › Memory's requests (#246): a wash of the accent, under text
+   * that stays in its own color. */
+  searchMatch: "rgba(0, 122, 255, 0.22)",
 };
 
 /** A theme, one color for each of `light`'s. */
@@ -108,6 +111,8 @@ const dark: Theme = {
   switchThumbShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
   cardShadow: "0 1px 2px rgba(0, 0, 0, 0.3)",
   usageTrack: "rgba(255, 255, 255, 0.12)",
+  // Faint enough that the replies' caption gray keeps small text's 4.5:1 over it.
+  searchMatch: "rgba(10, 132, 255, 0.2)",
 };
 
 export const palette = {

@@ -35,6 +35,28 @@ export interface MemoryPageState {
   status: string | null;
 }
 
+/** `text` in the parts Settings › Memory shows it in, each of `query`'s search words marked (`match`),
+ * as Thunderbird's Chat History marks them (#246): the words of at least
+ * `config.memoryHighlightMinLength` characters, wherever they occur and whatever their case, the
+ * longer word where two start at one place. Without such a word, all of it unmarked. */
+export function memoryHighlights(text: string, query: string): { text: string; match: boolean }[] {
+  const words = query
+    .split(/\s+/)
+    .filter((word) => word.length >= config.memoryHighlightMinLength)
+    .sort((a, b) => b.length - a.length);
+  if (words.length === 0) return [{ text, match: false }];
+  const pattern = new RegExp(words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  const parts: { text: string; match: boolean }[] = [];
+  let at = 0;
+  for (const found of text.matchAll(pattern)) {
+    if (found.index > at) parts.push({ text: text.slice(at, found.index), match: false });
+    parts.push({ text: found[0], match: true });
+    at = found.index + found[0].length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at), match: false });
+  return parts;
+}
+
 /** A size as Settings shows it, as Thunderbird's Chat History does: "1.9 MB", "1 GB". */
 export function formatBytes(bytes: number): string {
   const units = ["KB", "MB", "GB"];

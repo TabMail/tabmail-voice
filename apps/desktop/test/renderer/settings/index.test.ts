@@ -913,6 +913,29 @@ describe("Settings page", () => {
       expect(visibleText()).toContain("2 requests kept");
     });
 
+    test("a search's words are marked in each request and reply, as Thunderbird marks them (#246)", async () => {
+      const marks = (part: string) => [...document.querySelectorAll(`ul[aria-label="Past requests"] .${part} mark.memory-match`)].map((mark) => mark.textContent);
+      await open(withMemory({ query: "friday REVIEW" }));
+      expect(marks("memory-request")).toEqual(["Friday"]);
+      expect(marks("memory-reply")).toEqual(["review"]);
+      // The whole text still reads in order, in the parts the clamps apply to.
+      expect(document.querySelector(".memory-request")?.textContent).toBe("What's on Friday?");
+      expect(document.querySelector(".memory-reply")?.textContent).toBe("The review at 10:00.");
+    });
+
+    test("the newest requests, listed without a search, have nothing marked", async () => {
+      await open(kept);
+      expect(document.querySelectorAll('ul[aria-label="Past requests"] mark')).toHaveLength(0);
+    });
+
+    test("text that looks like markup is shown as text, its search word marked", async () => {
+      await open(withMemory({ query: "bold amp", entries: [{ memId: "turn:3", dateMs: now, content: "[USER]: Make <b>bold</b> &amp; plain\n\n[AGENT]: <img src=x onerror=alert(1)> bold" }] }));
+      const list = document.querySelector('ul[aria-label="Past requests"]') as HTMLElement;
+      expect(list.querySelector("b, img")).toBeNull();
+      expect(list.querySelector(".memory-request")?.textContent).toBe("Make <b>bold</b> &amp; plain");
+      expect([...list.querySelectorAll("mark")].map((mark) => mark.textContent)).toEqual(["bold", "amp", "bold"]);
+    });
+
     test("a search sends what was typed, trimmed", async () => {
       const { commands } = await open(kept);
       await act(async () => type(searchField(), "  friday review  "));

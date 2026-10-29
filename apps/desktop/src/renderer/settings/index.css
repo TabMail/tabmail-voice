@@ -341,6 +341,13 @@ ul.dictionary {
   -webkit-line-clamp: 3;
 }
 
+/* A search word in a listed request or reply (#246), as Thunderbird's Chat History marks it. */
+.memory-match {
+  border-radius: 2px;
+  background: var(--search-match);
+  color: inherit;
+}
+
 @media (forced-colors: active) {
   .usage-bar {
     border: 1px solid CanvasText;
@@ -348,6 +355,12 @@ ul.dictionary {
 
   .usage-fill {
     background: Highlight;
+  }
+
+  .memory-match {
+    background: Mark;
+    color: MarkText;
+    forced-color-adjust: none;
   }
 }
 
