@@ -68,8 +68,9 @@ export class OverlayWindowController {
   /** The overlay's latest showing afresh, which the page says it has drawn (`drawn`), and whether it
    * is still waiting for that. A window shown again keeps its last frame until its page draws the
    * next one, so a showing waits, transparent, until then: the overlay hidden after an answer showed
-   * that answer for a moment as the next hold's pill appeared (owner, 2026-10-28, #304). Linux has no
-   * window opacity; there the page's own redraw does it. */
+   * that answer for a moment as the next hold's pill appeared (owner, 2026-10-28, #304). Where window
+   * opacity isn't applied (Electron documents `setOpacity` as doing nothing on Linux), the page's own
+   * redraw does it. */
   private revealed = 0;
   private awaitingDrawing = false;
   private phase: Phase = { kind: "idle" };

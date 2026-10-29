@@ -846,6 +846,65 @@ describe("OverlayWindowController", () => {
     expect(overlay.opacity()).toBe(1);
   });
 
+  /** A chat window closed before it was measured leaves the overlay transparent while it is drawn away:
+   * the pill's drawing, arriving late, shows nothing then; and the next hold still shows once drawn. */
+  test("a pill's late drawing shows nothing once a chat window opened over it has closed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      const hold = async () => {
+        controller.update({ kind: "arming" });
+        await new Promise<void>(queueMicrotask);
+        controller.update({ kind: "listening" });
+      };
+      await hold();
+      const pill = controller.reveal;
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.update({ kind: "idle" }, false);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.visible()).toBe(true);
+      controller.drawn(pill);
+      expect(overlay.opacity()).toBe(0);
+      vi.advanceTimersByTime(config.overlayDismissDuration);
+      expect(overlay.visible()).toBe(false);
+
+      await hold();
+      controller.drawn(controller.reveal);
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The note for a text not pasted, shown as the chat window it followed closes, waits for its page's
+   * drawing as a pill does, and then shows, taking its click (ADR-DESK-042). */
+  test("the not-pasted note after a chat window shows once its page has drawn it", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => null);
+      controller.update({ kind: "running", tool: "compose" }, true);
+      controller.fitChat(120);
+      controller.update({ kind: "notPasted", message: "Couldn't paste. Click to copy.", text: "Synthetic reply." }, false);
+      vi.advanceTimersByTime(config.chatCloseDurationSeconds * 1000);
+      expect(controller.chatPlacement).toBeNull();
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(0);
+      controller.drawn(controller.reveal);
+      expect(overlay.opacity()).toBe(1);
+      controller.pointerOver(true);
+      expect(overlay.ignoresMouse()).toBe(false);
+      controller.update({ kind: "idle" });
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.overlayDismissDuration);
+      expect(overlay.visible()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   /** A follow-up as the chat window shrinks into its pill keeps it open, where it was, taking clicks
    * again. */
   test("a follow-up as the chat window shrinks keeps it open where it is", async () => {

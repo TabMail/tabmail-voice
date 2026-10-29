@@ -211,10 +211,13 @@ from hidden, from a closing chat, or placed again before it was drawn) numbers i
 showing (`overlayDrawn`, two animation frames after it took the state, so the frame showing it has
 been drawn); a word for an earlier showing does nothing, and a chat window opened meanwhile still
 waits for its measurement (`fitChat`). The same rule as the chat window's (shown once measured),
-applied to every showing. Linux has no window opacity; there the page's own redraw does it, as before.
+applied to every showing. Where window opacity isn't applied (Electron documents `setOpacity` as doing nothing on Linux), the
+page's own redraw does it, as before.
 Trade-off: the pill appears two frames later (about 33 ms at 60 Hz). Tests: `main/overlayWindow.test.ts`
 ("a hold's pill shows only once its page has drawn it", after a chat window and after a pill; red on
 the previous controller; "a pill shown after a chat window stays shown until its hold ends, and waits for
-each placing"; "a chat window opened as the pill shows still waits to be measured"),
+each placing"; "a chat window opened as the pill shows still waits to be measured"; "a pill's late drawing shows
+nothing once a chat window opened over it has closed"; "the not-pasted note after a chat window shows
+once its page has drawn it"),
 `renderer/overlay/index.test.ts` ("the page says when it has drawn the state it is shown for"),
 `shared/ipc.test.ts` and `main/index.test.ts` (the command checked and routed, the state carrying it).
