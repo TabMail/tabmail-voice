@@ -186,15 +186,21 @@ function DictationPane({ state }: { state: SettingsState }) {
 
 /** The user's dictionary (ADR-DESK-038): a field to add a word, the words with a remove button each
  * (the typed ones first, then the learned ones, tagged so, each alphabetically), and the switch for
- * learning from the user's corrections where it can. */
+ * learning from the user's corrections where it can. Learned words can run to thousands (#310), so
+ * above the list are how many of each there are and a field that shows only the words containing what
+ * is typed in it, whatever the case. */
 function DictionaryPane({ state }: { state: SettingsState }) {
   const [draft, setDraft] = useState("");
+  const [filter, setFilter] = useState("");
   const word = dictionaryWord(draft);
   const existing = word === null ? undefined : state.dictionary.find((entry) => isSameWord(entry.word, word));
   // Typed words are capped; learned ones make room for them. Retyping a typed word adds none.
   const isFull = state.dictionary.filter((entry) => !entry.learned).length >= config.dictionaryMaxTypedWords && existing?.learned !== false;
   const byWord = (a: DictionaryEntry, b: DictionaryEntry) => a.word.localeCompare(b.word);
-  const shown = [...state.dictionary.filter((entry) => !entry.learned).sort(byWord), ...state.dictionary.filter((entry) => entry.learned).sort(byWord)];
+  const typed = state.dictionary.filter((entry) => !entry.learned);
+  const learned = state.dictionary.filter((entry) => entry.learned);
+  const needle = filter.trim().toLowerCase();
+  const shown = [...typed.sort(byWord), ...learned.sort(byWord)].filter((entry) => entry.word.toLowerCase().includes(needle));
   let problem: string | null = null;
   if (draft.trim() !== "" && word === null) problem = `A word or name of up to ${config.dictionaryWordMaxWords} words, without < or >.`;
   else if (isFull) problem = `You can add up to ${config.dictionaryMaxTypedWords} words. Remove one to add another.`;
@@ -206,7 +212,7 @@ function DictionaryPane({ state }: { state: SettingsState }) {
   };
   return (
     <>
-      <Group captions={["Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them."]}>
+      <Group captions={["Names and terms spelled your way, kept on this computer. The ones you use most are sent with each dictation so they come out right, and TabMail doesn’t keep them."]}>
         <form className="row" onSubmit={add}>
           <input
             type="text"
@@ -231,25 +237,40 @@ function DictionaryPane({ state }: { state: SettingsState }) {
             <span className="caption">No words yet.</span>
           </div>
         ) : (
-          <ul className="dictionary" aria-label="Dictionary">
-            {shown.map((entry) => (
-              <li key={entry.word} className="row">
-                <span>
-                  {entry.word}
-                  {entry.learned && <span className="caption learned"> Learned</span>}
-                </span>
-                <button className="link" aria-label={`Remove ${entry.word}`} onClick={() => void send({ type: "removeDictionaryWord", word: entry.word })}>
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="row">
+              <span className="caption">
+                {typed.length} added by you, {learned.length} learned
+              </span>
+            </div>
+            <div className="row">
+              <input type="search" className="dictionary-input" placeholder="Filter" aria-label="Filter the dictionary" value={filter} onChange={(event) => setFilter(event.target.value)} />
+            </div>
+            {shown.length === 0 && (
+              <div className="row">
+                <span className="caption">No words match.</span>
+              </div>
+            )}
+            <ul className="dictionary" aria-label="Dictionary">
+              {shown.map((entry) => (
+                <li key={entry.word} className="row">
+                  <span>
+                    {entry.word}
+                    {entry.learned && <span className="caption learned"> Learned</span>}
+                  </span>
+                  <button className="link" aria-label={`Remove ${entry.word}`} onClick={() => void send({ type: "removeDictionaryWord", word: entry.word })}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </Group>
       {state.canLearnWords && (
         <Group>
           <Toggle label="Learn from my corrections" checked={state.learnsWords} onChange={(value) => send({ type: "setLearnsWords", value })}>
-            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to {config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.
+            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to {config.dictionaryMaxEntries.toLocaleString("en-US")} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.
           </Toggle>
         </Group>
       )}

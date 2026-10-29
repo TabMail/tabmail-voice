@@ -221,6 +221,40 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([{ type: "removeDictionaryWord", word: "TabMail" }]);
     });
 
+    /** Learned words run to thousands (#310): above the list, how many of each there are, and a field
+     * that shows only the words containing what is typed in it, whatever the case, in the same order,
+     * saying so when none does. Removing a word found works as in the whole list. */
+    test("counts the words and filters the list", async () => {
+      const page = await open({
+        ...signedIn,
+        dictionary: [
+          { word: "TabMail", learned: true, lastUsed: 4 },
+          { word: "Xyvora", learned: false, lastUsed: 5 },
+          { word: "Brevalle", learned: true, lastUsed: 2 },
+          { word: "Xyvoracorp", learned: true, lastUsed: 3 },
+        ],
+      });
+      const filterField = () => document.querySelector<HTMLInputElement>('input[aria-label="Filter the dictionary"]') as HTMLInputElement;
+      expect(visibleText()).toContain("1 added by you, 3 learned");
+      expect(words()).toHaveLength(4);
+
+      await act(async () => type(filterField(), " XYVORA "));
+      expect(words()).toEqual(["XyvoraRemove", "Xyvoracorp LearnedRemove"]);
+      expect(visibleText()).toContain("1 added by you, 3 learned");
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Xyvoracorp"]')?.click());
+      expect(page.commands).toEqual([{ type: "removeDictionaryWord", word: "Xyvoracorp" }]);
+
+      // Anywhere in a word, not only at its start.
+      await act(async () => type(filterField(), "vora"));
+      expect(words()).toEqual(["XyvoraRemove", "Xyvoracorp LearnedRemove"]);
+      await act(async () => type(filterField(), "quillon"));
+      expect(words()).toEqual([]);
+      expect(visibleText()).toContain("No words match.");
+      await act(async () => type(filterField(), ""));
+      expect(words()).toHaveLength(4);
+      expect(visibleText()).not.toContain("No words match.");
+    });
+
     /** A full dictionary of `typed` typed words, then learned ones. */
     const full = (typed: number) =>
       Array.from({ length: config.dictionaryMaxEntries }, (_, index) =>
@@ -1584,9 +1618,9 @@ describe("Settings page", () => {
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       // Closing the chat window on a click elsewhere, which the Swift app never had (owner, 2026-10-25).
       "It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.",
-      "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
+      "Names and terms spelled your way, kept on this computer. The ones you use most are sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
-      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,
+      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries.toLocaleString("en-US")} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,
       // Privacy's, which the Swift app never had (owner, 2026-09-30); Opt Out of AI as Thunderbird's and iOS's (owner, 2026-10-28).
       "Turns off dictation, agent mode and memory, so nothing you say or have on screen is sent to AI. Signing in and updates still work. On this computer only.",
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",

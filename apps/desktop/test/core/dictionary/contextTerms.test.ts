@@ -9,7 +9,7 @@ import { contextTerms } from "../../../src/core/dictionary/contextTerms.js";
 /** The names and terms picked from the screen read at key-down (ADR-DESK-038), sent with a dictation
  * beside the user's dictionary. */
 describe("contextTerms", () => {
-  const terms = (text: string, max = config.vocabularyMaxTerms) => contextTerms(text, max);
+  const terms = (text: string) => contextTerms(text);
 
   test("picks names and terms, not everyday words", () => {
     expect(terms("I spoke with Xyvora about the launch plan.")).toEqual(["Xyvora"]);
@@ -60,12 +60,13 @@ describe("contextTerms", () => {
     expect(terms("a Kaelthorne Drake note, from Brevalle Xyvora Labs")).toEqual(["Kaelthorne Drake", "Brevalle Xyvora Labs"]);
   });
 
-  /** The most frequent first, then the earliest; none twice, whatever its case; at most `max`. */
-  test("the most frequent first, distinct, and capped", () => {
+  /** The most frequent first, then the earliest; none twice, whatever its case; all of them, however
+   * many (#310: `dictationVocabulary` takes as many as it has room for). */
+  test("the most frequent first, distinct, and all of them", () => {
     const text = "ask Brevalle and Xyvora. then Xyvora again, and XYVORA, and Kaelthorne";
     expect(terms(text)).toEqual(["Xyvora", "Brevalle", "Kaelthorne"]);
-    expect(terms(text, 1)).toEqual(["Xyvora"]);
-    expect(terms(text, 2)).toEqual(["Xyvora", "Brevalle"]);
+    const names = Array.from({ length: config.cleanupScreenMaxTerms + config.dictionaryMaxEntries }, (_, index) => `Brevalle${index}`);
+    expect(terms(`ask ${names.join(", ")}`)).toEqual(names);
   });
 
   test("picks in any script", () => {

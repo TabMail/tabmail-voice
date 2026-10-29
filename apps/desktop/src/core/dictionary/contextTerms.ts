@@ -12,10 +12,11 @@ import { dictionaryWord } from "./entries.js";
  * sent. A term is a word with a capital letter anywhere but at the start of a sentence (a name,
  * "TabMail", "OKR"); runs of them are kept together ("Kaelthorne Drake"); not everyday words, no
  * addresses. The most frequent first, then the earliest; none the same word as another; each a valid
- * dictionary word; at most `max`. TabMail on iOS picks them by the same rules
- * (its ADR-IOS-086).
+ * dictionary word; all of them (`dictationVocabulary` sends as many as it has room for, once the
+ * user's dictionary words are left out). TabMail on iOS picks terms by the same rules (its
+ * ADR-IOS-086); how many it keeps is its own.
  */
-export function contextTerms(text: string, max: number): string[] {
+export function contextTerms(text: string): string[] {
   const tallies = new Map<string, { term: string; count: number; first: number }>();
   const tally = (term: string) => {
     const word = dictionaryWord(term);
@@ -51,7 +52,6 @@ export function contextTerms(text: string, max: number): string[] {
   }
   return [...tallies.values()]
     .sort((a, b) => (a.count !== b.count ? b.count - a.count : a.first - b.first))
-    .slice(0, max)
     .map(({ term }) => term);
 }
 

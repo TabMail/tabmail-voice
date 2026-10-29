@@ -171,16 +171,17 @@ export const contextWait = 500;
  * (a hung app) leaves the request without the screen rather than holding it up. */
 export const agentScreenWait = 5_000;
 /** The cleanup gets only the screen text around the caret, not the whole screen: this much before
- * the caret (about a paragraph) and after it, in UTF-16 code units, rounded to whole characters.
- * Owner, 2026-09-28: the whole screen (often 4k–13k characters) made the cleanup slow; agent mode
- * still gets all of it. */
-export const cleanupContextBefore = 500;
-export const cleanupContextAfter = 200;
+ * the caret and after it, in UTF-16 code units, rounded to whole characters. Owner, 2026-09-28: the
+ * whole screen (often 4k–13k characters) made the cleanup slow, so it got about a paragraph (500 and
+ * 200); 2026-10-28 (#310), measured: up to 8,000 in all, most of it before the caret, where what the
+ * dictation follows is. Agent mode still gets all of it. */
+export const cleanupContextBefore = 6_000;
+export const cleanupContextAfter = 2_000;
 /** The backend's limit on each cleanup field (its `transcription.json` `cleanup.maxFieldChars`,
  * ADR-027), in UTF-16 code units. Over it the backend refuses the whole request, the transcription
  * included, so every field is cut to it (`DictationCleanup.variables`): a window title is whatever
  * the app or web page sets. */
-export const cleanupFieldMaxLength = 20_000;
+export const cleanupFieldMaxLength = 30_000;
 
 // MARK: Backend
 
@@ -224,23 +225,28 @@ export const completionsRequestTimeout = 30_000;
 
 // MARK: Dictionary (ADR-DESK-038)
 
-/** The terms sent with each dictation (`dictationVocabulary`, ADR-DESK-038, #309). The backend takes
- * at most `vocabularyMaxTerms` (its ADR-025), and gives a speech model only the first ones it takes:
- * AssemblyAI at most 100, Whisper about 20 (200 bytes). So the first `vocabularyModelMaxTerms` are the
- * most important, in shares (owner, 2026-10-28): the screen's terms keep up to `vocabularyScreenShare`,
- * and of the rest the typed words take at most `vocabularyTypedShare` while learned words fill the
- * others; room a group can't fill passes on. Only with the cleanup (which reads every term) do the
- * terms that didn't fit follow, up to `vocabularyMaxTerms`. (The 2026-10-02 measurement, `Scripts/
- * stt-compare/vocabulary_limit.py`, found a model heeding a list of 200; the providers' own limits
- * are lower.) */
-export const vocabularyMaxTerms = 200;
+/** The terms sent with each dictation (`dictationVocabulary`, ADR-DESK-038, #309, #310). The backend
+ * gives a speech model only the first ones it takes (AssemblyAI at most 100, Whisper about 20, 200
+ * bytes), so the first `vocabularyModelMaxTerms` are the most important, in shares (owner,
+ * 2026-10-28): the screen's terms keep up to `vocabularyScreenShare`, and of the rest the typed words
+ * take at most `vocabularyTypedShare` while learned words fill the others; room a group can't fill
+ * passes on. Only with the cleanup do more follow: the rest of the screen's and the whole window's
+ * terms, up to `cleanupScreenMaxTerms` of theirs in all, and the cleanup's own dictionary gets up to
+ * `cleanupDictionaryMaxWords` of the user's words (typed, then learned, each most recently used
+ * first). Measured 2026-10-28 (#310): the cleanup gets slower and fixes fewer words as its lists
+ * grow, several seconds past 2,000 dictionary words, so each list stops at 500. Both stay under the
+ * backend's limits (`vocabulary.maxTerms` 1,000; 500 words of at most `dictionaryWordMaxChars`, one
+ * per line, under `cleanupFieldMaxLength`). */
 export const vocabularyModelMaxTerms = 100;
 export const vocabularyScreenShare = 30;
 export const vocabularyTypedShare = 50;
+export const cleanupScreenMaxTerms = 500;
+export const cleanupDictionaryMaxWords = 500;
 /** The dictionary keeps at most this many words, at most `dictionaryMaxTypedWords` of them typed, and
- * learned words in the rest. Each word is at most `dictionaryWordMaxChars` characters and
+ * learned words in the rest, far more than a dictation sends (#310): a learned word kept is sent when
+ * it is among the most recently used. Each word is at most `dictionaryWordMaxChars` characters and
  * `dictionaryWordMaxWords` space-separated words, the backend's limits. */
-export const dictionaryMaxEntries = 150;
+export const dictionaryMaxEntries = 5_000;
 export const dictionaryMaxTypedWords = 100;
 export const dictionaryWordMaxChars = 50;
 export const dictionaryWordMaxWords = 6;

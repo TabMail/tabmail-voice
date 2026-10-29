@@ -527,16 +527,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
   });
 
   /** #309 (owner, 2026-10-28): the speech model takes only the first 100 terms, so those are the most
-   * important (50 typed, 30 from the screen, 20 learned here); the cleanup reads every term, so with it
-   * the rest follow up to 200, and its dictionary holds every word. Without the cleanup (Smart
-   * Dictation off, or agent mode), only the first 100 go. */
+   * important (50 typed, 30 from the screen, 20 learned here). With the cleanup the rest of the
+   * screen's terms follow, and its own dictionary gets 500 of the user's words, typed first, then the
+   * learned used most recently (#310); the dictionary's words past the first 100 go only there.
+   * Without the cleanup (Smart Dictation off, or agent mode), only the first 100 go. */
   test.each<[string, DictationMode, boolean]>([
     ["dictation with the cleanup", "dictation", true],
     ["dictation without the cleanup", "dictation", false],
     ["agent mode", "agent", true],
   ])("%s sends the most important terms first", async (_, mode, smartDictation) => {
     const typed = Array.from({ length: 100 }, (_, index) => `Xyvora${index}`);
-    const learned = Array.from({ length: 50 }, (_, index) => `Zephrin${index}`);
+    const learned = Array.from({ length: 600 }, (_, index) => `Zephrin${index}`);
     const names = Array.from({ length: 80 }, (_, index) => `Brevalle${index}`);
     prefs.value = { ...defaultSettings(), dictionary: { typed, learned }, smartDictation, enabledTools: ["compose"] };
     const written = "Synthetic composed result.";
@@ -550,18 +551,18 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
     const first = [...typed.slice(0, 50), ...names.slice(0, 30), ...learned.slice(0, 20)];
     const cleans = mode === "dictation" && smartDictation;
-    expect(transcription.body(0).vocabulary).toEqual(cleans ? [...first, ...typed.slice(50), ...learned.slice(20), ...names.slice(30, 50)] : first);
-    expect(cleanupVars(0)?.dictionary).toBe(cleans ? [...typed, ...learned].join("\n") : undefined);
+    expect(transcription.body(0).vocabulary).toEqual(cleans ? [...first, ...names.slice(30)] : first);
+    expect(cleanupVars(0)?.dictionary).toBe(cleans ? [...typed, ...learned.slice(0, config.cleanupDictionaryMaxWords - typed.length)].join("\n") : undefined);
   });
 
-  /** With no dictionary the screen's terms take all the room: the first 200 with the cleanup, the
-   * first 100 without it. */
+  /** With no dictionary the screen's terms take all the room: the first 500 with the cleanup (#310),
+   * the first 100 without it. */
   test.each<[string, DictationMode, boolean]>([
     ["dictation with the cleanup", "dictation", true],
     ["dictation without the cleanup", "dictation", false],
     ["agent mode", "agent", true],
   ])("%s with no dictionary sends as many screen terms as there is room for", async (_, mode, smartDictation) => {
-    const names = Array.from({ length: config.vocabularyMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
+    const names = Array.from({ length: config.cleanupScreenMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
     prefs.value = { ...defaultSettings(), smartDictation, enabledTools: ["compose"] };
     transcription.enqueue(200, mode === "dictation" && smartDictation ? cleanedReply : { text: request });
     if (mode === "agent") completions.enqueue(200, writes("compose", "Synthetic composed result."));
@@ -572,7 +573,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
     const cleans = mode === "dictation" && smartDictation;
-    expect(transcription.body(0).vocabulary).toEqual(names.slice(0, cleans ? config.vocabularyMaxTerms : config.vocabularyModelMaxTerms));
+    expect(transcription.body(0).vocabulary).toEqual(names.slice(0, cleans ? config.cleanupScreenMaxTerms : config.vocabularyModelMaxTerms));
+  });
+
+  /** The user's words on screen (the cleanup's 500), however often shown, take none of the screen terms'
+   * room (#310): the cleanup still gets 500 terms from the screen that aren't dictionary words. */
+  test("dictionary words on screen take none of the screen terms' room", async () => {
+    const learned = Array.from({ length: config.cleanupDictionaryMaxWords }, (_, index) => `Zephrin${index}`);
+    const names = Array.from({ length: config.cleanupScreenMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
+    prefs.value = { ...defaultSettings(), dictionary: { typed: [], learned } };
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    // Each dictionary word shown twice, so it is more frequent on screen than any name.
+    controller.captureContext = async () => blankScreen({ appName: "Example Mail", renderedText: `ask ${[...learned, ...learned, ...names].join(", ")}` });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(transcription.body(0).vocabulary).toEqual([...names.slice(0, config.vocabularyScreenShare), ...learned.slice(0, config.vocabularyModelMaxTerms - config.vocabularyScreenShare), ...names.slice(config.vocabularyScreenShare, config.cleanupScreenMaxTerms)]);
   });
 
   /** The recording waits at most `contextWait` for the screen read: one not done by then adds no terms. */

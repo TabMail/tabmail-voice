@@ -22,7 +22,7 @@ import { DictationCleanup, spacedFromCaret } from "./cleanup.js";
 import * as config from "../config.js";
 import { contextTerms } from "../dictionary/contextTerms.js";
 import type { DictionaryWords } from "../dictionary/entries.js";
-import { dictationVocabulary } from "../dictionary/vocabulary.js";
+import { cleanupDictionary, dictationVocabulary } from "../dictionary/vocabulary.js";
 import { type DictationMode, type HotkeyAction, toggled } from "../hotkey/bindings.js";
 import { TransportError } from "../backend/http.js";
 import { LevelEnvelope } from "../audio/levelEnvelope.js";
@@ -686,10 +686,10 @@ export class DictationController extends Observable {
    * and the names and terms on the screen read at key-down (`contextTerms`), those of what the window
    * shows only if that read is done by the upload (a dictation waits `contextWait` for it, agent mode
    * not at all), those of the whole window only if it is done by then too (never waited for:
-   * ADR-DESK-016, 2026-10-25); none when the screen is not read. With `cleans`, the terms that don't
-   * fit the speech model's share follow, for the cleanup. */
+   * ADR-DESK-016, 2026-10-25); none when the screen is not read. With `cleans`, the screen's terms that
+   * don't fit the speech model's share follow, for the cleanup. */
   private vocabulary(dictionary: DictionaryWords, cleans: boolean): string[] {
-    const termsOf = (screen: ScreenContext | null) => (screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, config.vocabularyMaxTerms) : []);
+    const termsOf = (screen: ScreenContext | null) => (screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`) : []);
     const vocabulary = dictationVocabulary(dictionary, termsOf(this.screenRead), termsOf(this.screenRead && this.windowScreen), cleans);
     log.debug(() => `DictationController: sending ${vocabulary.length} term(s) of ${dictionary.typed.length} typed and ${dictionary.learned.length} learned word(s)${cleans ? ", for the speech model and the cleanup" : ""}`);
     return vocabulary;
@@ -759,7 +759,7 @@ export class DictationController extends Observable {
       if (waited?.late) log.debug(`DictationController: screen read not done in time (waited ${elapsed(waiting)}); continuing without it`);
       else if (waited) log.debug(() => `DictationController: waited ${elapsed(waiting)} for the screen read${waited.stopped ? ", stopped with what it had read" : ""}`);
     }
-    const cleanup = cleans ? DictationCleanup.variables(context, [...settings.dictionary.typed, ...settings.dictionary.learned]) : undefined;
+    const cleanup = cleans ? DictationCleanup.variables(context, cleanupDictionary(settings.dictionary)) : undefined;
     const client = this.deps.makeTranscriptionClient(settings.backendURL);
     const completions = this.deps.makeCompletionsClient(settings.backendURL);
     const vocabulary = this.vocabulary(settings.dictionary, cleans);
