@@ -374,10 +374,11 @@ export class AppSettings extends Observable {
     return this.optsOutOfAI ? optedOutOfAIMemoryLine : null;
   }
 
-  /** Smart dictation: the AI cleanup of each dictation, which adds a second or more. Off unless the
-   * user switches it on (owner, 2026-10-05). */
+  /** Smart dictation: the AI cleanup of each dictation, which adds a second or more. On unless the
+   * user switches it off (owner, 2026-10-29, #313; off by default from 2026-10-05): a choice the user
+   * saved, on or off, is kept. Opt Out of AI starts no dictation, so no cleanup runs while it is on. */
   get smartDictation(): boolean {
-    return storedBool(this.store, Key.smartDictation) ?? false;
+    return storedBool(this.store, Key.smartDictation) ?? true;
   }
 
   set smartDictation(value: boolean) {

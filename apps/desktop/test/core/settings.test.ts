@@ -86,11 +86,11 @@ describe("debug mode", () => {
 });
 
 describe("AppSettings", () => {
-  test("defaults: right Option, screen reading on, no consent, wizard not finished, default email app", () => {
+  test("defaults: right Option, screen reading and smart dictation on, no consent, wizard not finished, default email app", () => {
     const app = settings();
     expect(app.hotkey).toBe("rightOption");
     expect(app.readsScreen).toBe(true);
-    expect(app.smartDictation).toBe(false);
+    expect(app.smartDictation).toBe(true);
     expect(app.hasConsented).toBe(false);
     expect(app.hasFinishedWelcome).toBe(false);
     expect(app.emailClient).toBeNull();
@@ -163,11 +163,11 @@ describe("AppSettings", () => {
     app.hasConsented = true;
     app.hasFinishedWelcome = true;
     app.emailClient = "org.mozilla.thunderbirdbeta";
-    app.smartDictation = true;
+    app.smartDictation = false;
 
     const relaunched = settings(store);
     expect([relaunched.hotkey, relaunched.readsScreen, relaunched.hasConsented, relaunched.hasFinishedWelcome, relaunched.emailClient, relaunched.smartDictation])
-      .toEqual(["function", false, true, true, "org.mozilla.thunderbirdbeta", true]);
+      .toEqual(["function", false, true, true, "org.mozilla.thunderbirdbeta", false]);
 
     app.emailClient = null;
     expect(settings(store).emailClient).toBeNull();
@@ -209,7 +209,7 @@ describe("AppSettings", () => {
     app.learnsWords = false;
     app.excludeApp({ bundleIdentifier: "org.example.bank", name: "Example Bank" });
     app.excludeSite("example.com");
-    app.smartDictation = true;
+    app.smartDictation = false;
     const lower = config.memorySizeLimitChoices[0] ?? 0;
     expect(app.setMemorySizeLimit(lower)).toBe(true);
     expect(app.setEventDuration(20)).toBe(true);
@@ -230,11 +230,11 @@ describe("AppSettings", () => {
       userName: "",
       dictionary: [],
       learnsWords: true,
-      smartDictation: false,
+      smartDictation: true,
       memorySizeLimit: config.memorySizeLimitDefault,
       eventDuration: config.eventDurationDefault,
     });
-    expect(app.dictation(null)).toMatchObject({ enabledTools: ["edit"], dictionary: ["Xyvora"], learnsWords: false, smartDictation: true, memorySizeLimit: lower, eventDuration: 20 });
+    expect(app.dictation(null)).toMatchObject({ enabledTools: ["edit"], dictionary: ["Xyvora"], learnsWords: false, smartDictation: false, memorySizeLimit: lower, eventDuration: 20 });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
   });
