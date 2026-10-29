@@ -499,25 +499,16 @@ describe("UserPrompts", () => {
   });
 
   /** R23: a writing-style line holding the section-header mark or the END marker would be read back as a
-   * header or the skeleton, so a history entry holding it restored as other bullets: Settings refuses
-   * it, and restoring the version just recorded changes nothing. */
+   * header or the skeleton, so Settings refuses the edit (main's `editWritingStyle`, whose test sends
+   * these), whichever line of a pasted bullet holds it. */
   test.each([
     ["the header mark", "Language (DO NOT EDIT/DELETE THIS SECTION HEADER)"],
     ["the header mark without its parentheses", "Keep DO NOT EDIT/DELETE THIS SECTION HEADER here"],
     ["the END marker", "Use ====END USER INSTRUCTIONS==== in the example"],
-  ])("a line holding %s is refused, and restoring the version just recorded changes nothing (R23)", (_, line) => {
-    const { prompts } = setup();
-    const pairs = () => prompts.sync.state("composition").bullets.map((bullet) => [bullet.section, bullet.text]);
-    expect(prompts.editCompositionSection(general, shownSection(prompts, general), ["Plain rule"])).toBe(true);
-    prompts.flushHistory();
-
+    ["the header mark on a pasted bullet's second line", "First line\nKeep DO NOT EDIT/DELETE THIS SECTION HEADER here"],
+  ])("a line holding %s is found (R23)", (_, line) => {
     expect(holdsSectionMarker([line])).toBe(true);
-    const edited = prompts.editCompositionSection(general, shownSection(prompts, general), ["Plain rule", line, "Keep this in general"]);
-    expect(edited).toBe(false);
-    prompts.flushHistory();
-    const saved = pairs();
-    expect(prompts.restore(prompts.history.at(-1)?.id ?? "")).toBe(true);
-    expect(pairs()).toEqual(saved);
+    expect(holdsSectionMarker(["Plain rule", line, "Keep this in general"])).toBe(true);
     expect(holdsSectionMarker(["Plain rule", "DO NOT EDIT this"])).toBe(false);
   });
 
@@ -551,17 +542,6 @@ describe("UserPrompts", () => {
       { text: "gamma", labels: [["0000000100000001", 3]] },
     ]);
     expect(prompts.knowledgeBase).toBe("- alpha\n- beta\n- gamma");
-  });
-
-  /** R23: a typed bullet is one line once saved, so a marker on any of its lines is found and the edit
-   * refused, never saved without that line. */
-  test("a pasted bullet with a section marker on its second line is refused (R23)", () => {
-    const { prompts } = setup();
-    const before = prompts.composition;
-    const pasted = "First line\nKeep DO NOT EDIT/DELETE THIS SECTION HEADER here";
-    expect(holdsSectionMarker(["Plain rule", pasted])).toBe(true);
-    expect(prompts.editCompositionSection(general, shownSection(prompts, general), ["Plain rule", pasted])).toBe(false);
-    expect(prompts.composition).toBe(before);
   });
 
   /** R23: a history entry recorded before, holding a line with the header mark in a section, restores

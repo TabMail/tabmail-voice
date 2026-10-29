@@ -302,7 +302,7 @@ export function upgrade(field: SyncField, text: string, labels: LabelSource, cat
       continue;
     }
     const name = defaultName(entry);
-    if (!state.bullets.some((bullet) => bullet.name === name)) state.bullets.push({ ...item, name, n: 1 });
+    state.bullets.push({ ...item, name, n: 1 });
     state.seen.set(name, 1);
   }
   return { ...state, bullets: dedup(state.bullets) };

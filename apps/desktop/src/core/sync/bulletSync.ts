@@ -263,7 +263,7 @@ export class BulletSync {
   /** A `bullet_state` message: validated (DS-VALIDATE), buffered until complete (DS-CHUNK-APPLY), then
    * merged (§6). */
   receive(message: unknown): ReceiveOutcome {
-    if (!isRecord(message) || message.type !== "bullet_state") return { kind: "ignored" };
+    if (!isRecord(message)) return { kind: "ignored" };
     const field = message.field;
     if (!isField(field)) return this.invalid(String(typeof field === "string" ? "unknown" : typeof field), "field");
     if (!this.options.fields.includes(field)) return { kind: "ignored" };

@@ -107,11 +107,15 @@ class Fuzz {
       const last = this.merged.get(merged) ?? new Set<string>();
       const names = new Set(whole.bullets.map(([, , name]) => name));
       this.merged.set(merged, new Set([...last, ...names]));
-      const receive = vi.spyOn(device.prompts.sync, "receive");
+      // A plain wrapper, not a spy: a spy keeps every call's message and result, and runs out of memory
+      // over a few hundred seeds.
+      const sync = device.prompts.sync;
+      const receive = sync.receive;
+      let outcome: ReceiveOutcome | undefined;
+      sync.receive = (message) => (outcome = receive.call(sync, message));
       deliver(id, to, part);
-      const outcome = receive.mock.results.at(-1);
-      receive.mockRestore();
-      this.merged.set(merged, outcome?.type === "return" && (outcome.value as ReceiveOutcome).kind === "merged" ? names : last);
+      sync.receive = receive;
+      this.merged.set(merged, outcome?.kind === "merged" ? names : last);
       this.dropped(device, before);
       this.mergedAside(device, whole);
     };

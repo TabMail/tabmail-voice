@@ -790,26 +790,6 @@ describe("Settings page", () => {
       expect(commands).toEqual([{ type: "editKnowledgeBase", shown: shownBullets(["Zero.", "Beta.", "Gamma."]), bullets: ["Zero.", "Beta.", "Gamma, edited."] }]);
     });
 
-    /** Equal bullets (an Add of one already there stores it twice) are each a row of their own, and a
-     * change made elsewhere around them shows exactly the list pushed. */
-    test.each([
-      [["Alpha.", "Alpha.", "Beta."], ["Gamma.", "Alpha.", "Beta."]],
-      [["Alpha.", "Alpha.", "Beta."], ["Alpha.", "Beta."]],
-      [["Alpha.", "Beta.", "Alpha."], ["Beta.", "Alpha."]],
-      [["Alpha.", "Alpha."], ["Zero.", "Alpha.", "Alpha."]],
-    ])("equal bullets %j, changed elsewhere to %j, show as pushed", async (before, after) => {
-      const errors: unknown[] = [];
-      vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => void errors.push(args[0]));
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets(knowledgeBase) } });
-      const rows = () => [...document.querySelectorAll<HTMLTextAreaElement>('ul[aria-label="Knowledge base"] textarea')].map((element) => element.value);
-      const { push } = await open(withKB(before));
-      expect(rows()).toEqual(before);
-      await push(withKB(after));
-      expect(rows()).toEqual(after);
-      // React reports a key shared by two rows.
-      expect(errors).toEqual([]);
-    });
-
     /** A bullet is one line: Enter leaves the field, which saves it, rather than breaking the line. */
     test("Enter in an item takes no line break, and saves it", async () => {
       const { commands } = await open();

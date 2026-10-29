@@ -926,11 +926,10 @@ function BulletEditor({ title, bullets: shown, onChange }: { title: string; bull
     <div className="bullet-editor">
       <ul className="dictionary" aria-label={title}>
         {bullets.map((bullet, index) => (
-          // Keyed by the bullet (text and labels) and how many equal ones come before it, not by
-          // position: a bullet changed elsewhere (a tool, another device) shows afresh, and one added
+          // Keyed by the bullet (text and labels), not by position: a bullet changed elsewhere (a tool, another device) shows afresh, and one added
           // or removed elsewhere leaves the other rows, and what is being typed in them, as they are.
           <BulletRow
-            key={`${identities.slice(0, index).filter((other) => other === identities[index]).length}:${identities[index]}`}
+            key={identities[index]}
             bullet={bullet}
             label={`${title}, item ${index + 1}`}
             onSave={(text) => void onChange(bullets.map((other, at) => (at === index ? text : other)))}

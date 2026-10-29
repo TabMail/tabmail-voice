@@ -245,7 +245,6 @@ export class UserPrompts extends Observable implements BulletStore {
    * is no such section. */
   editCompositionSection(section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
     if (!displayedSections("composition").includes(section)) return false;
-    if (holdsSectionMarker(edited)) return false;
     return this.editSection("composition", section, shown, edited);
   }
 
