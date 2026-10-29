@@ -120,7 +120,7 @@ class Helper:
 hotkey = Helper(sys.argv[1])
 system = Helper(sys.argv[2])
 try:
-    hotkey.quiet()  # let the async session connection resolve
+    # Asked the moment the helper starts, as the app does at launch (#262).
     assert hotkey.request('gnomeIntegration')['result'] is True
     assert hotkey.request('caretAnchor')['result'] == state['rect']
     # An extension loaded before an upgrade keeps running until the next login: not ready.

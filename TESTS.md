@@ -227,6 +227,10 @@ going off after each dictation (the engine's release has no automated test, by t
   compositor target/activation wire contracts.
 
 
+| #262 GNOME integration asked at helper start | Verification |
+| --- | --- |
+| Linux `tests/gnome-caret.cpp`, `tests/gnome-protocol.py` | `gnomeIntegration` and `caretAnchor` asked the moment the helper starts reach the Shell and answer (no wait before the first request); an older extension, a failed call and an absent extension answer not ready. |
+
 | #263 selection recognition context | Verification |
 | --- | --- |
 | macOS `ScreenContextTests` non-field selection and private-source admission; Linux `tests/screen.cpp`; shared context/screen corpus and Rust selection-only tests | Page, list and row values redact with labels outside the selection; benign selection stays usable; hidden sides never enter replies or presentation reservation; whole-window selection stays empty; protected or incomplete sources are not requested. |
