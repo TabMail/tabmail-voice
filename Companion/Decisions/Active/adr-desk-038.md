@@ -250,7 +250,8 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
 - **Settings › Dictionary** shows how many words the user added and how many were learned, and a
   field that shows only the words containing what is typed in it, whatever the case, so a word can be
   found and removed in a list of thousands. The learning switch's note says up to 5,000 words, and the
-  dictionary's caption that the ones used most are sent with each dictation.
+  dictionary's caption that the ones used most are sent with each dictation. *Superseded 2026-10-29
+  (owner): the caption makes no claim about which words go, see below.*
 - Device Sync does not carry the dictionary, so the larger cap changes nothing there.
 - Tests: `dictionary/vocabulary.test.ts` (the cleanup's first 100 equal to the list without it, then
   the screen's rest up to 500, the whole window's terms in the first 100 counted, no dictionary words
@@ -261,3 +262,8 @@ words), so each list stops at 500. The backend raised its limits first (`vocabul
   room), `dictionary/contextTerms.test.ts` (every term, however many), `settings.test.ts` (5,000 words,
   a full dictionary read in one pass within a loose time bound), `renderer/settings/index.test.ts`
   (counts and the filter).
+
+**Amendment 2026-10-29 (owner): the dictionary's caption makes no claim about which words go.**
+Settings › Dictionary's caption reads "Names and terms spelled your way, kept on this computer.
+They’re sent adaptively with each dictation so they come out right, and TabMail doesn’t keep them."
+Test: `renderer/settings/index.test.ts` › the notes.

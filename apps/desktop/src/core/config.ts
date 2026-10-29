@@ -173,10 +173,10 @@ export const agentScreenWait = 5_000;
 /** The cleanup gets only the screen text around the caret, not the whole screen: this much before
  * the caret and after it, in UTF-16 code units, rounded to whole characters. Owner, 2026-09-28: the
  * whole screen (often 4k–13k characters) made the cleanup slow, so it got about a paragraph (500 and
- * 200); 2026-10-28 (#310), measured: up to 8,000 in all, most of it before the caret, where what the
- * dictation follows is. Agent mode still gets all of it. */
-export const cleanupContextBefore = 6_000;
-export const cleanupContextAfter = 2_000;
+ * 200); 2026-10-28 (#310), measured: up to 8,000 in all; 2026-10-29, the owner: half before the caret
+ * and half after. Agent mode still gets all of it. */
+export const cleanupContextBefore = 4_000;
+export const cleanupContextAfter = 4_000;
 /** The backend's limit on each cleanup field (its `transcription.json` `cleanup.maxFieldChars`,
  * ADR-027), in UTF-16 code units. Over it the backend refuses the whole request, the transcription
  * included, so every field is cut to it (`DictationCleanup.variables`): a window title is whatever

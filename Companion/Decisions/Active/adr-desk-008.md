@@ -188,4 +188,10 @@ the cleanup's other lists: `screen_text` may run to 8,000 characters around the 
 the caret, where what the dictation follows is. `cleanupFieldMaxLength` follows the backend's
 `cleanup.maxFieldChars` to 30,000, which also fits the cleanup's dictionary of 500 words (ADR-DESK-038,
 #310). Agent mode still gets the whole screen. The rest of the 2026-09-28 amendment stands.
+*Superseded 2026-10-29 (owner): the 8,000 are split evenly, see below.*
 
+
+**Amendment 2026-10-29 — the cleanup's screen text split evenly around the caret (owner).** The
+8,000 characters stay, now `cleanupContextBefore` 4,000 and `cleanupContextAfter` 4,000 (were 6,000
+and 2,000). Agent mode still gets the whole screen. Test: `dictation/cleanup.test.ts` › the numbers
+are the owner's.
