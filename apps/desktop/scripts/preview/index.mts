@@ -242,7 +242,7 @@ const introProblem = `() => {
 /** A shot of `page` with `state`; `whole` names what must show whole in it (the welcome window's
  * buttons, below everything else; a question's buttons in a chat long enough to scroll): inside the
  * window and inside every box above it in the page that clips. */
-const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; tab?: string; reset?: boolean; tabInto?: boolean; whole?: string; noteLines?: number | null }[] = [
+const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; tab?: string; reset?: boolean; press?: string; tabInto?: boolean; whole?: string; noteLines?: number | null }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
@@ -344,6 +344,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-memory-search-failed", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, query: "re: invoice", entries: [], searchFailed: "refused" } } },
   { name: "settings-memory-unavailable", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, usage: null, unavailable: true, entries: [] } } },
   { name: "settings-memory-limit-lowered", page: "settings/index.html", size: settingsWindowSize, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, sizeLimit: 100 * 1_024 * 1_024, usage: { docs: 2, usedBytes: 92_000_000 }, entries: memory.entries.slice(0, 2), status: "Size limit set to 100 MB. Removed the oldest request." } } },
+  // Remove Old's question (#247), the days in a field within its sentence.
+  { name: "settings-memory-remove-old", page: "settings/index.html", size: settingsWindowSize, section: "Memory", press: "Remove Old…", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory: { ...memory, entries: memory.entries.slice(0, 1) } } },
   { name: "settings-memory-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Memory", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, memory } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings/index.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
@@ -397,6 +399,10 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
   if (shot.reset) {
     const asked = (await window.webContents.executeJavaScript(`(() => { const reset = [...document.querySelectorAll('[role="tabpanel"]:not([hidden]) .tab-intro button')].find((button) => button.textContent === "Reset…"); reset?.click(); return reset !== undefined; })()`)) as boolean;
     if (!asked) throw new Error("the tab has no Reset");
+  }
+  if (shot.press) {
+    const pressed = (await window.webContents.executeJavaScript(`(() => { const button = [...document.querySelectorAll(".content button")].find((button) => button.textContent === ${JSON.stringify(shot.press)}); button?.click(); return button !== undefined; })()`)) as boolean;
+    if (!pressed) throw new Error(`the section has no ${shot.press} button`);
   }
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));

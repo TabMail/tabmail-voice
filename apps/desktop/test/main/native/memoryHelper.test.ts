@@ -156,6 +156,13 @@ describe("MemoryHelper", () => {
     expect(errors.filter((line) => /invoice|50%/.test(line))).toEqual([]);
   });
 
+  test("a search asks for each exchange's preview only when given one, and whole otherwise (#247)", async () => {
+    const memory = make();
+    await memory.index([memoryRow("a long request", "a long reply", Date.now(), "preview")], 1 << 30);
+    expect((await memory.search({ query: "", from: "", to: "", limit: 5, previewChars: 1 })).map((hit) => hit.content)).toEqual(["["]);
+    expect((await memory.search({ query: "", from: "", to: "", limit: 5 })).map((hit) => hit.content)).toEqual(["[USER]: a long request\n\n[AGENT]: a long reply"]);
+  });
+
   test("what the helper writes to stderr, which can name the query, reaches only the content log", async () => {
     const seen: string[] = [];
     const stop = observeContent((label, text) => seen.push(`${label}: ${text}`));

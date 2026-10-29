@@ -45,12 +45,13 @@ export interface MemoryTrim {
 }
 
 /** A search: `query` empty lists the newest first; `from` and `to` are ISO dates, both empty for
- * any date. */
+ * any date; `previewChars`, the most of each exchange's content the reply carries (whole without it). */
 export interface MemorySearch {
   query: string;
   from: string;
   to: string;
   limit: number;
+  previewChars?: number;
 }
 
 /**

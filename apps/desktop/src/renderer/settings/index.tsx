@@ -482,6 +482,11 @@ function MemoryPane({ state }: { state: SettingsState }) {
   const memory = state.memory;
   const [draft, setDraft] = useState("");
   const [confirmingClear, setConfirmingClear] = useState(false);
+  /** Remove Old asked for, with the days typed (#247): asked first, as Clear All is. */
+  const [confirmingOld, setConfirmingOld] = useState(false);
+  const [oldDays, setOldDays] = useState(String(config.memoryRemoveOldDaysDefault));
+  const days = /^\d+$/.test(oldDays.trim()) ? Number(oldDays.trim()) : NaN;
+  const daysValid = days >= 1 && days <= config.memoryRemoveOldDaysMax;
   /** A lower size limit chosen, waiting to be confirmed: it removes the oldest requests for good. */
   const [confirmingLimit, setConfirmingLimit] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -665,7 +670,28 @@ function MemoryPane({ state }: { state: SettingsState }) {
         )}
       </Group>
       <Group>
-        {confirmingClear ? (
+        {confirmingOld ? (
+          <div className="row stack">
+            <label>
+              Remove every request older than
+              <input type="number" className="memory-days" min={1} max={config.memoryRemoveOldDaysMax} step={1} aria-label="Days" value={oldDays} onChange={(event) => setOldDays(event.target.value)} />
+              days? This can’t be undone.
+            </label>
+            <div className="buttons">
+              <button onClick={() => setConfirmingOld(false)}>Cancel</button>
+              <button
+                className="default"
+                disabled={!daysValid}
+                onClick={() => {
+                  setConfirmingOld(false);
+                  void run({ type: "removeOldMemory", days });
+                }}
+              >
+                Remove Old
+              </button>
+            </div>
+          </div>
+        ) : confirmingClear ? (
           <div className="row stack">
             <span>Remove every request kept? This can’t be undone.</span>
             <div className="buttons">
@@ -684,9 +710,17 @@ function MemoryPane({ state }: { state: SettingsState }) {
         ) : (
           <div className="row">
             <span>{memory.usage ? `${memory.usage.docs} ${memory.usage.docs === 1 ? "request" : "requests"} kept` : "Requests kept"}</span>
-            <button onClick={() => setConfirmingClear(true)}>
-              Clear All…
-            </button>
+            <div className="buttons">
+              <button
+                onClick={() => {
+                  setOldDays(String(config.memoryRemoveOldDaysDefault));
+                  setConfirmingOld(true);
+                }}
+              >
+                Remove Old…
+              </button>
+              <button onClick={() => setConfirmingClear(true)}>Clear All…</button>
+            </div>
           </div>
         )}
       </Group>

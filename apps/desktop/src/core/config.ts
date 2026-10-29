@@ -407,6 +407,14 @@ export const memoryListLimit = 200;
  * Thunderbird's Chat History, in UTF-16 code units (JavaScript's length): a lone letter would mark
  * most of every entry. */
 export const memoryHighlightMinLength = 2;
+
+/** Settings › Memory's Remove Old (#247), as Thunderbird's Delete Old: the days it offers first and
+ * the most it takes; the exchanges it lists in each request, the newest of those older first; and the
+ * preview each comes with (characters), as short as the helper gives, since only its id is read. */
+export const memoryRemoveOldDaysDefault = 30;
+export const memoryRemoveOldDaysMax = 365;
+export const memoryRemoveOldFetchRows = 500;
+export const memoryRemoveOldPreviewChars = 1;
 /** The longest search Settings' Memory field takes (characters), and the longest exchange id it may
  * name to remove (`turn:` and a UUID, with room). */
 export const memorySearchMaxLength = 500;

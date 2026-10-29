@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { log } from "../../../src/core/log.js";
 import { formatBytes, MemoryPage, memoryHighlights } from "../../../src/core/memory/page.js";
@@ -246,6 +246,106 @@ describe("MemoryPage", () => {
     expect(memory.rows.map((row) => row.memId)).toEqual(["turn:0", "turn:2"]);
     expect(page.state.entries.map((entry) => entry.memId)).toEqual(["turn:2", "turn:0"]);
     expect(page.state.status).toBeNull();
+  });
+
+  /** Remove Old (#247), as Thunderbird's Delete Old. */
+  describe("removing the old requests", () => {
+    const cutoff = (days: number) => now - days * day;
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(now);
+      memory.rows = [];
+    });
+    afterEach(() => vi.useRealTimers());
+
+    test("removes every request older than the days given, keeps the rest, says how many and lists memory again", async () => {
+      memory.rows.push(memoryRow("kept", "", cutoff(30), "at"), memoryRow("kept", "", cutoff(29), "newer"), memoryRow("old", "", cutoff(30) - 1, "just"), memoryRow("old", "", cutoff(400), "far"));
+      await page.removeOlderThan(30);
+      expect(memory.rows.map((row) => row.memId).sort()).toEqual(["turn:at", "turn:newer"]);
+      expect(page.state.status).toBe("Removed 2 requests older than 30 days.");
+      expect(page.state.entries.map((entry) => entry.memId)).toEqual(["turn:newer", "turn:at"]);
+      memory.rows = [memoryRow("old", "", cutoff(2), "one"), memoryRow("kept", "", cutoff(1), "day")];
+      await page.removeOlderThan(1);
+      expect(memory.rows.map((row) => row.memId)).toEqual(["turn:day"]);
+      expect(page.state.status).toBe("Removed 1 request older than 1 day.");
+    });
+
+    test("lists the old requests a page at a time, the newest first, with the shortest preview, each page removed as it comes", async () => {
+      const rows = config.memoryRemoveOldFetchRows;
+      for (let i = 0; i < 2 * rows + 3; i += 1) memory.rows.push(memoryRow(`old ${i}`, "a reply", cutoff(31) - i * 1_000, String(i)));
+      memory.rows.push(memoryRow("new", "", now, "new"));
+      const removals = vi.spyOn(memory, "remove");
+      await page.removeOlderThan(30);
+      expect(memory.rows.map((row) => row.memId)).toEqual(["turn:new"]);
+      expect(page.state.status).toBe(`Removed ${2 * rows + 3} requests older than 30 days.`);
+      const asked = memory.searches.filter((search) => search.previewChars !== undefined);
+      expect(asked).toHaveLength(3);
+      for (const search of asked) expect(search).toEqual({ query: "", from: "", to: new Date(cutoff(30) - 1).toISOString(), limit: rows, previewChars: config.memoryRemoveOldPreviewChars });
+      expect(removals.mock.calls.map(([ids]) => ids.length)).toEqual([rows, rows, 3]);
+      expect(removals.mock.calls[0]?.[0][0]).toBe("turn:0");
+    });
+
+    test("with none older, or no memory yet, says there are none", async () => {
+      memory.rows.push(memoryRow("kept", "", cutoff(1), "kept"));
+      await page.removeOlderThan(7);
+      expect(page.state.status).toBe("No requests older than 7 days.");
+      expect(memory.rows).toHaveLength(1);
+      exists = false;
+      const search = vi.spyOn(memory, "search");
+      await page.removeOlderThan(7);
+      expect(search).not.toHaveBeenCalled();
+      expect(page.state.status).toBe("No requests older than 7 days.");
+    });
+
+    test("stopped by a failure, says how many went before it, and lists memory again", async () => {
+      const error = vi.spyOn(log, "error").mockImplementation(() => {});
+      const rows = config.memoryRemoveOldFetchRows;
+      for (let i = 0; i < rows + 1; i += 1) memory.rows.push(memoryRow(`old ${i}`, "", cutoff(31) - i, String(i)));
+      const search = memory.search.bind(memory);
+      vi.spyOn(memory, "search").mockImplementation(async (asked) => {
+        if (asked.previewChars !== undefined && memory.rows.length <= 1) throw new HelperError("exited", "memorySearch");
+        return search(asked);
+      });
+      await page.removeOlderThan(400);
+      expect(page.state.status).toBe("No requests older than 400 days.");
+      await expect(page.removeOlderThan(30)).rejects.toThrow(`Removed ${rows} requests older than 30 days, then stopped. Try again.`);
+      expect(page.state.status).toBeNull();
+      expect(page.state.entries.map((entry) => entry.memId)).toEqual([`turn:${rows}`]);
+      expect(error).toHaveBeenCalledWith("MemoryPage: old requests couldn't be removed: HelperError.exited(memorySearch)");
+      memory.failing = true;
+      await expect(page.removeOlderThan(30)).rejects.toThrow("Requests older than 30 days couldn't be removed. Try again.");
+      error.mockRestore();
+    });
+
+    /** With AI on, the list read again is the one shown: a search stays, with its words marked. */
+    test.each([false, true])("keeps the search shown, done or failed (failed: %s)", async (fails) => {
+      memory.rows.push(memoryRow("needle old", "", cutoff(40), "old"), memoryRow("needle kept", "", now, "kept"), memoryRow("unrelated", "", now - 1_000, "other"));
+      await page.load("needle");
+      expect(page.state.entries.map((entry) => entry.memId)).toEqual(["turn:kept", "turn:old"]);
+      if (fails) {
+        vi.spyOn(log, "error").mockImplementation(() => {});
+        const search = memory.search.bind(memory);
+        vi.spyOn(memory, "search").mockImplementation(async (asked) => {
+          if (asked.previewChars !== undefined) throw new HelperError("exited", "memorySearch");
+          return search(asked);
+        });
+        await expect(page.removeOlderThan(30)).rejects.toThrow("couldn't be removed");
+      } else {
+        await page.removeOlderThan(30);
+      }
+      expect(page.state.query).toBe("needle");
+      expect(page.state.entries.map((entry) => entry.memId)).toEqual(fails ? ["turn:kept", "turn:old"] : ["turn:kept"]);
+      expect(page.state.usage?.docs).toBe(memory.rows.length);
+    });
+
+    test("a full page that removes nothing ends it, rather than listing the same requests forever", async () => {
+      const error = vi.spyOn(log, "error").mockImplementation(() => {});
+      for (let i = 0; i < config.memoryRemoveOldFetchRows; i += 1) memory.rows.push(memoryRow(`old ${i}`, "", cutoff(31) - i, String(i)));
+      const remove = vi.spyOn(memory, "remove").mockResolvedValue(0);
+      await expect(page.removeOlderThan(30)).rejects.toThrow("Requests older than 30 days couldn't be removed. Try again.");
+      expect(remove).toHaveBeenCalledTimes(1);
+      error.mockRestore();
+    });
   });
 
   test("Clear All removes everything, and asks memory even with no database (a clear cut short can leave its write-ahead log)", async () => {

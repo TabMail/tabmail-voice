@@ -81,8 +81,9 @@ export class MemoryHelper implements AgentMemory {
     await this.request("memoryIndexBatch", { rows, maxBytes });
   }
 
-  async search({ query, from, to, limit }: MemorySearch): Promise<MemoryHit[]> {
-    return hits(await this.request("memorySearch", { q: query, from, to, limit, ignoreDate: from === "" && to === "" }), "memorySearch");
+  async search({ query, from, to, limit, previewChars }: MemorySearch): Promise<MemoryHit[]> {
+    const preview = previewChars === undefined ? {} : { previewChars };
+    return hits(await this.request("memorySearch", { q: query, from, to, limit, ignoreDate: from === "" && to === "", ...preview }), "memorySearch");
   }
 
   async read(timestampMs: number, toleranceMs: number): Promise<MemoryHit[]> {

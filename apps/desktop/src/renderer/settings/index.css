@@ -348,6 +348,12 @@ ul.dictionary {
   color: inherit;
 }
 
+/* The days typed in Remove Old's question (#247), which wraps as a sentence around it. */
+input.memory-days {
+  width: 5em;
+  margin: 0 4px;
+}
+
 @media (forced-colors: active) {
   .usage-bar {
     border: 1px solid CanvasText;
