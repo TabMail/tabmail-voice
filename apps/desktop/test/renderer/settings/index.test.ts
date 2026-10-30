@@ -4,7 +4,6 @@
 
 // @vitest-environment happy-dom
 
-import { aSignedInUser } from "../../support/stubs.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act } from "react";
@@ -79,7 +78,6 @@ const signedIn: SettingsState = {
   update: { kind: "idle" },
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: shownPersonalization,
-
   fileProblems: [],
 };
 
@@ -702,7 +700,7 @@ describe("Settings page", () => {
      * pushing the result (a save as focus left the field replaced the row under the press, and the
      * removal was lost). */
     test("an item edited and then removed is removed", async () => {
-      const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- Prefers morning meetings.\n- Works with Sam." }), aSignedInUser);
+      const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- Prefers morning meetings.\n- Works with Sam." }));
       // The stand-in main process: the command just sent applied to the store, then its state pushed.
       let sent: Command[] = [];
       const page = await settingsPage({ error: null }, () => {
@@ -737,8 +735,8 @@ describe("Settings page", () => {
       const shown = (prompts: UserPrompts) => (syncField === "kb" ? prompts.shown("kb", "") : prompts.shown("composition", language));
       const edit = (prompts: UserPrompts, bullets: string[]) =>
         syncField === "kb" ? prompts.editKnowledgeBase(shown(prompts), bullets) : prompts.editCompositionSection(language, shown(prompts), bullets);
-      const here = new UserPrompts(new MemoryStore(), aSignedInUser, { newName: () => "0000000a00000001" });
-      const there = new UserPrompts(new MemoryStore(), aSignedInUser, { newName: () => "0000000b00000001" });
+      const here = new UserPrompts(new MemoryStore(), { newName: () => "0000000a00000001" });
+      const there = new UserPrompts(new MemoryStore(), { newName: () => "0000000b00000001" });
       expect(edit(here, ["Alpha."])).toBe(true);
       relay(here, there);
       // The stand-in main process: the command just sent applied to this device's store, then its state pushed.
@@ -1905,51 +1903,29 @@ describe("personalization drafts", () => {
   });
 });
 
-/** Root ADR-035: while signed out, Settings › Personalization shows only that it needs a sign-in, never
- * a text, a control or Device Sync's switch, greyed in the sidebar, as soon as the sign-out is pushed;
- * the same account signing back in sees the texts again. */
-describe("personalization while signed out", () => {
-  const texts = ["ALWAYS start with a greeting.", "I write in English Only.", "Prefers morning meetings.", "Works with Sam."];
-  const signedOut: SettingsState = { ...signedIn, email: null, personalization: null };
+/** Root ADR-035 (owner, 2026-10-29: "even sign out, don't let it hide"): while signed out,
+ * Personalization and the dictionary show and change the texts and words as when signed in. */
+describe("personalization and the dictionary while signed out", () => {
+  const signedOut: SettingsState = { ...signedIn, email: null, dictionary: [{ word: "Kaelthorne", learned: false, lastUsed: 1 }] };
+  const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
 
-  test("shows only a sign-in line, live, and the texts again after the sign-in", async () => {
-    const { push } = await settingsPage({ error: null }, signedIn, signedIn);
+  test("Personalization shows the texts and saves an edit", async () => {
+    const { commands } = await settingsPage({ error: null }, signedOut, signedOut);
     await act(async () => button("Personalization").click());
-    const pane = () => document.querySelector('[role="tabpanel"]')?.closest("main") as HTMLElement;
-    const nav = () => [...document.querySelectorAll<HTMLButtonElement>(".sidebar button.nav")].find((candidate) => candidate.textContent?.includes("Personalization"));
-    for (const text of texts) expect(pane().textContent).toContain(text);
-    expect(nav()?.classList.contains("unavailable")).toBe(false);
-
-    await push(signedOut);
     const main = document.querySelector("main.content") as HTMLElement;
-    for (const text of texts) expect(main.textContent).not.toContain(text);
-    expect(main.textContent).toContain("Sign in to see this.");
-    expect(document.querySelector('[role="tabpanel"]')).toBeNull();
-    expect(main.textContent).not.toContain("Sync with my other devices");
-    expect(nav()?.classList.contains("unavailable")).toBe(true);
-
-    await push(signedIn);
-    for (const text of texts) expect(pane().textContent).toContain(text);
-    expect(nav()?.classList.contains("unavailable")).toBe(false);
+    for (const text of ["ALWAYS start with a greeting.", "I write in English Only."]) expect(main.textContent).toContain(text);
+    expect(main.textContent).not.toContain("Sign in to see this.");
+    await act(async () => button("Knowledge base").click());
+    await act(async () => type(field("Add to Knowledge base"), "Typed while signed out"));
+    await act(async () => field("Add to Knowledge base").form?.requestSubmit());
+    expect(commands.at(-1)).toMatchObject({ type: "editKnowledgeBase", bullets: ["Prefers morning meetings.", "Works with Sam.", "Typed while signed out"] });
   });
 
-  /** The dictionary, the computer's words kept across accounts, is hidden the same way while signed out. */
-  test("the dictionary shows only the sign-in line, live, and its words after any sign-in", async () => {
-    const withWords: SettingsState = { ...signedIn, dictionary: [{ word: "Kaelthorne", learned: false, lastUsed: 1 }] };
-    const { push } = await settingsPage({ error: null }, withWords, withWords);
+  test("the dictionary shows its words", async () => {
+    await settingsPage({ error: null }, signedOut, signedOut);
     await act(async () => button("Dictionary").click());
-    const main = () => document.querySelector("main.content") as HTMLElement;
-    const nav = () => [...document.querySelectorAll<HTMLButtonElement>(".sidebar button.nav")].find((candidate) => candidate.textContent?.includes("Dictionary"));
-    expect(main().textContent).toContain("Kaelthorne");
-    expect(nav()?.classList.contains("unavailable")).toBe(false);
-
-    await push({ ...withWords, email: null, personalization: null });
-    expect(main().textContent).not.toContain("Kaelthorne");
-    expect(document.querySelector('ul[aria-label="Dictionary"]')).toBeNull();
-    expect(nav()?.classList.contains("unavailable")).toBe(true);
-
-    await push({ ...withWords, email: "other@example.com" });
-    expect(main().textContent).toContain("Kaelthorne");
-    expect(nav()?.classList.contains("unavailable")).toBe(false);
+    const main = document.querySelector("main.content") as HTMLElement;
+    expect(main.textContent).toContain("Kaelthorne");
+    expect(main.textContent).not.toContain("Sign in to see this.");
   });
 });

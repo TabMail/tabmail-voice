@@ -2,7 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { aSignedInUser } from "../../support/stubs.js";
 import { describe, expect, test } from "vitest";
 import { personalizationState } from "../../../src/core/personalization/page.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
@@ -10,7 +9,7 @@ import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 
 describe("personalizationState", () => {
   test("Settings shows each writing-style section's bullets and the knowledge base's", () => {
-    const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- alpha.\n- beta." }), aSignedInUser);
+    const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- alpha.\n- beta." }));
     const state = personalizationState(prompts);
     expect(state.writingStyle.map((group) => [group.section, group.title])).toEqual([
       ["general", "General writing style"],
@@ -25,7 +24,7 @@ describe("personalizationState", () => {
   /** Each entry, newest first, says what restoring it would bring back and take away from the texts
    * as they are now. */
   test("the history says what restoring each entry would change", () => {
-    const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- alpha." }), aSignedInUser);
+    const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- alpha." }));
     prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha.", "beta."]);
     prompts.flushHistory();
     prompts.resetKnowledgeBase();

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { PromptField } from "../../../src/core/personalization/prompts.js";
 import { type Bullet, type Catalog, type CatalogEntry, defaultCatalog, parse, render, type SyncField, trim } from "../../../src/core/sync/bullets.js";
-import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } from "../../support/bulletDevices.js";
+import { BulletDevice, BulletRelay, DeviceStore, storeStates } from "../../support/bulletDevices.js";
 
 // The shared conformance vectors and default catalog, byte-identical in TabMail for Thunderbird, iOS and
 // Voice: a change to either is made in all three, and these hashes with it.
@@ -99,7 +99,7 @@ class ScenarioRun {
   }
 
   private initialStore(init: Init): DeviceStore {
-    const store = ownedStore();
+    const store = new DeviceStore();
     if (init === "new") return store;
     if (init === "empty") {
       storeStates(store, {});

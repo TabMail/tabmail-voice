@@ -19,7 +19,6 @@ import type { PromptHistoryItem } from "../../core/personalization/page.js";
 import type { ShownBullet } from "../../core/personalization/prompts.js";
 import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
-import type { PersonalizationState } from "../../core/personalization/page.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, PenIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
@@ -54,13 +53,6 @@ function isOffered(name: SectionName, state: SettingsState): boolean {
 
 /** Whether `name`'s section wants the user's attention: signed out, no name for agent mode, a
  * permission missing, or VS Code's settings hiding the caret. */
-/** Whether `name`'s section has nothing to show, greyed in the sidebar (root ADR-035): Personalization
- * while its texts aren't available, and the dictionary, the user's own words, while signed out. */
-function isUnavailable(name: SectionName, state: SettingsState): boolean {
-  if (name === "dictionary") return state.email === null;
-  return name === "personalization" && state.personalization === null;
-}
-
 function needsAttention(name: SectionName, state: SettingsState): boolean {
   if (name === "account") return state.email === null;
   if (name === "agent") return !hasName(state);
@@ -91,7 +83,7 @@ function Settings() {
           </div>
         </div>
         {sections.filter(({ name }) => isOffered(name, state)).map(({ name, title, icon: sectionIcon }) => (
-          <button key={name} className={["nav", name === shown ? "selected" : "", isUnavailable(name, state) ? "unavailable" : ""].filter(Boolean).join(" ")} aria-current={name === shown ? "page" : undefined} onClick={() => setShown(name)}>
+          <button key={name} className={name === shown ? "nav selected" : "nav"} aria-current={name === shown ? "page" : undefined} onClick={() => setShown(name)}>
             {sectionIcon(config.settingsSectionIconSize)}
             <span>{title}</span>
             {needsAttention(name, state) && <span className="attention" role="img" aria-label="Needs attention" />}
@@ -198,23 +190,7 @@ function DictationPane({ state }: { state: SettingsState }) {
  * learning from the user's corrections where it can. Learned words can run to thousands (#310), so
  * above the list are how many of each there are and a field that shows only the words containing what
  * is typed in it, whatever the case. */
-/** What Personalization and the dictionary show while signed out (root ADR-035). */
-const signedOutLine = "Sign in to see this.";
-
-/** Root ADR-035: while signed out, the dictionary shows only that it needs a sign-in. Its words are the
- * computer's (kept across accounts), so any sign-in shows them again. */
 function DictionaryPane({ state }: { state: SettingsState }) {
-  if (state.email === null) {
-    return (
-      <div className="row dictionary-unavailable">
-        <span className="caption">{signedOutLine}</span>
-      </div>
-    );
-  }
-  return <DictionaryEditor state={state} />;
-}
-
-function DictionaryEditor({ state }: { state: SettingsState }) {
   const [draft, setDraft] = useState("");
   const [filter, setFilter] = useState("");
   const word = dictionaryWord(draft);
@@ -774,20 +750,8 @@ type PersonalizationTab = (typeof personalizationTabs)[number];
  * the tabs, Device Sync's switch, with what stops it said under it: a choice that couldn't be saved,
  * or texts too large for the relay. What is being typed is dropped when the texts are replaced, by a
  * reset or a restore, or by another account (root ADR-035). */
-/** Root ADR-035: Personalization while its texts aren't available shows only why, never a text, a
- * control or Device Sync's switch. */
 function PersonalizationPane({ state }: { state: SettingsState }) {
-  if (state.personalization === null) {
-    return (
-      <div className="row personalization-unavailable">
-        <span className="caption">{signedOutLine}</span>
-      </div>
-    );
-  }
-  return <PersonalizationEditor state={state} personalization={state.personalization} />;
-}
-
-function PersonalizationEditor({ state, personalization }: { state: SettingsState; personalization: PersonalizationState }) {
+  const personalization = state.personalization;
   const [tab, setTab] = useState<PersonalizationTab>("Writing style");
   const [failure, setFailure] = useState<string | null>(null);
   const [replaced, setReplaced] = useState(0);

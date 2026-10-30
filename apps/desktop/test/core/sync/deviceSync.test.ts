@@ -8,27 +8,12 @@ import { UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { defaultCatalog, epochZero } from "../../../src/core/sync/bullets.js";
 import { MemoryStore, type StoreProblem } from "../../../src/core/util/keyValueStore.js";
-import { BulletDevice, BulletRelay, DeviceStore, ownedStore } from "../../support/bulletDevices.js";
+import { BulletDevice, BulletRelay, DeviceStore } from "../../support/bulletDevices.js";
 import { FakeRelay, VoiceDevice } from "../../support/fakeDeviceSync.js";
-import { aSignedInUser, Fixtures } from "../../support/stubs.js";
+import { Fixtures } from "../../support/stubs.js";
 
 const peerName = "ffffffff00000001";
 const kbDefaults = defaultCatalog.defaults.filter((entry) => entry.field === "kb").map((entry) => entry.text);
-
-/** A store whose disk refuses writes while `unsaved`: what it is given stays in memory, as `JSONFileStore`'s. */
-class UnsavedStore extends MemoryStore {
-  unsaved = false;
-
-  override set(key: string, value: unknown): boolean {
-    super.set(key, value);
-    return !this.unsaved;
-  }
-
-  override setAll(values: Readonly<Record<string, unknown>>): boolean {
-    super.setAll(values);
-    return !this.unsaved;
-  }
-}
 
 /** A store whose file couldn't be read at launch: every write fails, as `JSONFileStore`'s. */
 class UnreadableStore extends MemoryStore {
@@ -238,28 +223,13 @@ describe("when sync runs", () => {
     voice.account.signOut();
     expect(relay.isConnected("voice")).toBe(false);
   });
-
-  test("another account's texts go back to the defaults, and nothing of them is sent", async () => {
-    const relay = new FakeRelay();
-    const store = new MemoryStore();
-    const other = new VoiceDevice(relay, store, "voice", "user-2");
-    other.allowed = false;
-    other.sync.update();
-    other.add("kb", "", "Other account's fact");
-    expect(other.texts("kb")).toContain("Other account's fact");
-
-    const voice = new VoiceDevice(relay, store);
-    voice.sync.update();
-    await relay.settle();
-    expect(voice.texts("kb")).toEqual(kbDefaults);
-    expect(relay.sent.map((entry) => entry.text).join("\n")).not.toContain("Other account's fact");
-  });
 });
 
-/** Root ADR-035: Voice keeps the texts at sign-out; another account signing in wipes them first, and
- * when that wipe can't be saved the new account doesn't start on top of what is left. */
-describe("nothing of one account reaches the next", () => {
-  const oldFact = "First account's fact";
+/** Root ADR-035 (owner, 2026-10-29: "the sign-in is which do I sync with & who do I bill"): the texts
+ * are the computer user's, kept whatever account is signed in, and shown and changed while signed out;
+ * the account picks only the Device Sync group they sync with. */
+describe("an account change", () => {
+  const fact = "This computer's fact";
 
   async function signIn(voice: VoiceDevice, userID: string): Promise<void> {
     voice.auth.enqueue(200, Fixtures.sessionJSON({ access: `access-${userID}`, refresh: `refresh-${userID}`, userID }));
@@ -267,61 +237,100 @@ describe("nothing of one account reaches the next", () => {
     await vi.waitFor(() => expect(voice.account.session?.userID).toBe(userID));
   }
 
-  async function signedOutWithAFact(store: MemoryStore = new MemoryStore()): Promise<{ relay: FakeRelay; voice: VoiceDevice }> {
+  test("signing out stops sync only, and another account's sign-in syncs the texts as they are", async () => {
     const relay = new FakeRelay();
     relay.peer("thunderbird");
-    const voice = new VoiceDevice(relay, store);
+    const voice = new VoiceDevice(relay);
     voice.sync.update();
     await relay.settle();
-    voice.add("kb", "", oldFact);
+    voice.add("kb", "", fact);
     await relay.settle();
+
     voice.account.signOut();
-    // Kept, but neither shown nor synced while signed out.
-    expect(JSON.stringify(store.snapshot())).toContain(oldFact);
-    expect(voice.texts("kb")).toEqual([]);
     expect(relay.isConnected("voice")).toBe(false);
+    expect(voice.texts("kb")).toContain(fact);
+    voice.add("kb", "", "Typed while signed out");
+    expect(voice.texts("kb")).toEqual([...kbDefaults, fact, "Typed while signed out"]);
     relay.sent.length = 0;
-    return { relay, voice };
-  }
 
-  test("signed back in, the same account keeps its texts", async () => {
-    const { relay, voice } = await signedOutWithAFact();
-    await signIn(voice, Fixtures.userID);
-    await relay.settle();
-    expect(voice.texts("kb")).toContain(oldFact);
-    expect(relay.isConnected("voice")).toBe(true);
-  });
-
-  test("another account starts from the defaults, and nothing of the first is sent", async () => {
-    const { relay, voice } = await signedOutWithAFact();
     await signIn(voice, "user-2");
     await relay.settle();
-    expect(voice.prompts.owner).toBe("user-2");
-    expect(voice.texts("kb")).toEqual(kbDefaults);
     expect(relay.isConnected("voice")).toBe(true);
-    expect(relay.sent.map((entry) => entry.text).join("\n")).not.toContain(oldFact);
+    expect(voice.texts("kb")).toEqual([...kbDefaults, fact, "Typed while signed out"]);
+    const sent = relay.sent.map((entry) => entry.text).join("\n");
+    expect(sent).toContain(fact);
+    expect(sent).toContain("Typed while signed out");
   });
 
-  test("when the wipe can't be saved, sync stays off and nothing of the first account is shown or sent, until it can", async () => {
-    const store = new UnsavedStore();
-    const { relay, voice } = await signedOutWithAFact(store);
-    const connections = relay.urls.length;
-    store.unsaved = true;
-    await signIn(voice, "user-2");
-    await relay.settle();
-    expect(relay.urls).toHaveLength(connections);
-    expect(relay.isConnected("voice")).toBe(false);
-    expect(voice.prompts.owner).toBe(Fixtures.userID);
-    expect(voice.texts("kb")).toEqual([]);
-    expect(JSON.stringify(voice.prompts.personalization)).not.toContain(oldFact);
+  /** One device switching between two accounts' groups, each with a peer of its own: every exchange
+   * is a union (neither group's writers are in the other's seen map), nothing is lost on the device or
+   * on either group's peer, a text both groups added shows once (DS-DEDUP), and the line counts stay
+   * the same however often the device switches. */
+  describe("with two groups", () => {
+    const name = (prefix: string) => (k: number) => `${prefix}${k.toString(16).padStart(8, "0")}`;
+    const texts = (device: BulletDevice): string[] => device.state("kb").bullets.map((bullet) => bullet.text);
+    const drain = (...relays: BulletRelay[]) => {
+      for (const relay of relays) while (relay.deliverOldest());
+    };
 
-    store.unsaved = false;
-    voice.sync.update();
-    await relay.settle();
-    expect(voice.prompts.owner).toBe("user-2");
-    expect(relay.isConnected("voice")).toBe(true);
-    expect(relay.sent.map((entry) => entry.text).join("\n")).not.toContain(oldFact);
-    expect(JSON.stringify(store.snapshot())).not.toContain(oldFact);
+    async function twoGroups(): Promise<{ groupA: BulletRelay; groupB: BulletRelay; voice: BulletDevice; peerA: BulletDevice; peerB: BulletDevice }> {
+      const groupA = new BulletRelay();
+      const groupB = new BulletRelay();
+      const voice = new BulletDevice("voice", new DeviceStore(), groupA, { name: name("0000000a") });
+      const peerA = new BulletDevice("peerA", new DeviceStore(), groupA, { name: name("0000000b") });
+      const peerB = new BulletDevice("peerB", new DeviceStore(), groupB, { name: name("0000000c") });
+      for (const device of [voice, peerA, peerB]) await device.connect();
+      voice.add("kb", "", fact);
+      peerA.add("kb", "", "First account's fact");
+      peerA.add("kb", "", "Fact both groups have");
+      peerB.add("kb", "", "Second account's fact");
+      peerB.add("kb", "", "Fact both groups have");
+      drain(groupA, groupB);
+      return { groupA, groupB, voice, peerA, peerB };
+    }
+
+    test("switching back and forth five times loses nothing and keeps the line counts", async () => {
+      const { groupA, groupB, voice, peerA, peerB } = await twoGroups();
+      const union = [...kbDefaults, fact, "First account's fact", "Fact both groups have", "Second account's fact"].sort();
+      const counts: number[][] = [];
+      for (let round = 0; round < 5; round += 1) {
+        await voice.switchGroup(groupB);
+        drain(groupB);
+        await voice.switchGroup(groupA);
+        drain(groupA);
+        counts.push([voice, peerA, peerB].map((device) => texts(device).length));
+      }
+      expect(texts(voice).sort()).toEqual(union);
+      expect(texts(peerA).sort()).toEqual(union);
+      expect(texts(peerB).sort()).toEqual(union);
+      expect(new Set(counts.map((count) => JSON.stringify(count))).size).toBe(1);
+    });
+
+    test("the texts are kept across a restart in the other group", async () => {
+      const { groupB, voice, peerB } = await twoGroups();
+      await voice.switchGroup(groupB);
+      voice.restart();
+      await voice.connect();
+      drain(groupB);
+      expect(texts(voice)).toEqual(expect.arrayContaining([fact, "First account's fact", "Second account's fact"]));
+      expect(texts(peerB)).toEqual(expect.arrayContaining([fact, "First account's fact", "Second account's fact"]));
+    });
+
+    /** A deletion still crosses between devices that were in contact: one the device made in the
+     * second group reaches the first group's peer, which had the bullet from it. */
+    test("a deletion of a bullet both groups have seen reaches both", async () => {
+      const { groupA, groupB, voice, peerA, peerB } = await twoGroups();
+      await voice.switchGroup(groupB);
+      drain(groupB);
+      expect(texts(peerB)).toContain("First account's fact");
+      voice.delete("kb", "", "First account's fact");
+      drain(groupB);
+      expect(texts(peerB)).not.toContain("First account's fact");
+      await voice.switchGroup(groupA);
+      drain(groupA);
+      expect(texts(peerA)).not.toContain("First account's fact");
+      expect(texts(voice)).not.toContain("First account's fact");
+    });
   });
 });
 
@@ -330,7 +339,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
    * what is sent does not grow with the snapshots merged before it. Each round a peer adds a bullet
    * under a writer of its own, then deletes it. */
   test("what is sent does not grow with the snapshots merged before", () => {
-    const prompts = new UserPrompts(new MemoryStore(), aSignedInUser);
+    const prompts = new UserPrompts(new MemoryStore());
     const sent = () => {
       const outgoing = prompts.sync.outgoing("kb");
       if (outgoing.kind !== "messages") throw new Error(outgoing.kind);
@@ -367,7 +376,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
   test("a field in ten parts or more keeps every part within it, whatever the budget", () => {
     let most = 0;
     for (let budget = 360; budget <= 440; budget += 1) {
-      const prompts = new UserPrompts(new MemoryStore(), aSignedInUser, { budget: () => budget });
+      const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
       for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(`Fact number ${index} of thirty`);
       const outgoing = prompts.sync.outgoing("kb");
       if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
@@ -382,7 +391,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
    * bytes, here accented letters and owls (two UTF-16 units each), splits as its bytes require. */
   test("a field of multibyte text keeps every part within it in UTF-8 bytes, whatever the budget", () => {
     for (let budget = 360; budget <= 440; budget += 1) {
-      const prompts = new UserPrompts(new MemoryStore(), aSignedInUser, { budget: () => budget });
+      const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
       for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(`Fait numéro ${index} \u{1F989}\u{1F989}\u{1F989}`);
       const outgoing = prompts.sync.outgoing("kb");
       if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
@@ -395,7 +404,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
    * budget by its length, but not by its bytes, goes in parts within it. */
   test("a field that fits by its length but not its UTF-8 bytes goes in parts within it", () => {
     let budget = config.deviceSyncMessageMaxBytes;
-    const prompts = new UserPrompts(new MemoryStore(), aSignedInUser, { budget: () => budget });
+    const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
     prompts.addKnowledge("\u{1F989}".repeat(40));
     prompts.addKnowledge("\u{1F989}".repeat(41));
     const whole = prompts.sync.outgoing("kb");
@@ -415,7 +424,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
    * UTF-16 units, 320 bytes) make one bullet over the budget, held back and kept. */
   test("one bullet of multibyte text over it in UTF-8 bytes is held back and kept, though its length fits", () => {
     const budget = 420;
-    const ascii = new UserPrompts(new MemoryStore(), aSignedInUser, { budget: () => budget });
+    const ascii = new UserPrompts(new MemoryStore(), { budget: () => budget });
     ascii.addKnowledge("a".repeat(80));
     const sent = ascii.sync.outgoing("kb");
     if (sent.kind !== "messages") throw new Error(`ascii: ${sent.kind}`);
@@ -423,10 +432,10 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     expect(sent.messages.flatMap((message) => message.bullets).map((bullet) => bullet[1])).toContain("a".repeat(80));
 
     const store = new MemoryStore();
-    const owls = new UserPrompts(store, aSignedInUser, { budget: () => budget });
+    const owls = new UserPrompts(store, { budget: () => budget });
     owls.addKnowledge("\u{1F989}".repeat(80));
     expect(owls.sync.outgoing("kb")).toMatchObject({ kind: "oversize", budget });
-    expect(new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser).sync.state("kb").bullets.map((bullet) => bullet.text)).toContain("\u{1F989}".repeat(80));
+    expect(new UserPrompts(new MemoryStore(store.snapshot())).sync.state("kb").bullets.map((bullet) => bullet.text)).toContain("\u{1F989}".repeat(80));
   });
 
   test("one bullet over it holds the field back: logged with sizes only, shown, and cleared once it fits", async () => {
@@ -458,7 +467,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
   /** R19 discards by (sender, field) only when the refused part's sender is a string: an array of that
    * sender's id reads as the same key, and is not that sender. */
   test("a refused part whose sender is not a string drops no snapshot", () => {
-    const prompts = new UserPrompts(new MemoryStore(), aSignedInUser);
+    const prompts = new UserPrompts(new MemoryStore());
     const part = (fields: Record<string, unknown>) => ({ ...JSON.parse(bulletState("kb", [["", "Half fact", peerName, 1]], { [peerName]: 2 })), parts: 2, ...fields });
     expect(prompts.sync.receive(part({}))).toEqual({ kind: "partial" });
     expect(prompts.sync.receive(part({ sender: ["ffffffffffffffff"], snap: "0000000000000002", v: 2 }))).toMatchObject({ kind: "invalid" });
@@ -483,8 +492,8 @@ describe("an in-process reload of the texts (DS-NAME-ABANDON, R7)", () => {
   /** Two devices that both hold "Alpha", added on A. */
   async function alphaOnBoth(): Promise<{ relay: BulletRelay; a: BulletDevice; b: BulletDevice }> {
     const relay = new BulletRelay();
-    const a = new BulletDevice("A", ownedStore(), relay, { name: (k) => `0000000a${k.toString(16).padStart(8, "0")}` });
-    const b = new BulletDevice("B", ownedStore(), relay, { name: (k) => `0000000b${k.toString(16).padStart(8, "0")}` });
+    const a = new BulletDevice("A", new DeviceStore(), relay, { name: (k) => `0000000a${k.toString(16).padStart(8, "0")}` });
+    const b = new BulletDevice("B", new DeviceStore(), relay, { name: (k) => `0000000b${k.toString(16).padStart(8, "0")}` });
     await a.connect();
     await b.connect();
     a.add("kb", "", "Alpha");
@@ -500,7 +509,7 @@ describe("an in-process reload of the texts (DS-NAME-ABANDON, R7)", () => {
   test("after the user's factory reset, the next bullet is under a fresh name, and no peer loses a bullet", async () => {
     const { relay, a, b } = await alphaOnBoth();
     const before = a.state("kb").bullets.find((bullet) => bullet.text === "Alpha");
-    a.prompts.resetFile(() => a.store.replaceWith(ownedStore()));
+    a.prompts.resetFile(() => a.store.replaceWith(new DeviceStore()));
     a.add("kb", "", "Beta");
     while (relay.deliverOldest());
 
@@ -508,22 +517,6 @@ describe("an in-process reload of the texts (DS-NAME-ABANDON, R7)", () => {
     expect(beta?.name).not.toBe(before?.name);
     expect(texts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
     expect(texts(a)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
-  });
-
-  test("after another account's texts are cleared on sign-in, the same", async () => {
-    const { relay, a, b } = await alphaOnBoth();
-    const before = a.state("kb").bullets.find((bullet) => bullet.text === "Alpha");
-    a.disconnect();
-    // The file is another account's now, as when someone else signed in on A since.
-    a.store.replaceWith(ownedStore("user-elsewhere"));
-    await a.connect();
-    expect(a.prompts.owner).not.toBe("user-elsewhere");
-    a.add("kb", "", "Beta");
-    while (relay.deliverOldest());
-
-    const beta = a.state("kb").bullets.find((bullet) => bullet.text === "Beta");
-    expect(beta?.name).not.toBe(before?.name);
-    expect(texts(b)).toEqual(expect.arrayContaining(["Alpha", "Beta"]));
   });
 });
 
@@ -538,7 +531,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
   }
 
   function legacyStore(): FullDiskStore {
-    const store = new FullDiskStore(ownedStore().snapshot());
+    const store = new FullDiskStore(new DeviceStore().snapshot());
     store.set("user_prompts:user_kb.md", "- Alpha\n- Beta");
     return store;
   }
@@ -554,7 +547,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     const store = legacyStore();
     store.failing = true;
     const a = device("A", store, relay);
-    const b = device("B", ownedStore(), relay);
+    const b = device("B", new DeviceStore(), relay);
     await b.connect();
     await a.connect();
 
@@ -576,7 +569,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     store.set("user_prompts:user_composition.md", "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- Write in French.");
     store.failing = true;
     const a = device("A", store, relay);
-    const b = device("B", ownedStore(), relay);
+    const b = device("B", new DeviceStore(), relay);
     await b.connect();
     await a.connect();
     while (relay.deliverOldest());
@@ -597,7 +590,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     const store = legacyStore();
     store.failing = true;
     const a = device("A", store, relay);
-    const b = device("B", ownedStore(), relay);
+    const b = device("B", new DeviceStore(), relay);
     await b.connect();
     await a.connect();
     while (relay.deliverOldest());
@@ -619,7 +612,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     expect(a.prompts.addKnowledge("Gamma")).toEqual({ outcome: "unsaved", fields: [] });
     expect(store.failNext).toBe(false);
 
-    const reader = new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser);
+    const reader = new UserPrompts(new MemoryStore(store.snapshot()));
     expect(reader.shown("kb", "").map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
     expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
   });
@@ -635,7 +628,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     expect(store.failNext).toBe(false);
 
     // A later reader of the store finds the texts as they were, upgraded then.
-    const reader = new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser);
+    const reader = new UserPrompts(new MemoryStore(store.snapshot()));
     expect(reader.shown("kb", "").map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
     expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
   });

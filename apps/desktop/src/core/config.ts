@@ -427,6 +427,13 @@ export const memoryToolProgressLabel = "Looking through past requests";
 export const memoryBubbleName = "Memory";
 export const memoryBubbleDescription = "Looks back at your earlier requests, and keeps what you ask it to remember.";
 
+// MARK: The app's data folder
+
+/** The permissions of the app's data folder and of the files the app writes there, set on every
+ * platform rather than left to the system's defaults: the user's alone (root ADR-035). */
+export const privateFolderMode = 0o700;
+export const privateFileMode = 0o600;
+
 // MARK: Knowledge base and writing style (ADR-DESK-063)
 
 /** The agent loop's knowledge-base tools, as the backend names them. */

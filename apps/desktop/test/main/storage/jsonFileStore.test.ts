@@ -2,12 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog } from "../../../src/core/log.js";
-import { JSONFileStore } from "../../../src/main/storage/jsonFileStore.js";
+import * as config from "../../../src/core/config.js";
+import { JSONFileStore, restrictDataFolder } from "../../../src/main/storage/jsonFileStore.js";
 
 const folders: string[] = [];
 function scratch(): string {
@@ -233,3 +234,64 @@ describe("JSONFileStore", () => {
     expect(store.set("readsScreen", false)).toBe(false);
   });
 });
+
+/** Root ADR-035: the app's data folder and the files it writes there are the user's alone, set rather
+ * than left to the system's defaults (POSIX permissions; Windows keeps a profile's folders private). */
+describe.skipIf(process.platform === "win32")("permissions", () => {
+  const mode = (path: string) => statSync(path).mode & 0o777;
+
+  test("a saved file is the user's alone, and so are the folders made for it", () => {
+    const path = join(scratch(), "Made/Here/userPrompts.json");
+    expect(new JSONFileStore(path).set("key", "value")).toBe(true);
+    expect(mode(path)).toBe(config.privateFileMode);
+    expect(mode(dirname(path))).toBe(config.privateFolderMode);
+    expect(mode(dirname(dirname(path)))).toBe(config.privateFolderMode);
+  });
+
+  /** A temporary file a crash left keeps its permissions when written over: they are set again. */
+  test("a saved file is the user's alone whatever a leftover temporary file had", () => {
+    const path = join(scratch(), "userPrompts.json");
+    writeFileSync(`${path}.tmp`, "{}");
+    chmodSync(`${path}.tmp`, 0o644);
+    expect(new JSONFileStore(path).set("key", "value")).toBe(true);
+    expect(mode(path)).toBe(config.privateFileMode);
+  });
+
+  test("a file read at launch is made the user's alone; one that couldn't be read is left as it is", () => {
+    const folder = scratch();
+    const readable = join(folder, "settings.json");
+    writeFileSync(readable, "{}");
+    chmodSync(readable, 0o644);
+    new JSONFileStore(readable);
+    expect(mode(readable)).toBe(config.privateFileMode);
+
+    const damaged = join(folder, "userPrompts.json");
+    writeFileSync(damaged, "not json");
+    chmodSync(damaged, 0o644);
+    expect(new JSONFileStore(damaged).problem).toBeDefined();
+    expect(mode(damaged)).toBe(0o644);
+  });
+
+  test("the data folder is made, or made the user's alone when it is there", () => {
+    const folder = scratch();
+    const made = join(folder, "New");
+    restrictDataFolder(made);
+    expect(mode(made)).toBe(config.privateFolderMode);
+
+    chmodSync(folder, 0o755);
+    restrictDataFolder(folder);
+    expect(mode(folder)).toBe(config.privateFolderMode);
+  });
+
+  /** A folder that can't be made is logged by its error's code, never its path, and nothing throws. */
+  test("a data folder that can't be made is logged without its path", () => {
+    const errors: string[] = [];
+    configureLog({ isDebugBuild: false, sinks: { error: (line) => errors.push(line) } });
+    const file = join(scratch(), "a-file");
+    writeFileSync(file, "");
+    restrictDataFolder(join(file, "below"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).not.toContain(file);
+  });
+});
+

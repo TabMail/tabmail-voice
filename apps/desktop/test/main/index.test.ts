@@ -82,6 +82,8 @@ const app = vi.hoisted(() => ({
   files: new Map<string, Map<string, unknown>>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
   savesFail: false,
+  /** The folders launch made the user's alone (root ADR-035). */
+  restrictedFolders: [] as string[],
   /** The account a sign-in code verifies as, when set; every other request still fails. */
   verifiesAs: null as { id: string; email: string } | null,
   /** Why a file couldn't be read at launch, by its path: none is saved to (`JSONFileStore.problem`). */
@@ -326,6 +328,8 @@ vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
 vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
   const { join } = await import("node:path");
   return {
+    /** The data folders made the user's alone (`restrictDataFolder`), in order. */
+    restrictDataFolder: (path: string) => app.restrictedFolders.push(path),
     /** Each file its own values, kept across launches: the app folder's preferences file is
      * `app.stored`, any other is in `app.files` by its path. As the real store, one that couldn't be
      * read (`app.problems`) starts at the defaults and keeps what is set for this launch only. */
@@ -678,6 +682,7 @@ afterEach(() => {
   app.files.clear();
   app.savesFail = false;
   app.verifiesAs = null;
+  app.restrictedFolders = [];
   app.problems.clear();
   app.missingFiles.clear();
   app.shownFiles = [];
@@ -2230,7 +2235,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
    * at once how to fix it by hand, its Fix item stays in the menu, and every change it would have kept
    * says how to fix it. The app itself never resets, moves or writes over it. */
   test("a knowledge base file that couldn't be read is told of at launch, and nothing is saved to it", async () => {
-    signInStored();
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
     app.dialogResponse = 2;
@@ -2361,113 +2365,39 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.trayState?.().fileProblems).toEqual([]);
   });
 
-  /** Settings › Personalization's commands (ADR-DESK-063): each changes the stored texts and the
-   * state Settings shows, and pushes it; one the file can't keep is reported and changes nothing. */
-  /** Root ADR-035: while signed out, no state Settings is given or pushed carries a text, every
-   * personalization command is refused and changes nothing, and the same account signing back in sees
-   * its texts again. */
-  test("signed out, Settings gets none of the texts and changes none of them", async () => {
-    signInStored();
+  /** Root ADR-035: the app's data folder is made the user's alone at launch. */
+  test("launch makes the data folder the user's alone", async () => {
     await launch("darwin");
-    type Personalization = PersonalizationState | null;
-    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: Personalization }).personalization;
-    const pushed: Personalization[] = [];
-    app.listeners.set("voice:state", [
-      (_event, name, pushedState) => {
-        if (name === "settings") pushed.push((pushedState as { personalization: Personalization }).personalization);
-      },
-    ]);
-    const shown = page();
-    if (shown === null) throw new Error("signed in, the texts are shown");
-    expect(await send({ type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: [...texts(shown.knowledgeBase), "Kept private."] })).toEqual({ error: null });
-    const promptsFile = () => JSON.stringify([...(app.files.get(join(app.userData, "userPrompts.json"))?.entries() ?? [])]);
-    const before = promptsFile();
-    expect(before).toContain("Kept private.");
-    pushed.length = 0;
-
-    expect(await send({ type: "signOut" })).toEqual({ error: null });
-    expect(pushed.length).toBeGreaterThan(0);
-    expect(pushed.at(-1)).toBeNull();
-    expect(page()).toBeNull();
-    const language = shown.writingStyle.find((one) => one.section === "language")?.bullets ?? [];
-    for (const command of [
-      { type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: ["Typed while signed out."] },
-      { type: "editWritingStyle", section: "language", shown: language, bullets: ["Typed while signed out."] },
-      { type: "resetKnowledgeBase" },
-      { type: "resetWritingStyle" },
-      { type: "restorePromptHistory", id: "no-such-entry" },
-    ]) {
-      expect(await send(command), command.type).toEqual({ error: "Sign in to change this, so nothing changed." });
-    }
-    expect(promptsFile()).toBe(before);
-    expect(JSON.stringify(pushed)).not.toContain("Kept private.");
-
-    signInStored();
-    await launch("darwin");
-    expect(texts(page()?.knowledgeBase)).toContain("Kept private.");
+    expect(app.restrictedFolders).toEqual([app.userData]);
   });
 
-  /** Root ADR-035 (owner, 2026-10-29): another account signs in only once the previous account's texts
-   * are wiped. When the wipe can't be saved the sign-in fails: no account is set, nothing of the texts is
-   * shown, and the user is told how to fix it; once it can be saved, the same sign-in completes with the
-   * defaults. */
-  test("another account's sign-in fails while the previous account's texts can't be wiped", async () => {
+  /** Root ADR-035 (owner, 2026-10-29: "App is device-user tied"): the texts are the computer user's.
+   * While signed out Settings shows them and its commands change them; another account signing in finds
+   * them as they were, nothing wiped. */
+  test("signed out, Settings shows and changes the texts, and another account's sign-in keeps them", async () => {
     signInStored("user-1", "first@example.com");
     await launch("darwin");
-    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState | null; email: string | null });
-    const shown = page().personalization;
-    if (shown === null) throw new Error("signed in, the texts are shown");
-    expect(await send({ type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: ["First account's note."] })).toEqual({ error: null });
+    const page = () => app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState; email: string | null };
+    expect(await send({ type: "editKnowledgeBase", shown: page().personalization.knowledgeBase, bullets: [...texts(page().personalization.knowledgeBase), "First note."] })).toEqual({ error: null });
+
     expect(await send({ type: "signOut" })).toEqual({ error: null });
+    expect(page().email).toBeNull();
+    expect(texts(page().personalization.knowledgeBase)).toContain("First note.");
+    expect(await send({ type: "editKnowledgeBase", shown: page().personalization.knowledgeBase, bullets: [...texts(page().personalization.knowledgeBase), "Typed while signed out."] })).toEqual({ error: null });
+    expect(await send({ type: "resetWritingStyle" })).toEqual({ error: null });
 
     app.verifiesAs = { id: "user-2", email: "second@example.com" };
-    app.savesFail = true;
-    const path = join(app.userData, "userPrompts.json");
-    expect(await send({ type: "verify", email: "second@example.com", code: "123456" })).toEqual({
-      error: `Sign-in failed. Please try again. If it keeps happening, quit TabMail Voice, move this file to the Trash, and sign in again:\n${path}`,
-    });
-    expect(page().email).toBeNull();
-    expect(page().personalization).toBeNull();
-    expect(app.credential).toBeNull();
-    expect(app.syncSockets.every((socket) => socket.closed)).toBe(true);
-
-    app.savesFail = false;
     expect(await send({ type: "verify", email: "second@example.com", code: "123456" })).toEqual({ error: null });
     expect(page().email).toBe("second@example.com");
-    expect(JSON.stringify(page().personalization)).not.toContain("First account's note.");
-    expect(JSON.stringify([...(app.files.get(path)?.entries() ?? [])])).not.toContain("First account's note.");
+    expect(texts(page().personalization.knowledgeBase)).toEqual(expect.arrayContaining(["First note.", "Typed while signed out."]));
+    const stored = JSON.stringify([...(app.files.get(join(app.userData, "userPrompts.json"))?.entries() ?? [])]);
+    expect(stored).toContain("First note.");
+    expect(stored).toContain("Typed while signed out.");
   });
 
-  /** A texts file that can't be read is never written and nothing of it is read, so it doesn't stop a
-   * sign-in. */
-  test("a sign-in goes through while the texts' file can't be read", async () => {
-    const path = join(app.userData, "userPrompts.json");
-    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
-    app.dialogResponse = 2;
-    await launch("darwin");
-    app.verifiesAs = { id: "user-2", email: "second@example.com" };
-    expect(await send({ type: "verify", email: "second@example.com", code: "123456" })).toEqual({ error: null });
-    expect((app.handlers.get(channels.getState)?.({}, "settings") as { email: string | null }).email).toBe("second@example.com");
-  });
-
-  /** A sign-in kept from before launch is held to the same rule: when the texts are another account's
-   * and can't be wiped, the app starts signed out. */
-  test("a kept sign-in of another account is signed out at launch while the texts can't be wiped", async () => {
-    signInStored("user-1", "first@example.com");
-    await launch("darwin");
-    const shown = (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
-    expect(await send({ type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: ["First account's note."] })).toEqual({ error: null });
-
-    signInStored("user-2", "second@example.com");
-    app.savesFail = true;
-    await launch("darwin");
-    const state = app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState | null; email: string | null };
-    expect(state.email).toBeNull();
-    expect(state.personalization).toBeNull();
-  });
-
+  /** Settings › Personalization's commands (ADR-DESK-063): each changes the stored texts and the
+   * state Settings shows, and pushes it; one the file can't keep is reported and changes nothing. */
   test("the writing style and knowledge base are edited, reset and restored from Settings", async () => {
-    signInStored();
     await launch("darwin");
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const pushed: PersonalizationState[] = [];
@@ -2546,7 +2476,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   /** The knowledge base changed outside Settings (by `kb_add` or `kb_del`): the Settings
    * window is pushed the new state. */
   test("a knowledge base change made outside Settings reaches the Settings window", async () => {
-    signInStored();
     await launch("darwin");
     const pushed: string[][] = [];
     app.listeners.set("voice:state", [
@@ -2561,7 +2490,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   /** Edits still waiting for their quiet period are recorded in the history when the app quits, not
    * lost. */
   test("quitting records the edits waiting for their quiet period", async () => {
-    signInStored();
     await launch("darwin");
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const defaults = page().knowledgeBase;
@@ -2580,7 +2508,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
    * app's folder, apart from the preferences, and read again at the next launch; another user's
    * folder has its own. */
   test("the knowledge base is kept in the app's folder, apart from the preferences, across launches", async () => {
-    signInStored();
     const [first, second] = [mkdtempSync(join(tmpdir(), "TabMailVoiceTests-")), mkdtempSync(join(tmpdir(), "TabMailVoiceTests-"))];
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const relaunch = async (userData: string) => {
@@ -3072,7 +2999,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   });
 
   test("a confirmed reset of the knowledge base file keeps it as a dated copy, and opens no wizard", async () => {
-    signInStored();
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
     app.dialogResponse = 2;

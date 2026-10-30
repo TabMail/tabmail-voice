@@ -7,9 +7,8 @@ import { type PromptField, promptFields, type ShownBullet, UserPrompts } from ".
 import { type Bullet, type Catalog, defaultCatalog, type FieldState, parse } from "../../src/core/sync/bullets.js";
 import { DeviceSync, type SyncSocketEvents } from "../../src/core/sync/deviceSync.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
-import { aSignedInUser, Fixtures } from "./stubs.js";
+import { Fixtures } from "./stubs.js";
 
-const ownerKey = "device_sync_owner_user_id";
 
 /** A device's store: a `MemoryStore` whose next whole-value write can be made to fail, as a full disk's
  * would. */
@@ -34,12 +33,6 @@ export class DeviceStore extends MemoryStore {
     for (const key of Object.keys(this.snapshot())) this.values.delete(key);
     for (const [key, value] of Object.entries(structuredClone(other.snapshot()))) this.values.set(key, value);
   }
-}
-
-/** A store of `userID`'s texts (the signed-in fixture account's by default), with nothing else in it:
- * a new install. */
-export function ownedStore(userID: string = Fixtures.userID): DeviceStore {
-  return new DeviceStore({ [ownerKey]: userID });
 }
 
 /** One snapshot a device sent: every part, and who has yet to get each. */
@@ -153,14 +146,14 @@ export class BulletDevice {
   constructor(
     readonly id: string,
     readonly store: DeviceStore,
-    private readonly relay: BulletRelay,
+    private relay: BulletRelay,
     private readonly options: DeviceOptions,
   ) {
     this.start();
   }
 
   private start(): void {
-    this.prompts = new UserPrompts(this.store, aSignedInUser, {
+    this.prompts = new UserPrompts(this.store, {
       newName: () => this.options.name(++this.names),
       budget: this.options.budget === undefined ? undefined : () => this.options.budget as number,
       catalog: this.options.catalog,
@@ -186,6 +179,15 @@ export class BulletDevice {
 
   disconnect(): void {
     this.sync.stop();
+  }
+
+  /** Another account signs in (root ADR-035): the device leaves its Device Sync group for `relay`'s,
+   * its texts kept, and the texts are told of the account change, as the app tells them. */
+  async switchGroup(relay: BulletRelay): Promise<void> {
+    this.disconnect();
+    this.prompts.accountChanged();
+    this.relay = relay;
+    await this.connect();
   }
 
   /** The process ends and another opens the same store. */
@@ -251,7 +253,7 @@ export function builtInSkeleton(field: PromptField): Pick<FieldState, "head" | "
 
 /** Writes `states` into `store` as `UserPrompts` keeps them; fields not given stored empty. */
 export function storeStates(store: DeviceStore, states: Partial<Record<PromptField, Pick<FieldState, "bullets" | "seen">>>): void {
-  const prompts = new UserPrompts(store, aSignedInUser);
+  const prompts = new UserPrompts(store);
   const all: Partial<Record<PromptField, FieldState>> = {};
   for (const field of promptFields) {
     const given = states[field];

@@ -80,9 +80,8 @@ export class DeviceSync extends Observable {
   }
 
   /** Brings the connection in line with the account and the settings: run on every change of either,
-   * and of the texts. The texts are first made the signed-in account's (`UserPrompts.claim`), whether
-   * sync is on or not; sync runs only for an account they belong to, from a texts file that could be
-   * read, while `allowed`. */
+   * and of the texts. Sync runs for the account signed in, which picks the group it syncs with, never
+   * whose texts they are (root ADR-035), from a texts file that could be read, while `allowed`. */
   update(): void {
     if (this.updating) {
       this.updateAgain = true;
@@ -119,14 +118,14 @@ export class DeviceSync extends Observable {
   private reconcile(): void {
     const { prompts, account } = this.options;
     const session = account.session;
-    const owned = session !== null && prompts.fileProblem === undefined && prompts.claim(session.userID);
-    if (!owned || !this.options.allowed()) {
+    const syncable = session !== null && prompts.fileProblem === undefined;
+    if (!syncable || !this.options.allowed()) {
       if (this.userID !== null) log.debug("DeviceSync: off");
       this.stop();
       return;
     }
-    // Another account signed in (its texts were just made its own), or debug mode switched the relay:
-    // synced afresh.
+    // Another account signed in (the texts as they are, merged with its group's: a union), or debug mode
+    // switched the relay: synced afresh.
     if (this.userID !== null && (this.userID !== session.userID || this.address !== this.options.url())) this.stop();
     // Connected, connecting, waiting to try again, or out of attempts until `wake`.
     if (this.userID !== null) return;

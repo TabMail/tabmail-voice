@@ -140,7 +140,7 @@ export class VoiceDevice {
     userID = Fixtures.userID,
     options: UserPromptsOptions = {},
   ) {
-    this.prompts = new UserPrompts(store, () => this.account.session?.userID ?? null, options);
+    this.prompts = new UserPrompts(store, options);
     this.account = signedIn(this.auth, Fixtures.session({ userID }));
     this.sync = new DeviceSync({ prompts: this.prompts, account: this.account, allowed: () => this.allowed, url: () => this.url, open: relay.open(name) });
     this.prompts.observe(() => this.sync.update());

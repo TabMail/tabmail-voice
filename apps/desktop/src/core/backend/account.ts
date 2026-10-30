@@ -156,9 +156,6 @@ export class AccountModel extends Observable {
   /** Called as the account changes (signed out, or another one signed in), not for a refreshed
    * token: the dictation controller ends its conversation there. */
   onAccountChange: (() => void) | undefined;
-  /** Root ADR-035: run before an account signed in is kept; throws, keeping the app signed out, when
-   * that account may not sign in on this computer (the previous account's texts couldn't be wiped). */
-  admit: ((userID: string) => void) | undefined;
 
   constructor(
     private readonly client: AuthClient,
@@ -186,7 +183,6 @@ export class AccountModel extends Observable {
 
   async verify(email: string, code: string): Promise<void> {
     const session = await this.client.verify(trimWhitespace(email), trimWhitespace(code));
-    this.admit?.(session.userID);
     this.store.save(session);
     this.set(session);
   }

@@ -2,7 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { aSignedInUser } from "../../support/stubs.js";
 import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { KBTools } from "../../../src/core/personalization/kbTools.js";
@@ -42,7 +41,7 @@ class RefusingStore extends MemoryStore {
 
 function setup(knowledgeBase?: string) {
   const store = new FailingStore(knowledgeBase === undefined ? {} : { [kbKey]: knowledgeBase });
-  const prompts = new UserPrompts(store, aSignedInUser);
+  const prompts = new UserPrompts(store);
   // An agent request: the knowledge base's labels captured at its key-down (DS-CAPTURE). The text from
   // before is upgraded by then.
   let tools = new KBTools(prompts, prompts.captureKnowledgeBase());
@@ -69,7 +68,7 @@ describe("KBTools", () => {
   test("kb_del of a request read while the upgrade was unsaved reports it could not be saved (R22)", () => {
     const store = new RefusingStore({ [kbKey]: "- alpha.\n- beta." });
     store.refusing = true;
-    const prompts = new UserPrompts(store, aSignedInUser);
+    const prompts = new UserPrompts(store);
     const refused = new KBTools(prompts, prompts.captureKnowledgeBase());
     store.refusing = false;
 
@@ -125,7 +124,7 @@ describe("KBTools", () => {
     expect(prompts.knowledgeBase).toBe("- alpha.");
 
     expect(run("kb_add", "Uses ABC.")).toBe("Added to knowledge base.");
-    const fresh = new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser);
+    const fresh = new UserPrompts(new MemoryStore(store.snapshot()));
     expect(fresh.knowledgeBase).toBe("- alpha.\n- [Pinned] Uses ABC.");
     expect(fresh.sync.state("kb").bullets.filter((bullet) => bullet.section === "future")).toEqual([{ section: "future", text: "[Pinned] Uses ABC.", name: writer, n: 1 }]);
   });
@@ -155,7 +154,7 @@ describe("KBTools", () => {
     expect(changes()).toBe(changesBefore);
 
     expect(run("kb_del", '[Pinned] Uses the "weekly" label\'s color')).toBe("Removed from knowledge base.");
-    expect(new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser).knowledgeBase).toBe("- alpha.");
+    expect(new UserPrompts(new MemoryStore(store.snapshot())).knowledgeBase).toBe("- alpha.");
   });
 
   /** Compatibility forms (a ligature, full-width letters) are made plain too (NFKC), as Thunderbird
@@ -255,7 +254,7 @@ describe("KBTools", () => {
   /** Root ADR-035: a request's kb_add and kb_del write only while nothing was saved from Settings, and the
    * account didn't change, since its key-down; otherwise the model is told it wasn't saved, and nothing
    * changes. A request taken after writes. */
-  const changes: [string, (prompts: UserPrompts, store: RefusingStore, account: { id: string }) => void][] = [
+  const changes: [string, (prompts: UserPrompts, store: RefusingStore) => void][] = [
     ["a knowledge-base edit in Settings", (prompts) => expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["gamma."])).toBe(true)],
     ["a writing-style edit in Settings", (prompts) => expect(prompts.editCompositionSection("language", prompts.shown("composition", "language"), ["I write in German."])).toBe(true)],
     ["a reset of the knowledge base", (prompts) => expect(prompts.resetKnowledgeBase()).toBe(true)],
@@ -268,20 +267,14 @@ describe("KBTools", () => {
       expect(prompts.restore(entry.id)).toBe(true);
     }],
     ["the texts' file reset", (prompts, store) => prompts.resetFile(() => store.setAll(Object.fromEntries(Object.keys(store.snapshot()).map((key) => [key, undefined]))))],
-    ["another account's texts taken", (prompts, _store, account) => {
-      account.id = "user-2";
-      expect(prompts.claim("user-2")).toBe(true);
-    }],
     ["an account change", (prompts) => prompts.accountChanged()],
   ];
   describe.each(["kb_add", "kb_del"])("%s", (tool) => {
     test.each(changes)("isn't saved after %s since key-down", (_change, change) => {
       const store = new RefusingStore({ [kbKey]: "- alpha.\n- beta." });
-      const account = { id: "user-1" };
-      const prompts = new UserPrompts(store, () => account.id);
-      expect(prompts.claim("user-1")).toBe(true);
+      const prompts = new UserPrompts(store);
       const request = new KBTools(prompts, prompts.captureKnowledgeBase());
-      change(prompts, store, account);
+      change(prompts, store);
       const before = structuredClone(store.snapshot());
       const statement = tool === "kb_add" ? "Prefers tea" : "alpha";
       expect(JSON.parse(request.run(tool, { statement }))).toEqual({ error: config.kbChangedSinceRequest });
@@ -292,7 +285,7 @@ describe("KBTools", () => {
     });
 
     /** What leaves a request's knowledge base as it took it, as far as its writes go: a change from
-     * Settings that couldn't be saved, the same account signing in again, and another request's write. */
+     * Settings that couldn't be saved, and another request's write. */
     test.each<[string, (prompts: UserPrompts, store: RefusingStore) => void]>([
       ["a Settings edit that couldn't be saved", (prompts, store) => {
         store.refusing = true;
@@ -304,12 +297,10 @@ describe("KBTools", () => {
         expect(prompts.resetKnowledgeBase()).toBe(false);
         store.refusing = false;
       }],
-      ["the same account signing in again", (prompts) => expect(prompts.claim("user-1")).toBe(true)],
       ["another request's write", (prompts) => expect(JSON.parse(new KBTools(prompts, prompts.captureKnowledgeBase()).run("kb_add", { statement: "Prefers coffee" }))).toBe("Added to knowledge base.")],
     ])("is saved after %s", (_change, change) => {
       const store = new RefusingStore({ [kbKey]: "- alpha.\n- beta." });
-      const prompts = new UserPrompts(store, aSignedInUser);
-      expect(prompts.claim("user-1")).toBe(true);
+      const prompts = new UserPrompts(store);
       const request = new KBTools(prompts, prompts.captureKnowledgeBase());
       change(prompts, store);
       expect(JSON.parse(request.run(tool, { statement: tool === "kb_add" ? "Prefers tea" : "alpha" }))).toBe(tool === "kb_add" ? "Added to knowledge base." : "Removed from knowledge base.");

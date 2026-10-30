@@ -37,7 +37,7 @@ import { memoryDate, memoryRow } from "../../../src/core/memory/store.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
 import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
-import { aSignedInUser, CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
+import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
 import { concat, random, room, speech } from "../../support/speech.js";
 
 /** The knowledge base a new install holds: the catalog's defaults (DS-DEFAULT). */
@@ -144,7 +144,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     new TipBook(tipStore).markLearned("agentKnowledgeBase");
     used = [];
     memory = new FakeMemory();
-    prompts = new UserPrompts(new MemoryStore(), aSignedInUser);
+    prompts = new UserPrompts(new MemoryStore());
   });
 
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
@@ -4167,64 +4167,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
         auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
         await account.verify(Fixtures.email, "123456");
         expect(prompts.isCurrent(signedOut)).toBe(false);
-      });
-
-      /** Root ADR-035: a dictation still recording when the account changes could yet become an agent
-       * request (Space) carrying the texts taken at its key-down; it stays a dictation instead, so
-       * nothing of the first account's texts reaches a request, under any account. */
-      test.each([["a sign-out", "signOut"], ["another account signing in", "switch"], ["a sign-out, then another account", "both"]] as const)(
-        "a dictation still recording at %s never sends the texts from before",
-        async (_name, change) => {
-          const account = signedIn(auth);
-          prompts = new UserPrompts(new MemoryStore(), () => account.session?.userID ?? null);
-          expect(prompts.claim(Fixtures.userID)).toBe(true);
-          expect(prompts.addKnowledge("First account's note.").outcome).toBe("saved");
-          const { controller } = makeController({ account });
-          transcription.enqueue(200, { text: "what is on today" });
-          completions.enqueue(200, reply("Nothing today."));
-
-          controller.handle("start");
-          expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
-          if (change !== "switch") account.signOut();
-          if (change !== "signOut") {
-            auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
-            await account.verify(Fixtures.email, "123456");
-            expect(prompts.claim("user-2")).toBe(true);
-          }
-          controller.handle("toggleMode");
-          expect(controller.mode).toBe("dictation");
-          controller.handle("finish");
-          expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
-
-          const sent = [...transcription.requests, ...completions.requests].map((request) => request.body ?? "").join("\n");
-          expect(sent).not.toContain("First account's note");
-          expect(completions.requests.filter((_, index) => completionsVars(index)?.user_kb_content !== undefined)).toEqual([]);
-          expect(controller.chat).toBeNull();
-
-          // The next dictation, taken under the account now signed in, can be an agent request.
-          if (change !== "signOut") {
-            controller.handle("start");
-            controller.handle("toggleMode");
-            expect(controller.mode).toBe("agent");
-            controller.handle("cancel");
-          }
-        },
-      );
-
-      /** The same through a double tap's hands-free latch asking for agent mode: a tap recorded before
-       * the account change stays a dictation. */
-      test("a tap recorded before an account change isn't latched into an agent request", async () => {
-        const account = signedIn(auth);
-        prompts = new UserPrompts(new MemoryStore(), () => account.session?.userID ?? null);
-        expect(prompts.claim(Fixtures.userID)).toBe(true);
-        const { controller } = makeController({ account, capture: new CountingCapture(true) });
-        controller.handle("start");
-        controller.handle("finish");
-        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
-        await account.verify(Fixtures.email, "123456");
-        controller.handle("startAgentHandsFree");
-        expect(controller.mode).toBe("dictation");
-        controller.handle("cancel");
       });
 
       /** Signed out while the answer is written: it never opens a chat window. */

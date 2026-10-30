@@ -239,8 +239,6 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** The knowledge base and writing style this dictation started with, read with its settings. */
   private dictationPersonalization: Personalization;
-  /** The account changed during this dictation: it stays one, never an agent request (root ADR-035). */
-  private agentLocked = false;
   /** The knowledge base as taken with it (`KnowledgeCapture`): the write generation its tools need
    * unchanged (root ADR-035), and the labels `kb_del` deletes from (DS-CAPTURE). */
   private dictationKBCapture: KnowledgeCapture;
@@ -465,7 +463,7 @@ export class DictationController extends Observable {
       if (handsFree) {
         // Explicit agent intent also applies when reusing the first tap's audio.
         // An ordinary second tap preserves a mode already selected with Space.
-        if (initialMode === "agent" && !this.agentLocked) this.currentMode = "agent";
+        if (initialMode === "agent") this.currentMode = "agent";
         if (this.currentMode === "agent") this.prepareAgent();
         this.updateTools();
         this.latchHandsFree();
@@ -478,7 +476,6 @@ export class DictationController extends Observable {
     // First, before anything else: the settings this dictation uses, whatever changes meanwhile.
     const settings = this.deps.settings();
     this.dictationSettings = settings;
-    this.agentLocked = false;
     this.dictationPersonalization = this.deps.prompts.personalization;
     this.dictationKBCapture = this.deps.prompts.captureKnowledgeBase();
     if (settings.aiOffLine !== null) return this.fail(`${settings.aiOffLine}.`);
@@ -611,7 +608,6 @@ export class DictationController extends Observable {
     const kind = this.currentPhase.kind;
     if (kind !== "arming" && kind !== "listening") return;
     if (this.currentChat !== null) return;
-    if (this.agentLocked) return;
     this.currentMode = toggled(this.currentMode);
     // Space was used; the tip, which teaches the history too, shows again at the next hold.
     if (this.currentTip === "agentAndHistory") this.hideTip();
@@ -1822,12 +1818,8 @@ export class DictationController extends Observable {
     this.deps.prompts.accountChanged();
     // A dictation never reaches the chat (one is open only after an agent request, and every request
     // while it is open is one): it goes on, its transcription and cleanup both from the account signed
-    // in at the upload. It can no longer become an agent request, which would send the texts taken at
-    // its key-down under the other account (root ADR-035).
-    if (this.currentMode !== "agent") {
-      this.agentLocked = true;
-      return;
-    }
+    // in at the upload.
+    if (this.currentMode !== "agent") return;
     log.debug("DictationController: account changed; conversation ended");
     this.endConversation();
   }

@@ -2,7 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { aSignedInUser } from "../../support/stubs.js";
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { KBTools } from "../../../src/core/personalization/kbTools.js";
@@ -46,7 +45,7 @@ describe("knowledge-base diagnostics", () => {
       },
     });
     const store = new FailingStore({ [kbKey]: `- ${kept}.` });
-    const prompts = new UserPrompts(store, aSignedInUser);
+    const prompts = new UserPrompts(store);
     // Edits from Settings, saved and not.
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), [`${kept}.`, `${asked}.`])).toBe(true);
     // An agent request from after the saved edit (one from before it saves nothing, root ADR-035).

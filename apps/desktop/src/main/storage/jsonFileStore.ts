@@ -2,8 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import * as config from "../../core/config.js";
 import { MemoryStore, type StoreProblem } from "../../core/util/keyValueStore.js";
 import { errorName, log } from "../../core/log.js";
 
@@ -23,6 +24,9 @@ export class JSONFileStore extends MemoryStore {
     super("problem" in contents ? {} : contents.values);
     this.currentProblem = "problem" in contents ? contents.problem : undefined;
     this.isNew = "isNew" in contents;
+    // A file read is the user's alone from now on (root ADR-035), whatever it was written with before.
+    // One that couldn't be read is left as it is, for the user to fix.
+    if (!("problem" in contents) && !this.isNew) restrict(path, config.privateFileMode);
   }
 
   get problem(): StoreProblem | undefined {
@@ -61,16 +65,39 @@ export class JSONFileStore extends MemoryStore {
   private save(): boolean {
     if (this.currentProblem !== undefined) return false;
     try {
-      mkdirSync(dirname(this.path), { recursive: true });
+      // The folders it makes, and the file, are the user's alone (root ADR-035).
+      mkdirSync(dirname(this.path), { recursive: true, mode: config.privateFolderMode });
       // Written beside it, then moved over it: a crash mid-write never leaves half a file.
       const temporary = `${this.path}.tmp`;
-      writeFileSync(temporary, JSON.stringify(this.snapshot(), null, 2));
+      writeFileSync(temporary, JSON.stringify(this.snapshot(), null, 2), { mode: config.privateFileMode });
+      // A temporary file left by a crash keeps its permissions through the write: set again.
+      chmodSync(temporary, config.privateFileMode);
       renameSync(temporary, this.path);
       return true;
     } catch (error) {
       log.error(`FileStore: save failed: ${errorName(error)}`);
       return false;
     }
+  }
+}
+
+/** Root ADR-035: the app's data folder is the user's alone, set on every platform rather than left to the
+ * system's defaults (some Linux distributions make a home's folders readable by everyone). */
+export function restrictDataFolder(path: string): void {
+  try {
+    mkdirSync(path, { recursive: true, mode: config.privateFolderMode });
+  } catch (error) {
+    log.error(`FileStore: the data folder couldn't be made (${errorCode(error)})`);
+    return;
+  }
+  restrict(path, config.privateFolderMode);
+}
+
+function restrict(path: string, mode: number): void {
+  try {
+    chmodSync(path, mode);
+  } catch (error) {
+    log.error(`FileStore: permissions not set (${errorCode(error)})`);
   }
 }
 

@@ -156,9 +156,8 @@ export interface SettingsState {
   /** Settings › Memory: past agent-mode requests (ADR-DESK-061). */
   memory: MemoryPageState;
   /** Settings › Personalization: the writing style, the knowledge base and their history
-   * (ADR-DESK-063); null while they aren't available (root ADR-035, `UserPrompts.isAvailable`): signed
-   * out, or another account's texts not wiped yet. */
-  personalization: PersonalizationState | null;
+   * (ADR-DESK-063). */
+  personalization: PersonalizationState;
   /** The app's files that couldn't be read at launch: Settings says so above every section. */
   fileProblems: StoredFile[];
 }

@@ -80,30 +80,6 @@ describe("AccountModel", () => {
     expect(stub.body(0).token).toBe("123456");
   });
 
-  /** Root ADR-035: an account the app may not sign in on this computer is never kept: not set, not
-   * saved, and no one is told of an account change. Once admitted, the same sign-in goes through. */
-  test("verify keeps no session an admission refuses", async () => {
-    const stub = new StubTransport();
-    const store = new InMemorySessionStore();
-    const model = new AccountModel(client(stub), store);
-    let refused = true;
-    model.admit = () => {
-      if (refused) throw new Error("not admitted");
-    };
-    let changes = 0;
-    model.observe(() => (changes += 1));
-    let accountChanges = 0;
-    model.onAccountChange = () => (accountChanges += 1);
-    stub.enqueue(200, Fixtures.sessionJSON({ access: "access-1", refresh: "refresh-1" }));
-    await expect(model.verify(Fixtures.email, "123456")).rejects.toThrow("not admitted");
-    expect([model.session, store.load(), changes, accountChanges]).toEqual([null, null, 0, 0]);
-
-    refused = false;
-    stub.enqueue(200, Fixtures.sessionJSON({ access: "access-1", refresh: "refresh-1" }));
-    await model.verify(Fixtures.email, "123456");
-    expect([model.session?.accessToken, store.load()?.accessToken, accountChanges]).toEqual(["access-1", "access-1", 1]);
-  });
-
   test("a fresh token is used without refreshing", async () => {
     const stub = new StubTransport();
     const account = new AccountModel(client(stub), new InMemorySessionStore(Fixtures.session({ access: "fresh" })));

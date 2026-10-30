@@ -2,7 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { aSignedInUser } from "../../support/stubs.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { defaultComposition } from "../../../src/core/personalization/defaults.js";
@@ -96,16 +95,14 @@ const links = "links";
 
 function setup(values: Record<string, unknown> = {}, newName?: () => string) {
   const store = new FailingStore(values);
-  /** The signed-in account, which a test changes. */
-  const account: { id: string | null } = { id: "user-1" };
-  const prompts = new UserPrompts(store, () => account.id, newName === undefined ? {} : { newName });
+  const prompts = new UserPrompts(store, newName === undefined ? {} : { newName });
   let changes = 0;
   prompts.observe(() => {
     changes += 1;
   });
   const sent: string[] = [];
   prompts.onLocalChange = (field) => sent.push(field);
-  return { store, prompts, account, changes: () => changes, sent };
+  return { store, prompts, changes: () => changes, sent };
 }
 
 /** Writer names in order, as the vectors name them. */
@@ -143,7 +140,7 @@ describe("UserPrompts", () => {
       }
     })({ [kbKey]: "- Held this session." });
     store.failing = true;
-    const prompts = new UserPrompts(store, aSignedInUser);
+    const prompts = new UserPrompts(store);
     const sent: string[] = [];
     prompts.onLocalChange = (field) => sent.push(field);
     let changes = 0;
@@ -228,7 +225,7 @@ describe("UserPrompts", () => {
     const entry = { id: "a", timestamp: new Date().toISOString(), source: "reset", fields: ["kb"], composition: defaultStyle, kb: "- alpha" };
     const store = new RecoveringStore({ [kbKey]: "- alpha\n- beta", prompt_history: [entry] });
     store.refusals = refusals;
-    const prompts = new UserPrompts(store, aSignedInUser);
+    const prompts = new UserPrompts(store);
 
     const restored = prompts.restore("a");
     expect(restored && prompts.knowledgeBase !== "- alpha").toBe(false);
@@ -243,12 +240,12 @@ describe("UserPrompts", () => {
   test("the app's own writer names keep every device's additions, after a restart and from a copy (DS-NAME)", () => {
     const aStore = new MemoryStore();
     const bStore = new MemoryStore();
-    const a = new UserPrompts(aStore, aSignedInUser);
-    expect(new UserPrompts(bStore, aSignedInUser).addKnowledge("Second note").outcome).toBe("saved");
+    const a = new UserPrompts(aStore);
+    expect(new UserPrompts(bStore).addKnowledge("Second note").outcome).toBe("saved");
     expect(a.addKnowledge("First note").outcome).toBe("saved");
-    const copy = new UserPrompts(new MemoryStore(structuredClone(aStore.snapshot())), aSignedInUser);
+    const copy = new UserPrompts(new MemoryStore(structuredClone(aStore.snapshot())));
     expect(copy.addKnowledge("Copied note").outcome).toBe("saved");
-    const b = new UserPrompts(bStore, aSignedInUser);
+    const b = new UserPrompts(bStore);
     expect(b.addKnowledge("After restart").outcome).toBe("saved");
     const devices = [a, b, copy];
     for (let round = 0; round < 3; round += 1) {
@@ -355,7 +352,7 @@ describe("UserPrompts", () => {
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), [])).toBe(true);
     expect(prompts.knowledgeBase).toBe("");
     expect(prompts.personalization.knowledgeBase).toBe("");
-    expect(new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser).knowledgeBase).toBe("");
+    expect(new UserPrompts(new MemoryStore(store.snapshot())).knowledgeBase).toBe("");
     expect(prompts.editKnowledgeBase([], ["Likes short replies."])).toBe(true);
     expect(texts(prompts.shown("kb", ""))).toEqual(["Likes short replies."]);
   });
@@ -530,7 +527,7 @@ describe("UserPrompts", () => {
     expect(texts(shownSection(prompts, general))).toContain("Peer rule");
     expect(prompts.composition.startsWith("# My own composition notes\n- A line I typed before the sections.\n")).toBe(true);
     expect(prompts.composition.endsWith("\nNow acknowledge these, my way.")).toBe(true);
-    expect(new UserPrompts(store, aSignedInUser).composition).toBe(prompts.composition);
+    expect(new UserPrompts(store).composition).toBe(prompts.composition);
   });
 
   /** DS-DEDUP and DS-RENDER: a text this device holds, arriving under a smaller label, keeps its place
@@ -595,7 +592,7 @@ describe("UserPrompts", () => {
    * reported: both texts put back, or both as they were. */
   test.each([0, 1, 2, 3])("a restore whose writes fail after %i of them leaves the file as it reported", (writesLeft) => {
     const store = new DiskStore();
-    const prompts = new UserPrompts(store, aSignedInUser);
+    const prompts = new UserPrompts(store);
     prompts.editCompositionSection(language, prompts.shown("composition", language), ["I write in French."]);
     prompts.editKnowledgeBase(prompts.shown("kb", ""), ["Works with Sam."]);
     prompts.flushHistory();
@@ -611,7 +608,7 @@ describe("UserPrompts", () => {
 
     const restored = prompts.restore(id);
 
-    const relaunched = new UserPrompts(new MemoryStore(store.disk), aSignedInUser);
+    const relaunched = new UserPrompts(new MemoryStore(store.disk));
     const expected = restored ? [historyComposition, historyKB] : [currentComposition, currentKB];
     expect([prompts.composition, prompts.knowledgeBase]).toEqual(expected);
     expect([relaunched.composition, relaunched.knowledgeBase]).toEqual(expected);
@@ -642,128 +639,39 @@ describe("UserPrompts", () => {
     expect(prompts.sync.state("kb")).toEqual({ head: [], tail: [], bullets: [{ section: "", text: "Good", name: "0000000100000001", n: 1 }], seen: new Map([["0000000100000001", 1]]) });
   });
 
-  /** iOS ADR-IOS-089: the texts are taken by the first account that signs in, kept for it, and back
-   * at their defaults, with no history, for another. */
-  test("the texts belong to an account", () => {
-    const { store, prompts, account } = setup({ [kbKey]: "- alpha" });
-    expect(prompts.claim("user-1")).toBe(true);
-    expect(prompts.owner).toBe("user-1");
-    expect(prompts.knowledgeBase).toBe("- alpha");
+  /** Root ADR-035 (owner, 2026-10-29: "App is device-user tied"): signing out, or into another account,
+   * keeps the texts as they are, with their labels, seen map, writer name and history; an edit waiting
+   * for its quiet period is still recorded. Only the Device Sync group changes. */
+  test("an account change keeps the texts, their labels, the writer name and the history", () => {
+    const { store, prompts } = setup({ [kbKey]: "- first note" }, names());
     prompts.resetComposition();
-    expect(prompts.claim("user-1")).toBe(true);
-    expect(prompts.history).toHaveLength(1);
+    expect(prompts.addKnowledge("waiting edit").outcome).toBe("saved");
+    const writer = prompts.sync.state("kb").bullets.at(-1)?.name;
+    const before = JSON.stringify([store.get(kbStateKey), store.get(compositionStateKey)]);
 
-    account.id = "user-2";
-    store.failing = true;
-    expect(prompts.claim("user-2")).toBe(false);
-    store.failing = false;
-    expect(prompts.claim("user-2")).toBe(true);
-    expect([prompts.owner, prompts.knowledgeBase, prompts.history]).toEqual(["user-2", defaultKB, []]);
-  });
-
-  /** Everything an agent request, Settings or the history could read or change: what they read is
-   * returned as one string, and each write reports whether it was saved. */
-  function everything(prompts: UserPrompts, held: string): { read: string; writes: boolean[] } {
-    const read = [prompts.knowledgeBase, prompts.composition, JSON.stringify(prompts.personalization), JSON.stringify(prompts.history), JSON.stringify(prompts.shown("kb", "")), JSON.stringify(prompts.shown("composition", language)), JSON.stringify(prompts.captureKnowledgeBase().bullets), JSON.stringify(personalizationState(prompts)),
-      // The engine's own reads too: what it would merge, capture or send, and the texts before labels.
-      JSON.stringify([prompts.sync.state("kb"), prompts.sync.state("composition"), prompts.sync.capture("kb", [""]), prompts.sync.outgoing("kb"), prompts.sync.outgoing("composition"), prompts.read("kb"), prompts.read("composition"), prompts.legacyText("kb"), prompts.legacyText("composition")])].join("\n");
-    const writes = [
-      prompts.editKnowledgeBase(prompts.shown("kb", ""), ["typed while out"]),
-      prompts.editCompositionSection(language, prompts.shown("composition", language), ["typed while out"]),
-      prompts.addKnowledge("added while out").outcome === "saved",
-      // A statement the stored texts hold already is refused too, never reported done as unchanged.
-      prompts.addKnowledge(held).outcome !== "unsaved",
-      prompts.addKnowledge(kbDefaults[0] ?? "").outcome !== "unsaved",
-      prompts.resetKnowledgeBase(),
-      prompts.resetComposition(),
-      prompts.restore(prompts.history[0]?.id ?? "none"),
-    ];
-    // Each reader gives nothing at all, not only nothing of the texts at hand.
-    expect([prompts.knowledgeBase, prompts.composition, prompts.history, prompts.shown("kb", ""), prompts.shown("composition", language)]).toEqual(["", "", [], [], []]);
-    expect(prompts.personalization).toEqual({ knowledgeBase: "", writingStyle: "" });
-    return { read, writes };
-  }
-
-  /** Root ADR-035: while signed out, the texts kept on this computer are neither shown, sent nor
-   * changed; the same account signing back in has them all again. */
-  test("while signed out, nothing of the texts is read and nothing is written", () => {
-    const { store, prompts, account } = setup({ [kbKey]: "- first account's note", [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- first account's style" });
-    expect(prompts.claim("user-1")).toBe(true);
-    prompts.resetComposition();
-    const before = JSON.stringify(store.snapshot());
-
-    account.id = null;
-    expect(prompts.isAvailable).toBe(false);
-    const out = everything(prompts, "first account's note");
+    prompts.accountChanged();
+    expect(JSON.stringify([store.get(kbStateKey), store.get(compositionStateKey)])).toBe(before);
     prompts.flushHistory();
-    expect(out.read).not.toContain("first account");
-    expect(out.writes).toEqual([false, false, false, false, false, false, false, false]);
-    expect(JSON.stringify(store.snapshot())).toBe(before);
-
-    account.id = "user-1";
-    expect(prompts.claim("user-1")).toBe(true);
-    expect(prompts.knowledgeBase).toBe("- first account's note");
-    expect(prompts.history).toHaveLength(1);
+    expect(prompts.history.map((entry) => entry.source)).toEqual(["reset", "local_edit"]);
+    expect(prompts.addKnowledge("after the change").outcome).toBe("saved");
+    expect(prompts.sync.state("kb").bullets.at(-1)?.name).toBe(writer);
+    expect(prompts.knowledgeBase).toBe("- first note\n- waiting edit\n- after the change");
   });
 
-  /** Texts no account has claimed yet (a launch before any sign-in) are no one's to see either. */
-  test("while signed out, texts no account claimed yet are neither read nor written", () => {
-    const { store, prompts, account } = setup({ [kbKey]: "- unclaimed note" });
-    account.id = null;
-    const before = JSON.stringify(store.snapshot());
-    const out = everything(prompts, "unclaimed note");
-    expect(out.read).not.toContain("unclaimed note");
-    expect(out.writes).toEqual([false, false, false, false, false, false, false, false]);
-    expect(JSON.stringify(store.snapshot())).toBe(before);
-    account.id = "user-1";
-    expect(prompts.knowledgeBase).toBe("- unclaimed note");
-  });
-
-  /** Root ADR-035: another account signing in wipes the texts first. While that wipe can't be saved,
-   * the texts are still the first account's, so nothing of them is shown, sent or changed for the
-   * next one, and the claim tries again; once the disk takes it, they are gone. The first account
-   * signing back in meanwhile has them again. */
-  test("a wipe for another account that can't be saved leaves nothing of the first account to it", () => {
-    const { store, prompts, account } = setup({ [kbKey]: "- first account's note", [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- first account's style" });
-    expect(prompts.claim("user-1")).toBe(true);
-    prompts.resetComposition();
-    const before = JSON.stringify(store.snapshot());
-
-    account.id = "user-2";
-    store.failing = true;
-    expect(prompts.claim("user-2")).toBe(false);
-    store.failing = false;
-    expect(prompts.owner).toBe("user-1");
-    expect(prompts.isAvailable).toBe(false);
-    const out = everything(prompts, "first account's note");
-    expect(out.read).not.toContain("first account");
-    expect(out.writes).toEqual([false, false, false, false, false, false, false, false]);
-    expect(JSON.stringify(store.snapshot())).toBe(before);
-
-    account.id = "user-1";
-    expect(prompts.knowledgeBase).toBe("- first account's note");
-
-    account.id = "user-2";
-    expect(prompts.claim("user-2")).toBe(true);
-    expect([prompts.owner, prompts.knowledgeBase, prompts.history]).toEqual(["user-2", defaultKB, []]);
-    expect(JSON.stringify(store.snapshot())).not.toContain("first account");
-  });
-
-  /** Another account's texts from before, not upgraded yet (nothing read them since it claimed them), are
-   * cleared with its states: they never become the new account's bullets or reach its devices. */
-  test("another account's texts from before go with its claim", () => {
-    const { store, prompts, account } = setup({
-      device_sync_owner_user_id: "user-1",
-      [kbKey]: "- one's private note",
-      [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style",
-    });
-    account.id = "user-2";
-    expect(prompts.claim("user-2")).toBe(true);
-    const relaunched = new UserPrompts(new MemoryStore(store.snapshot()), () => "user-2");
-    for (const reader of [prompts, relaunched]) {
-      expect([reader.knowledgeBase, reader.composition]).toEqual([defaultKB, defaultStyle]);
-    }
-    expect(Object.keys(store.snapshot()).filter((key) => key.startsWith("user_prompts:"))).toEqual([]);
+  /** Root ADR-035: while signed out the texts are shown, sent and changed as when signed in; only Device
+   * Sync needs the account. */
+  test("while signed out, the texts are read and written as when signed in", () => {
+    const { store, prompts } = setup({ [kbKey]: "- note" });
+    prompts.accountChanged();
+    expect(prompts.knowledgeBase).toBe("- note");
+    expect(prompts.personalization.knowledgeBase).toBe("- note");
+    expect(personalizationState(prompts).knowledgeBase.map((bullet) => bullet.text)).toEqual(["note"]);
+    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["note", "typed while out"])).toBe(true);
+    expect(prompts.addKnowledge("added while out").outcome).toBe("saved");
+    expect(prompts.resetComposition()).toBe(true);
+    // The reset records the edits waiting first.
+    expect(prompts.history.map((entry) => entry.source)).toEqual(["local_edit", "reset"]);
+    expect(new UserPrompts(new MemoryStore(store.snapshot())).knowledgeBase).toBe("- note\n- typed while out\n- added while out");
   });
 
   test("the history keeps the newest entries only", () => {

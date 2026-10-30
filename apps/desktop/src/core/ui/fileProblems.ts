@@ -64,13 +64,6 @@ export function fileProblemNotice(file: StoredFile, problem: StoreProblem, platf
   }
 }
 
-/** Root ADR-035 (owner, 2026-10-29): another account's sign-in fails while the previous account's
- * knowledge base and writing style, at `path`, can't be wiped. Uninstalling keeps the app's data
- * folder, so the fix is the file itself, as for a damaged file. */
-export function signInFailedLine(path: string, platform: string): string {
-  return `Sign-in failed. Please try again. If it keeps happening, quit TabMail Voice, move this file to the ${platform === "win32" ? "Recycle Bin" : "Trash"}, and sign in again:\n${path}`;
-}
-
 /** The fix dialog's button for the user's factory reset of a file that can't be read (owner,
  * 2026-10-27), offered after the steps to fix it by hand. */
 export const resetButton = "Reset to Defaults…";

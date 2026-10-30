@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { type PromptField, promptFields } from "../../../src/core/personalization/prompts.js";
 import { type Bullet, displayedSections, labelKey } from "../../../src/core/sync/bullets.js";
-import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } from "../../support/bulletDevices.js";
+import { BulletDevice, BulletRelay, DeviceStore, storeStates } from "../../support/bulletDevices.js";
 import type { ReceiveOutcome } from "../../../src/core/sync/bulletSync.js";
 
 /**
@@ -187,7 +187,7 @@ class Fuzz {
   }
 
   private initialStore(): DeviceStore {
-    const store = ownedStore();
+    const store = new DeviceStore();
     const kind = this.int(4);
     if (kind === 1) storeStates(store, {});
     if (kind === 2) store.set("user_prompts:user_kb.md", [this.text(), this.text(), "plain line"].map((text) => `- ${text}`).join("\n"));
@@ -405,7 +405,7 @@ class Fuzz {
       this.cleared = true;
       this.captures.delete(device);
       this.forgetMerged(device);
-      device.prompts.resetFile(() => device.store.replaceWith(ownedStore()));
+      device.prompts.resetFile(() => device.store.replaceWith(new DeviceStore()));
       return false;
     }
     const texts = [this.text(), this.text()];
