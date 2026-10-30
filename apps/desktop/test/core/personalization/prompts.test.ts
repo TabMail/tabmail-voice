@@ -789,14 +789,19 @@ describe("UserPrompts", () => {
     expect(texts(prompts.shown(field, section))).toEqual(edited);
   });
 
-  /** R30: a reset ends what was shown even when it isn't saved (an epoch is never reused); the edit is
-   * redone from what is shown now. */
+  /** R30: a reset ends what was shown even when it isn't saved (an epoch is never reused), and tells
+   * observers so; the edit is redone from what is shown now. */
   test("a reset not saved still ends what was shown", () => {
     const { store, prompts } = setup({ [kbKey]: "- alpha" });
     const shown = prompts.shown("kb", "");
+    let pushed: Shown | undefined;
+    prompts.observe(() => (pushed = prompts.shown("kb", "")));
     store.failing = true;
     expect(prompts.resetKnowledgeBase()).toBe(false);
     store.failing = false;
+    // Observers are told: what they show now carries the new epoch.
+    expect(pushed).toEqual(prompts.shown("kb", ""));
+    expect(pushed?.epoch).not.toBe(shown.epoch);
     expect(prompts.editKnowledgeBase(shown, ["alpha", "beta"])).toBe(false);
     expect(prompts.knowledgeBase).toBe("- alpha");
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha", "beta"])).toBe(true);

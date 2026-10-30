@@ -340,7 +340,8 @@ export class UserPrompts extends Observable implements BulletStore {
     if (owner === null) return this.writeValues({ [Key.owner]: userID });
     const cleared: Record<string, unknown> = { [Key.history]: undefined, [Key.owner]: userID };
     for (const field of promptFields) for (const key of [Key.state(field), Key.legacyText(field), ...retiredKeys(field)]) cleared[key] = undefined;
-    // R30: every operation in flight on the texts ends before they are cleared.
+    // R30: every operation in flight on the texts ends before they are cleared. A claim not saved
+    // tells no one: Device Sync, an observer, would claim again at once. The next one saved does.
     this.sync.endOperations(promptFields);
     if (!this.writeValues(cleared)) return false;
     this.sync.reload();
@@ -410,7 +411,10 @@ export class UserPrompts extends Observable implements BulletStore {
     this.sync.endOperations([field]);
     this.flushHistory();
     this.record("reset", [field]);
-    return this.local(this.sync.reset([field]), false).outcome === "saved";
+    const saved = this.local(this.sync.reset([field]), false).outcome === "saved";
+    // Not saved, it still ended what was shown, so observers (Settings) are told the new epoch.
+    if (!saved) this.changed();
+    return saved;
   }
 
   /** After a local commit: its fields recorded once edits stop (`edits`), and sent. */

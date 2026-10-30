@@ -2244,7 +2244,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // The settings file read, so a setting is saved as ever.
     expect(await send({ type: "setSmartDictation", value: false })).toEqual({ error: null });
     expect(app.files.get(path)?.size).toBe(0);
-    expect(page().knowledgeBase).toEqual(defaults);
+    expect(page().knowledgeBase.bullets).toEqual(defaults.bullets);
 
     // The menu's Fix item tells it again, and Show File shows it; Close does nothing more.
     app.dialogResponse = 0;
@@ -2441,7 +2441,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(await send(command), command.type).toEqual(unsaved);
       expect(storedKB(), command.type).toBe(kbBefore);
       expect(storedStyle(), command.type).toBe(styleBefore);
-      expect({ knowledgeBase: page().knowledgeBase, writingStyle: page().writingStyle }, command.type).toEqual(shownBefore);
+      const bullets = (state: Pick<PersonalizationState, "knowledgeBase" | "writingStyle">) => ({ knowledgeBase: state.knowledgeBase.bullets, writingStyle: state.writingStyle.map((one) => one.shown.bullets) });
+      expect(bullets(page()), command.type).toEqual(bullets(shownBefore));
+      // R30: what Settings was last pushed is what applies now, even after a reset not saved ended it.
+      const views = (state: PersonalizationState | undefined) => ({ knowledgeBase: state?.knowledgeBase, writingStyle: state?.writingStyle });
+      expect(views(pushed.at(-1)), command.type).toEqual(views(page()));
     }
   });
 

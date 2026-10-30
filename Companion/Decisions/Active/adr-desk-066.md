@@ -58,7 +58,9 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   once an ending has begun, and the state an ending pushes carries the new epoch. The epochs stay
   ended even if the ending isn't saved: an epoch is never reused (putting them back was tried and
   removed: an upgrade saved during a refused reset, or an observer throwing after a saved one, let an
-  earlier edit land after a later reset), and an edit refused then is one the user redoes.
+  earlier edit land after a later reset), and an edit refused then is one the user redoes: a reset not
+  saved still tells observers, so Settings is pushed the new epoch (a claim not saved tells no one,
+  since Device Sync, an observer, would claim again at once; the next claim saved does).
   `BulletSync` still refuses a write carrying an ended epoch, writing nothing, in one check for both
   commit paths: that is the backstop for an operation that resumes later. Settings' editor is keyed
   by the epoch, so a draft in a row or the field to add one is dropped then. Sign-out doesn't touch
