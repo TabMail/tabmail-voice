@@ -179,8 +179,8 @@ export class BulletSync {
   private readonly lastMerged = new Map<SyncField, Set<string>>();
   /** Parts of incomplete snapshots, per sender and field (DS-CHUNK). */
   private readonly buffers = new Map<string, PartBuffer>();
-  /** Each field's capture epoch (R30), memory only: a DS-RESET of the field, or a reload of the fields
-   * from storage (another account's claim, the file's factory reset), ends it. */
+  /** Each field's capture epoch (R30), memory only: a DS-RESET of the field, another account's claim or
+   * the texts' file reset ends it as its first step (`endingOperations`). */
   private readonly epochs = new Map<SyncField, number>();
   private readonly catalog: Catalog;
 
@@ -265,13 +265,23 @@ export class BulletSync {
     this.abandonName();
     const states: Partial<Record<SyncField, FieldState>> = {};
     for (const field of fields) states[field] = defaultState(field, this.options.skeleton(field), this.catalog);
-    // R30: the epochs end before the write, which tells observers, so a state shown once the reset is saved
-    // carries the new epoch; a reset not saved changes nothing, and its epochs are put back.
+    return this.write(states, "reset") ? { outcome: "saved", fields: [...fields] } : { outcome: "unsaved", fields: [] };
+  }
+
+  /** R30's order: `change` (a DS-RESET, another account's claim, the texts' file reset) runs with every
+   * operation in flight on `fields` already ended, so none of them writes once it has begun, and a state
+   * shown as it is saved carries the new epoch. When it changed nothing (false, or it threw), the epochs
+   * are put back: what applies is what is saved. */
+  endingOperations(fields: readonly SyncField[], change: () => boolean): boolean {
     const before = fields.map((field) => [field, this.epoch(field)] as const);
-    for (const field of fields) this.endEpoch(field);
-    if (this.write(states, "reset")) return { outcome: "saved", fields: [...fields] };
-    for (const [field, epoch] of before) this.epochs.set(field, epoch);
-    return { outcome: "unsaved", fields: [] };
+    for (const field of fields) this.epochs.set(field, this.epoch(field) + 1);
+    let changed = false;
+    try {
+      changed = change();
+    } finally {
+      if (!changed) for (const [field, epoch] of before) this.epochs.set(field, epoch);
+    }
+    return changed;
   }
 
   /** DS-NAME-ABANDON for an in-process reload of the fields from storage: the next add uses a fresh
@@ -279,7 +289,6 @@ export class BulletSync {
   reload(): void {
     this.abandonName();
     this.lastMerged.clear();
-    for (const field of this.options.fields) this.endEpoch(field);
   }
 
   /** R30, for every write an operation makes after it may have awaited: whether a field's epoch it took
@@ -288,10 +297,6 @@ export class BulletSync {
     if (writes.every((write) => write.epoch === this.epoch(write.field))) return false;
     this.options.error("DeviceSync: a write from before a reset or account change refused");
     return true;
-  }
-
-  private endEpoch(field: SyncField): void {
-    this.epochs.set(field, this.epoch(field) + 1);
   }
 
   /** The connection ended: incomplete snapshots are dropped (DS-CHUNK). */

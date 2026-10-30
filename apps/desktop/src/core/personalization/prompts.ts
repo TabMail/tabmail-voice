@@ -219,7 +219,11 @@ export class UserPrompts extends Observable implements BulletStore {
   /** The user's factory reset of the texts' file (`moveAside`, which throws, changing nothing, when the
    * file can't be moved): DS-RESET of both fields, and their history gone. */
   resetFile(moveAside: () => void): void {
-    moveAside();
+    // R30: every operation in flight on the texts ends before the file is moved.
+    this.sync.endingOperations(promptFields, () => {
+      moveAside();
+      return true;
+    });
     this.sync.reload();
     this.dropPendingHistory();
     this.changed();
@@ -338,7 +342,8 @@ export class UserPrompts extends Observable implements BulletStore {
     if (owner === null) return this.writeValues({ [Key.owner]: userID });
     const cleared: Record<string, unknown> = { [Key.history]: undefined, [Key.owner]: userID };
     for (const field of promptFields) for (const key of [Key.state(field), Key.legacyText(field), ...retiredKeys(field)]) cleared[key] = undefined;
-    if (!this.writeValues(cleared)) return false;
+    // R30: every operation in flight on the texts ends before they are cleared.
+    if (!this.sync.endingOperations(promptFields, () => this.writeValues(cleared))) return false;
     this.sync.reload();
     // Another account's edits waiting to be recorded are not this one's history.
     this.dropPendingHistory();
@@ -402,9 +407,15 @@ export class UserPrompts extends Observable implements BulletStore {
   }
 
   private reset(field: PromptField): boolean {
-    this.flushHistory();
-    this.record("reset", [field]);
-    return this.local(this.sync.reset([field]), false).outcome === "saved";
+    let result: CommitResult = { outcome: "unsaved", fields: [] };
+    // R30: every operation in flight on the field ends before the reset writes anything.
+    this.sync.endingOperations([field], () => {
+      this.flushHistory();
+      this.record("reset", [field]);
+      result = this.sync.reset([field]);
+      return result.outcome === "saved";
+    });
+    return this.local(result, false).outcome === "saved";
   }
 
   /** After a local commit: its fields recorded once edits stop (`edits`), and sent. */

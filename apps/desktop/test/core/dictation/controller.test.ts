@@ -4711,6 +4711,48 @@ describe("DictationController", { timeout: 20_000 }, () => {
             return completions.requests.filter((_, index) => completionsVars(index)?.content === "system_prompt_kb_refine").length;
           }
 
+          /** R30: a request takes the knowledge base's epoch once, at key-down, and every kb_add and kb_del it
+           * makes, in any model round, carries that one; a reset while it waits refuses them all, and the next
+           * dictation takes the new epoch. */
+          test.each([false, true])("a request taken before a reset writes nothing after it, in a chat: %s", async (inChat) => {
+            let ended = false;
+            const { done } = await ask(
+              [],
+              [
+                calling(["kb_add", JSON.stringify({ statement: "Requested before reset" })], ["kb_del", JSON.stringify({ statement: "User is using TabMail as their AI assistant for emails" })]),
+                calling(["kb_add", JSON.stringify({ statement: "Still requested before reset" })]),
+                reply("The request is complete."),
+              ],
+              (controller) => {
+                controller.onPhaseChange = (phase) => {
+                  if (phase.kind !== "listening" || ended) return;
+                  ended = true;
+                  expect(prompts.resetKnowledgeBase()).toBe(true);
+                };
+              },
+              { inChat },
+            );
+            const { controller } = await done;
+            expect(ended).toBe(true);
+            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
+            const firstRound = inChat ? 2 : 1;
+            expect(told(firstRound).map((text) => JSON.parse(text))).toEqual([
+              { error: "failed to persist knowledge base" },
+              { error: "failed to persist knowledge base" },
+            ]);
+            expect(JSON.parse(told(firstRound + 1).at(-1) ?? "null")).toEqual({ error: "failed to persist knowledge base" });
+
+            // A later dictation takes the new epoch and can write, including while the chat stays open.
+            controller.onPhaseChange = undefined;
+            const requestsBefore = completions.requests.length;
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, calling(["kb_add", JSON.stringify({ statement: "Requested after reset" })]));
+            completions.enqueue(200, reply("Noted."));
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => settled(controller) && completions.requests.length === requestsBefore + 2)).toBe(true);
+            expect(prompts.knowledgeBase).toBe(`${defaultKnowledgeBase}\n- [Pinned] Requested after reset.`);
+          });
+
           test("kb_add keeps the statement, and the next request carries it", async () => {
             const { done } = await ask([], [calling(["kb_add", JSON.stringify({ statement: "Prefers morning meetings" })]), reply("Noted.")]);
             const { controller } = await done;

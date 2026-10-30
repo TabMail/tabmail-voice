@@ -52,10 +52,13 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   that can await between reading a field and writing it takes the epoch once, at its start, and every
   write it makes carries it as a required argument: Settings' edits (one epoch per field view, `Shown`,
   so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a
-  history restore. A reset of the field ends its epoch before the write tells anyone (put back if the
-  write fails), and so does a reload of the fields (another account's claim, the texts' file reset).
-  `BulletSync` refuses a write carrying an ended epoch, writing nothing, in one check for both commit
-  paths. Settings' editor is keyed by the epoch, so a draft in a row or the field to add one is dropped
+  history restore. Ending is ordered, not only checked: a reset of the field, another account's claim
+  and the texts' file reset end the epochs of every operation in flight as their FIRST step, before
+  they write anything (`BulletSync.endingOperations`, one place), and put them back if nothing was
+  saved. An operation can then no longer write once an ending has begun, and the state an ending
+  pushes carries the new epoch. `BulletSync` still refuses a write carrying an ended epoch, writing
+  nothing, in one check for both commit paths: that is the backstop for an operation that resumes
+  later. Sign-out never waits on an operation: it ends the agent conversation first. Settings' editor is keyed by the epoch, so a draft in a row or the field to add one is dropped
   then. Sign-out doesn't touch the texts, so it ends nothing; the next account's claim does.
 - **Released Thunderbird and iOS** (`prompt_state`): imported additions only, an epoch-zero text
   skipped; nothing is deleted from what they send.

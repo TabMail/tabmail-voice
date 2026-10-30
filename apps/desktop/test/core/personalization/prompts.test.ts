@@ -15,17 +15,27 @@ import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 class FailingStore extends MemoryStore {
   failing = false;
   writes = 0;
+  /** Runs once, at the next write, before it is made. */
+  beforeWrite: (() => void) | undefined;
 
   override set(key: string, value: unknown): boolean {
     if (this.failing) return false;
+    this.runBeforeWrite();
     this.writes += 1;
     return super.set(key, value);
   }
 
   override setAll(values: Readonly<Record<string, unknown>>): boolean {
     if (this.failing) return false;
+    this.runBeforeWrite();
     this.writes += 1;
     return super.setAll(values);
+  }
+
+  private runBeforeWrite(): void {
+    const run = this.beforeWrite;
+    this.beforeWrite = undefined;
+    run?.();
   }
 }
 
@@ -730,6 +740,22 @@ describe("UserPrompts", () => {
       expect(write()).toBe(false);
       expect(store.snapshot()).toEqual(after);
       expect(field === "kb" ? prompts.knowledgeBase : prompts.composition).toBe(field === "kb" ? defaultKB : defaultStyle);
+    },
+  );
+
+  /** R30's order: an ending ends every operation in flight on its fields as its first step, so one that
+   * finishes while the ending writes (or moves the texts' file aside) writes nothing. */
+  test.each(r30Writers.flatMap(([writer, field, prepare, take]) => r30Endings.filter(([, fields]) => fields.includes(field)).map(([ending, , end]) => [writer, ending, prepare, take, end] as const)))(
+    "%s finishing as %s is written",
+    (_writer, _ending, prepare, take, end) => {
+      const { store, prompts } = setup({ [kbKey]: `- one's private note\n- ${kbDefaults[0]}`, [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style" });
+      expect(prompts.claim("user-1")).toBe(true);
+      prepare(prompts);
+      const write = take(prompts);
+      let wrote: boolean | undefined;
+      store.beforeWrite = () => (wrote = write());
+      end(prompts, store);
+      expect(wrote).toBe(false);
     },
   );
 
