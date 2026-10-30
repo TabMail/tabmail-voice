@@ -4,6 +4,7 @@
 
 // @vitest-environment happy-dom
 
+import { aSignedInUser } from "../../support/stubs.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act } from "react";
@@ -11,8 +12,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
-import { personalizationState } from "../../../src/core/personalization/page.js";
-import { type Shown, UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { type PersonalizationState, personalizationState } from "../../../src/core/personalization/page.js";
+import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { formatBytes } from "../../../src/core/memory/page.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
@@ -22,16 +23,23 @@ const labels = new Map<string, string>();
 /** Bullets as Settings is pushed them, each text with its label: a text given alone is one bullet
  * wherever it shows (one label per text), and `{ text, name }` is a bullet of that text under the
  * label `name`, as a bullet deleted and added again elsewhere comes back under a new one. */
-function shownBullets(bullets: (string | { text: string; name: string })[], epoch = 0): Shown {
-  return {
-    epoch,
-    bullets: bullets.map((bullet) => {
-      if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
-      if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
-      return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
-    }),
-  };
+function shownBullets(bullets: (string | { text: string; name: string })[]): ShownBullet[] {
+  return bullets.map((bullet) => {
+    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
+    if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
+    return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
+  });
 }
+
+const shownPersonalization: PersonalizationState = {
+  writingStyle: [
+    { section: "general", title: "General writing style", bullets: shownBullets(["ALWAYS start with a greeting."]) },
+    { section: "language", title: "Language", bullets: shownBullets(["I write in English Only."]) },
+    { section: "links", title: "Useful links to personal website and other resources", bullets: [] },
+  ],
+  knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
+  history: [],
+};
 
 const signedIn: SettingsState = {
   email: "person@example.com",
@@ -70,15 +78,8 @@ const signedIn: SettingsState = {
   version: "1.2.3",
   update: { kind: "idle" },
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
-  personalization: {
-    writingStyle: [
-      { section: "general", title: "General writing style", shown: shownBullets(["ALWAYS start with a greeting."]) },
-      { section: "language", title: "Language", shown: shownBullets(["I write in English Only."]) },
-      { section: "links", title: "Useful links to personal website and other resources", shown: shownBullets([]) },
-    ],
-    knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
-    history: [],
-  },
+  personalization: shownPersonalization,
+
   fileProblems: [],
 };
 
@@ -701,7 +702,7 @@ describe("Settings page", () => {
      * pushing the result (a save as focus left the field replaced the row under the press, and the
      * removal was lost). */
     test("an item edited and then removed is removed", async () => {
-      const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- Prefers morning meetings.\n- Works with Sam." }));
+      const prompts = new UserPrompts(new MemoryStore({ "user_prompts:user_kb.md": "- Prefers morning meetings.\n- Works with Sam." }), aSignedInUser);
       // The stand-in main process: the command just sent applied to the store, then its state pushed.
       let sent: Command[] = [];
       const page = await settingsPage({ error: null }, () => {
@@ -736,8 +737,8 @@ describe("Settings page", () => {
       const shown = (prompts: UserPrompts) => (syncField === "kb" ? prompts.shown("kb", "") : prompts.shown("composition", language));
       const edit = (prompts: UserPrompts, bullets: string[]) =>
         syncField === "kb" ? prompts.editKnowledgeBase(shown(prompts), bullets) : prompts.editCompositionSection(language, shown(prompts), bullets);
-      const here = new UserPrompts(new MemoryStore(), { newName: () => "0000000a00000001" });
-      const there = new UserPrompts(new MemoryStore(), { newName: () => "0000000b00000001" });
+      const here = new UserPrompts(new MemoryStore(), aSignedInUser, { newName: () => "0000000a00000001" });
+      const there = new UserPrompts(new MemoryStore(), aSignedInUser, { newName: () => "0000000b00000001" });
       expect(edit(here, ["Alpha."])).toBe(true);
       relay(here, there);
       // The stand-in main process: the command just sent applied to this device's store, then its state pushed.
@@ -759,7 +760,7 @@ describe("Settings page", () => {
       // The other device deletes the bullet and adds it again: the same text under its own label.
       expect(edit(there, [])).toBe(true);
       expect(edit(there, ["Alpha."])).toBe(true);
-      expect(shown(there).bullets).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
       relay(there, here);
       await page.push(state());
 
@@ -768,61 +769,14 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
       expect(shown(here)).toEqual(shown(there));
       relay(here, there);
-      expect(shown(there).bullets).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
-    });
-
-    /** A reset of the field, or another account signing in, while something is being typed in a row or in
-     * the field to add one drops the draft, though a row shows the same default text under the same label
-     * afterwards: nothing typed before is saved after it (R30). Each editor; each device a real store. */
-    test.each(
-      (
-        [
-          ["the knowledge base", "kb", "Knowledge base"],
-          ["a writing-style section", "composition", "Language"],
-        ] as const
-      ).flatMap(([editor, syncField, label]) =>
-        (
-          [
-            ["a row", `${label}, item 1`],
-            ["the field to add one", `Add to ${label}`],
-          ] as const
-        ).flatMap(([draft, draftLabel]) => ["a reset", "another account signing in"].map((ending) => [editor, draft, ending, syncField, draftLabel] as const)),
-      ),
-    )("in %s, a draft in %s is dropped by %s", async (_editor, _draft, ending, syncField, draftLabel) => {
-      const prompts = new UserPrompts(new MemoryStore());
-      expect(prompts.claim("user-1")).toBe(true);
-      const text = () => (syncField === "kb" ? prompts.knowledgeBase : prompts.composition);
-      const defaults = text();
-      let sent: Command[] = [];
-      const state = (): SettingsState => ({ ...signedIn, personalization: personalizationState(prompts) });
-      const page = await settingsPage({ error: null }, () => {
-        const command = sent.at(-1);
-        if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
-        if (command?.type === "editWritingStyle") prompts.editCompositionSection(command.section, command.shown, command.bullets);
-        return state();
-      }, state());
-      sent = page.commands;
-      await act(async () => button("Personalization").click());
-      const before = field(draftLabel).value;
-      await act(async () => field(draftLabel).focus());
-      await act(async () => type(field(draftLabel), "Typed under one."));
-
-      if (ending === "a reset") expect(syncField === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition()).toBe(true);
-      else expect(prompts.claim("user-2")).toBe(true);
-      await page.push(state());
-
-      expect(field(draftLabel).value).toBe(before);
-      await act(async () => field(draftLabel).dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      await act(async () => field(draftLabel).form?.requestSubmit());
-      expect(page.commands).toEqual([]);
-      expect(text()).toBe(defaults);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
     });
 
     /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:
      * each field shows its own bullet, what is being typed in a later field stays, and is saved with
      * the list shown now, and a field left untouched saves nothing. */
     test("a knowledge base changed elsewhere keeps what is being typed", async () => {
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets(knowledgeBase) } });
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...shownPersonalization, knowledgeBase: shownBullets(knowledgeBase) } });
       const { commands, push } = await open(withKB(["Alpha.", "Beta.", "Gamma."]));
       const item = field("Knowledge base, item 3");
       await act(async () => type(item, "Gamma, edited."));
@@ -877,7 +831,7 @@ describe("Settings page", () => {
     /** A bullet another writer stored with a leading space (Thunderbird or iOS) is
      * shown as stored; leaving it untouched saves nothing. */
     test("an item stored with a leading space and left untouched saves nothing", async () => {
-      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets([" Alice.", "Works with Sam."]) } });
+      const { commands } = await open({ ...signedIn, personalization: { ...shownPersonalization, knowledgeBase: shownBullets([" Alice.", "Works with Sam."]) } });
       const item = field("Knowledge base, item 1");
       expect(item.value).toBe(" Alice.");
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
@@ -943,7 +897,7 @@ describe("Settings page", () => {
       const withHistory: SettingsState = {
         ...signedIn,
         personalization: {
-          ...signedIn.personalization,
+          ...shownPersonalization,
           history: [
             { id: "now", timestamp: new Date().toISOString(), source: "local_edit", fields: ["kb"], restores: [], removes: [] },
             { id: "then", timestamp: new Date(Date.now() - 86_400_000).toISOString(), source: "reset", fields: ["composition", "kb"], restores: ["Likes short replies."], removes: ["Works with Sam."] },
@@ -1910,5 +1864,67 @@ describe("GNOME integration", () => {
     expect(button("Enable").disabled).toBe(state === "unsupported" || state === "checking");
     if (state === "restart") expect(visibleText()).toContain("Log out of Ubuntu and back in");
     if (state === "unavailable") expect(visibleText()).toContain("could not be enabled");
+  });
+});
+
+/** Root ADR-035 in Settings › Personalization: what is being typed is dropped when the texts are
+ * replaced, by a reset saved or another account; a change made elsewhere (a tool, another device)
+ * leaves it. */
+describe("personalization drafts", () => {
+  const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
+  const reset = async () => {
+    await act(async () => button("Reset…").click());
+    await act(async () => button("Reset").click());
+  };
+
+  test.each([
+    ["a reset", async () => reset()],
+    ["another account", async (push: (state: SettingsState) => Promise<void>) => push({ ...signedIn, email: "other@example.com" })],
+  ] as const)("a draft is dropped by %s", async (_name, replace) => {
+    const { push } = await settingsPage({ error: null }, signedIn, signedIn);
+    await act(async () => button("Personalization").click());
+    await act(async () => type(field("Add to Knowledge base"), "Half typed"));
+    await push({ ...signedIn });
+    expect(field("Add to Knowledge base").value).toBe("Half typed");
+    await replace(push);
+    expect(field("Add to Knowledge base").value).toBe("");
+  });
+});
+
+/** Root ADR-035: while signed out, Settings › Personalization shows only that it needs a sign-in, never
+ * a text, a control or Device Sync's switch, greyed in the sidebar, as soon as the sign-out is pushed;
+ * the same account signing back in sees the texts again. */
+describe("personalization while signed out", () => {
+  const texts = ["ALWAYS start with a greeting.", "I write in English Only.", "Prefers morning meetings.", "Works with Sam."];
+  const signedOut: SettingsState = { ...signedIn, email: null, personalization: null };
+
+  test("shows only a sign-in line, live, and the texts again after the sign-in", async () => {
+    const { push } = await settingsPage({ error: null }, signedIn, signedIn);
+    await act(async () => button("Personalization").click());
+    const pane = () => document.querySelector('[role="tabpanel"]')?.closest("main") as HTMLElement;
+    const nav = () => [...document.querySelectorAll<HTMLButtonElement>(".sidebar button.nav")].find((candidate) => candidate.textContent?.includes("Personalization"));
+    for (const text of texts) expect(pane().textContent).toContain(text);
+    expect(nav()?.classList.contains("unavailable")).toBe(false);
+
+    await push(signedOut);
+    const main = document.querySelector("main.content") as HTMLElement;
+    for (const text of texts) expect(main.textContent).not.toContain(text);
+    expect(main.textContent).toContain("Sign in to see this.");
+    expect(document.querySelector('[role="tabpanel"]')).toBeNull();
+    expect(main.textContent).not.toContain("Sync with my other devices");
+    expect(nav()?.classList.contains("unavailable")).toBe(true);
+
+    await push(signedIn);
+    for (const text of texts) expect(pane().textContent).toContain(text);
+    expect(nav()?.classList.contains("unavailable")).toBe(false);
+  });
+
+  test("signed in while another account's texts couldn't be cleared, it says so and shows none", async () => {
+    const notWiped: SettingsState = { ...signedIn, personalization: null };
+    await settingsPage({ error: null }, notWiped, notWiped);
+    await act(async () => button("Personalization").click());
+    const main = document.querySelector("main.content") as HTMLElement;
+    for (const text of texts) expect(main.textContent).not.toContain(text);
+    expect(main.textContent).toContain("couldn't be cleared from this computer");
   });
 });

@@ -2,11 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { aSignedInUser } from "../../support/stubs.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { defaultComposition } from "../../../src/core/personalization/defaults.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
-import { holdsSectionMarker, type PromptField, type Shown, UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { holdsSectionMarker, type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { defaultCatalog } from "../../../src/core/sync/bullets.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 
@@ -15,43 +16,16 @@ import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 class FailingStore extends MemoryStore {
   failing = false;
   writes = 0;
-  /** Runs once, at the next write, before it is made. */
-  beforeWrite: (() => void) | undefined;
 
   override set(key: string, value: unknown): boolean {
     if (this.failing) return false;
-    this.runBeforeWrite();
     this.writes += 1;
     return super.set(key, value);
   }
 
   override setAll(values: Readonly<Record<string, unknown>>): boolean {
     if (this.failing) return false;
-    this.runBeforeWrite();
     this.writes += 1;
-    return super.setAll(values);
-  }
-
-  private runBeforeWrite(): void {
-    const run = this.beforeWrite;
-    this.beforeWrite = undefined;
-    run?.();
-  }
-}
-
-/** A store that refuses every write once `writesLeft` are used. */
-class LimitedStore extends MemoryStore {
-  writesLeft = Number.POSITIVE_INFINITY;
-
-  override set(key: string, value: unknown): boolean {
-    if (this.writesLeft <= 0) return false;
-    this.writesLeft -= 1;
-    return super.set(key, value);
-  }
-
-  override setAll(values: Readonly<Record<string, unknown>>): boolean {
-    if (this.writesLeft <= 0) return false;
-    this.writesLeft -= 1;
     return super.setAll(values);
   }
 }
@@ -122,14 +96,16 @@ const links = "links";
 
 function setup(values: Record<string, unknown> = {}, newName?: () => string) {
   const store = new FailingStore(values);
-  const prompts = new UserPrompts(store, newName === undefined ? {} : { newName });
+  /** The signed-in account, which a test changes. */
+  const account: { id: string | null } = { id: "user-1" };
+  const prompts = new UserPrompts(store, () => account.id, newName === undefined ? {} : { newName });
   let changes = 0;
   prompts.observe(() => {
     changes += 1;
   });
   const sent: string[] = [];
   prompts.onLocalChange = (field) => sent.push(field);
-  return { store, prompts, changes: () => changes, sent };
+  return { store, prompts, account, changes: () => changes, sent };
 }
 
 /** Writer names in order, as the vectors name them. */
@@ -138,14 +114,12 @@ function names(): () => string {
   return () => `00000001${(++k).toString(16).padStart(8, "0")}`;
 }
 
-function texts(shown: Shown): string[] {
-  return shown.bullets.map((bullet) => bullet.text);
+function texts(shown: readonly ShownBullet[]): string[] {
+  return shown.map((bullet) => bullet.text);
 }
 
-function shownSection(prompts: UserPrompts, section: string): Shown {
-  const found = personalizationState(prompts).writingStyle.find((shown) => shown.section === section);
-  if (found === undefined) throw new Error(`no section ${section}`);
-  return found.shown;
+function shownSection(prompts: UserPrompts, section: string): ShownBullet[] {
+  return personalizationState(prompts).writingStyle.find((shown) => shown.section === section)?.bullets ?? [];
 }
 
 beforeEach(() => {
@@ -169,7 +143,7 @@ describe("UserPrompts", () => {
       }
     })({ [kbKey]: "- Held this session." });
     store.failing = true;
-    const prompts = new UserPrompts(store);
+    const prompts = new UserPrompts(store, aSignedInUser);
     const sent: string[] = [];
     prompts.onLocalChange = (field) => sent.push(field);
     let changes = 0;
@@ -194,8 +168,8 @@ describe("UserPrompts", () => {
     expect(prompts.composition).toBe(defaultStyle);
     expect(prompts.knowledgeBase).toBe(defaultKB);
     expect(prompts.personalization.knowledgeBase).toBe(defaultKB);
-    expect(personalizationState(prompts).writingStyle.map(({ shown }) => shown.bullets.length)).toEqual([4, 1, 2]);
-    expect(personalizationState(prompts).knowledgeBase.bullets[0]?.labels).toEqual([["default:kb-1", 1]]);
+    expect(personalizationState(prompts).writingStyle.map(({ bullets }) => bullets.length)).toEqual([4, 1, 2]);
+    expect(personalizationState(prompts).knowledgeBase[0]?.labels).toEqual([["default:kb-1", 1]]);
     expect(store.snapshot()).toEqual({});
   });
 
@@ -223,10 +197,10 @@ describe("UserPrompts", () => {
     const { store, prompts, sent } = setup({ [kbKey]: "- alpha" });
     store.failing = true;
     expect(texts(prompts.shown("kb", ""))).toEqual(["alpha"]);
-    expect(prompts.addKnowledge(prompts.captureKnowledgeBase(), "beta").outcome).toBe("unsaved");
+    expect(prompts.addKnowledge("beta").outcome).toBe("unsaved");
     expect(sent).toEqual([]);
     store.failing = false;
-    expect(prompts.addKnowledge(prompts.captureKnowledgeBase(), "beta").outcome).toBe("saved");
+    expect(prompts.addKnowledge("beta").outcome).toBe("saved");
     expect(texts(prompts.shown("kb", ""))).toEqual(["alpha", "beta"]);
     expect(store.get(kbKey)).toBeUndefined();
   });
@@ -254,7 +228,7 @@ describe("UserPrompts", () => {
     const entry = { id: "a", timestamp: new Date().toISOString(), source: "reset", fields: ["kb"], composition: defaultStyle, kb: "- alpha" };
     const store = new RecoveringStore({ [kbKey]: "- alpha\n- beta", prompt_history: [entry] });
     store.refusals = refusals;
-    const prompts = new UserPrompts(store);
+    const prompts = new UserPrompts(store, aSignedInUser);
 
     const restored = prompts.restore("a");
     expect(restored && prompts.knowledgeBase !== "- alpha").toBe(false);
@@ -269,14 +243,13 @@ describe("UserPrompts", () => {
   test("the app's own writer names keep every device's additions, after a restart and from a copy (DS-NAME)", () => {
     const aStore = new MemoryStore();
     const bStore = new MemoryStore();
-    const a = new UserPrompts(aStore);
-    const first = new UserPrompts(bStore);
-    expect(first.addKnowledge(first.captureKnowledgeBase(), "Second note").outcome).toBe("saved");
-    expect(a.addKnowledge(a.captureKnowledgeBase(), "First note").outcome).toBe("saved");
-    const copy = new UserPrompts(new MemoryStore(structuredClone(aStore.snapshot())));
-    expect(copy.addKnowledge(copy.captureKnowledgeBase(), "Copied note").outcome).toBe("saved");
-    const b = new UserPrompts(bStore);
-    expect(b.addKnowledge(b.captureKnowledgeBase(), "After restart").outcome).toBe("saved");
+    const a = new UserPrompts(aStore, aSignedInUser);
+    expect(new UserPrompts(bStore, aSignedInUser).addKnowledge("Second note").outcome).toBe("saved");
+    expect(a.addKnowledge("First note").outcome).toBe("saved");
+    const copy = new UserPrompts(new MemoryStore(structuredClone(aStore.snapshot())), aSignedInUser);
+    expect(copy.addKnowledge("Copied note").outcome).toBe("saved");
+    const b = new UserPrompts(bStore, aSignedInUser);
+    expect(b.addKnowledge("After restart").outcome).toBe("saved");
     const devices = [a, b, copy];
     for (let round = 0; round < 3; round += 1) {
       for (const from of devices) {
@@ -346,7 +319,7 @@ describe("UserPrompts", () => {
   test("a bullet added after the page showed survives an edit", () => {
     const { prompts } = setup({ [kbKey]: "- alpha\n- beta" });
     const shown = prompts.shown("kb", "");
-    expect(prompts.addKnowledge(prompts.captureKnowledgeBase(), "[Pinned] Added meanwhile.").outcome).toBe("saved");
+    expect(prompts.addKnowledge("[Pinned] Added meanwhile.").outcome).toBe("saved");
     expect(prompts.editKnowledgeBase(shown, ["alpha"])).toBe(true);
     expect(texts(prompts.shown("kb", ""))).toEqual(["alpha", "[Pinned] Added meanwhile."]);
   });
@@ -356,7 +329,7 @@ describe("UserPrompts", () => {
     const { prompts } = setup({ [kbKey]: "- Alpha.\n- Beta." }, names());
     const shown = prompts.shown("kb", "");
     expect(prompts.editKnowledgeBase(shown, ["Alpha, edited.", "Beta."])).toBe(true);
-    expect(prompts.shown("kb", "").bullets).toEqual([
+    expect(prompts.shown("kb", "")).toEqual([
       { text: "Beta.", labels: [["0000000100000001", 2]] },
       { text: "Alpha, edited.", labels: [["0000000100000001", 3]] },
     ]);
@@ -366,7 +339,7 @@ describe("UserPrompts", () => {
     const { store, prompts, changes, sent } = setup();
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), kbDefaults)).toBe(true);
     expect(prompts.editCompositionSection(language, shownSection(prompts, language), ["I write in English Only."])).toBe(true);
-    expect(prompts.addKnowledge(prompts.captureKnowledgeBase(), kbDefaults[0] as string).outcome).toBe("unchanged");
+    expect(prompts.addKnowledge(kbDefaults[0] as string).outcome).toBe("unchanged");
     expect(store.snapshot()).toEqual({});
     expect([changes(), sent]).toEqual([0, []]);
     vi.advanceTimersByTime(config.promptHistoryQuietPeriod);
@@ -382,8 +355,8 @@ describe("UserPrompts", () => {
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), [])).toBe(true);
     expect(prompts.knowledgeBase).toBe("");
     expect(prompts.personalization.knowledgeBase).toBe("");
-    expect(new UserPrompts(new MemoryStore(store.snapshot())).knowledgeBase).toBe("");
-    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["Likes short replies."])).toBe(true);
+    expect(new UserPrompts(new MemoryStore(store.snapshot()), aSignedInUser).knowledgeBase).toBe("");
+    expect(prompts.editKnowledgeBase([], ["Likes short replies."])).toBe(true);
     expect(texts(prompts.shown("kb", ""))).toEqual(["Likes short replies."]);
   });
 
@@ -407,14 +380,14 @@ describe("UserPrompts", () => {
     expect(prompts.editCompositionSection(general, shownSection(prompts, general), [...texts(shownSection(prompts, general)), "I write in English Only."])).toBe(true);
     expect(prompts.editCompositionSection(language, shownSection(prompts, language), [])).toBe(true);
     expect(texts(shownSection(prompts, general)).at(-1)).toBe("I write in English Only.");
-    expect(shownSection(prompts, language).bullets).toEqual([]);
+    expect(shownSection(prompts, language)).toEqual([]);
     expect(texts(shownSection(prompts, links))).toHaveLength(2);
   });
 
   test("an edit of a section that isn't one is refused", () => {
     const { store, prompts } = setup();
-    expect(prompts.editCompositionSection("General writing style", { epoch: 0, bullets: [] }, ["anything"])).toBe(false);
-    expect(prompts.editCompositionSection("", { epoch: 0, bullets: [] }, ["anything"])).toBe(false);
+    expect(prompts.editCompositionSection("General writing style", [], ["anything"])).toBe(false);
+    expect(prompts.editCompositionSection("", [], ["anything"])).toBe(false);
     expect(store.snapshot()).toEqual({});
   });
 
@@ -428,7 +401,7 @@ describe("UserPrompts", () => {
     store.failing = true;
 
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["beta"])).toBe(false);
-    expect(prompts.addKnowledge(prompts.captureKnowledgeBase(), "gamma").outcome).toBe("unsaved");
+    expect(prompts.addKnowledge("gamma").outcome).toBe("unsaved");
     expect(prompts.editCompositionSection(language, shownSection(prompts, language), ["French"])).toBe(false);
 
     expect(prompts.knowledgeBase).toBe("- alpha");
@@ -439,8 +412,8 @@ describe("UserPrompts", () => {
     expect(prompts.history).toEqual([]);
 
     store.failing = false;
-    expect(prompts.addKnowledge(prompts.captureKnowledgeBase(), "gamma").outcome).toBe("saved");
-    expect(prompts.shown("kb", "").bullets.at(-1)?.labels).toEqual([["0000000100000004", 1]]);
+    expect(prompts.addKnowledge("gamma").outcome).toBe("saved");
+    expect(prompts.shown("kb", "").at(-1)?.labels).toEqual([["0000000100000004", 1]]);
   });
 
   /** Edits are recorded once they stop, as one entry holding the texts after them, as on iOS. */
@@ -557,7 +530,7 @@ describe("UserPrompts", () => {
     expect(texts(shownSection(prompts, general))).toContain("Peer rule");
     expect(prompts.composition.startsWith("# My own composition notes\n- A line I typed before the sections.\n")).toBe(true);
     expect(prompts.composition.endsWith("\nNow acknowledge these, my way.")).toBe(true);
-    expect(new UserPrompts(store).composition).toBe(prompts.composition);
+    expect(new UserPrompts(store, aSignedInUser).composition).toBe(prompts.composition);
   });
 
   /** DS-DEDUP and DS-RENDER: a text this device holds, arriving under a smaller label, keeps its place
@@ -566,7 +539,7 @@ describe("UserPrompts", () => {
     const { prompts } = setup({ [kbKey]: "- alpha\n- beta\n- gamma" }, names());
     const message = { type: "bullet_state", v: 1, field: "kb", sender: "ffffffffffffffff", snap: "1", part: 1, parts: 1, bullets: [["", "beta", "0000000000000001", 1]], seen: { "0000000000000001": 1 } };
     prompts.sync.receive(message);
-    expect(prompts.shown("kb", "").bullets).toEqual([
+    expect(prompts.shown("kb", "")).toEqual([
       { text: "alpha", labels: [["0000000100000001", 1]] },
       { text: "beta", labels: [["0000000000000001", 1]] },
       { text: "gamma", labels: [["0000000100000001", 3]] },
@@ -622,7 +595,7 @@ describe("UserPrompts", () => {
    * reported: both texts put back, or both as they were. */
   test.each([0, 1, 2, 3])("a restore whose writes fail after %i of them leaves the file as it reported", (writesLeft) => {
     const store = new DiskStore();
-    const prompts = new UserPrompts(store);
+    const prompts = new UserPrompts(store, aSignedInUser);
     prompts.editCompositionSection(language, prompts.shown("composition", language), ["I write in French."]);
     prompts.editKnowledgeBase(prompts.shown("kb", ""), ["Works with Sam."]);
     prompts.flushHistory();
@@ -638,7 +611,7 @@ describe("UserPrompts", () => {
 
     const restored = prompts.restore(id);
 
-    const relaunched = new UserPrompts(new MemoryStore(store.disk));
+    const relaunched = new UserPrompts(new MemoryStore(store.disk), aSignedInUser);
     const expected = restored ? [historyComposition, historyKB] : [currentComposition, currentKB];
     expect([prompts.composition, prompts.knowledgeBase]).toEqual(expected);
     expect([relaunched.composition, relaunched.knowledgeBase]).toEqual(expected);
@@ -672,7 +645,7 @@ describe("UserPrompts", () => {
   /** iOS ADR-IOS-089: the texts are taken by the first account that signs in, kept for it, and back
    * at their defaults, with no history, for another. */
   test("the texts belong to an account", () => {
-    const { store, prompts } = setup({ [kbKey]: "- alpha" });
+    const { store, prompts, account } = setup({ [kbKey]: "- alpha" });
     expect(prompts.claim("user-1")).toBe(true);
     expect(prompts.owner).toBe("user-1");
     expect(prompts.knowledgeBase).toBe("- alpha");
@@ -680,173 +653,96 @@ describe("UserPrompts", () => {
     expect(prompts.claim("user-1")).toBe(true);
     expect(prompts.history).toHaveLength(1);
 
+    account.id = "user-2";
     store.failing = true;
     expect(prompts.claim("user-2")).toBe(false);
-    expect(prompts.knowledgeBase).toBe("- alpha");
     store.failing = false;
     expect(prompts.claim("user-2")).toBe(true);
     expect([prompts.owner, prompts.knowledgeBase, prompts.history]).toEqual(["user-2", defaultKB, []]);
   });
 
+  /** Everything an agent request, Settings or the history could read or change: what they read is
+   * returned as one string, and each write reports whether it was saved. */
+  function everything(prompts: UserPrompts): { read: string; writes: boolean[] } {
+    const read = [prompts.knowledgeBase, prompts.composition, JSON.stringify(prompts.personalization), JSON.stringify(prompts.history), JSON.stringify(prompts.shown("kb", "")), JSON.stringify(prompts.shown("composition", language)), JSON.stringify(prompts.captureKnowledgeBase().bullets), JSON.stringify(personalizationState(prompts))].join("\n");
+    const writes = [
+      prompts.editKnowledgeBase(prompts.shown("kb", ""), ["typed while out"]),
+      prompts.editCompositionSection(language, prompts.shown("composition", language), ["typed while out"]),
+      prompts.addKnowledge("added while out").outcome === "saved",
+      prompts.resetKnowledgeBase(),
+      prompts.resetComposition(),
+      prompts.restore(prompts.history[0]?.id ?? "none"),
+    ];
+    return { read, writes };
+  }
+
+  /** Root ADR-035: while signed out, the texts kept on this computer are neither shown, sent nor
+   * changed; the same account signing back in has them all again. */
+  test("while signed out, nothing of the texts is read and nothing is written", () => {
+    const { store, prompts, account } = setup({ [kbKey]: "- first account's note", [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- first account's style" });
+    expect(prompts.claim("user-1")).toBe(true);
+    prompts.resetComposition();
+    const before = JSON.stringify(store.snapshot());
+
+    account.id = null;
+    expect(prompts.isAvailable).toBe(false);
+    const out = everything(prompts);
+    prompts.flushHistory();
+    expect(out.read).not.toContain("first account");
+    expect(out.writes).toEqual([false, false, false, false, false, false]);
+    expect(JSON.stringify(store.snapshot())).toBe(before);
+
+    account.id = "user-1";
+    expect(prompts.claim("user-1")).toBe(true);
+    expect(prompts.knowledgeBase).toBe("- first account's note");
+    expect(prompts.history).toHaveLength(1);
+  });
+
+  /** Root ADR-035: another account signing in wipes the texts first. While that wipe can't be saved,
+   * the texts are still the first account's, so nothing of them is shown, sent or changed for the
+   * next one, and the claim tries again; once the disk takes it, they are gone. The first account
+   * signing back in meanwhile has them again. */
+  test("a wipe for another account that can't be saved leaves nothing of the first account to it", () => {
+    const { store, prompts, account } = setup({ [kbKey]: "- first account's note", [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- first account's style" });
+    expect(prompts.claim("user-1")).toBe(true);
+    prompts.resetComposition();
+    const before = JSON.stringify(store.snapshot());
+
+    account.id = "user-2";
+    store.failing = true;
+    expect(prompts.claim("user-2")).toBe(false);
+    store.failing = false;
+    expect(prompts.owner).toBe("user-1");
+    expect(prompts.isAvailable).toBe(false);
+    const out = everything(prompts);
+    expect(out.read).not.toContain("first account");
+    expect(out.writes).toEqual([false, false, false, false, false, false]);
+    expect(JSON.stringify(store.snapshot())).toBe(before);
+
+    account.id = "user-1";
+    expect(prompts.knowledgeBase).toBe("- first account's note");
+
+    account.id = "user-2";
+    expect(prompts.claim("user-2")).toBe(true);
+    expect([prompts.owner, prompts.knowledgeBase, prompts.history]).toEqual(["user-2", defaultKB, []]);
+    expect(JSON.stringify(store.snapshot())).not.toContain("first account");
+  });
+
   /** Another account's texts from before, not upgraded yet (nothing read them since it claimed them), are
    * cleared with its states: they never become the new account's bullets or reach its devices. */
   test("another account's texts from before go with its claim", () => {
-    const { store, prompts } = setup({
+    const { store, prompts, account } = setup({
       device_sync_owner_user_id: "user-1",
       [kbKey]: "- one's private note",
       [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style",
     });
+    account.id = "user-2";
     expect(prompts.claim("user-2")).toBe(true);
-    const relaunched = new UserPrompts(new MemoryStore(store.snapshot()));
+    const relaunched = new UserPrompts(new MemoryStore(store.snapshot()), () => "user-2");
     for (const reader of [prompts, relaunched]) {
       expect([reader.knowledgeBase, reader.composition]).toEqual([defaultKB, defaultStyle]);
     }
     expect(Object.keys(store.snapshot()).filter((key) => key.startsWith("user_prompts:"))).toEqual([]);
-  });
-
-  /** R30, for every writer that can await between reading a field and writing it: what it took under one
-   * account, or before a reset of its field or of the texts' file, is never written after it; a reset of the
-   * other field leaves it good. Each writer from a list that holds bullets and from an empty one. (A history
-   * restore reads and writes in one call, with nothing between.) */
-  const r30Writers: [string, PromptField, (prompts: UserPrompts) => void, (prompts: UserPrompts) => () => boolean][] = [
-    ["Settings' knowledge-base edit", "kb", () => {}, (prompts) => {
-      const shown = prompts.shown("kb", "");
-      return () => prompts.editKnowledgeBase(shown, [...texts(shown), "Added under one."]);
-    }],
-    ["Settings' edit of an empty knowledge base", "kb", (prompts) => expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), [])).toBe(true), (prompts) => {
-      const shown = prompts.shown("kb", "");
-      return () => prompts.editKnowledgeBase(shown, ["Added under one."]);
-    }],
-    ["Settings' writing-style edit", "composition", () => {}, (prompts) => {
-      const shown = shownSection(prompts, language);
-      return () => prompts.editCompositionSection(language, shown, [...texts(shown), "Added under one."]);
-    }],
-    ["Settings' edit of an empty writing-style section", "composition", (prompts) => expect(prompts.editCompositionSection(language, shownSection(prompts, language), [])).toBe(true), (prompts) => {
-      const shown = shownSection(prompts, language);
-      return () => prompts.editCompositionSection(language, shown, ["Added under one."]);
-    }],
-    ["an agent request's kb_add", "kb", () => {}, (prompts) => {
-      const captured = prompts.captureKnowledgeBase();
-      return () => prompts.addKnowledge(captured, "Added under one.").outcome === "saved";
-    }],
-    // A default text: the defaults after a reset or claim hold it again, under the same label.
-    ["an agent request's kb_del", "kb", () => {}, (prompts) => {
-      const captured = prompts.captureKnowledgeBase();
-      return () => prompts.removeKnowledge(captured, { section: "", text: kbDefaults[0]! }).outcome === "saved";
-    }],
-  ];
-  const r30Endings: [string, PromptField[], (prompts: UserPrompts, store: FailingStore) => void][] = [
-    ["another account signs in", ["kb", "composition"], (prompts) => expect(prompts.claim("user-2")).toBe(true)],
-    ["the knowledge base is reset", ["kb"], (prompts) => expect(prompts.resetKnowledgeBase()).toBe(true)],
-    ["the writing style is reset", ["composition"], (prompts) => expect(prompts.resetComposition()).toBe(true)],
-    ["the texts' file is reset", ["kb", "composition"], (prompts, store) => prompts.resetFile(() => store.setAll(Object.fromEntries(Object.keys(store.snapshot()).map((key) => [key, undefined]))))],
-  ];
-  test.each(r30Writers.flatMap(([writer, field, prepare, take]) => r30Endings.map(([ending, fields, end]) => [writer, ending, field, prepare, take, fields, end] as const)))(
-    "%s taken before %s",
-    (_writer, _ending, field, prepare, take, fields, end) => {
-      const { store, prompts } = setup({ [kbKey]: `- one's private note\n- ${kbDefaults[0]}`, [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style" });
-      expect(prompts.claim("user-1")).toBe(true);
-      prepare(prompts);
-      const write = take(prompts);
-      end(prompts, store);
-      const after = store.snapshot();
-      if (!fields.includes(field)) {
-        expect(write()).toBe(true);
-        return;
-      }
-      expect(write()).toBe(false);
-      expect(store.snapshot()).toEqual(after);
-      expect(field === "kb" ? prompts.knowledgeBase : prompts.composition).toBe(field === "kb" ? defaultKB : defaultStyle);
-    },
-  );
-
-  /** R30's order: an ending ends every operation in flight on its fields as its first step, so one that
-   * finishes while the ending writes (or moves the texts' file aside) writes nothing. */
-  test.each(r30Writers.flatMap(([writer, field, prepare, take]) => r30Endings.filter(([, fields]) => fields.includes(field)).map(([ending, , end]) => [writer, ending, prepare, take, end] as const)))(
-    "%s finishing as %s is written",
-    (_writer, _ending, prepare, take, end) => {
-      const { store, prompts } = setup({ [kbKey]: `- one's private note\n- ${kbDefaults[0]}`, [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style" });
-      expect(prompts.claim("user-1")).toBe(true);
-      prepare(prompts);
-      const write = take(prompts);
-      let wrote: boolean | undefined;
-      store.beforeWrite = () => (wrote = write());
-      end(prompts, store);
-      expect(wrote).toBe(false);
-    },
-  );
-
-  /** R30: what a reset shows, as Settings is pushed it while the reset is saved, can be edited. */
-  test.each(["kb", "composition"] as const)("the %s shown as its reset is saved can be edited", (field) => {
-    const { prompts } = setup();
-    const section = field === "kb" ? "" : language;
-    let pushed: Shown | undefined;
-    prompts.observe(() => (pushed = prompts.shown(field, section)));
-    expect(field === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition()).toBe(true);
-    if (pushed === undefined) throw new Error("nothing pushed");
-    const edited = [...texts(pushed), "added"];
-    expect(field === "kb" ? prompts.editKnowledgeBase(pushed, edited) : prompts.editCompositionSection(section, pushed, edited)).toBe(true);
-    expect(texts(prompts.shown(field, section))).toEqual(edited);
-  });
-
-  /** R30: a reset ends what was shown even when it isn't saved (an epoch is never reused), and tells
-   * observers so; the edit is redone from what is shown now. */
-  test("a reset not saved still ends what was shown", () => {
-    const { store, prompts } = setup({ [kbKey]: "- alpha" });
-    const shown = prompts.shown("kb", "");
-    let pushed: Shown | undefined;
-    prompts.observe(() => (pushed = prompts.shown("kb", "")));
-    store.failing = true;
-    expect(prompts.resetKnowledgeBase()).toBe(false);
-    store.failing = false;
-    // Observers are told: what they show now carries the new epoch.
-    expect(pushed).toEqual(prompts.shown("kb", ""));
-    expect(pushed?.epoch).not.toBe(shown.epoch);
-    expect(prompts.editKnowledgeBase(shown, ["alpha", "beta"])).toBe(false);
-    expect(prompts.knowledgeBase).toBe("- alpha");
-    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha", "beta"])).toBe(true);
-    expect(prompts.knowledgeBase).toBe("- alpha\n- beta");
-  });
-
-  /** R30: an observer that throws after a reset was saved doesn't bring back the epoch it ended. */
-  test("a saved reset still refuses an earlier request when telling its observers fails", () => {
-    const { store, prompts } = setup({ [kbKey]: "- alpha" });
-    const captured = prompts.captureKnowledgeBase();
-    const stop = prompts.observe(() => {
-      throw new Error("an observer failed");
-    });
-    expect(() => prompts.resetKnowledgeBase()).toThrow("an observer failed");
-    stop();
-    expect(prompts.knowledgeBase).toBe(defaultKB);
-    const after = store.snapshot();
-    expect(prompts.addKnowledge(captured, "Earlier request").outcome).toBe("unsaved");
-    expect(store.snapshot()).toEqual(after);
-  });
-
-  /** R30: a reset not saved, after the upgrade it waited on was: the view the upgrade pushed can be edited,
-   * and once a later reset is saved it never writes again. */
-  test.each(["kb", "composition"] as const)("the %s view pushed during a reset not saved", (field) => {
-    const store = new LimitedStore({ [kbKey]: "- Prior note", [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- Prior style" });
-    store.writesLeft = 0;
-    const prompts = new UserPrompts(store);
-    expect(prompts.captureKnowledgeBase().bullets).toBeNull();
-    const section = field === "kb" ? "" : language;
-    const reset = () => (field === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition());
-    const edit = (shown: Shown, text: string) => (field === "kb" ? prompts.editKnowledgeBase(shown, [...texts(shown), text]) : prompts.editCompositionSection(section, shown, [...texts(shown), text]));
-    let pushed: Shown | undefined;
-    const stop = prompts.observe(() => (pushed = prompts.shown(field, section)));
-    // The upgrade is saved, then the reset's own writes are refused.
-    store.writesLeft = 1;
-    expect(reset()).toBe(false);
-    stop();
-    if (pushed === undefined) throw new Error("nothing pushed");
-    const view = pushed;
-    store.writesLeft = Number.POSITIVE_INFINITY;
-    expect(edit(view, "Edited once")).toBe(true);
-    expect(reset()).toBe(true);
-    const after = store.snapshot();
-    expect(edit(view, "Edited after the reset")).toBe(false);
-    expect(store.snapshot()).toEqual(after);
   });
 
   test("the history keeps the newest entries only", () => {

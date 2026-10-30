@@ -150,6 +150,9 @@ export const Fixtures = {
 };
 
 
+/** `UserPrompts`' signed-in account for a test that doesn't sign in or out: the fixtures' user. */
+export const aSignedInUser = (): string | null => Fixtures.userID;
+
 export function signedIn(auth = new StubTransport(), session: TabMailSession | null = Fixtures.session()): AccountModel {
   return new AccountModel(new AuthClient(auth.transport, "https://auth.example.com", "publishable-key"), new InMemorySessionStore(session));
 }

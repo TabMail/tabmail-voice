@@ -23,8 +23,8 @@ import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
 /** The texts of bullets as Settings shows them. */
-function texts(shown: { bullets: readonly { text: string }[] } | undefined): string[] {
-  return (shown?.bullets ?? []).map((bullet) => bullet.text);
+function texts(bullets: readonly { text: string }[] | undefined): string[] {
+  return (bullets ?? []).map((bullet) => bullet.text);
 }
 
 /** The signal a tool runs with: a request never canceled. */
@@ -714,6 +714,11 @@ afterEach(() => {
 /** Sends `command` to the main process as a window would. */
 function send(command: unknown): Promise<unknown> {
   return Promise.resolve(app.handlers.get(channels.command)?.({}, command));
+}
+
+/** A session stored in the Keychain, as an account signed in before launch has. */
+function signInStored(id = "user", email = "tester@example.com"): void {
+  app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id, email } });
 }
 
 describe("main process wiring", () => {
@@ -2217,6 +2222,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
    * at once how to fix it by hand, its Fix item stays in the menu, and every change it would have kept
    * says how to fix it. The app itself never resets, moves or writes over it. */
   test("a knowledge base file that couldn't be read is told of at launch, and nothing is saved to it", async () => {
+    signInStored();
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
     app.dialogResponse = 2;
@@ -2234,7 +2240,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const defaults = page().knowledgeBase;
     for (const command of [
       { type: "editKnowledgeBase", shown: defaults, bullets: [...texts(defaults), "Prefers short replies."] },
-      { type: "editWritingStyle", section: "language", shown: page().writingStyle.find((one) => one.section === "language")?.shown, bullets: ["I write in German."] },
+      { type: "editWritingStyle", section: "language", shown: page().writingStyle.find((one) => one.section === "language")?.bullets, bullets: ["I write in German."] },
       { type: "resetKnowledgeBase" },
       { type: "resetWritingStyle" },
       { type: "restorePromptHistory", id: "no-such-entry" },
@@ -2244,7 +2250,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // The settings file read, so a setting is saved as ever.
     expect(await send({ type: "setSmartDictation", value: false })).toEqual({ error: null });
     expect(app.files.get(path)?.size).toBe(0);
-    expect(page().knowledgeBase.bullets).toEqual(defaults.bullets);
+    expect(page().knowledgeBase).toEqual(defaults);
 
     // The menu's Fix item tells it again, and Show File shows it; Close does nothing more.
     app.dialogResponse = 0;
@@ -2347,29 +2353,54 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.trayState?.().fileProblems).toEqual([]);
   });
 
-  /** R30: the state a reset pushes to Settings carries the epoch the reset started, so an edit of it is
-   * saved. */
-  test.each(["kb", "composition"] as const)("the %s state a reset pushes can be edited", async (field) => {
-    await launch("darwin");
-    const pushed: PersonalizationState[] = [];
-    app.listeners.set("voice:state", [
-      (_event, name, pushedState) => {
-        if (name === "settings") pushed.push((pushedState as { personalization: PersonalizationState }).personalization);
-      },
-    ]);
-    expect(await send({ type: field === "kb" ? "resetKnowledgeBase" : "resetWritingStyle" })).toEqual({ error: null });
-    const last = pushed.at(-1);
-    if (last === undefined) throw new Error("nothing pushed");
-    const shown = field === "kb" ? last.knowledgeBase : last.writingStyle.find((one) => one.section === "language")?.shown;
-    if (shown === undefined) throw new Error("no language section");
-    const command = field === "kb" ? { type: "editKnowledgeBase", shown, bullets: [...texts(shown), "Entered after the reset."] } : { type: "editWritingStyle", section: "language", shown, bullets: [...texts(shown), "Entered after the reset."] };
-    expect(await send(command)).toEqual({ error: null });
-    expect(field === "kb" ? app.prompts?.knowledgeBase : app.prompts?.composition).toContain("Entered after the reset.");
-  });
-
   /** Settings › Personalization's commands (ADR-DESK-063): each changes the stored texts and the
    * state Settings shows, and pushes it; one the file can't keep is reported and changes nothing. */
+  /** Root ADR-035: while signed out, no state Settings is given or pushed carries a text, every
+   * personalization command is refused and changes nothing, and the same account signing back in sees
+   * its texts again. */
+  test("signed out, Settings gets none of the texts and changes none of them", async () => {
+    signInStored();
+    await launch("darwin");
+    type Personalization = PersonalizationState | null;
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: Personalization }).personalization;
+    const pushed: Personalization[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, pushedState) => {
+        if (name === "settings") pushed.push((pushedState as { personalization: Personalization }).personalization);
+      },
+    ]);
+    const shown = page();
+    if (shown === null) throw new Error("signed in, the texts are shown");
+    expect(await send({ type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: [...texts(shown.knowledgeBase), "Kept private."] })).toEqual({ error: null });
+    const promptsFile = () => JSON.stringify([...(app.files.get(join(app.userData, "userPrompts.json"))?.entries() ?? [])]);
+    const before = promptsFile();
+    expect(before).toContain("Kept private.");
+    pushed.length = 0;
+
+    expect(await send({ type: "signOut" })).toEqual({ error: null });
+    expect(pushed.length).toBeGreaterThan(0);
+    expect(pushed.at(-1)).toBeNull();
+    expect(page()).toBeNull();
+    const language = shown.writingStyle.find((one) => one.section === "language")?.bullets ?? [];
+    for (const command of [
+      { type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: ["Typed while signed out."] },
+      { type: "editWritingStyle", section: "language", shown: language, bullets: ["Typed while signed out."] },
+      { type: "resetKnowledgeBase" },
+      { type: "resetWritingStyle" },
+      { type: "restorePromptHistory", id: "no-such-entry" },
+    ]) {
+      expect(await send(command), command.type).toEqual({ error: "Sign in to change this, so nothing changed." });
+    }
+    expect(promptsFile()).toBe(before);
+    expect(JSON.stringify(pushed)).not.toContain("Kept private.");
+
+    signInStored();
+    await launch("darwin");
+    expect(texts(page()?.knowledgeBase)).toContain("Kept private.");
+  });
+
   test("the writing style and knowledge base are edited, reset and restored from Settings", async () => {
+    signInStored();
     await launch("darwin");
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const pushed: PersonalizationState[] = [];
@@ -2381,7 +2412,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const promptsFile = () => app.files.get(join(app.userData, "userPrompts.json"));
     const storedKB = () => JSON.stringify(promptsFile()?.get("bullet_state:kb") ?? null);
     const storedStyle = () => JSON.stringify(promptsFile()?.get("bullet_state:composition") ?? null);
-    const languageShown = () => page().writingStyle.find((one) => one.section === "language")?.shown;
+    const languageShown = () => page().writingStyle.find((one) => one.section === "language")?.bullets ?? [];
     const language = () => texts(languageShown());
     const defaults = texts(page().knowledgeBase);
     expect(defaults).toHaveLength(3);
@@ -2397,7 +2428,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(storedStyle()).toContain('"I write in English and French."');
     expect(storedStyle()).not.toContain("English Only");
     expect(language()).toEqual(["I write in English and French."]);
-    expect(texts(pushed.at(-1)?.writingStyle.find((one) => one.section === "language")?.shown)).toEqual(["I write in English and French."]);
+    expect(texts(pushed.at(-1)?.writingStyle.find((one) => one.section === "language")?.bullets)).toEqual(["I write in English and French."]);
 
     // R23: a line holding a section marker, on any line of a pasted bullet, is refused with a message that
     // says why; nothing changes.
@@ -2441,17 +2472,14 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(await send(command), command.type).toEqual(unsaved);
       expect(storedKB(), command.type).toBe(kbBefore);
       expect(storedStyle(), command.type).toBe(styleBefore);
-      const bullets = (state: Pick<PersonalizationState, "knowledgeBase" | "writingStyle">) => ({ knowledgeBase: state.knowledgeBase.bullets, writingStyle: state.writingStyle.map((one) => one.shown.bullets) });
-      expect(bullets(page()), command.type).toEqual(bullets(shownBefore));
-      // R30: what Settings was last pushed is what applies now, even after a reset not saved ended it.
-      const views = (state: PersonalizationState | undefined) => ({ knowledgeBase: state?.knowledgeBase, writingStyle: state?.writingStyle });
-      expect(views(pushed.at(-1)), command.type).toEqual(views(page()));
+      expect({ knowledgeBase: page().knowledgeBase, writingStyle: page().writingStyle }, command.type).toEqual(shownBefore);
     }
   });
 
   /** The knowledge base changed outside Settings (by `kb_add` or `kb_del`): the Settings
    * window is pushed the new state. */
   test("a knowledge base change made outside Settings reaches the Settings window", async () => {
+    signInStored();
     await launch("darwin");
     const pushed: string[][] = [];
     app.listeners.set("voice:state", [
@@ -2459,13 +2487,14 @@ test("the real capture pipeline reads the delayed captured identity in both scop
         if (name === "settings") pushed.push(texts((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase));
       },
     ]);
-    expect(app.prompts?.addKnowledge(app.prompts.captureKnowledgeBase(), "Learned in a chat.").outcome).toBe("saved");
+    expect(app.prompts?.addKnowledge("Learned in a chat.").outcome).toBe("saved");
     expect(pushed.at(-1)).toContain("Learned in a chat.");
   });
 
   /** Edits still waiting for their quiet period are recorded in the history when the app quits, not
    * lost. */
   test("quitting records the edits waiting for their quiet period", async () => {
+    signInStored();
     await launch("darwin");
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const defaults = page().knowledgeBase;
@@ -2484,6 +2513,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
    * app's folder, apart from the preferences, and read again at the next launch; another user's
    * folder has its own. */
   test("the knowledge base is kept in the app's folder, apart from the preferences, across launches", async () => {
+    signInStored();
     const [first, second] = [mkdtempSync(join(tmpdir(), "TabMailVoiceTests-")), mkdtempSync(join(tmpdir(), "TabMailVoiceTests-"))];
     const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
     const relaunch = async (userData: string) => {
@@ -2975,6 +3005,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
   });
 
   test("a confirmed reset of the knowledge base file keeps it as a dated copy, and opens no wizard", async () => {
+    signInStored();
     const path = join(app.userData, "userPrompts.json");
     app.problems.set(path, { kind: "damaged", path, code: "invalid" });
     app.dialogResponse = 2;

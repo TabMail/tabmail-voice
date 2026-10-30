@@ -8,7 +8,7 @@ import * as config from "../../src/core/config.js";
 import { type PromptField, UserPrompts, type UserPromptsOptions } from "../../src/core/personalization/prompts.js";
 import { DeviceSync, type OpenSyncSocket, type SyncSocket, type SyncSocketEvents } from "../../src/core/sync/deviceSync.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
-import { Fixtures, signedIn } from "./stubs.js";
+import { Fixtures, signedIn, StubTransport } from "./stubs.js";
 
 /** One end of the relay: what it was sent, waiting to be delivered in order. */
 interface Endpoint {
@@ -127,6 +127,8 @@ export class VoiceDevice {
   readonly prompts: UserPrompts;
   readonly sync: DeviceSync;
   readonly account: AccountModel;
+  /** The auth server: a test queues a session here to sign another account in. */
+  readonly auth = new StubTransport();
   allowed = true;
   /** The relay's address, as debug mode picks it. */
   url = config.deviceSyncURL;
@@ -138,8 +140,8 @@ export class VoiceDevice {
     userID = Fixtures.userID,
     options: UserPromptsOptions = {},
   ) {
-    this.prompts = new UserPrompts(store, options);
-    this.account = signedIn(undefined, Fixtures.session({ userID }));
+    this.prompts = new UserPrompts(store, () => this.account.session?.userID ?? null, options);
+    this.account = signedIn(this.auth, Fixtures.session({ userID }));
     this.sync = new DeviceSync({ prompts: this.prompts, account: this.account, allowed: () => this.allowed, url: () => this.url, open: relay.open(name) });
     this.prompts.observe(() => this.sync.update());
     this.account.observe(() => this.sync.update());
@@ -147,17 +149,17 @@ export class VoiceDevice {
 
   /** The texts of `field`'s live bullets in `section`, in order. */
   texts(field: PromptField, section = ""): string[] {
-    return this.prompts.shown(field, section).bullets.map((bullet) => bullet.text);
+    return this.prompts.shown(field, section).map((bullet) => bullet.text);
   }
 
   add(field: PromptField, section: string, text: string): void {
-    if (field === "kb") this.prompts.addKnowledge(this.prompts.captureKnowledgeBase(), text);
+    if (field === "kb") this.prompts.addKnowledge(text);
     else this.prompts.editCompositionSection(section, this.prompts.shown(field, section), [...this.texts(field, section), text]);
   }
 
   remove(field: PromptField, section: string, text: string): void {
     const shown = this.prompts.shown(field, section);
-    const edited = shown.bullets.map((bullet) => bullet.text).filter((other) => other !== text);
+    const edited = shown.map((bullet) => bullet.text).filter((other) => other !== text);
     if (field === "kb") this.prompts.editKnowledgeBase(shown, edited);
     else this.prompts.editCompositionSection(section, shown, edited);
   }

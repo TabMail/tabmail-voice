@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { defaultComposition } from "../../src/core/personalization/defaults.js";
-import { type PromptField, promptFields, type Shown, UserPrompts } from "../../src/core/personalization/prompts.js";
+import { type PromptField, promptFields, type ShownBullet, UserPrompts } from "../../src/core/personalization/prompts.js";
 import { type Bullet, type Catalog, defaultCatalog, type FieldState, parse } from "../../src/core/sync/bullets.js";
 import { DeviceSync, type SyncSocketEvents } from "../../src/core/sync/deviceSync.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
-import { Fixtures } from "./stubs.js";
+import { aSignedInUser, Fixtures } from "./stubs.js";
 
 const ownerKey = "device_sync_owner_user_id";
 
@@ -160,7 +160,7 @@ export class BulletDevice {
   }
 
   private start(): void {
-    this.prompts = new UserPrompts(this.store, {
+    this.prompts = new UserPrompts(this.store, aSignedInUser, {
       newName: () => this.options.name(++this.names),
       budget: this.options.budget === undefined ? undefined : () => this.options.budget as number,
       catalog: this.options.catalog,
@@ -207,19 +207,19 @@ export class BulletDevice {
     return this.prompts.sync.state(field);
   }
 
-  shown(field: PromptField, section: string): Shown {
+  shown(field: PromptField, section: string): ShownBullet[] {
     return this.prompts.shown(field, section);
   }
 
   /** The user's edit of one section in Settings, from what it shows now to `texts`. */
   editSection(field: PromptField, section: string, texts: (shown: string[]) => string[]): boolean {
     const shown = this.shown(field, section);
-    const edited = texts(shown.bullets.map((bullet) => bullet.text));
+    const edited = texts(shown.map((bullet) => bullet.text));
     return field === "kb" ? this.prompts.editKnowledgeBase(shown, edited) : this.prompts.editCompositionSection(section, shown, edited);
   }
 
   add(field: PromptField, section: string, text: string): void {
-    if (field === "kb") this.prompts.addKnowledge(this.prompts.captureKnowledgeBase(), text);
+    if (field === "kb") this.prompts.addKnowledge(text);
     else this.editSection(field, section, (texts) => [...texts, text]);
   }
 
@@ -227,13 +227,13 @@ export class BulletDevice {
     this.editSection(field, section, (texts) => texts.filter((other) => other !== text));
   }
 
-  /** A section's edit committed from what `captured` held then, in the capture epoch `epoch` (DS-CAPTURE,
-   * R30); whether it was saved. */
-  commit(field: PromptField, section: string, epoch: number, captured: readonly Bullet[] | null, result: readonly string[]): boolean {
+  /** A section's edit committed from what `captured` held then (DS-CAPTURE). */
+  commit(field: PromptField, section: string, captured: readonly Bullet[] | null, result: readonly string[]): void {
     // A capture refused while an upgrade was unsaved saves nothing (R22).
-    if (captured === null) return false;
-    const shown: Shown = { epoch, bullets: captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] })) };
-    return field === "kb" ? this.prompts.editKnowledgeBase(shown, result) : this.prompts.editCompositionSection(section, shown, result);
+    if (captured === null) return;
+    const shown: ShownBullet[] = captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
+    if (field === "kb") this.prompts.editKnowledgeBase(shown, result);
+    else this.prompts.editCompositionSection(section, shown, result);
   }
 
   reset(field: PromptField): void {
@@ -251,7 +251,7 @@ export function builtInSkeleton(field: PromptField): Pick<FieldState, "head" | "
 
 /** Writes `states` into `store` as `UserPrompts` keeps them; fields not given stored empty. */
 export function storeStates(store: DeviceStore, states: Partial<Record<PromptField, Pick<FieldState, "bullets" | "seen">>>): void {
-  const prompts = new UserPrompts(store);
+  const prompts = new UserPrompts(store, aSignedInUser);
   const all: Partial<Record<PromptField, FieldState>> = {};
   for (const field of promptFields) {
     const given = states[field];

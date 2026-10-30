@@ -294,7 +294,7 @@ function launch(): void {
   // The writing style and knowledge base, in a file of their own: per user of this computer, as
   // memory is (ADR-DESK-063).
   const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));
-  const prompts = new UserPrompts(promptsStore);
+  const prompts = new UserPrompts(promptsStore, () => account.session?.userID ?? null);
   // Device Sync of the writing style and the knowledge base with the user's Thunderbird and iOS apps
   // (root ADR-021), for the account signed in, while the settings let it run; the development relay
   // in debug mode.
@@ -550,7 +550,7 @@ function launch(): void {
       version: app.getVersion(),
       update: updater?.state ?? null,
       memory: memoryPage.state,
-      personalization: personalizationState(prompts),
+      personalization: prompts.isAvailable ? personalizationState(prompts) : null,
       fileProblems: unreadableFiles(),
     };
   }
@@ -1057,6 +1057,11 @@ function launch(): void {
    * handler, `commandWrites`). */
   const exclusionUnsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
   const personalizationUnsaved = "This couldn't be saved, so nothing changed. Check the disk and try again.";
+  /** Root ADR-035: while signed out, Settings shows no texts to change; a command sent anyway changes nothing. */
+  const personalizationUnavailable = "Sign in to change this, so nothing changed.";
+  const personalizationAvailable = (): void => {
+    if (!prompts.isAvailable) throw new Error(personalizationUnavailable);
+  };
   const personalizationMarker = "A line can't contain \"DO NOT EDIT/DELETE THIS SECTION HEADER\" or \"====END USER INSTRUCTIONS====\", so nothing changed.";
   const removalUnsaved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
 
@@ -1135,19 +1140,24 @@ function launch(): void {
       case "clearMemory":
         return memoryPage.clear(memoryListQuery());
       case "editWritingStyle":
+        personalizationAvailable();
         if (holdsSectionMarker(command.bullets)) throw new Error(personalizationMarker);
         if (!prompts.editCompositionSection(command.section, command.shown, command.bullets)) throw new Error(personalizationUnsaved);
         return;
       case "editKnowledgeBase":
+        personalizationAvailable();
         if (!prompts.editKnowledgeBase(command.shown, command.bullets)) throw new Error(personalizationUnsaved);
         return;
       case "resetWritingStyle":
+        personalizationAvailable();
         if (!prompts.resetComposition()) throw new Error(personalizationUnsaved);
         return;
       case "resetKnowledgeBase":
+        personalizationAvailable();
         if (!prompts.resetKnowledgeBase()) throw new Error(personalizationUnsaved);
         return;
       case "restorePromptHistory":
+        personalizationAvailable();
         if (!prompts.restore(command.id)) throw new Error(personalizationUnsaved);
         return;
       case "excludeApp":

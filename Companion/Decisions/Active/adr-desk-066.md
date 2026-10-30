@@ -48,7 +48,42 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   also limits how many messages a connection sends a minute, and every part counts: a field of
   dozens of parts (megabytes, far beyond a real knowledge base) would be cut off on each connect.
   Left as it is (2026-10-29).
-- **Capture epoch (R30, 2026-10-29).** Each field has a capture epoch, in memory only. Every operation
+- **One operation at a time (root ADR-035, 2026-10-29; replaces R30 below).** Settings has no busy
+  state and greys nothing out, and Voice needs no retry: its main thread is synchronous, so it is the
+  semaphore. Every command from Settings (an edit, a reset, a restore) and every `kb_add`/`kb_del` runs
+  to its end there before the next one starts. Every write of the texts goes through one function,
+  `UserPrompts.writeValues` (`BulletSync` commits call `UserPrompts.write`; claim and restore use it
+  too). An agent request is the one thing that awaits between reading the knowledge base and writing
+  it (the AI turn), so it carries one change counter (`KnowledgeCapture.generation`) taken at key-down,
+  and `kb_add`/`kb_del` compare it once before they write: a stale request saves nothing and tells the
+  model "not saved" at once. The counter goes up on every saved change from Settings (edit, reset,
+  restore), the texts' file reset, another account's wipe, and every account change (the dictation
+  controller's `accountChanged`, a sign-out included); not when Settings opens. Settings drops a draft
+  (a row being edited, the field to add one) after a reset, a restore or an account change: the editor
+  is keyed by the account and a count of saved resets/restores.
+  **Accounts.** Sign-out keeps the texts (owner, re-confirmed 2026-10-29), never waits, ends the agent
+  turn, stops sync and moves the counter, so a late agent or sync write is refused. The same account
+  signing back in keeps its texts. A different account signing in wipes the previous account's texts
+  first (`UserPrompts.claim`: defaults, history cleared, owner set; no reset sent to peers; never a
+  merge on top). A damaged file is never claimed or written, so sync stays off and Settings shows the
+  damaged-file notice. When the wipe can't be saved, the texts stay the previous account's (owner
+  unchanged, so sync stays off and the next claim tries again), and the availability check below
+  keeps every one of them from the new account.
+  **Signed out, nothing is shown or used (owner, 2026-10-29).** One check, `UserPrompts.isAvailable`,
+  guards every read and write of the texts: they are available only while an account is signed in
+  and they are its own, or no account's yet. Otherwise every reader (Settings' state, the history,
+  an agent request's texts and `KnowledgeCapture`, `kb_add`'s duplicate check) gets nothing and
+  `writeValues` refuses every write, history entries included; only the claim's wipe is let through.
+  The main process pushes Settings `personalization: null` then and refuses the personalization
+  commands ("Sign in to change this"); Settings › Personalization shows only "Sign in to see this."
+  (or, signed in while another account's wipe is pending, that the texts couldn't be cleared), no
+  text, control or Device Sync switch, and its sidebar entry is greyed, live on sign-out. The same
+  account signing back in sees its texts again. The dictionary is the computer's (the settings
+  file, never wiped on an account change), not the account's, so it stays shown. The tray has no
+  personalization entry.
+- **Capture epoch (R30, 2026-10-29). Superseded the same day by root ADR-035 above: the epochs,
+  `endOperations` and their ordering tests were deleted, since they existed only for concurrent local
+  writes that Voice's synchronous main thread already rules out.** ** Each field has a capture epoch, in memory only. Every operation
   that can await between reading a field and writing it takes the epoch once, at its start, and every
   write it makes carries it as a required argument: Settings' edits (one epoch per field view, `Shown`,
   so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a

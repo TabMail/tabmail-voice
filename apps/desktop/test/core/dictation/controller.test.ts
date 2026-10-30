@@ -37,7 +37,7 @@ import { memoryDate, memoryRow } from "../../../src/core/memory/store.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
 import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
-import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
+import { aSignedInUser, CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
 import { concat, random, room, speech } from "../../support/speech.js";
 
 /** The knowledge base a new install holds: the catalog's defaults (DS-DEFAULT). */
@@ -144,7 +144,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     new TipBook(tipStore).markLearned("agentKnowledgeBase");
     used = [];
     memory = new FakeMemory();
-    prompts = new UserPrompts(new MemoryStore());
+    prompts = new UserPrompts(new MemoryStore(), aSignedInUser);
   });
 
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
@@ -4150,6 +4150,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
       });
 
+      /** Root ADR-035: an account change, signing out or into another account, in any mode, leaves no
+       * request from before able to write to the knowledge base; a refreshed token for the same account
+       * changes nothing. */
+      test("an account change ends every earlier request's knowledge-base writes", async () => {
+        const account = signedIn(auth);
+        makeController({ account });
+        const atStart = prompts.captureKnowledgeBase();
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-refreshed", refresh: "refresh-refreshed" }));
+        await account.validToken(true);
+        expect(prompts.isCurrent(atStart)).toBe(true);
+
+        account.signOut();
+        expect(prompts.isCurrent(atStart)).toBe(false);
+        const signedOut = prompts.captureKnowledgeBase();
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+        await account.verify(Fixtures.email, "123456");
+        expect(prompts.isCurrent(signedOut)).toBe(false);
+      });
+
       /** Signed out while the answer is written: it never opens a chat window. */
       test("signing out during an answer opens no chat", async () => {
         const account = signedIn(auth);
@@ -4711,48 +4730,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
             return completions.requests.filter((_, index) => completionsVars(index)?.content === "system_prompt_kb_refine").length;
           }
 
-          /** R30: a request takes the knowledge base's epoch once, at key-down, and every kb_add and kb_del it
-           * makes, in any model round, carries that one; a reset while it waits refuses them all, and the next
-           * dictation takes the new epoch. */
-          test.each([false, true])("a request taken before a reset writes nothing after it, in a chat: %s", async (inChat) => {
-            let ended = false;
-            const { done } = await ask(
-              [],
-              [
-                calling(["kb_add", JSON.stringify({ statement: "Requested before reset" })], ["kb_del", JSON.stringify({ statement: "User is using TabMail as their AI assistant for emails" })]),
-                calling(["kb_add", JSON.stringify({ statement: "Still requested before reset" })]),
-                reply("The request is complete."),
-              ],
-              (controller) => {
-                controller.onPhaseChange = (phase) => {
-                  if (phase.kind !== "listening" || ended) return;
-                  ended = true;
-                  expect(prompts.resetKnowledgeBase()).toBe(true);
-                };
-              },
-              { inChat },
-            );
-            const { controller } = await done;
-            expect(ended).toBe(true);
-            expect(prompts.knowledgeBase).toBe(defaultKnowledgeBase);
-            const firstRound = inChat ? 2 : 1;
-            expect(told(firstRound).map((text) => JSON.parse(text))).toEqual([
-              { error: "failed to persist knowledge base" },
-              { error: "failed to persist knowledge base" },
-            ]);
-            expect(JSON.parse(told(firstRound + 1).at(-1) ?? "null")).toEqual({ error: "failed to persist knowledge base" });
-
-            // A later dictation takes the new epoch and can write, including while the chat stays open.
-            controller.onPhaseChange = undefined;
-            const requestsBefore = completions.requests.length;
-            transcription.enqueue(200, { text: toolRequest });
-            completions.enqueue(200, calling(["kb_add", JSON.stringify({ statement: "Requested after reset" })]));
-            completions.enqueue(200, reply("Noted."));
-            await holdAndRelease(controller, "agent");
-            expect(await eventually(() => settled(controller) && completions.requests.length === requestsBefore + 2)).toBe(true);
-            expect(prompts.knowledgeBase).toBe(`${defaultKnowledgeBase}\n- [Pinned] Requested after reset.`);
-          });
-
           test("kb_add keeps the statement, and the next request carries it", async () => {
             const { done } = await ask([], [calling(["kb_add", JSON.stringify({ statement: "Prefers morning meetings" })]), reply("Noted.")]);
             const { controller } = await done;
@@ -4828,7 +4805,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
            * after the app started (in Settings, or from another device) can be removed by voice. */
           test("kb_del removes a statement added after the app started", async () => {
             const { done } = await ask([], [calling(["kb_del", JSON.stringify({ statement: "Added after launch" })]), reply("Forgotten.")], () => {
-              prompts.addKnowledge(prompts.captureKnowledgeBase(), "Added after launch.");
+              prompts.addKnowledge("Added after launch.");
             });
             await done;
             expect(JSON.parse(told(1)[0] ?? "null")).toBe("Removed from knowledge base.");
@@ -4843,7 +4820,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
               [calling(["kb_del", JSON.stringify({ statement: "Arrived while held" })]), reply("Not found.")],
               (controller) => {
                 controller.onPhaseChange = (phase) => {
-                  if (phase.kind === "listening" && !prompts.knowledgeBase.includes("Arrived")) prompts.addKnowledge(prompts.captureKnowledgeBase(), "Arrived while held.");
+                  if (phase.kind === "listening" && !prompts.knowledgeBase.includes("Arrived")) prompts.addKnowledge("Arrived while held.");
                 };
               },
             );

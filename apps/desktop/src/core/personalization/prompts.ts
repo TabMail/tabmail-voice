@@ -6,7 +6,7 @@ import type { Personalization } from "../agent/requests.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
 import { type Bullet, type BulletText, type Catalog, displayedSections, type FieldState, hasLineBreak, isMarkerText, isName, parse, render, sectionHeaders, trim } from "../sync/bullets.js";
-import { type AddResult, BulletSync, type BulletStore, type CapturedChange, type CommitKind, type CommitResult } from "../sync/bulletSync.js";
+import { BulletSync, type BulletStore, type CapturedChange, type CommitKind, type CommitResult } from "../sync/bulletSync.js";
 import { type KeyValueStore, type StoreProblem, storedString } from "../util/keyValueStore.js";
 import { Observable } from "../util/observable.js";
 import { defaultComposition } from "./defaults.js";
@@ -122,19 +122,11 @@ export interface ShownBullet {
   labels: [string, number][];
 }
 
-/** A section as Settings showed it: its bullets, and the field's capture epoch then (R30), which an edit
- * hands back with them. An edit from before a reset or an account change is refused, whether or not the
- * section showed any bullet. */
-export interface Shown {
-  epoch: number;
-  bullets: ShownBullet[];
-}
-
-/** What an agent request took of the knowledge base at its start: the field's capture epoch, which every
- * `kb_add` and `kb_del` it makes carries (R30), and the live labels its `kb_del` may delete (DS-CAPTURE),
- * null while the upgrade is unsaved (R22). */
+/** What an agent request took of the knowledge base at key-down: the write generation then, which its
+ * `kb_add` and `kb_del` need unchanged to write (root ADR-035), and the live labels its `kb_del` may
+ * delete (DS-CAPTURE), null while the upgrade is unsaved (R22). */
 export interface KnowledgeCapture {
-  epoch: number;
+  generation: number;
   bullets: Bullet[] | null;
 }
 
@@ -186,6 +178,10 @@ export interface UserPromptsOptions {
  */
 export class UserPrompts extends Observable implements BulletStore {
   private pendingFields = new Set<PromptField>();
+  /** Root ADR-035: counts what an agent request's knowledge-base writes must not come after, in memory
+   * only: each change saved from Settings (an edit, a reset, a restore), the texts' file reset, another
+   * account's texts taken, and an account change. */
+  private generation = 0;
   private historyTimer: ReturnType<typeof setTimeout> | null = null;
   /** The engine every change goes through. */
   readonly sync: BulletSync;
@@ -195,6 +191,8 @@ export class UserPrompts extends Observable implements BulletStore {
 
   constructor(
     private readonly store: KeyValueStore,
+    /** The signed-in account's ID, read now; null while signed out. */
+    private readonly signedIn: () => string | null,
     options: UserPromptsOptions = {},
   ) {
     super();
@@ -210,6 +208,17 @@ export class UserPrompts extends Observable implements BulletStore {
     });
   }
 
+  /** Root ADR-035, the one check every read and write of the texts makes: they are shown, sent and
+   * changed only while an account is signed in and they are its own, or no account's yet (the claim
+   * makes them its own then). While signed out, and while another account's texts couldn't be wiped,
+   * every reader gets nothing and every write is refused; only that wipe is let through. */
+  get isAvailable(): boolean {
+    const account = this.signedIn();
+    if (account === null) return false;
+    const owner = this.owner;
+    return owner === null || owner === account;
+  }
+
   /** Why the texts' file couldn't be read at launch, until it is fixed or the user resets it: nothing
    * is saved to it meanwhile. */
   get fileProblem(): StoreProblem | undefined {
@@ -219,9 +228,8 @@ export class UserPrompts extends Observable implements BulletStore {
   /** The user's factory reset of the texts' file (`moveAside`, which throws, changing nothing, when the
    * file can't be moved): DS-RESET of both fields, and their history gone. */
   resetFile(moveAside: () => void): void {
-    // R30: every operation in flight on the texts ends before the file is moved.
-    this.sync.endOperations(promptFields);
     moveAside();
+    this.generation += 1;
     this.sync.reload();
     this.dropPendingHistory();
     this.changed();
@@ -230,63 +238,70 @@ export class UserPrompts extends Observable implements BulletStore {
 
   /** The writing style's markdown, rendered (DS-RENDER). */
   get composition(): string {
+    if (!this.isAvailable) return "";
     return render("composition", this.sync.state("composition"));
   }
 
   /** The knowledge base's bullets, rendered. */
   get knowledgeBase(): string {
+    if (!this.isAvailable) return "";
     return render("kb", this.sync.state("kb"));
   }
 
   /** Both texts as an agent request sends them, read now: the knowledge base whole, the writing
    * style's sections (`sentWritingStyle`). */
   get personalization(): Personalization {
+    if (!this.isAvailable) return { knowledgeBase: "", writingStyle: "" };
     return { knowledgeBase: this.knowledgeBase, writingStyle: sentWritingStyle(this.sync.state("composition")) };
   }
 
   /** The live bullets of `field`'s `section`, in order, as Settings shows them. While an upgrade is
    * unsaved they carry no labels, and an edit of them is refused (R22). */
-  shown(field: PromptField, section: string): Shown {
-    const epoch = this.sync.epoch(field);
+  shown(field: PromptField, section: string): ShownBullet[] {
+    if (!this.isAvailable) return [];
     const captured = this.sync.capture(field, [section]);
-    if (captured === null) return { epoch, bullets: this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [] })) };
-    return { epoch, bullets: captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] })) };
+    if (captured === null) return this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [] }));
+    return captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
   }
 
-  /** The knowledge base as an agent request takes it at its start (`KnowledgeCapture`). */
+  /** The knowledge base as an agent request takes it at key-down (`KnowledgeCapture`). */
   captureKnowledgeBase(): KnowledgeCapture {
-    const epoch = this.sync.epoch("kb");
-    return { epoch, bullets: this.sync.capture("kb", [""]) };
+    return { generation: this.generation, bullets: this.isAvailable ? this.sync.capture("kb", [""]) : [] };
+  }
+
+  /** Root ADR-035, the one check an agent request's knowledge-base writes make: nothing was saved from
+   * Settings, and the account didn't change, since it took `captured`. */
+  isCurrent(captured: KnowledgeCapture): boolean {
+    return captured.generation === this.generation;
+  }
+
+  /** The signed-in account changed (signed out, or in): no agent request from before writes. */
+  accountChanged(): void {
+    this.generation += 1;
   }
 
   /** The user's edit in Settings of the writing style's section `section` (its key), from the bullets
    * it showed to `edited` (DS-CAPTURE); false when it couldn't be saved (nothing changed then) or there
    * is no such section. */
-  editCompositionSection(section: string, shown: Shown, edited: readonly string[]): boolean {
+  editCompositionSection(section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
     if (!displayedSections("composition").includes(section)) return false;
     return this.editSection("composition", section, shown, edited);
   }
 
   /** The user's edit in Settings of the knowledge base, from the bullets it showed to `edited`. */
-  editKnowledgeBase(shown: Shown, edited: readonly string[]): boolean {
+  editKnowledgeBase(shown: readonly ShownBullet[], edited: readonly string[]): boolean {
     return this.editSection("kb", "", shown, edited);
   }
 
-  /** `kb_add` of an agent request that took `captured` at its start: DS-ADD of `text` to the knowledge
-   * base, refused once the capture's epoch has ended (R30). */
-  addKnowledge(captured: KnowledgeCapture, text: string): AddResult {
-    const result = this.sync.add("kb", captured.epoch, [{ section: "", text }]);
-    this.local(result);
-    return result;
+  /** `kb_add`: DS-ADD of `text` to the knowledge base. */
+  addKnowledge(text: string): CommitResult {
+    return this.local(this.sync.add("kb", [{ section: "", text }]));
   }
 
-  /** `kb_del` of an agent request that took `captured` at its start: of the labels it captured, those of
-   * `item` deleted (DS-CAPTURE); refused while the upgrade was unsaved then (R22) or once the capture's
-   * epoch has ended (R30). */
-  removeKnowledge(captured: KnowledgeCapture, item: BulletText): CommitResult {
-    if (captured.bullets === null) return { outcome: "unsaved", fields: [] };
-    const labels = captured.bullets.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
-    return this.local(this.sync.commitCapture([{ field: "kb", epoch: captured.epoch, captured: labels, result: [] }]));
+  /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE). */
+  removeKnowledge(captured: readonly Bullet[], item: BulletText): CommitResult {
+    const labels = captured.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
+    return this.local(this.sync.commitCapture([{ field: "kb", captured: labels, result: [] }]));
   }
 
   /** DS-RESET of the writing style, recorded first. */
@@ -301,6 +316,7 @@ export class UserPrompts extends Observable implements BulletStore {
 
   /** The history, the newest last. */
   get history(): PromptHistoryEntry[] {
+    if (!this.isAvailable) return [];
     const stored = this.store.get(Key.history);
     return Array.isArray(stored) ? stored.filter(isHistoryEntry) : [];
   }
@@ -315,14 +331,13 @@ export class UserPrompts extends Observable implements BulletStore {
     this.record("reset", [...promptFields]);
     const changes: CapturedChange[] = [];
     for (const field of promptFields) {
-      const epoch = this.sync.epoch(field);
       const sections = displayedSections(field);
       const captured = this.sync.capture(field, sections);
       // R22: refused while an upgrade is unsaved.
       if (captured === null) return false;
-      changes.push({ field, epoch, captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
+      changes.push({ field, captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
     }
-    return this.local(this.sync.commitCapture(changes)).outcome !== "unsaved";
+    return this.fromSettings(this.local(this.sync.commitCapture(changes))).outcome !== "unsaved";
   }
 
   /** The TabMail account the texts belong to; null before one signed in. */
@@ -331,25 +346,30 @@ export class UserPrompts extends Observable implements BulletStore {
   }
 
   /** Makes the texts the signed-in account's (iOS ADR-IOS-089): kept when they are its own already,
-   * taken as they are when they belong to no account yet, and back at their defaults (DS-RESET), with
-   * no history, when they belong to another. False when that couldn't be saved: they are still the
-   * other account's then, and nothing of theirs is synced. */
+   * taken as they are when they belong to no account yet, and wiped first, back at their defaults with
+   * no history, when they belong to another (root ADR-035: never a merge on top). False when the wipe
+   * couldn't be saved: the texts are still the other account's, so none of them is shown, sent or synced
+   * (`isAvailable`), and the next claim tries again. */
   claim(userID: string): boolean {
     const owner = this.owner;
     if (owner === userID) return true;
-    if (owner === null) return this.writeValues({ [Key.owner]: userID });
-    const cleared: Record<string, unknown> = { [Key.history]: undefined, [Key.owner]: userID };
-    for (const field of promptFields) for (const key of [Key.state(field), Key.legacyText(field), ...retiredKeys(field)]) cleared[key] = undefined;
-    // R30: every operation in flight on the texts ends before they are cleared. A claim not saved
-    // tells no one: Device Sync, an observer, would claim again at once. The next one saved does.
-    this.sync.endOperations(promptFields);
-    if (!this.writeValues(cleared)) return false;
+    if (owner === null) return this.save({ [Key.owner]: userID });
+    const texts: Record<string, unknown> = { [Key.history]: undefined };
+    for (const field of promptFields) for (const key of [Key.state(field), Key.legacyText(field), ...retiredKeys(field)]) texts[key] = undefined;
+    if (!this.save({ ...texts, [Key.owner]: userID })) return false;
+    this.wiped();
+    return true;
+  }
+
+  /** The texts are another account's no more (root ADR-035): no agent request from before writes, the
+   * writer name is fresh, edits waiting to be recorded are not the next account's history, and Settings
+   * shows the defaults. */
+  private wiped(): void {
+    this.generation += 1;
     this.sync.reload();
-    // Another account's edits waiting to be recorded are not this one's history.
     this.dropPendingHistory();
     log.debug("UserPrompts: another account signed in; knowledge base and writing style back to defaults");
     this.changed();
-    return true;
   }
 
   /** Records the edits waiting for their quiet period now: the app is quitting. */
@@ -397,24 +417,24 @@ export class UserPrompts extends Observable implements BulletStore {
 
   // MARK: Private
 
-  private editSection(field: PromptField, section: string, shown: Shown, edited: readonly string[]): boolean {
+  private editSection(field: PromptField, section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
     // R22: bullets shown while an upgrade was unsaved carry no labels, and nothing is saved from them.
-    if (shown.bullets.some((bullet) => bullet.labels.length === 0)) return false;
-    const captured = shown.bullets.flatMap((bullet) => bullet.labels.map(([name, n]) => ({ section, text: bullet.text, name, n })));
+    if (shown.some((bullet) => bullet.labels.length === 0)) return false;
+    const captured = shown.flatMap((bullet) => bullet.labels.map(([name, n]) => ({ section, text: bullet.text, name, n })));
     const result = edited.map((typed) => ({ section, text: bulletText(typed) })).filter((bullet) => bullet.text !== "");
-    // R30: refused when the epoch Settings showed the section in has ended.
-    return this.local(this.sync.commitCapture([{ field, epoch: shown.epoch, captured, result }])).outcome !== "unsaved";
+    return this.fromSettings(this.local(this.sync.commitCapture([{ field, captured, result }]))).outcome !== "unsaved";
   }
 
   private reset(field: PromptField): boolean {
-    // R30: every operation in flight on the field ends before the reset writes anything.
-    this.sync.endOperations([field]);
     this.flushHistory();
     this.record("reset", [field]);
-    const saved = this.local(this.sync.reset([field]), false).outcome === "saved";
-    // Not saved, it still ended what was shown, so observers (Settings) are told the new epoch.
-    if (!saved) this.changed();
-    return saved;
+    return this.fromSettings(this.local(this.sync.reset([field]), false)).outcome === "saved";
+  }
+
+  /** A change from Settings, saved: no agent request from before it writes (root ADR-035). */
+  private fromSettings(result: CommitResult): CommitResult {
+    if (result.outcome === "saved") this.generation += 1;
+    return result;
   }
 
   /** After a local commit: its fields recorded once edits stop (`edits`), and sent. */
@@ -444,9 +464,19 @@ export class UserPrompts extends Observable implements BulletStore {
     this.pendingFields = new Set();
   }
 
-  /** Writes `values` together, in one write of the file; when it couldn't be written, puts them all
-   * back and returns false: what applies is what is saved. */
+  /** The one function every write of the texts goes through (root ADR-035): refused, changing nothing,
+   * while they aren't available (`isAvailable`). */
   private writeValues(values: Record<string, unknown>): boolean {
+    if (!this.isAvailable) {
+      log.debug("UserPrompts: not saved: signed out, or the texts are another account's");
+      return false;
+    }
+    return this.save(values);
+  }
+
+  /** Writes `values` together, in one write of the file; when it couldn't be written, puts them all
+   * back and returns false: what applies is what is saved. Only `writeValues` and the claim call it. */
+  private save(values: Record<string, unknown>): boolean {
     const before = Object.fromEntries(Object.keys(values).map((key) => [key, this.store.get(key)]));
     if (this.store.setAll(values)) return true;
     this.store.setAll(before);
@@ -462,6 +492,7 @@ export class UserPrompts extends Observable implements BulletStore {
 
   /** Records both texts as they are now. A history that can't be written loses the entry only. */
   private record(source: PromptHistorySource, fields: PromptField[]): void {
+    if (!this.isAvailable) return;
     const entry: PromptHistoryEntry = { id: globalThis.crypto.randomUUID(), timestamp: new Date().toISOString(), source, fields, composition: this.composition, kb: this.knowledgeBase };
     const history = [...this.history, entry].slice(-config.promptHistoryMax);
     if (!this.store.set(Key.history, history)) log.error("UserPrompts: history entry not kept");

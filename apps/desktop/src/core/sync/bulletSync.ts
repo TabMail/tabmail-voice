@@ -17,7 +17,6 @@ import {
   isMarkerText,
   isName,
   type LabelSource,
-  labelKey,
   merge,
   sameState,
   type SyncField,
@@ -47,16 +46,9 @@ export interface CommitResult {
   fields: SyncField[];
 }
 
-/** A DS-ADD's commit and the bullets it added (none unless saved). */
-export interface AddResult extends CommitResult {
-  added: Bullet[];
-}
-
 /** One field's part of a captured operation's commit (DS-CAPTURE). */
 export interface CapturedChange {
   field: SyncField;
-  /** The field's `epoch` when it was captured: a commit after that epoch ended is refused (R30). */
-  epoch: number;
   captured: readonly Bullet[];
   result: readonly BulletText[];
 }
@@ -179,9 +171,6 @@ export class BulletSync {
   private readonly lastMerged = new Map<SyncField, Set<string>>();
   /** Parts of incomplete snapshots, per sender and field (DS-CHUNK). */
   private readonly buffers = new Map<string, PartBuffer>();
-  /** Each field's capture epoch (R30), memory only: a DS-RESET of the field, another account's claim or
-   * the texts' file reset ends it as its first step (`endOperations`). */
-  private readonly epochs = new Map<SyncField, number>();
   private readonly catalog: Catalog;
 
   constructor(private readonly options: BulletSyncOptions) {
@@ -209,27 +198,9 @@ export class BulletSync {
     return states;
   }
 
-  /** DS-ADD of `items` by an operation that took `field`'s capture epoch `epoch` at its start: refused,
-   * nothing written, once that epoch has ended (R30). Gives back the bullets it added, the operation's
-   * own from then on. */
-  add(field: SyncField, epoch: number, items: readonly BulletText[]): AddResult {
-    if (this.ended([{ field, epoch }])) return { outcome: "unsaved", fields: [], added: [] };
-    let added: Bullet[] = [];
-    const result = this.commit(
-      [
-        [
-          field,
-          (state) => {
-            const next = add(state, items, this.labels());
-            const had = new Set(state.bullets.map(labelKey));
-            added = next.bullets.filter((bullet) => !had.has(labelKey(bullet)));
-            return next;
-          },
-        ],
-      ],
-      "edit",
-    );
-    return { ...result, added: result.outcome === "saved" ? added : [] };
+  /** DS-ADD of `items`. */
+  add(field: SyncField, items: readonly BulletText[]): CommitResult {
+    return this.commit([[field, (state) => add(state, items, this.labels())]], "edit");
   }
 
   /** DS-CAPTURE: the live labels of `sections` (all when not given), to commit against later; null
@@ -239,16 +210,9 @@ export class BulletSync {
     return this.stored(field).bullets.filter((bullet) => sections === undefined || sections.includes(bullet.section));
   }
 
-  /** The capture epoch of `field` now (R30): a capture keeps it to hand back with its commit. */
-  epoch(field: SyncField): number {
-    return this.epochs.get(field) ?? 0;
-  }
-
   /** DS-CAPTURE's commit, of one or more fields in one write: each `result` the operation's bullets for
-   * what it captured. Refused whole, nothing written, when a field's capture epoch has ended since (R30):
-   * a capture never crosses a reset, an account change or a reset file. */
+   * what it captured. */
   commitCapture(changes: readonly CapturedChange[]): CommitResult {
-    if (this.ended(changes)) return { outcome: "unsaved", fields: [] };
     return this.commit(
       changes.map((change): [SyncField, (state: FieldState) => FieldState] => {
         // R23: no writer makes a marker text a bullet.
@@ -268,27 +232,11 @@ export class BulletSync {
     return this.write(states, "reset") ? { outcome: "saved", fields: [...fields] } : { outcome: "unsaved", fields: [] };
   }
 
-  /** R30's order: a DS-RESET, another account's claim and the texts' file reset call this as their first
-   * step, so no operation in flight on `fields` writes once they have begun, and a state shown as they
-   * are saved carries the new epoch. The epochs stay ended even if the change then isn't saved: an epoch
-   * is never reused, and an edit refused then is one the user redoes. */
-  endOperations(fields: readonly SyncField[]): void {
-    for (const field of fields) this.epochs.set(field, this.epoch(field) + 1);
-  }
-
   /** DS-NAME-ABANDON for an in-process reload of the fields from storage: the next add uses a fresh
    * name, and what was merged before is forgotten. */
   reload(): void {
     this.abandonName();
     this.lastMerged.clear();
-  }
-
-  /** R30, for every write an operation makes after it may have awaited: whether a field's epoch it took
-   * at its start has ended since (a reset, an account change, a reset file), when the write is refused. */
-  private ended(writes: readonly { field: SyncField; epoch: number }[]): boolean {
-    if (writes.every((write) => write.epoch === this.epoch(write.field))) return false;
-    this.options.error("DeviceSync: a write from before a reset or account change refused");
-    return true;
   }
 
   /** The connection ended: incomplete snapshots are dropped (DS-CHUNK). */
