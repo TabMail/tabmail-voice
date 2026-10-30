@@ -1919,12 +1919,32 @@ describe("personalization while signed out", () => {
     expect(nav()?.classList.contains("unavailable")).toBe(false);
   });
 
+  /** The dictionary, the computer's words kept across accounts, is hidden the same way while signed out. */
+  test("the dictionary shows only the sign-in line, live, and its words after any sign-in", async () => {
+    const withWords: SettingsState = { ...signedIn, dictionary: [{ word: "Kaelthorne", learned: false, lastUsed: 1 }] };
+    const { push } = await settingsPage({ error: null }, withWords, withWords);
+    await act(async () => button("Dictionary").click());
+    const main = () => document.querySelector("main.content") as HTMLElement;
+    const nav = () => [...document.querySelectorAll<HTMLButtonElement>(".sidebar button.nav")].find((candidate) => candidate.textContent?.includes("Dictionary"));
+    expect(main().textContent).toContain("Kaelthorne");
+    expect(nav()?.classList.contains("unavailable")).toBe(false);
+
+    await push({ ...withWords, email: null, personalization: null });
+    expect(main().textContent).not.toContain("Kaelthorne");
+    expect(document.querySelector('ul[aria-label="Dictionary"]')).toBeNull();
+    expect(nav()?.classList.contains("unavailable")).toBe(true);
+
+    await push({ ...withWords, email: "other@example.com" });
+    expect(main().textContent).toContain("Kaelthorne");
+    expect(nav()?.classList.contains("unavailable")).toBe(false);
+  });
+
   test("signed in while another account's texts couldn't be cleared, it says so and shows none", async () => {
     const notWiped: SettingsState = { ...signedIn, personalization: null };
     await settingsPage({ error: null }, notWiped, notWiped);
     await act(async () => button("Personalization").click());
     const main = document.querySelector("main.content") as HTMLElement;
     for (const text of texts) expect(main.textContent).not.toContain(text);
-    expect(main.textContent).toContain("couldn't be cleared from this computer");
+    expect(main.textContent).toContain("The previous account's data couldn't be cleared from this computer, so nothing is shown. Sign out and in again to retry.");
   });
 });

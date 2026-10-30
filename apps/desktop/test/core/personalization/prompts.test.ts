@@ -673,6 +673,9 @@ describe("UserPrompts", () => {
       prompts.resetComposition(),
       prompts.restore(prompts.history[0]?.id ?? "none"),
     ];
+    // Each reader gives nothing at all, not only nothing of the texts at hand.
+    expect([prompts.knowledgeBase, prompts.composition, prompts.history, prompts.shown("kb", ""), prompts.shown("composition", language)]).toEqual(["", "", [], [], []]);
+    expect(prompts.personalization).toEqual({ knowledgeBase: "", writingStyle: "" });
     return { read, writes };
   }
 

@@ -76,11 +76,13 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   `writeValues` refuses every write, history entries included; only the claim's wipe is let through.
   The main process pushes Settings `personalization: null` then and refuses the personalization
   commands ("Sign in to change this"); Settings › Personalization shows only "Sign in to see this."
-  (or, signed in while another account's wipe is pending, that the texts couldn't be cleared), no
-  text, control or Device Sync switch, and its sidebar entry is greyed, live on sign-out. The same
-  account signing back in sees its texts again. The dictionary is the computer's (the settings
-  file, never wiped on an account change), not the account's, so it stays shown. The tray has no
-  personalization entry.
+  (or, signed in while another account's wipe is pending, "The previous account's data couldn't be
+  cleared from this computer, so nothing is shown. Sign out and in again to retry.", awaiting owner
+  blessing), no text, control or Device Sync switch, and its sidebar entry is greyed, live on
+  sign-out. The same account signing back in sees its texts again. The dictionary stays the
+  computer's (the settings file, never wiped on an account change), but it holds the user's own
+  words, so Settings hides it the same way while signed out (UI only) and shows it again on any
+  sign-in. The tray has no personalization entry.
 - **Capture epoch (R30, 2026-10-29). Superseded the same day by root ADR-035 above: the epochs,
   `endOperations` and their ordering tests were deleted, since they existed only for concurrent local
   writes that Voice's synchronous main thread already rules out.** ** Each field has a capture epoch, in memory only. Every operation

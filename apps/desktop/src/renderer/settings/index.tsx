@@ -54,9 +54,10 @@ function isOffered(name: SectionName, state: SettingsState): boolean {
 
 /** Whether `name`'s section wants the user's attention: signed out, no name for agent mode, a
  * permission missing, or VS Code's settings hiding the caret. */
-/** Whether `name`'s section has nothing to show: Personalization while its texts aren't available
- * (root ADR-035), greyed in the sidebar. */
+/** Whether `name`'s section has nothing to show, greyed in the sidebar (root ADR-035): Personalization
+ * while its texts aren't available, and the dictionary, the user's own words, while signed out. */
 function isUnavailable(name: SectionName, state: SettingsState): boolean {
+  if (name === "dictionary") return state.email === null;
   return name === "personalization" && state.personalization === null;
 }
 
@@ -197,7 +198,23 @@ function DictationPane({ state }: { state: SettingsState }) {
  * learning from the user's corrections where it can. Learned words can run to thousands (#310), so
  * above the list are how many of each there are and a field that shows only the words containing what
  * is typed in it, whatever the case. */
+/** What Personalization and the dictionary show while signed out (root ADR-035). */
+const signedOutLine = "Sign in to see this.";
+
+/** Root ADR-035: while signed out, the dictionary shows only that it needs a sign-in. Its words are the
+ * computer's (kept across accounts), so any sign-in shows them again. */
 function DictionaryPane({ state }: { state: SettingsState }) {
+  if (state.email === null) {
+    return (
+      <div className="row dictionary-unavailable">
+        <span className="caption">{signedOutLine}</span>
+      </div>
+    );
+  }
+  return <DictionaryEditor state={state} />;
+}
+
+function DictionaryEditor({ state }: { state: SettingsState }) {
   const [draft, setDraft] = useState("");
   const [filter, setFilter] = useState("");
   const word = dictionaryWord(draft);
@@ -745,9 +762,8 @@ const writingStyleSectionLabels: Readonly<Record<string, string>> = { general: "
 const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
 /** Why Device Sync isn't sending: the texts are over the relay's size. */
 const deviceSyncTooLargeLine = "Too large to sync. Remove some bullets to sync again.";
-const personalizationSignedOutLine = "Sign in to see this.";
 /** Signed in, but another account's texts couldn't be wiped yet (`UserPrompts.claim`). */
-const personalizationNotWipedLine = "The previous account's writing style and knowledge base couldn't be cleared from this computer, so nothing is shown. Check the disk, then sign out and in again.";
+const personalizationNotWipedLine = "The previous account's data couldn't be cleared from this computer, so nothing is shown. Sign out and in again to retry.";
 type PersonalizationTab = (typeof personalizationTabs)[number];
 
 /** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages,
@@ -766,7 +782,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
   if (state.personalization === null) {
     return (
       <div className="row personalization-unavailable">
-        <span className="caption">{state.email === null ? personalizationSignedOutLine : personalizationNotWipedLine}</span>
+        <span className="caption">{state.email === null ? signedOutLine : personalizationNotWipedLine}</span>
       </div>
     );
   }
