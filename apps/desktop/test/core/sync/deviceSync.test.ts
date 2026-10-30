@@ -256,10 +256,27 @@ describe("an account change", () => {
     await signIn(voice, "user-2");
     await relay.settle();
     expect(relay.isConnected("voice")).toBe(true);
+    // Connected afresh, for the account now signed in: the group it syncs with.
+    expect(relay.urls.at(-1)).toBe(`${config.deviceSyncURL}?token=access-user-2`);
     expect(voice.texts("kb")).toEqual([...kbDefaults, fact, "Typed while signed out"]);
     const sent = relay.sent.map((entry) => entry.text).join("\n");
     expect(sent).toContain(fact);
     expect(sent).toContain("Typed while signed out");
+  });
+
+  /** Signing straight into another account, with no sign-out between, leaves the first account's group:
+   * its connection is closed and one opened for the account now signed in. */
+  test("signing straight into another account connects afresh for it", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    voice.sync.update();
+    await relay.settle();
+    voice.add("kb", "", fact);
+    await signIn(voice, "user-2");
+    await relay.settle();
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?token=access-1`, `${config.deviceSyncURL}?token=access-user-2`]);
+    expect(relay.isConnected("voice")).toBe(true);
+    expect(voice.texts("kb")).toContain(fact);
   });
 
   /** One device switching between two accounts' groups, each with a peer of its own: every exchange
@@ -314,6 +331,33 @@ describe("an account change", () => {
       drain(groupB);
       expect(texts(voice)).toEqual(expect.arrayContaining([fact, "First account's fact", "Second account's fact"]));
       expect(texts(peerB)).toEqual(expect.arrayContaining([fact, "First account's fact", "Second account's fact"]));
+    });
+
+    /** The seen map is kept across the switches, so a bullet deleted here stays deleted when a device of
+     * the first group that missed the deletion comes back with it, though its writer has no other bullet
+     * left: never brought back. */
+    test("a deletion made before switching stays deleted against a device that missed it", async () => {
+      const { groupA, groupB, voice, peerA, peerB } = await twoGroups();
+      const offline = new BulletDevice("offlineA", new DeviceStore(), groupA, { name: name("0000000d") });
+      await offline.connect();
+      offline.add("kb", "", "Lone fact");
+      drain(groupA);
+      offline.disconnect();
+      voice.delete("kb", "", "Lone fact");
+      drain(groupA);
+      for (let round = 0; round < 2; round += 1) {
+        await voice.switchGroup(groupB);
+        drain(groupB);
+        await voice.switchGroup(groupA);
+        drain(groupA);
+      }
+      // Only this device is there to answer it.
+      peerA.disconnect();
+      await offline.connect();
+      drain(groupA);
+      await voice.switchGroup(groupB);
+      drain(groupB);
+      for (const device of [voice, peerA, peerB, offline]) expect(texts(device), device.id).not.toContain("Lone fact");
     });
 
     /** A deletion still crosses between devices that were in contact: one the device made in the

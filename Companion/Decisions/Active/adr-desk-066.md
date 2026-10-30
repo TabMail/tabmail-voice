@@ -72,9 +72,13 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   writers are not in this device's seen map, nor this device's in theirs, so nothing on either side is
   inferred deleted; DS-DEDUP collapses a text both groups hold to one line, so switching back and forth
   keeps the line counts. A deletion still crosses between devices that were really in contact (a
-  bullet both groups have from this device). Matches Thunderbird and iOS (2026-10-29). Pending the
-  owner's call, shared with them: a catalog default deleted on this device also leaves the new group,
-  since every device knows the `default:<id>` names. A damaged file is never written, so Device Sync
+  bullet both groups have from this device). Matches Thunderbird and iOS (the shared Device Sync rule,
+  2026-10-29). Settled the same day: a catalog default deleted on this device also leaves the new
+  group's devices (every device knows the `default:<id>` names, DS-MERGE-2, as DS-DEFAULT already does
+  within one account); the device's user deleted it, so it really was deleted (owner: "deletion happens
+  only if you know the device name previously, and if you already know, you should probably really
+  delete it"). Signing into another account closes the connection opened for the previous one
+  (`DeviceSync.reconcile`), so the device leaves that group; nothing is wiped. A damaged file is never written, so Device Sync
   stays off and Settings shows the damaged-file notice. The app's data folder is set to 0700 and the
   files it writes to 0600 on every platform (`restrictDataFolder` at launch; `JSONFileStore` on read and
   save), rather than left to the system's defaults. The `device_sync_owner_user_id` key a 0.5.x build
