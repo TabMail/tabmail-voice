@@ -327,8 +327,8 @@ describe("UserPrompts", () => {
     const shown = prompts.shown("kb", "");
     expect(prompts.editKnowledgeBase(shown, ["Alpha, edited.", "Beta."])).toBe(true);
     expect(prompts.shown("kb", "")).toEqual([
-      { text: "Beta.", labels: [["0000000100000001", 2]] },
-      { text: "Alpha, edited.", labels: [["0000000100000001", 3]] },
+      { text: "Beta.", labels: [["0000000100000001", 2]], epoch: 0 },
+      { text: "Alpha, edited.", labels: [["0000000100000001", 3]], epoch: 0 },
     ]);
   });
 
@@ -537,9 +537,9 @@ describe("UserPrompts", () => {
     const message = { type: "bullet_state", v: 1, field: "kb", sender: "ffffffffffffffff", snap: "1", part: 1, parts: 1, bullets: [["", "beta", "0000000000000001", 1]], seen: { "0000000000000001": 1 } };
     prompts.sync.receive(message);
     expect(prompts.shown("kb", "")).toEqual([
-      { text: "alpha", labels: [["0000000100000001", 1]] },
-      { text: "beta", labels: [["0000000000000001", 1]] },
-      { text: "gamma", labels: [["0000000100000001", 3]] },
+      { text: "alpha", labels: [["0000000100000001", 1]], epoch: 0 },
+      { text: "beta", labels: [["0000000000000001", 1]], epoch: 0 },
+      { text: "gamma", labels: [["0000000100000001", 3]], epoch: 0 },
     ]);
     expect(prompts.knowledgeBase).toBe("- alpha\n- beta\n- gamma");
   });
@@ -672,6 +672,53 @@ describe("UserPrompts", () => {
       expect([reader.knowledgeBase, reader.composition]).toEqual([defaultKB, defaultStyle]);
     }
     expect(Object.keys(store.snapshot()).filter((key) => key.startsWith("user_prompts:"))).toEqual([]);
+  });
+
+  /** R30: nothing captured under one account is committed after another signs in, nor anything captured
+   * before a reset of its field or of the texts' file: an edit Settings showed, or an agent request's
+   * capture, from before is refused at commit with nothing written. */
+  test.each<[string, (prompts: UserPrompts, store: FailingStore) => void]>([
+    ["another account signs in", (prompts) => expect(prompts.claim("user-2")).toBe(true)],
+    ["the knowledge base is reset", (prompts) => expect(prompts.resetKnowledgeBase()).toBe(true)],
+    ["the texts' file is reset", (prompts, store) => prompts.resetFile(() => store.setAll(Object.fromEntries(Object.keys(store.snapshot()).map((key) => [key, undefined]))))],
+  ])("nothing captured before %s is committed after it", (_, end) => {
+    const { store, prompts } = setup({ [kbKey]: `- one's private note\n- ${kbDefaults[0]}` });
+    expect(prompts.claim("user-1")).toBe(true);
+    const shown = prompts.shown("kb", "");
+    const captured = prompts.captureKnowledgeBase();
+    expect(captured).not.toBeNull();
+    end(prompts, store);
+    const after = store.snapshot();
+    // Settings' edit of what it showed before: every text it showed, one added.
+    expect(prompts.editKnowledgeBase(shown, [...shown.map((bullet) => bullet.text), "added"])).toBe(false);
+    // An agent request's kb_del of a default text, which the defaults after it also hold.
+    expect(prompts.removeKnowledge(captured!, { section: "", text: kbDefaults[0]! }).outcome).toBe("unsaved");
+    expect(store.snapshot()).toEqual(after);
+    expect(prompts.knowledgeBase).toBe(defaultKB);
+  });
+
+  /** R30 is per field: a reset of the writing style leaves a capture of the knowledge base good. */
+  test("a reset of one field leaves a capture of the other good", () => {
+    const { prompts } = setup({ [kbKey]: "- alpha" });
+    const shown = prompts.shown("kb", "");
+    expect(prompts.resetComposition()).toBe(true);
+    expect(prompts.editKnowledgeBase(shown, ["alpha", "beta"])).toBe(true);
+    expect(prompts.knowledgeBase).toBe("- alpha\n- beta");
+  });
+
+  /** R30: a list that holds a bullet shown before a reset is refused, wherever in the list it is, with
+   * nothing written. */
+  test("a list mixing bullets from before and after a reset is refused", () => {
+    const { store, prompts } = setup({ [kbKey]: "- one's private note" });
+    const before = prompts.shown("kb", "");
+    expect(prompts.resetKnowledgeBase()).toBe(true);
+    const after = prompts.shown("kb", "");
+    const snapshot = store.snapshot();
+    for (const mixed of [[...after, ...before], [...before, ...after]]) {
+      expect(prompts.editKnowledgeBase(mixed, [...mixed.map((bullet) => bullet.text), "added"])).toBe(false);
+    }
+    expect(store.snapshot()).toEqual(snapshot);
+    expect(prompts.knowledgeBase).toBe(defaultKB);
   });
 
   test("the history keeps the newest entries only", () => {

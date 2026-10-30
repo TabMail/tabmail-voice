@@ -49,6 +49,8 @@ export interface CommitResult {
 /** One field's part of a captured operation's commit (DS-CAPTURE). */
 export interface CapturedChange {
   field: SyncField;
+  /** The field's `epoch` when it was captured: a commit after that epoch ended is refused (R30). */
+  epoch: number;
   captured: readonly Bullet[];
   result: readonly BulletText[];
 }
@@ -99,8 +101,8 @@ export type ReceiveOutcome =
   | { kind: "merged"; field: SyncField; changed: boolean; send: boolean };
 
 interface PartBuffer {
-  /** The snapshot's id as the sender gave it (DS-VALIDATE puts no rule on it). */
-  snap: unknown;
+  /** The snapshot's id as the sender gave it (DS-VALIDATE requires only a string, R27). */
+  snap: string;
   parts: number;
   seen: string;
   received: Map<number, string>;
@@ -171,6 +173,9 @@ export class BulletSync {
   private readonly lastMerged = new Map<SyncField, Set<string>>();
   /** Parts of incomplete snapshots, per sender and field (DS-CHUNK). */
   private readonly buffers = new Map<string, PartBuffer>();
+  /** Each field's capture epoch (R30), memory only: a DS-RESET of the field, or a reload of the fields
+   * from storage (another account's claim, the file's factory reset), ends it. */
+  private readonly epochs = new Map<SyncField, number>();
   private readonly catalog: Catalog;
 
   constructor(private readonly options: BulletSyncOptions) {
@@ -210,9 +215,19 @@ export class BulletSync {
     return this.stored(field).bullets.filter((bullet) => sections === undefined || sections.includes(bullet.section));
   }
 
+  /** The capture epoch of `field` now (R30): a capture keeps it to hand back with its commit. */
+  epoch(field: SyncField): number {
+    return this.epochs.get(field) ?? 0;
+  }
+
   /** DS-CAPTURE's commit, of one or more fields in one write: each `result` the operation's bullets for
-   * what it captured. */
+   * what it captured. Refused whole, nothing written, when a field's capture epoch has ended since (R30):
+   * a capture never crosses a reset, an account change or a reset file. */
   commitCapture(changes: readonly CapturedChange[]): CommitResult {
+    if (changes.some((change) => change.epoch !== this.epoch(change.field))) {
+      this.options.error("DeviceSync: a capture from before a reset or account change refused");
+      return { outcome: "unsaved", fields: [] };
+    }
     return this.commit(
       changes.map((change): [SyncField, (state: FieldState) => FieldState] => {
         // R23: no writer makes a marker text a bullet.
@@ -229,7 +244,9 @@ export class BulletSync {
     this.abandonName();
     const states: Partial<Record<SyncField, FieldState>> = {};
     for (const field of fields) states[field] = defaultState(field, this.options.skeleton(field), this.catalog);
-    return this.write(states, "reset") ? { outcome: "saved", fields: [...fields] } : { outcome: "unsaved", fields: [] };
+    if (!this.write(states, "reset")) return { outcome: "unsaved", fields: [] };
+    for (const field of fields) this.endEpoch(field);
+    return { outcome: "saved", fields: [...fields] };
   }
 
   /** DS-NAME-ABANDON for an in-process reload of the fields from storage: the next add uses a fresh
@@ -237,6 +254,11 @@ export class BulletSync {
   reload(): void {
     this.abandonName();
     this.lastMerged.clear();
+    for (const field of this.options.fields) this.endEpoch(field);
+  }
+
+  private endEpoch(field: SyncField): void {
+    this.epochs.set(field, this.epoch(field) + 1);
   }
 
   /** The connection ended: incomplete snapshots are dropped (DS-CHUNK). */
@@ -268,10 +290,14 @@ export class BulletSync {
     if (!isField(field)) return this.invalid(String(typeof field === "string" ? "unknown" : typeof field), "field");
     if (!this.options.fields.includes(field)) return { kind: "ignored" };
     const { sender, snap, part, parts } = message;
-    const key = `${String(sender)}\u0000${field}`;
+    // R27: a sender or snap that isn't a string fails DS-VALIDATE; with no (sender, field) to key it,
+    // nothing buffered is discarded.
+    if (typeof sender !== "string") return this.invalid(field, "sender");
+    if (typeof snap !== "string") return this.invalid(field, "snap");
+    const key = `${sender}\u0000${field}`;
     // R19: a refused part drops the incomplete snapshot buffered for its sender and field, whatever its snap.
     const refuse = (reason: string): ReceiveOutcome => {
-      if (typeof sender === "string") this.buffers.delete(key);
+      this.buffers.delete(key);
       return this.invalid(field, reason);
     };
     if (message.v !== 1) return refuse("version");

@@ -912,10 +912,11 @@ function ResetButton({ what, onReset }: { what: string; onReset: () => void }) {
 function BulletEditor({ title, bullets: shown, onChange }: { title: string; bullets: ShownBullet[]; onChange: (bullets: string[]) => Promise<void> }) {
   const [draft, setDraft] = useState("");
   const bullets = shown.map((bullet) => bullet.text);
-  // A row is its bullet: its text and the labels it carries. The same text under other labels (removed
-  // and added again elsewhere) is another bullet, so a row being typed in then starts afresh, never
-  // saving its edit over the newer one (DS-CAPTURE).
-  const identities = shown.map((bullet) => `${bullet.text}\u0000${JSON.stringify(bullet.labels)}`);
+  // A row is its bullet: its text, the labels it carries and the epoch it was captured in. The same text
+  // under other labels (removed and added again elsewhere), or after a reset or account change, is
+  // another bullet, so a row being typed in then starts afresh, never saving its edit over the newer one
+  // (DS-CAPTURE, R30).
+  const identities = shown.map((bullet) => `${bullet.text}\u0000${JSON.stringify(bullet.labels)}\u0000${bullet.epoch}`);
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (draft.trim() === "") return;

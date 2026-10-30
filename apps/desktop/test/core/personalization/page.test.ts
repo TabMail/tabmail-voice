@@ -16,7 +16,7 @@ describe("personalizationState", () => {
       ["language", "Language"],
       ["links", "Useful links to personal website and other resources"],
     ]);
-    expect(state.writingStyle[1]?.bullets).toEqual([{ text: "I write in English Only.", labels: [["default:composition-language-1", 1]] }]);
+    expect(state.writingStyle[1]?.bullets).toEqual([{ text: "I write in English Only.", labels: [["default:composition-language-1", 1]], epoch: 0 }]);
     expect(state.knowledgeBase.map((bullet) => bullet.text)).toEqual(["alpha.", "beta."]);
     expect(state.history).toEqual([]);
   });

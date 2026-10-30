@@ -120,6 +120,16 @@ export interface PromptHistoryEntry {
 export interface ShownBullet {
   text: string;
   labels: [string, number][];
+  /** The field's capture epoch when it was shown (R30): an edit from before a reset or an account
+   * change is refused. */
+  epoch: number;
+}
+
+/** The knowledge base's live labels as an agent request captured them, with the epoch they were
+ * captured in (R30). */
+export interface KnowledgeCapture {
+  epoch: number;
+  bullets: Bullet[];
 }
 
 /** The writing style as agent requests send it: each section under "# <section>" with what it holds, a
@@ -229,15 +239,18 @@ export class UserPrompts extends Observable implements BulletStore {
   /** The live bullets of `field`'s `section`, in order, as Settings shows them. While an upgrade is
    * unsaved they carry no labels, and an edit of them is refused (R22). */
   shown(field: PromptField, section: string): ShownBullet[] {
+    const epoch = this.sync.epoch(field);
     const captured = this.sync.capture(field, [section]);
-    if (captured === null) return this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [] }));
-    return captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
+    if (captured === null) return this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [], epoch }));
+    return captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]], epoch }));
   }
 
   /** The knowledge base's live labels now, for an agent request to delete from (DS-CAPTURE); null while
    * its upgrade is unsaved (R22), when nothing can be deleted from it. */
-  captureKnowledgeBase(): Bullet[] | null {
-    return this.sync.capture("kb", [""]);
+  captureKnowledgeBase(): KnowledgeCapture | null {
+    const epoch = this.sync.epoch("kb");
+    const bullets = this.sync.capture("kb", [""]);
+    return bullets === null ? null : { epoch, bullets };
   }
 
   /** The user's edit in Settings of the writing style's section `section` (its key), from the bullets
@@ -259,9 +272,9 @@ export class UserPrompts extends Observable implements BulletStore {
   }
 
   /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE). */
-  removeKnowledge(captured: readonly Bullet[], item: BulletText): CommitResult {
-    const labels = captured.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
-    return this.local(this.sync.commitCapture([{ field: "kb", captured: labels, result: [] }]));
+  removeKnowledge(captured: KnowledgeCapture, item: BulletText): CommitResult {
+    const labels = captured.bullets.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
+    return this.local(this.sync.commitCapture([{ field: "kb", epoch: captured.epoch, captured: labels, result: [] }]));
   }
 
   /** DS-RESET of the writing style, recorded first. */
@@ -294,7 +307,7 @@ export class UserPrompts extends Observable implements BulletStore {
       const captured = this.sync.capture(field, sections);
       // R22: refused while an upgrade is unsaved.
       if (captured === null) return false;
-      changes.push({ field, captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
+      changes.push({ field, epoch: this.sync.epoch(field), captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
     }
     return this.local(this.sync.commitCapture(changes)).outcome !== "unsaved";
   }
@@ -371,9 +384,12 @@ export class UserPrompts extends Observable implements BulletStore {
   private editSection(field: PromptField, section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
     // R22: bullets shown while an upgrade was unsaved carry no labels, and nothing is saved from them.
     if (shown.some((bullet) => bullet.labels.length === 0)) return false;
+    // R30: bullets shown before a reset or account change carry an ended epoch, and nothing is saved from them.
+    const epoch = this.sync.epoch(field);
+    if (shown.some((bullet) => bullet.epoch !== epoch)) return false;
     const captured = shown.flatMap((bullet) => bullet.labels.map(([name, n]) => ({ section, text: bullet.text, name, n })));
     const result = edited.map((typed) => ({ section, text: bulletText(typed) })).filter((bullet) => bullet.text !== "");
-    return this.local(this.sync.commitCapture([{ field, captured, result }])).outcome !== "unsaved";
+    return this.local(this.sync.commitCapture([{ field, epoch, captured, result }])).outcome !== "unsaved";
   }
 
   private reset(field: PromptField): boolean {

@@ -9,7 +9,7 @@ import * as config from "../../src/core/config.js";
 import { channels, isAudioReport, isCommand, isWindowName } from "../../src/shared/ipc.js";
 
 const compositionSections = ["general", "language", "links"];
-const shown = (text: string) => ({ text, labels: [["0000000100000001", 1]] });
+const shown = (text: string) => ({ text, labels: [["0000000100000001", 1]], epoch: 0 });
 
 /** The channel names the preload script writes out, read from its source: a sandboxed preload
  * can't import them. */
@@ -78,7 +78,7 @@ describe("IPC", () => {
       { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength) },
       ...compositionSections.map((section) => ({ type: "editWritingStyle", section, shown: [], bullets: ["Short sentences."] })),
       { type: "editKnowledgeBase", shown: [shown("a")], bullets: [] },
-      { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["default:kb-1", 1], ["0000000100000001", 2]] }, { text: "b", labels: [] }], bullets: [] },
+      { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["default:kb-1", 1], ["0000000100000001", 2]], epoch: 3 }, { text: "b", labels: [], epoch: 3 }], bullets: [] },
       // A bullet longer than the Settings fields take, as kb_add can store, still lets
       // the knowledge base be edited.
       { type: "editKnowledgeBase", shown: [shown("x".repeat(config.personalizationBulletMaxLength + 1)), shown("a")], bullets: ["a"] },
@@ -158,11 +158,15 @@ describe("IPC", () => {
     { type: "editWritingStyle", section: "", shown: [], bullets: [] },
     { type: "editKnowledgeBase", shown: ["a"], bullets: [] },
     { type: "editKnowledgeBase", shown: [{ text: "a" }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: 1, labels: [] }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["NAME", 1]] }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 0]] }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 1.5]] }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001"]] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: 1, labels: [], epoch: 0 }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [] }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [], epoch: -1 }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [], epoch: 1.5 }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [], epoch: "0" }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["NAME", 1]], epoch: 0 }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 0]], epoch: 0 }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 1.5]], epoch: 0 }], bullets: [] },
+    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001"]], epoch: 0 }], bullets: [] },
     { type: "editKnowledgeBase", shown: [null], bullets: [] },
     { type: "editWritingStyle", section: compositionSections[0], shown: [], bullets: "Short sentences." },
     { type: "editWritingStyle", shown: [], bullets: [] },

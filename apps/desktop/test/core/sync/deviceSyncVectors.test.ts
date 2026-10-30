@@ -12,7 +12,7 @@ import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } 
 
 // The shared conformance vectors and default catalog, byte-identical in TabMail for Thunderbird, iOS and
 // Voice: a change to either is made in all three, and these hashes with it.
-const vectorsSha256 = "301ff7d146de272044b7819b2e3677fd7f5bdf87340f38c9287ec3578db4f708";
+const vectorsSha256 = "f656a5bfffbec4597a5fb0c97b63d9b4946f13bd67eeebe8f9cf1ddcc304a4a8";
 const catalogSha256 = "1ca6383ba9af86b42e13736b453cc3932297da32141aaf21a08c2055d9339f5f";
 
 const vectorsBytes = readFileSync(join(__dirname, "device-sync-vectors.json"));
@@ -86,7 +86,7 @@ class ScenarioRun {
   readonly relay = new BulletRelay();
   readonly devices = new Map<string, BulletDevice>();
   readonly backups = new Map<string, DeviceStore>();
-  readonly captures = new Map<string, { device: BulletDevice; field: PromptField; section: string; captured: Bullet[] | null }>();
+  readonly captures = new Map<string, { device: BulletDevice; field: PromptField; section: string; epoch: number; captured: Bullet[] | null }>();
   private readonly specs = new Map<string, { index: number; spec: DeviceVector }>();
 
   constructor(private readonly scenario: Scenario) {
@@ -174,13 +174,13 @@ class ScenarioRun {
       case "capture": {
         const device = this.device(step.device);
         const section = step.section as string;
-        this.captures.set(step.as as string, { device, field: field as PromptField, section, captured: device.prompts.sync.capture(field as PromptField, [section]) });
+        this.captures.set(step.as as string, { device, field: field as PromptField, section, epoch: device.prompts.sync.epoch(field as PromptField), captured: device.prompts.sync.capture(field as PromptField, [section]) });
         return;
       }
       case "commit": {
         const capture = this.captures.get(step.capture as string);
         if (capture === undefined) throw new Error(`no capture ${String(step.capture)}`);
-        capture.device.commit(capture.field, capture.section, capture.captured, step.result as string[]);
+        capture.device.commit(capture.field, capture.section, capture.epoch, capture.captured, step.result as string[]);
         return;
       }
       case "reset":

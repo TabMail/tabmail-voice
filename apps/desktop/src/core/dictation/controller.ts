@@ -29,8 +29,7 @@ import { LevelEnvelope } from "../audio/levelEnvelope.js";
 import { agentPart, type AgentMemory, memoryRow } from "../memory/store.js";
 import { MemoryTools } from "../memory/tools.js";
 import { KBTools } from "../personalization/kbTools.js";
-import type { Bullet } from "../sync/bullets.js";
-import type { UserPrompts } from "../personalization/prompts.js";
+import type { KnowledgeCapture, UserPrompts } from "../personalization/prompts.js";
 import { elapsed, errorName, log } from "../log.js";
 import { Observable } from "../util/observable.js";
 import type { PasteHistory } from "./pasteHistory.js";
@@ -242,7 +241,7 @@ export class DictationController extends Observable {
   private dictationPersonalization: Personalization;
   /** The knowledge base's labels read with it, which `kb_del` deletes from (DS-CAPTURE); null when the
    * read was refused while its upgrade was unsaved (R22). */
-  private dictationKBCapture: Bullet[] | null;
+  private dictationKBCapture: KnowledgeCapture | null;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
   /** The app in front at key-down: the paste goes there only, and the corrections are learned from

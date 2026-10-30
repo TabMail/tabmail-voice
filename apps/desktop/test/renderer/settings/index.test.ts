@@ -24,9 +24,9 @@ const labels = new Map<string, string>();
  * label `name`, as a bullet deleted and added again elsewhere comes back under a new one. */
 function shownBullets(bullets: (string | { text: string; name: string })[]): ShownBullet[] {
   return bullets.map((bullet) => {
-    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
+    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]], epoch: 0 };
     if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
-    return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
+    return { text: bullet, labels: [[labels.get(bullet) as string, 1]], epoch: 0 };
   });
 }
 
@@ -756,7 +756,7 @@ describe("Settings page", () => {
       // The other device deletes the bullet and adds it again: the same text under its own label.
       expect(edit(there, [])).toBe(true);
       expect(edit(there, ["Alpha."])).toBe(true);
-      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]], epoch: 0 }]);
       relay(there, here);
       await page.push(state());
 
@@ -765,7 +765,36 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
       expect(shown(here)).toEqual(shown(there));
       relay(here, there);
-      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]], epoch: 0 }]);
+    });
+
+    /** A reset of the knowledge base while a default bullet is being typed in drops the draft, though the
+     * reset shows the same text under the same label: leaving the field saves nothing over the reset
+     * (R30). */
+    test("a reset drops the draft begun before it", async () => {
+      const prompts = new UserPrompts(new MemoryStore());
+      const defaults = prompts.knowledgeBase;
+      let sent: Command[] = [];
+      const state = (): SettingsState => ({ ...signedIn, personalization: personalizationState(prompts) });
+      const page = await settingsPage({ error: null }, () => {
+        const command = sent.at(-1);
+        if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
+        return state();
+      }, state());
+      sent = page.commands;
+      await act(async () => button("Personalization").click());
+      const item = field("Knowledge base, item 1");
+      const before = item.value;
+      await act(async () => item.focus());
+      await act(async () => type(item, "Edited."));
+
+      expect(prompts.resetKnowledgeBase()).toBe(true);
+      await page.push(state());
+
+      expect(field("Knowledge base, item 1").value).toBe(before);
+      await act(async () => field("Knowledge base, item 1").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(page.commands).toEqual([]);
+      expect(prompts.knowledgeBase).toBe(defaults);
     });
 
     /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:

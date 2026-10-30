@@ -67,7 +67,7 @@ const eventQuestions = {
 };
 const eventRequests = { add: "Set up a weekly design review on Wednesdays at 10 in Room 5 with Alex and Sam", change: "Move Thursday's team sync to 3, add Pat, Sam, Jordan and Morgan, and drop Alex and Chris", delete: "Delete my weekly one-on-one" };
 /** Bullets as Settings shows them, each under a label of its own. */
-const shown = (texts: string[]) => texts.map((text, index) => ({ text, labels: [["0000000000000001", index + 1] as [string, number]] }));
+const shown = (texts: string[]) => texts.map((text, index) => ({ text, labels: [["0000000000000001", index + 1] as [string, number]], epoch: 0 }));
 const settings = {
   availableHotkeys: ["rightOption", "function"],
   email: null,

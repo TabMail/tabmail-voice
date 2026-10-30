@@ -434,14 +434,14 @@ function isBulletList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((bullet) => typeof bullet === "string");
 }
 
-/** Bullets as Settings showed them, each with its labels (`ShownBullet`). */
+/** Bullets as Settings showed them, each with its labels and capture epoch (`ShownBullet`). */
 function isShownList(value: unknown): value is ShownBullet[] {
   return (
     Array.isArray(value) &&
     value.every((bullet: unknown) => {
       if (!bullet || typeof bullet !== "object") return false;
-      const { text, labels } = bullet as Record<string, unknown>;
-      return typeof text === "string" && Array.isArray(labels) && labels.every((label: unknown) => Array.isArray(label) && label.length === 2 && isName(label[0]) && Number.isSafeInteger(label[1]) && (label[1] as number) >= 1);
+      const { text, labels, epoch } = bullet as Record<string, unknown>;
+      return typeof text === "string" && Number.isSafeInteger(epoch) && (epoch as number) >= 0 && Array.isArray(labels) && labels.every((label: unknown) => Array.isArray(label) && label.length === 2 && isName(label[0]) && Number.isSafeInteger(label[1]) && (label[1] as number) >= 1);
     })
   );
 }
