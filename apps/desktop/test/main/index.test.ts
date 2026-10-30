@@ -88,6 +88,8 @@ const app = vi.hoisted(() => ({
   missingFiles: new Set<string>(),
   /** The files shown in Finder. */
   shownFiles: [] as string[],
+  /** The files `shell.openPath` opened (Play Last Recording). */
+  openedFiles: [] as string[],
   opened: [] as string[],
   openFailure: null as Error | null,
   emailHandler: "",
@@ -97,8 +99,6 @@ const app = vi.hoisted(() => ({
   appData: null as string | null,
   /** `app.getPath("userData")`, the app's own folder (memory's is in it). */
   userData: "/nonexistent",
-  /** `app.getPath("temp")`, the temporary folder. */
-  temp: "/nonexistent",
   /** The writing style and knowledge base the controller was given (ADR-DESK-063). */
   prompts: null as import("../../src/core/personalization/prompts.js").UserPrompts | null,
   /** Memory as the app made it: a stand-in that keeps it in a list. */
@@ -106,7 +106,7 @@ const app = vi.hoisted(() => ({
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; playLastRecording: () => void; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
   /** Every request that reached the network (`liveTransport`), by URL. */
@@ -167,7 +167,7 @@ vi.mock("electron", async () => {
       focus() {},
       requestSingleInstanceLock: () => true,
       whenReady: () => Promise.resolve(),
-      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : name === "temp" ? app.temp : "/nonexistent"),
+      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
       getApplicationNameForProtocol: () => app.emailHandler,
@@ -205,6 +205,10 @@ vi.mock("electron", async () => {
     net: { isOnline: () => app.online },
     shell: {
       showItemInFolder: (path: string) => void app.shownFiles.push(path),
+      openPath: async (path: string) => {
+        app.openedFiles.push(path);
+        return "";
+      },
       openExternal: async (url: string) => {
         if (app.openFailure) throw app.openFailure;
         app.opened.push(url);
@@ -675,6 +679,7 @@ afterEach(() => {
   app.problems.clear();
   app.missingFiles.clear();
   app.shownFiles = [];
+  app.openedFiles = [];
   app.opened = [];
   app.requests = [];
   app.openFailure = null;
@@ -684,7 +689,6 @@ afterEach(() => {
   app.appData = null;
   if (app.userData !== "/nonexistent") rmSync(app.userData, { recursive: true, force: true });
   app.userData = "/nonexistent";
-  app.temp = "/nonexistent";
   app.memory = null;
   app.prompts = null;
   app.fullName = null;
@@ -1538,9 +1542,16 @@ test("the real capture pipeline reads the delayed captured identity in both scop
    * app's run: switching it off, signing out, quitting and launching all empty the folder. */
   describe("debug mode in a packaged build", () => {
     let folder: string;
-    const recordings = () => join(folder, config.debugRecordingsFolderName);
+    /** The app's own data folder and Node's temporary folder, where earlier versions kept the file:
+     * apart, so a recording in the wrong one shows. */
+    const userData = () => join(folder, "user-data");
+    const nodeTemp = () => join(folder, "node-temp");
+    const recordings = () => join(userData(), config.debugRecordingsFolderName);
     const kept = () => (existsSync(recordings()) ? readdirSync(recordings()) : []);
-    const earlierFile = () => join(folder, config.earlierDebugRecordingFileName);
+    const earlierFile = () => join(nodeTemp(), config.earlierDebugRecordingFileName);
+    /** Deletes wait while `holdDeletes.on` until `holdDeletes.release()`. */
+    const holdDeletes = { on: false, release: () => {} };
+    const quit = (prevented: number[], request: number) => app.appEvents.get("before-quit")?.({ preventDefault: () => void prevented.push(request) });
     const signIn = (email: string) => {
       app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email } });
     };
@@ -1554,10 +1565,33 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
     beforeEach(() => {
       folder = mkdtempSync(join(tmpdir(), "voice-debug-mode-"));
-      app.userData = folder;
-      app.temp = folder;
+      mkdirSync(userData());
+      mkdirSync(nodeTemp());
+      app.userData = userData();
+      vi.doMock("node:os", async () => ({ ...await vi.importActual<typeof import("node:os")>("node:os"), tmpdir: () => nodeTemp() }));
+      holdDeletes.on = false;
+      const gate = new Promise<void>((resolve) => {
+        holdDeletes.release = resolve;
+      });
+      vi.doMock("node:fs/promises", async () => {
+        const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+        return {
+          ...actual,
+          rm: async (...args: Parameters<typeof actual.rm>) => {
+            if (holdDeletes.on) await gate;
+            return actual.rm(...args);
+          },
+        };
+      });
       app.packaged = true;
       Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
+    });
+
+    afterEach(() => {
+      holdDeletes.release();
+      vi.doUnmock("node:os");
+      vi.doUnmock("node:fs/promises");
+      rmSync(folder, { recursive: true, force: true });
     });
 
     test("on: the menu shows the debug items and each dictation keeps its recording, the newest played", async () => {
@@ -1568,11 +1602,19 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(app.dictationSettings?.().keepsRecording).toBe(true);
       expect(app.trayActions?.debug.hasLastRecording()).toBe(false);
 
+      app.trayActions?.debug.playLastRecording();
+      expect(app.openedFiles).toEqual([]);
+
       app.keepRecording?.(Uint8Array.from([1, 2, 3]));
       app.keepRecording?.(Uint8Array.from([4, 5]));
       await vi.waitFor(() => expect(kept()).toHaveLength(2));
       expect(kept().map((name) => readFileSync(join(recordings(), name)).toString("hex")).sort()).toEqual(["010203", "0405"]);
+      expect(readdirSync(nodeTemp())).toEqual([]);
       await vi.waitFor(() => expect(app.trayActions?.debug.hasLastRecording()).toBe(true));
+
+      app.trayActions?.debug.playLastRecording();
+      expect(app.openedFiles).toHaveLength(1);
+      expect(readFileSync(app.openedFiles[0] ?? "").toString("hex")).toBe("0405");
     });
 
     test("switching it off hides the items, keeps no more and deletes every recording; on again keeps again", async () => {
@@ -1645,7 +1687,9 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       await gone();
     });
 
-    test("quitting deletes every recording", async () => {
+    /** The app goes only once its recordings are deleted: every quit asked for meanwhile waits too,
+     * and the one after that goes through. */
+    test("quitting deletes every recording before the app goes", async () => {
       app.stored.set("debugMode", true);
       signIn("tester@tabmail.ai");
       await launch("darwin");
@@ -1653,8 +1697,49 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       app.keepRecording?.(Uint8Array.from([2]));
       await vi.waitFor(() => expect(kept()).toHaveLength(2));
 
-      app.appEvents.get("before-quit")?.({ preventDefault() {} });
-      await gone();
+      holdDeletes.on = true;
+      const prevented: number[] = [];
+      quit(prevented, 1);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      quit(prevented, 2);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(prevented).toEqual([1, 2]);
+      expect(app.quits).toBe(0);
+      expect(kept()).toHaveLength(2);
+
+      holdDeletes.release();
+      await vi.waitFor(() => expect(app.quits).toBe(1));
+      expect(kept()).toEqual([]);
+      quit(prevented, 3);
+      expect(prevented).toEqual([1, 2]);
+    });
+
+    test("a delete that never finishes holds quitting only up to its bound", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      app.keepRecording?.(Uint8Array.from([1]));
+      await vi.waitFor(() => expect(kept()).toHaveLength(1));
+
+      holdDeletes.on = true;
+      quit([], 1);
+      await new Promise((resolve) => setTimeout(resolve, config.recordingsDeleteAtQuitTimeout / 2));
+      expect(app.quits).toBe(0);
+      await vi.waitFor(() => expect(app.quits).toBe(1), { timeout: config.recordingsDeleteAtQuitTimeout * 2 });
+    });
+
+    /** Quit's delete is final: debug mode told "on" again while quitting (any settings change does)
+     * keeps nothing for a dictation that ends then. */
+    test("once quitting, nothing is kept again, even with debug mode told on", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      quit([], 1);
+      expect(await send({ type: "setSmartDictation", value: true })).toEqual({ error: null });
+      app.keepRecording?.(Uint8Array.from([9]));
+      await vi.waitFor(() => expect(app.quits).toBe(1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(kept()).toEqual([]);
     });
 
     /** Whatever debug mode is at launch, what an earlier run left (a crash or a force-quit) is

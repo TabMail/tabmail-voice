@@ -34,6 +34,8 @@ export async function removeQuietly(path: string): Promise<void> {
 export class LastRecording {
   private queue: Promise<void> = Promise.resolve();
   private on = false;
+  /** Quit has begun (`close`): nothing is kept again, whatever debug mode does. */
+  private closed = false;
   private newest: string | null = null;
 
   constructor(readonly folder: string) {}
@@ -64,7 +66,7 @@ export class LastRecording {
   }
 
   keep(wav: Uint8Array): void {
-    if (!this.on) return;
+    if (!this.on || this.closed) return;
     const path = join(this.folder, `${randomUUID()}.wav`);
     this.queue = this.queue
       .then(() => mkdir(this.folder, { recursive: true, mode: 0o700 }))
@@ -77,9 +79,10 @@ export class LastRecording {
       });
   }
 
-  /** At quit: keeps nothing more and deletes every recording, waiting at most `timeout` ms so quitting
-   * never hangs; what is left then goes at the next launch. */
+  /** At quit: keeps nothing more, for good, and deletes every recording, waiting at most `timeout` ms
+   * so quitting never hangs; what is left then goes at the next launch. */
   close(timeout: number): Promise<void> {
+    this.closed = true;
     this.follow(false);
     return withTimeout(timeout, () => this.flush()).catch((error: unknown) => {
       log.error(`main: the recordings weren't deleted at quit: ${errorName(error)}`);

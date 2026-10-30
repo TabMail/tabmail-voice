@@ -7,7 +7,7 @@ import { parsePDF } from "./documents/pdfProcess.js";
 import { NativeTextRedactor } from "./native/textRedactor.js";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { homedir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, screen, session, shell } from "electron";
 import { autoUpdater, NsisUpdater } from "electron-updater";
@@ -214,7 +214,7 @@ function launch(): void {
   app.dock?.hide();
   if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
 
-  const lastRecording = LastRecording.open(join(app.getPath("userData"), config.debugRecordingsFolderName), join(app.getPath("temp"), config.earlierDebugRecordingFileName));
+  const lastRecording = LastRecording.open(join(app.getPath("userData"), config.debugRecordingsFolderName), join(tmpdir(), config.earlierDebugRecordingFileName));
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
   // Native Thunderbird integration on Windows/Linux is deferred by the owner.
   const hasTabMail = (): boolean => process.platform === "darwin" && EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
@@ -1273,13 +1273,16 @@ function launch(): void {
   app.on("did-become-active", () => permissions.refresh());
   app.on("second-instance", showSettings);
 
-  let quitting = false;
+  // Quitting first deletes the recordings and stops the helpers; every quit asked for meanwhile waits
+  // for that (or the recordings' bound), and the last one, once it is done, goes through.
+  let quitting: "no" | "cleaning" | "done" = "no";
   app.on("before-quit", (event) => {
     // Every time, the last just before the library's quit-time install.
     updater?.quitting();
-    if (quitting) return;
+    if (quitting === "done") return;
     event.preventDefault();
-    quitting = true;
+    if (quitting === "cleaning") return;
+    quitting = "cleaning";
     // No recording outlives the app's run (ADR-DESK-018); a crash's are deleted at the next launch.
     const recordingsDeleted = lastRecording.close(config.recordingsDeleteAtQuitTimeout);
     void (globeKey?.restore() ?? Promise.resolve())
@@ -1295,7 +1298,10 @@ function launch(): void {
         accessibilityActivator?.stop();
         return Promise.all([logFile.flush(), recordingsDeleted]);
       })
-      .finally(() => app.quit());
+      .finally(() => {
+        quitting = "done";
+        app.quit();
+      });
   });
 
   hotkeyHelper.start();
