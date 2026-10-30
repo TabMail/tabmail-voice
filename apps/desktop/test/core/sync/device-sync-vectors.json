@@ -5861,6 +5861,281 @@
       ]
     },
     {
+      "id": "a-part-whose-sender-or-snap-is-not-a-string-is-dropped-R27",
+      "rules": [
+        "R27",
+        "DS-VALIDATE",
+        "DS-CHUNK-APPLY",
+        "R19"
+      ],
+      "fields": [
+        "kb"
+      ],
+      "note": "A part whose sender or snap is not a JSON string fails DS-VALIDATE and is dropped; it discards nothing buffered (R19 does not apply). A part with a snap that is not a string, between two valid parts of one snapshot, leaves that snapshot to complete. The control merges.",
+      "devices": [
+        {
+          "id": "A",
+          "init": "empty"
+        }
+      ],
+      "steps": [
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": 12345,
+            "snap": "00000000000000c1",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "N",
+                "dddddddd00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "dddddddd00000001": 1
+            }
+          },
+          "note": "a number as sender"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": null,
+            "snap": "00000000000000c1",
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "N",
+                "dddddddd00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "dddddddd00000001": 1
+            }
+          },
+          "note": "null as sender"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "dddddddddddddddd",
+            "snap": null,
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "N",
+                "dddddddd00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "dddddddd00000001": 1
+            }
+          },
+          "note": "null as snap"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "dddddddddddddddd",
+            "snap": {
+              "id": "00000000000000c1"
+            },
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "N",
+                "dddddddd00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "dddddddd00000001": 1
+            }
+          },
+          "note": "an object as snap"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "dddddddddddddddd",
+            "snap": [
+              "00000000000000c1"
+            ],
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "N",
+                "dddddddd00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "dddddddd00000001": 1
+            }
+          },
+          "note": "an array as snap"
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "dddddddddddddddd",
+            "snap": true,
+            "part": 1,
+            "parts": 1,
+            "bullets": [
+              [
+                "",
+                "N",
+                "dddddddd00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "dddddddd00000001": 1
+            }
+          },
+          "note": "a boolean as snap"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "eeeeeeeeeeeeeeee",
+            "snap": "00000000000000c2",
+            "part": 1,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "X",
+                "eeeeeeee00000001",
+                1
+              ]
+            ],
+            "seen": {
+              "eeeeeeee00000001": 2
+            }
+          }
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "eeeeeeeeeeeeeeee",
+            "snap": 7,
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "eeeeeeee00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "eeeeeeee00000001": 2
+            }
+          },
+          "note": "part 2 with a number as snap: dropped, part 1 still buffered"
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": []
+        },
+        {
+          "op": "raw",
+          "to": "A",
+          "message": {
+            "type": "bullet_state",
+            "v": 1,
+            "field": "kb",
+            "sender": "eeeeeeeeeeeeeeee",
+            "snap": "00000000000000c2",
+            "part": 2,
+            "parts": 2,
+            "bullets": [
+              [
+                "",
+                "Y",
+                "eeeeeeee00000001",
+                2
+              ]
+            ],
+            "seen": {
+              "eeeeeeee00000001": 2
+            }
+          }
+        },
+        {
+          "op": "expect",
+          "device": "A",
+          "field": "kb",
+          "texts": [
+            [
+              "",
+              "X"
+            ],
+            [
+              "",
+              "Y"
+            ]
+          ]
+        }
+      ]
+    },
+    {
       "id": "capture-spares-a-same-text-label-that-arrived-later",
       "rules": [
         "DS-CAPTURE",

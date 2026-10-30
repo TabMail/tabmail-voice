@@ -6,7 +6,7 @@ import type { Personalization } from "../agent/requests.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
 import { type Bullet, type BulletText, type Catalog, displayedSections, type FieldState, hasLineBreak, isMarkerText, isName, parse, render, sectionHeaders, trim } from "../sync/bullets.js";
-import { BulletSync, type BulletStore, type CapturedChange, type CommitKind, type CommitResult } from "../sync/bulletSync.js";
+import { type AddResult, BulletSync, type BulletStore, type CapturedChange, type CommitKind, type CommitResult } from "../sync/bulletSync.js";
 import { type KeyValueStore, type StoreProblem, storedString } from "../util/keyValueStore.js";
 import { Observable } from "../util/observable.js";
 import { defaultComposition } from "./defaults.js";
@@ -122,6 +122,22 @@ export interface ShownBullet {
   labels: [string, number][];
 }
 
+/** A section as Settings showed it: its bullets, and the field's capture epoch then (R30), which an edit
+ * hands back with them. An edit from before a reset or an account change is refused, whether or not the
+ * section showed any bullet. */
+export interface Shown {
+  epoch: number;
+  bullets: ShownBullet[];
+}
+
+/** What an agent request took of the knowledge base at its start: the field's capture epoch, which every
+ * `kb_add` and `kb_del` it makes carries (R30), and the live labels its `kb_del` may delete (DS-CAPTURE),
+ * null while the upgrade is unsaved (R22). */
+export interface KnowledgeCapture {
+  epoch: number;
+  bullets: Bullet[] | null;
+}
+
 /** The writing style as agent requests send it: each section under "# <section>" with what it holds, a
  * section holding nothing left out. Without the rest of Thunderbird's document, whose "Strictly follow these
  * instructions in future responses" would also govern the chat window's replies (ADR-DESK-063). */
@@ -203,6 +219,8 @@ export class UserPrompts extends Observable implements BulletStore {
   /** The user's factory reset of the texts' file (`moveAside`, which throws, changing nothing, when the
    * file can't be moved): DS-RESET of both fields, and their history gone. */
   resetFile(moveAside: () => void): void {
+    // R30: every operation in flight on the texts ends before the file is moved.
+    this.sync.endOperations(promptFields);
     moveAside();
     this.sync.reload();
     this.dropPendingHistory();
@@ -228,40 +246,47 @@ export class UserPrompts extends Observable implements BulletStore {
 
   /** The live bullets of `field`'s `section`, in order, as Settings shows them. While an upgrade is
    * unsaved they carry no labels, and an edit of them is refused (R22). */
-  shown(field: PromptField, section: string): ShownBullet[] {
+  shown(field: PromptField, section: string): Shown {
+    const epoch = this.sync.epoch(field);
     const captured = this.sync.capture(field, [section]);
-    if (captured === null) return this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [] }));
-    return captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] }));
+    if (captured === null) return { epoch, bullets: this.sync.state(field).bullets.filter((bullet) => bullet.section === section).map((bullet) => ({ text: bullet.text, labels: [] })) };
+    return { epoch, bullets: captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] })) };
   }
 
-  /** The knowledge base's live labels now, for an agent request to delete from (DS-CAPTURE); null while
-   * its upgrade is unsaved (R22), when nothing can be deleted from it. */
-  captureKnowledgeBase(): Bullet[] | null {
-    return this.sync.capture("kb", [""]);
+  /** The knowledge base as an agent request takes it at its start (`KnowledgeCapture`). */
+  captureKnowledgeBase(): KnowledgeCapture {
+    const epoch = this.sync.epoch("kb");
+    return { epoch, bullets: this.sync.capture("kb", [""]) };
   }
 
   /** The user's edit in Settings of the writing style's section `section` (its key), from the bullets
    * it showed to `edited` (DS-CAPTURE); false when it couldn't be saved (nothing changed then) or there
    * is no such section. */
-  editCompositionSection(section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
+  editCompositionSection(section: string, shown: Shown, edited: readonly string[]): boolean {
     if (!displayedSections("composition").includes(section)) return false;
     return this.editSection("composition", section, shown, edited);
   }
 
   /** The user's edit in Settings of the knowledge base, from the bullets it showed to `edited`. */
-  editKnowledgeBase(shown: readonly ShownBullet[], edited: readonly string[]): boolean {
+  editKnowledgeBase(shown: Shown, edited: readonly string[]): boolean {
     return this.editSection("kb", "", shown, edited);
   }
 
-  /** `kb_add`: DS-ADD of `text` to the knowledge base. */
-  addKnowledge(text: string): CommitResult {
-    return this.local(this.sync.add("kb", [{ section: "", text }]));
+  /** `kb_add` of an agent request that took `captured` at its start: DS-ADD of `text` to the knowledge
+   * base, refused once the capture's epoch has ended (R30). */
+  addKnowledge(captured: KnowledgeCapture, text: string): AddResult {
+    const result = this.sync.add("kb", captured.epoch, [{ section: "", text }]);
+    this.local(result);
+    return result;
   }
 
-  /** `kb_del`: of the labels an agent request captured, those of `item` deleted (DS-CAPTURE). */
-  removeKnowledge(captured: readonly Bullet[], item: BulletText): CommitResult {
-    const labels = captured.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
-    return this.local(this.sync.commitCapture([{ field: "kb", captured: labels, result: [] }]));
+  /** `kb_del` of an agent request that took `captured` at its start: of the labels it captured, those of
+   * `item` deleted (DS-CAPTURE); refused while the upgrade was unsaved then (R22) or once the capture's
+   * epoch has ended (R30). */
+  removeKnowledge(captured: KnowledgeCapture, item: BulletText): CommitResult {
+    if (captured.bullets === null) return { outcome: "unsaved", fields: [] };
+    const labels = captured.bullets.filter((bullet) => bullet.section === item.section && bullet.text === item.text);
+    return this.local(this.sync.commitCapture([{ field: "kb", epoch: captured.epoch, captured: labels, result: [] }]));
   }
 
   /** DS-RESET of the writing style, recorded first. */
@@ -290,11 +315,12 @@ export class UserPrompts extends Observable implements BulletStore {
     this.record("reset", [...promptFields]);
     const changes: CapturedChange[] = [];
     for (const field of promptFields) {
+      const epoch = this.sync.epoch(field);
       const sections = displayedSections(field);
       const captured = this.sync.capture(field, sections);
       // R22: refused while an upgrade is unsaved.
       if (captured === null) return false;
-      changes.push({ field, captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
+      changes.push({ field, epoch, captured, result: parse(field, field === "kb" ? entry.kb : entry.composition).bullets.filter((bullet) => sections.includes(bullet.section)) });
     }
     return this.local(this.sync.commitCapture(changes)).outcome !== "unsaved";
   }
@@ -314,6 +340,9 @@ export class UserPrompts extends Observable implements BulletStore {
     if (owner === null) return this.writeValues({ [Key.owner]: userID });
     const cleared: Record<string, unknown> = { [Key.history]: undefined, [Key.owner]: userID };
     for (const field of promptFields) for (const key of [Key.state(field), Key.legacyText(field), ...retiredKeys(field)]) cleared[key] = undefined;
+    // R30: every operation in flight on the texts ends before they are cleared. A claim not saved
+    // tells no one: Device Sync, an observer, would claim again at once. The next one saved does.
+    this.sync.endOperations(promptFields);
     if (!this.writeValues(cleared)) return false;
     this.sync.reload();
     // Another account's edits waiting to be recorded are not this one's history.
@@ -368,18 +397,24 @@ export class UserPrompts extends Observable implements BulletStore {
 
   // MARK: Private
 
-  private editSection(field: PromptField, section: string, shown: readonly ShownBullet[], edited: readonly string[]): boolean {
+  private editSection(field: PromptField, section: string, shown: Shown, edited: readonly string[]): boolean {
     // R22: bullets shown while an upgrade was unsaved carry no labels, and nothing is saved from them.
-    if (shown.some((bullet) => bullet.labels.length === 0)) return false;
-    const captured = shown.flatMap((bullet) => bullet.labels.map(([name, n]) => ({ section, text: bullet.text, name, n })));
+    if (shown.bullets.some((bullet) => bullet.labels.length === 0)) return false;
+    const captured = shown.bullets.flatMap((bullet) => bullet.labels.map(([name, n]) => ({ section, text: bullet.text, name, n })));
     const result = edited.map((typed) => ({ section, text: bulletText(typed) })).filter((bullet) => bullet.text !== "");
-    return this.local(this.sync.commitCapture([{ field, captured, result }])).outcome !== "unsaved";
+    // R30: refused when the epoch Settings showed the section in has ended.
+    return this.local(this.sync.commitCapture([{ field, epoch: shown.epoch, captured, result }])).outcome !== "unsaved";
   }
 
   private reset(field: PromptField): boolean {
+    // R30: every operation in flight on the field ends before the reset writes anything.
+    this.sync.endOperations([field]);
     this.flushHistory();
     this.record("reset", [field]);
-    return this.local(this.sync.reset([field]), false).outcome === "saved";
+    const saved = this.local(this.sync.reset([field]), false).outcome === "saved";
+    // Not saved, it still ended what was shown, so observers (Settings) are told the new epoch.
+    if (!saved) this.changed();
+    return saved;
   }
 
   /** After a local commit: its fields recorded once edits stop (`edits`), and sent. */

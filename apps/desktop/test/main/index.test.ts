@@ -23,8 +23,8 @@ import { channels, type SettingsState } from "../../src/shared/ipc.js";
 import { eventually, toolSettings } from "../support/stubs.js";
 
 /** The texts of bullets as Settings shows them. */
-function texts(bullets: readonly { text: string }[] | undefined): string[] {
-  return (bullets ?? []).map((bullet) => bullet.text);
+function texts(shown: { bullets: readonly { text: string }[] } | undefined): string[] {
+  return (shown?.bullets ?? []).map((bullet) => bullet.text);
 }
 
 /** The signal a tool runs with: a request never canceled. */
@@ -2234,7 +2234,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const defaults = page().knowledgeBase;
     for (const command of [
       { type: "editKnowledgeBase", shown: defaults, bullets: [...texts(defaults), "Prefers short replies."] },
-      { type: "editWritingStyle", section: "language", shown: page().writingStyle.find((one) => one.section === "language")?.bullets, bullets: ["I write in German."] },
+      { type: "editWritingStyle", section: "language", shown: page().writingStyle.find((one) => one.section === "language")?.shown, bullets: ["I write in German."] },
       { type: "resetKnowledgeBase" },
       { type: "resetWritingStyle" },
       { type: "restorePromptHistory", id: "no-such-entry" },
@@ -2244,7 +2244,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // The settings file read, so a setting is saved as ever.
     expect(await send({ type: "setSmartDictation", value: false })).toEqual({ error: null });
     expect(app.files.get(path)?.size).toBe(0);
-    expect(page().knowledgeBase).toEqual(defaults);
+    expect(page().knowledgeBase.bullets).toEqual(defaults.bullets);
 
     // The menu's Fix item tells it again, and Show File shows it; Close does nothing more.
     app.dialogResponse = 0;
@@ -2347,6 +2347,26 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.trayState?.().fileProblems).toEqual([]);
   });
 
+  /** R30: the state a reset pushes to Settings carries the epoch the reset started, so an edit of it is
+   * saved. */
+  test.each(["kb", "composition"] as const)("the %s state a reset pushes can be edited", async (field) => {
+    await launch("darwin");
+    const pushed: PersonalizationState[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, pushedState) => {
+        if (name === "settings") pushed.push((pushedState as { personalization: PersonalizationState }).personalization);
+      },
+    ]);
+    expect(await send({ type: field === "kb" ? "resetKnowledgeBase" : "resetWritingStyle" })).toEqual({ error: null });
+    const last = pushed.at(-1);
+    if (last === undefined) throw new Error("nothing pushed");
+    const shown = field === "kb" ? last.knowledgeBase : last.writingStyle.find((one) => one.section === "language")?.shown;
+    if (shown === undefined) throw new Error("no language section");
+    const command = field === "kb" ? { type: "editKnowledgeBase", shown, bullets: [...texts(shown), "Entered after the reset."] } : { type: "editWritingStyle", section: "language", shown, bullets: [...texts(shown), "Entered after the reset."] };
+    expect(await send(command)).toEqual({ error: null });
+    expect(field === "kb" ? app.prompts?.knowledgeBase : app.prompts?.composition).toContain("Entered after the reset.");
+  });
+
   /** Settings › Personalization's commands (ADR-DESK-063): each changes the stored texts and the
    * state Settings shows, and pushes it; one the file can't keep is reported and changes nothing. */
   test("the writing style and knowledge base are edited, reset and restored from Settings", async () => {
@@ -2361,7 +2381,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const promptsFile = () => app.files.get(join(app.userData, "userPrompts.json"));
     const storedKB = () => JSON.stringify(promptsFile()?.get("bullet_state:kb") ?? null);
     const storedStyle = () => JSON.stringify(promptsFile()?.get("bullet_state:composition") ?? null);
-    const languageShown = () => page().writingStyle.find((one) => one.section === "language")?.bullets ?? [];
+    const languageShown = () => page().writingStyle.find((one) => one.section === "language")?.shown;
     const language = () => texts(languageShown());
     const defaults = texts(page().knowledgeBase);
     expect(defaults).toHaveLength(3);
@@ -2377,7 +2397,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(storedStyle()).toContain('"I write in English and French."');
     expect(storedStyle()).not.toContain("English Only");
     expect(language()).toEqual(["I write in English and French."]);
-    expect(texts(pushed.at(-1)?.writingStyle.find((one) => one.section === "language")?.bullets)).toEqual(["I write in English and French."]);
+    expect(texts(pushed.at(-1)?.writingStyle.find((one) => one.section === "language")?.shown)).toEqual(["I write in English and French."]);
 
     // R23: a line holding a section marker, on any line of a pasted bullet, is refused with a message that
     // says why; nothing changes.
@@ -2421,7 +2441,11 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(await send(command), command.type).toEqual(unsaved);
       expect(storedKB(), command.type).toBe(kbBefore);
       expect(storedStyle(), command.type).toBe(styleBefore);
-      expect({ knowledgeBase: page().knowledgeBase, writingStyle: page().writingStyle }, command.type).toEqual(shownBefore);
+      const bullets = (state: Pick<PersonalizationState, "knowledgeBase" | "writingStyle">) => ({ knowledgeBase: state.knowledgeBase.bullets, writingStyle: state.writingStyle.map((one) => one.shown.bullets) });
+      expect(bullets(page()), command.type).toEqual(bullets(shownBefore));
+      // R30: what Settings was last pushed is what applies now, even after a reset not saved ended it.
+      const views = (state: PersonalizationState | undefined) => ({ knowledgeBase: state?.knowledgeBase, writingStyle: state?.writingStyle });
+      expect(views(pushed.at(-1)), command.type).toEqual(views(page()));
     }
   });
 
@@ -2435,7 +2459,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
         if (name === "settings") pushed.push(texts((pushedState as { personalization: PersonalizationState }).personalization.knowledgeBase));
       },
     ]);
-    expect(app.prompts?.addKnowledge("Learned in a chat.").outcome).toBe("saved");
+    expect(app.prompts?.addKnowledge(app.prompts.captureKnowledgeBase(), "Learned in a chat.").outcome).toBe("saved");
     expect(pushed.at(-1)).toContain("Learned in a chat.");
   });
 

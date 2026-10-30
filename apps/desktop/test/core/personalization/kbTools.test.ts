@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { KBTools } from "../../../src/core/personalization/kbTools.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { unsavedBecauseOf } from "../../../src/core/ui/fileProblems.js";
+import { defaultCatalog } from "../../../src/core/sync/bullets.js";
 import { MemoryStore, type StoreProblem } from "../../../src/core/util/keyValueStore.js";
 
 const kbKey = "user_prompts:user_kb.md";
@@ -37,6 +38,8 @@ class RefusingStore extends MemoryStore {
     return !this.refusing && super.setAll(values);
   }
 }
+
+const kbDefaults = defaultCatalog.defaults.filter((entry) => entry.field === "kb").map((entry) => entry.text);
 
 function setup(knowledgeBase?: string) {
   const store = new FailingStore(knowledgeBase === undefined ? {} : { [kbKey]: knowledgeBase });
@@ -188,10 +191,25 @@ describe("KBTools", () => {
     expect(prompts.knowledgeBase).toBe("- alpha.\n- beta.");
   });
 
+  /** R30: a request that began under one account, or before a reset of the knowledge base, writes nothing
+   * after it: no kb_add of what it was asked under the first, no kb_del of a default the reset brings back. */
+  test.each<[string, (prompts: UserPrompts) => void]>([
+    ["another account signs in", (prompts) => expect(prompts.claim("user-2")).toBe(true)],
+    ["the knowledge base is reset", (prompts) => expect(prompts.resetKnowledgeBase()).toBe(true)],
+  ])("a request writes nothing after %s", (_, end) => {
+    const { store, prompts, run } = setup(`- one's private note.\n- ${kbDefaults[0]}`);
+    expect(prompts.claim("user-1")).toBe(true);
+    end(prompts);
+    const after = store.snapshot();
+    expect(run("kb_add", "Asked under one")).toEqual({ error: "failed to persist knowledge base" });
+    expect(run("kb_del", kbDefaults[0])).toEqual({ error: "failed to persist knowledge base" });
+    expect(store.snapshot()).toEqual(after);
+  });
+
   /** DS-CAPTURE: a request removes only what it saw, or what its own kb_add added. */
   test("kb_del never removes a bullet that arrived after the request began, and removes its own kb_add's", () => {
     const { prompts, run, request } = setup("- alpha.");
-    prompts.addKnowledge("Arrived meanwhile.");
+    prompts.addKnowledge(prompts.captureKnowledgeBase(), "Arrived meanwhile.");
     expect(run("kb_del", "Arrived meanwhile")).toEqual({ error: "failed to delete from knowledge base (statement not found)" });
     expect(prompts.knowledgeBase).toBe("- alpha.\n- Arrived meanwhile.");
     expect(run("kb_add", "Likes tea")).toBe("Added to knowledge base.");

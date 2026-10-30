@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { displayedSections, parse, sectionHeaders } from "../sync/bullets.js";
-import type { PromptField, PromptHistorySource, ShownBullet, UserPrompts } from "./prompts.js";
+import type { PromptField, PromptHistorySource, Shown, UserPrompts } from "./prompts.js";
 
 /** One history entry as Settings lists it: when and how it came about, the texts it changed, and what
  * restoring it would do to the texts as they are now. */
@@ -21,8 +21,8 @@ export interface PromptHistoryItem {
 export interface PersonalizationState {
   /** The writing style's sections, in order: each one's key, its header and its bullets with the
    * labels an edit hands back (DS-CAPTURE). */
-  writingStyle: { section: string; title: string; bullets: ShownBullet[] }[];
-  knowledgeBase: ShownBullet[];
+  writingStyle: { section: string; title: string; shown: Shown }[];
+  knowledgeBase: Shown;
   /** The newest first. */
   history: PromptHistoryItem[];
 }
@@ -37,7 +37,7 @@ function editableBullets(composition: string, knowledgeBase: string): string[] {
 export function personalizationState(prompts: UserPrompts): PersonalizationState {
   const now = new Set(editableBullets(prompts.composition, prompts.knowledgeBase));
   return {
-    writingStyle: sectionHeaders.composition.map(([section, title]) => ({ section, title, bullets: prompts.shown("composition", section) })),
+    writingStyle: sectionHeaders.composition.map(([section, title]) => ({ section, title, shown: prompts.shown("composition", section) })),
     knowledgeBase: prompts.shown("kb", ""),
     history: prompts.history
       .map((entry) => {

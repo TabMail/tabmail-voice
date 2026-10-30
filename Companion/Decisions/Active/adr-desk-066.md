@@ -43,10 +43,29 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   names on its bullets and on the last snapshot merged for that field. Over the relay's budget it is
   sent in parts, and a snapshot is applied only when every part arrived, agreeing; one bullet alone
   over the budget holds the field back and Settings says "Too large to sync". A malformed part drops
-  the whole snapshot. Voice never asks for state and never sends the released format. The relay
+  the whole snapshot, except one whose sender or snap is no string: it is dropped alone, since with no
+  sender there is no snapshot to key (R27). Voice never asks for state and never sends the released format. The relay
   also limits how many messages a connection sends a minute, and every part counts: a field of
   dozens of parts (megabytes, far beyond a real knowledge base) would be cut off on each connect.
   Left as it is (2026-10-29).
+- **Capture epoch (R30, 2026-10-29).** Each field has a capture epoch, in memory only. Every operation
+  that can await between reading a field and writing it takes the epoch once, at its start, and every
+  write it makes carries it as a required argument: Settings' edits (one epoch per field view, `Shown`,
+  so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a
+  history restore. Ending is ordered, not only checked: a reset of the field, another account's claim
+  and the texts' file reset end the epochs of every operation in flight as their FIRST step, before
+  they write anything (`BulletSync.endOperations`, one place). An operation can then no longer write
+  once an ending has begun, and the state an ending pushes carries the new epoch. The epochs stay
+  ended even if the ending isn't saved: an epoch is never reused (putting them back was tried and
+  removed: an upgrade saved during a refused reset, or an observer throwing after a saved one, let an
+  earlier edit land after a later reset), and an edit refused then is one the user redoes: a reset not
+  saved still tells observers, so Settings is pushed the new epoch (a claim not saved tells no one,
+  since Device Sync, an observer, would claim again at once; the next claim saved does).
+  `BulletSync` still refuses a write carrying an ended epoch, writing nothing, in one check for both
+  commit paths: that is the backstop for an operation that resumes later. Settings' editor is keyed
+  by the epoch, so a draft in a row or the field to add one is dropped then. Sign-out doesn't touch
+  the texts and never waits on an operation: it ends the agent conversation first, and the next
+  account's claim ends the epochs.
 - **Released Thunderbird and iOS** (`prompt_state`): imported additions only, an epoch-zero text
   skipped; nothing is deleted from what they send.
 - **Upgrade.** The texts Voice kept before are parsed once: catalog defaults take their default label,

@@ -4,10 +4,9 @@
 
 import * as config from "../config.js";
 import { log } from "../log.js";
-import type { Bullet } from "../sync/bullets.js";
 import { unsavedBecauseOf } from "../ui/fileProblems.js";
 import { normalizeUnicode } from "./patchApplier.js";
-import type { UserPrompts } from "./prompts.js";
+import type { KnowledgeCapture, UserPrompts } from "./prompts.js";
 
 /** A statement as a bullet's text, as Thunderbird's `patchApplier.js` writes it: without a leading
  * "- ", with a period after it if it has none. */
@@ -28,7 +27,8 @@ function deletionKey(text: string): string {
  * tools of the same names: the same argument, matching, results and errors, each result the JSON of
  * what the tool answers. They edit only the user's own knowledge base, so they ask nothing first.
  * `kb_del` removes only a bullet the request saw (`captured`, taken at key-down, DS-CAPTURE) or one
- * its own `kb_add` made, never one that arrived since.
+ * its own `kb_add` made, never one that arrived since. Neither writes once the knowledge base has been
+ * reset or another account has signed in since key-down (R30): each write carries the capture's epoch.
  */
 export class KBTools {
   /** The tools' names, as the loop offers them. */
@@ -36,7 +36,7 @@ export class KBTools {
 
   constructor(
     private readonly prompts: UserPrompts,
-    private readonly captured: Bullet[] | null,
+    private readonly captured: KnowledgeCapture,
   ) {}
 
   /** Runs the tool `name` with `args` (the call's parsed arguments), and returns what the model reads. */
@@ -66,11 +66,11 @@ export class KBTools {
       log.debug(`KBTools: ${config.kbAddTool} unchanged`);
       return "No change (duplicate or unchanged).";
     }
-    const { outcome } = this.prompts.addKnowledge(text);
+    const { outcome, added } = this.prompts.addKnowledge(this.captured, text);
     log.debug(`KBTools: ${config.kbAddTool} ${outcome}`);
     if (outcome === "unsaved") return { error: this.unsaved() };
     // What it added is the request's own, for a `kb_del` after it.
-    this.captured?.push(...this.prompts.sync.state("kb").bullets.filter((bullet) => bullet.section === "" && bullet.text === text));
+    this.captured.bullets?.push(...added);
     return "Added to knowledge base.";
   }
 
@@ -80,9 +80,9 @@ export class KBTools {
       return { error: "knowledge base is empty" };
     }
     // R22: the request's read was refused while the knowledge base's upgrade was unsaved.
-    if (this.captured === null) return { error: this.unsaved() };
+    if (this.captured.bullets === null) return { error: this.unsaved() };
     const wanted = deletionKey(bulletText(statement));
-    const match = this.captured.find((bullet) => bullet.section === "" && deletionKey(bullet.text) === wanted);
+    const match = this.captured.bullets.find((bullet) => bullet.section === "" && deletionKey(bullet.text) === wanted);
     if (match === undefined) {
       log.debug(`KBTools: ${config.kbDelTool} found nothing`);
       return { error: "failed to delete from knowledge base (statement not found)" };

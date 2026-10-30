@@ -283,7 +283,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     let most = 0;
     for (let budget = 360; budget <= 440; budget += 1) {
       const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
-      for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(`Fact number ${index} of thirty`);
+      for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(prompts.captureKnowledgeBase(), `Fact number ${index} of thirty`);
       const outgoing = prompts.sync.outgoing("kb");
       if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
       most = Math.max(most, outgoing.messages.length);
@@ -298,7 +298,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
   test("a field of multibyte text keeps every part within it in UTF-8 bytes, whatever the budget", () => {
     for (let budget = 360; budget <= 440; budget += 1) {
       const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
-      for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(`Fait numéro ${index} \u{1F989}\u{1F989}\u{1F989}`);
+      for (let index = 1; index <= 30; index += 1) prompts.addKnowledge(prompts.captureKnowledgeBase(), `Fait numéro ${index} \u{1F989}\u{1F989}\u{1F989}`);
       const outgoing = prompts.sync.outgoing("kb");
       if (outgoing.kind !== "messages") throw new Error(`budget ${budget}: ${outgoing.kind}`);
       for (const message of outgoing.messages) expect(new TextEncoder().encode(JSON.stringify(message)).length, `budget ${budget}`).toBeLessThanOrEqual(budget);
@@ -311,8 +311,8 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
   test("a field that fits by its length but not its UTF-8 bytes goes in parts within it", () => {
     let budget = config.deviceSyncMessageMaxBytes;
     const prompts = new UserPrompts(new MemoryStore(), { budget: () => budget });
-    prompts.addKnowledge("\u{1F989}".repeat(40));
-    prompts.addKnowledge("\u{1F989}".repeat(41));
+    prompts.addKnowledge(prompts.captureKnowledgeBase(), "\u{1F989}".repeat(40));
+    prompts.addKnowledge(prompts.captureKnowledgeBase(), "\u{1F989}".repeat(41));
     const whole = prompts.sync.outgoing("kb");
     if (whole.kind !== "messages" || whole.messages.length !== 1) throw new Error(`one message expected: ${whole.kind}`);
     const text = JSON.stringify(whole.messages[0]);
@@ -331,7 +331,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
   test("one bullet of multibyte text over it in UTF-8 bytes is held back and kept, though its length fits", () => {
     const budget = 420;
     const ascii = new UserPrompts(new MemoryStore(), { budget: () => budget });
-    ascii.addKnowledge("a".repeat(80));
+    ascii.addKnowledge(ascii.captureKnowledgeBase(), "a".repeat(80));
     const sent = ascii.sync.outgoing("kb");
     if (sent.kind !== "messages") throw new Error(`ascii: ${sent.kind}`);
     for (const message of sent.messages) expect(new TextEncoder().encode(JSON.stringify(message)).length).toBeLessThanOrEqual(budget);
@@ -339,7 +339,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
 
     const store = new MemoryStore();
     const owls = new UserPrompts(store, { budget: () => budget });
-    owls.addKnowledge("\u{1F989}".repeat(80));
+    owls.addKnowledge(owls.captureKnowledgeBase(), "\u{1F989}".repeat(80));
     expect(owls.sync.outgoing("kb")).toMatchObject({ kind: "oversize", budget });
     expect(new UserPrompts(new MemoryStore(store.snapshot())).sync.state("kb").bullets.map((bullet) => bullet.text)).toContain("\u{1F989}".repeat(80));
   });
@@ -378,7 +378,7 @@ describe("the relay's size (DS-CHUNK, DS-OVERSIZE)", () => {
     expect(prompts.sync.receive(part({}))).toEqual({ kind: "partial" });
     expect(prompts.sync.receive(part({ sender: ["ffffffffffffffff"], snap: "0000000000000002", v: 2 }))).toMatchObject({ kind: "invalid" });
     expect(prompts.sync.receive(part({ part: 2, bullets: [["", "Other half", peerName, 2]] }))).toMatchObject({ kind: "merged", changed: true });
-    expect(prompts.shown("kb", "").map((bullet) => bullet.text)).toEqual(expect.arrayContaining(["Half fact", "Other half"]));
+    expect(prompts.shown("kb", "").bullets.map((bullet) => bullet.text)).toEqual(expect.arrayContaining(["Half fact", "Other half"]));
   });
 
   test("an incomplete snapshot is dropped with the connection", async () => {
@@ -530,12 +530,17 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
     const relay = new BulletRelay();
     const store = legacyStore();
     const a = device("A", store, relay);
+    // The request's capture at its start runs the upgrade, which can't be saved (R22), and the add's own
+    // run of it can't either.
     store.failNext = true;
-    expect(a.prompts.addKnowledge("Gamma")).toEqual({ outcome: "unsaved", fields: [] });
+    const captured = a.prompts.captureKnowledgeBase();
+    expect(captured.bullets).toBeNull();
+    store.failNext = true;
+    expect(a.prompts.addKnowledge(captured, "Gamma")).toEqual({ outcome: "unsaved", fields: [], added: [] });
     expect(store.failNext).toBe(false);
 
     const reader = new UserPrompts(new MemoryStore(store.snapshot()));
-    expect(reader.shown("kb", "").map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
+    expect(reader.shown("kb", "").bullets.map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
     expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
   });
 
@@ -551,7 +556,7 @@ describe("an upgrade from the texts of a released version (DS-UPGRADE)", () => {
 
     // A later reader of the store finds the texts as they were, upgraded then.
     const reader = new UserPrompts(new MemoryStore(store.snapshot()));
-    expect(reader.shown("kb", "").map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
+    expect(reader.shown("kb", "").bullets.map((bullet) => bullet.text)).toEqual(["Alpha", "Beta"]);
     expect(kbTexts(a)).toEqual(["Alpha", "Beta"]);
   });
 });
