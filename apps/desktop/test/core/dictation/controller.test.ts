@@ -4169,6 +4169,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(prompts.isCurrent(signedOut)).toBe(false);
       });
 
+      /** Root ADR-035: the texts are the device user's, so a recording under way when the account changes
+       * can still become an agent request (Space): the same account back, another after a sign-out, or
+       * another directly. Its knowledge-base writes are refused (the counter moved), never the request. */
+      test.each(["the same account back", "another account after a sign-out", "another account directly"])("a recording can still enter agent mode with %s", async (change) => {
+        const account = signedIn(auth);
+        const { controller } = makeController({ account });
+        controller.handle("start");
+        try {
+          expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+          if (change !== "another account directly") account.signOut();
+          const userID = change === "the same account back" ? Fixtures.userID : "user-2";
+          auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID }));
+          await account.verify(Fixtures.email, "123456");
+          expect(controller.mode).toBe("dictation");
+          controller.handle("toggleMode");
+          expect(controller.mode).toBe("agent");
+        } finally {
+          controller.handle("cancel");
+        }
+      });
+
       /** Signed out while the answer is written: it never opens a chat window. */
       test("signing out during an answer opens no chat", async () => {
         const account = signedIn(auth);

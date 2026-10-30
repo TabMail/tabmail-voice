@@ -2,13 +2,25 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, constants, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { configureLog } from "../../../src/core/log.js";
-import * as config from "../../../src/core/config.js";
 import { JSONFileStore, restrictDataFolder } from "../../../src/main/storage/jsonFileStore.js";
+
+/** Whether `chmodSync` refuses, as a file system that doesn't allow it does. */
+const faults = vi.hoisted(() => ({ chmod: false }));
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    chmodSync: vi.fn((path: string, mode: number) => {
+      if (faults.chmod) throw Object.assign(new Error(`refused at ${path}`), { code: "EPERM" });
+      return actual.chmodSync(path, mode);
+    }),
+  };
+});
 
 const folders: string[] = [];
 function scratch(): string {
@@ -18,6 +30,7 @@ function scratch(): string {
 }
 
 afterEach(() => {
+  faults.chmod = false;
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
   configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
 });
@@ -239,13 +252,17 @@ describe("JSONFileStore", () => {
  * than left to the system's defaults (POSIX permissions; Windows keeps a profile's folders private). */
 describe.skipIf(process.platform === "win32")("permissions", () => {
   const mode = (path: string) => statSync(path).mode & 0o777;
+  /** Read and write by the owner only; a folder also entered by the owner only. Not the configured
+   * values, so a public mode set there fails. */
+  const ownerFile = constants.S_IRUSR | constants.S_IWUSR;
+  const ownerFolder = constants.S_IRWXU;
 
   test("a saved file is the user's alone, and so are the folders made for it", () => {
     const path = join(scratch(), "Made/Here/userPrompts.json");
     expect(new JSONFileStore(path).set("key", "value")).toBe(true);
-    expect(mode(path)).toBe(config.privateFileMode);
-    expect(mode(dirname(path))).toBe(config.privateFolderMode);
-    expect(mode(dirname(dirname(path)))).toBe(config.privateFolderMode);
+    expect(mode(path)).toBe(ownerFile);
+    expect(mode(dirname(path))).toBe(ownerFolder);
+    expect(mode(dirname(dirname(path)))).toBe(ownerFolder);
   });
 
   /** A temporary file a crash left keeps its permissions when written over: they are set again. */
@@ -254,7 +271,7 @@ describe.skipIf(process.platform === "win32")("permissions", () => {
     writeFileSync(`${path}.tmp`, "{}");
     chmodSync(`${path}.tmp`, 0o644);
     expect(new JSONFileStore(path).set("key", "value")).toBe(true);
-    expect(mode(path)).toBe(config.privateFileMode);
+    expect(mode(path)).toBe(ownerFile);
   });
 
   test("a file read at launch is made the user's alone; one that couldn't be read is left as it is", () => {
@@ -263,7 +280,7 @@ describe.skipIf(process.platform === "win32")("permissions", () => {
     writeFileSync(readable, "{}");
     chmodSync(readable, 0o644);
     new JSONFileStore(readable);
-    expect(mode(readable)).toBe(config.privateFileMode);
+    expect(mode(readable)).toBe(ownerFile);
 
     const damaged = join(folder, "userPrompts.json");
     writeFileSync(damaged, "not json");
@@ -276,11 +293,11 @@ describe.skipIf(process.platform === "win32")("permissions", () => {
     const folder = scratch();
     const made = join(folder, "New");
     restrictDataFolder(made);
-    expect(mode(made)).toBe(config.privateFolderMode);
+    expect(mode(made)).toBe(ownerFolder);
 
     chmodSync(folder, 0o755);
     restrictDataFolder(folder);
-    expect(mode(folder)).toBe(config.privateFolderMode);
+    expect(mode(folder)).toBe(ownerFolder);
   });
 
   /** A folder that can't be made is logged by its error's code, never its path, and nothing throws. */
@@ -295,3 +312,31 @@ describe.skipIf(process.platform === "win32")("permissions", () => {
   });
 });
 
+/** A file system that refuses to change permissions doesn't stop the app: launch goes on, a file read
+ * stays readable, and the refusal is logged by its code, never a path or what the file holds. */
+describe("permissions the file system refuses", () => {
+  test("the data folder's refusal doesn't throw and is logged without its path", () => {
+    const folder = scratch();
+    const errors: string[] = [];
+    configureLog({ isDebugBuild: false, sinks: { error: (line) => errors.push(line) } });
+    faults.chmod = true;
+    expect(() => restrictDataFolder(folder)).not.toThrow();
+    expect(chmodSync).toHaveBeenCalledWith(folder, expect.any(Number));
+    expect(errors).toEqual(["FileStore: permissions not set (EPERM)"]);
+  });
+
+  test("a readable file's refusal doesn't stop opening it, and is logged without its path or contents", () => {
+    const path = join(scratch(), "settings.json");
+    writeFileSync(path, JSON.stringify({ note: "example sentinel" }));
+    const errors: string[] = [];
+    configureLog({ isDebugBuild: false, sinks: { error: (line) => errors.push(line) } });
+    faults.chmod = true;
+    let store: JSONFileStore | undefined;
+    expect(() => {
+      store = new JSONFileStore(path);
+    }).not.toThrow();
+    expect(store?.get("note")).toBe("example sentinel");
+    expect(store?.problem).toBeUndefined();
+    expect(errors).toEqual(["FileStore: permissions not set (EPERM)"]);
+  });
+});

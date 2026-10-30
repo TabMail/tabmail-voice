@@ -1921,11 +1921,17 @@ describe("personalization and the dictionary while signed out", () => {
     expect(commands.at(-1)).toMatchObject({ type: "editKnowledgeBase", bullets: ["Prefers morning meetings.", "Works with Sam.", "Typed while signed out"] });
   });
 
-  test("the dictionary shows its words", async () => {
-    await settingsPage({ error: null }, signedOut, signedOut);
+  test("the dictionary shows its words, and adds and removes one", async () => {
+    const { commands } = await settingsPage({ error: null }, signedOut, signedOut);
     await act(async () => button("Dictionary").click());
     const main = document.querySelector("main.content") as HTMLElement;
     expect(main.textContent).toContain("Kaelthorne");
     expect(main.textContent).not.toContain("Sign in to see this.");
+    await act(async () => type(field("Word or name"), "Nebulaforge"));
+    expect(button("Add").disabled).toBe(false);
+    await act(async () => button("Add").click());
+    expect(commands).toContainEqual({ type: "addDictionaryWord", word: "Nebulaforge" });
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Kaelthorne"]')?.click());
+    expect(commands).toContainEqual({ type: "removeDictionaryWord", word: "Kaelthorne" });
   });
 });

@@ -120,8 +120,9 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   affect what is kept: the only timers keep the connection alive (ping every 30 s) and try it again
   (5 s doubling to 300 s, ten times, then at the next wake or return online).
 - **When it runs** is unchanged: for the account signed in, from a texts file that could be read,
-  while `AppSettings.deviceSyncAllowed`; another account signing in resets the texts to the defaults
-  (`UserPrompts.claim`).
+  while `AppSettings.deviceSyncAllowed`; another account signing in keeps the texts and syncs them
+  with its group (root ADR-035, the Accounts paragraph above; the reset to defaults by
+  `UserPrompts.claim` it once did is deleted).
 
 **Consequences:**
 - A bullet deleted on one device is deleted on the others once they exchange states, however late or
