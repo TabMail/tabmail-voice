@@ -214,7 +214,7 @@ function launch(): void {
   app.dock?.hide();
   if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" }, { role: "windowMenu" }]));
 
-  const lastRecording = new LastRecording(join(tmpdir(), config.debugLastRecordingFileName));
+  const lastRecording = LastRecording.open(join(app.getPath("userData"), config.debugRecordingsFolderName), join(tmpdir(), config.earlierDebugRecordingFileName));
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
   // Native Thunderbird integration on Windows/Linux is deferred by the owner.
   const hasTabMail = (): boolean => process.platform === "darwin" && EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
@@ -461,8 +461,11 @@ function launch(): void {
     checkForUpdates: () => updater?.checkNow(),
     installUpdate: () => updater?.install(),
     debug: {
-      hasLastRecording: () => lastRecording.exists,
-      playLastRecording: () => void shell.openPath(lastRecording.path),
+      hasLastRecording: () => lastRecording.path !== null,
+      playLastRecording: () => {
+        const path = lastRecording.path;
+        if (path !== null) void shell.openPath(path);
+      },
       showLastScreenContext: () => windows.showContextDebug(),
       showsSmokeTip: () => showsSmokeTip,
       toggleSmokeTip: () => { showsSmokeTip = !showsSmokeTip; windows.push("overlay"); tray.update(); },
@@ -969,9 +972,9 @@ function launch(): void {
   const followDebugMode = () => {
     const on = settings.isDebugMode(account.email);
     setDebugMode(on);
-    // The last recording, screen context and sample tip live only while debug mode is on: switched
-    // off, or the account no longer allowed it, they are dropped (the recording also at launch, after
-    // a switch changed while the app was closed), and a recording still being made is not kept.
+    // The recordings, screen context and sample tip live only while debug mode is on: switched off, or
+    // the account no longer allowed it, they are dropped (the recordings also at launch and quit), and
+    // a recording still being made is not kept.
     lastRecording.follow(on);
     if (on) return;
     if (probe.lastContext !== null) {
@@ -1270,13 +1273,18 @@ function launch(): void {
   app.on("did-become-active", () => permissions.refresh());
   app.on("second-instance", showSettings);
 
-  let quitting = false;
+  // Quitting first deletes the recordings and stops the helpers; every quit asked for meanwhile waits
+  // for that (or the recordings' bound), and the last one, once it is done, goes through.
+  let quitting: "no" | "cleaning" | "done" = "no";
   app.on("before-quit", (event) => {
     // Every time, the last just before the library's quit-time install.
     updater?.quitting();
-    if (quitting) return;
+    if (quitting === "done") return;
     event.preventDefault();
-    quitting = true;
+    if (quitting === "cleaning") return;
+    quitting = "cleaning";
+    // No recording outlives the app's run (ADR-DESK-018); a crash's are deleted at the next launch.
+    const recordingsDeleted = lastRecording.close(config.recordingsDeleteAtQuitTimeout);
     void (globeKey?.restore() ?? Promise.resolve())
       .then(() => {
         hotkeyHelper.stop();
@@ -1288,9 +1296,12 @@ function launch(): void {
         deviceSync.stop();
         prompts.flushHistory();
         accessibilityActivator?.stop();
-        return logFile.flush();
+        return Promise.all([logFile.flush(), recordingsDeleted]);
       })
-      .finally(() => app.quit());
+      .finally(() => {
+        quitting = "done";
+        app.quit();
+      });
   });
 
   hotkeyHelper.start();

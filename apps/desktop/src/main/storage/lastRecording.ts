@@ -2,45 +2,91 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { errorName, log } from "../../core/log.js";
+import { withTimeout } from "../../core/util/timeout.js";
 
 /**
- * The latest dictation's audio, kept for the debug menu's Play Last Recording while debug mode is on
- * (ADR-DESK-018). `follow(on)` mirrors debug mode: off, the file is deleted and a recording still
- * being made is not kept when it finishes (a dictation that started in debug mode keeps its audio
- * only while debug mode stays on). Writes and the delete run in order, so a recording being written
- * as debug mode goes off is removed after it lands. The file is created for this user alone and
- * never over an existing file or symlink: the temporary folder is shared on Linux.
+ * Deletes `path`, a file or a folder with everything in it. The one way a recording is deleted: one
+ * already gone is fine and says nothing (`force`), since two cleanups can race over the same files;
+ * any other failure is logged, never thrown or shown.
+ */
+export async function removeQuietly(path: string): Promise<void> {
+  try {
+    await rm(path, { recursive: true, force: true });
+  } catch (error) {
+    log.error(`main: couldn't delete a recording: ${errorName(error)}`);
+  }
+}
+
+/**
+ * The audio of the dictations made in debug mode, for the debug menu's Play Last Recording, which
+ * plays the newest (ADR-DESK-018). Each recording is its own file under a random name in `folder`,
+ * the app's own per-user folder, created for this user alone, so none overwrites another. None
+ * outlives debug mode or the app's run: `follow(false)` (debug mode off), `close` (quit) and `open`
+ * (launch, for what a crash or a force-quit left) delete every file in the folder. A dictation that
+ * started in debug mode keeps its audio only while debug mode stays on. Writes and deletes run in
+ * order, so a recording being written as debug mode goes off is removed after it lands.
  */
 export class LastRecording {
   private queue: Promise<void> = Promise.resolve();
   private on = false;
+  /** Quit has begun (`close`): nothing is kept again, whatever debug mode does. */
+  private closed = false;
+  private newest: string | null = null;
 
-  constructor(readonly path: string) {}
+  constructor(readonly folder: string) {}
 
-  get exists(): boolean {
-    return existsSync(this.path);
+  /** At launch: deletes what an earlier run left in `folder`, and the file `earlierFile` earlier
+   * versions kept the last recording in. */
+  static open(folder: string, earlierFile: string): LastRecording {
+    const recording = new LastRecording(folder);
+    recording.clear();
+    recording.queue = recording.queue.then(() => removeQuietly(earlierFile));
+    return recording;
   }
 
-  /** Debug mode is on or off (`AppSettings.isDebugMode`); off deletes the kept recording, if any. */
+  /** The newest recording this run kept, while it is on disk: none once the folder is emptied. */
+  get path(): string | null {
+    return this.newest !== null && existsSync(this.newest) ? this.newest : null;
+  }
+
+  /** Debug mode is on or off (`AppSettings.isDebugMode`); off deletes every recording. */
   follow(on: boolean): void {
     this.on = on;
-    if (on) return;
-    this.queue = this.queue.then(() => rm(this.path, { force: true })).catch((error: unknown) => {
-      log.error(`main: couldn't delete the last recording: ${errorName(error)}`);
-    });
+    if (!on) this.clear();
+  }
+
+  /** Deletes every recording in the folder, after the writes and deletes before it. */
+  clear(): void {
+    this.queue = this.queue.then(() => removeQuietly(this.folder));
   }
 
   keep(wav: Uint8Array): void {
-    if (!this.on) return;
+    if (!this.on || this.closed) return;
+    const path = join(this.folder, `${randomUUID()}.wav`);
     this.queue = this.queue
-      .then(() => rm(this.path, { force: true }))
-      .then(() => writeFile(this.path, wav, { flag: "wx", mode: 0o600 }))
+      .then(() => mkdir(this.folder, { recursive: true, mode: 0o700 }))
+      .then(() => writeFile(path, wav, { flag: "wx", mode: 0o600 }))
+      .then(() => {
+        this.newest = path;
+      })
       .catch((error: unknown) => {
-        log.error(`main: couldn't keep the last recording: ${errorName(error)}`);
+        log.error(`main: couldn't keep the recording: ${errorName(error)}`);
       });
+  }
+
+  /** At quit: keeps nothing more, for good, and deletes every recording, waiting at most `timeout` ms
+   * so quitting never hangs; what is left then goes at the next launch. */
+  close(timeout: number): Promise<void> {
+    this.closed = true;
+    this.follow(false);
+    return withTimeout(timeout, () => this.flush()).catch((error: unknown) => {
+      log.error(`main: the recordings weren't deleted at quit: ${errorName(error)}`);
+    });
   }
 
   /** Resolves once every keep and delete so far is done. */
