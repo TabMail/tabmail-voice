@@ -48,3 +48,25 @@ show while debug mode is on (the switch on AND an allowed account, `AppSettings.
   is really debug mode, and it's only something that you can turn on if you are our developers").
 - **Show Log File** offers the file debug mode writes (ADR-DESK-015; on macOS
   `~/Library/Logs/TabMail Voice/TabMail Voice.log`, elsewhere Electron's `logs` folder).
+
+**Amendment, 2026-10-29 (owner: "make dictation clean up all local recordings when exiting so that
+they do not accidentally linger ... random filename inside the shared folder, which we delete all
+when exiting ... if any two accidentally race and one cannot delete because it's already deleted, it
+should be fine (silent ignore)"; "each recording should not overwrite"):** the one fixed file in the
+temporary folder is replaced by a folder of recordings.
+
+- **The invariant:** no recording overwrites another, and none outlives debug mode or the app's run.
+- **Where:** `Recordings` (`config.debugRecordingsFolderName`) in the app's own per-user data folder
+  (`app.getPath("userData")`), not the system temporary folder, created for this user alone (mode
+  0700). Each dictation kept in debug mode is its own file under a random name (`randomUUID`,
+  created `wx`, mode 0600). Play Last Recording plays the newest this run kept.
+- **When they go:** every recording in the folder is deleted when debug mode goes off (as before, at
+  once), at quit (`before-quit`, waiting at most `config.recordingsDeleteAtQuitTimeout`, 2 s, so
+  quitting never hangs), and at launch, whatever debug mode is, for what a crash or a force-quit left
+  (`LastRecording.open`, `close`, `follow`). The file earlier versions kept
+  (`TabMail-last-dictation.wav` in the temporary folder) is deleted at launch too.
+- **One way to delete** (`removeQuietly`): a recording already gone is fine and says nothing, so two
+  cleanups racing over the same files both succeed; any other failure is logged with `log.error`
+  (its error type only, no path), never thrown or shown.
+- The census found no other audio written to disk: the controller's `keepRecording` (debug mode only)
+  is the one writer; the microphone check, onboarding and the native helpers keep audio in memory.

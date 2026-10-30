@@ -163,8 +163,9 @@ going off after each dictation (the engine's release has no automated test, by t
 - A tap shorter than `minimumHoldDuration` uploads nothing; holding without speaking shows
   "Didn't catch that. Try again." on one line and types nothing.
 - The last word survives releasing the key mid-word (`releaseTailDuration`). With debug mode on (any
-  build): menu › Play Last Recording plays exactly what was uploaded; with it off the item is gone and
-  no recording file is left (ADR-DESK-018).
+  build): menu › Play Last Recording plays exactly what was uploaded, the newest of this run; with it off the
+  item is gone and the `Recordings` folder in the app's user-data folder is empty, as it is after
+  quitting and after the next launch (ADR-DESK-018).
 - Mic indicator in the menu bar clears `releaseTailDuration` after the key is released.
 - Signed out / no subscription / network off: the overlay shows a clear message.
 - Granting Accessibility in System Settings makes the hotkey work without relaunching.

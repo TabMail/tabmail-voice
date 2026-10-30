@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { screen as blankScreen } from "../support/screens.js";
@@ -97,6 +97,8 @@ const app = vi.hoisted(() => ({
   appData: null as string | null,
   /** `app.getPath("userData")`, the app's own folder (memory's is in it). */
   userData: "/nonexistent",
+  /** `app.getPath("temp")`, the temporary folder. */
+  temp: "/nonexistent",
   /** The writing style and knowledge base the controller was given (ADR-DESK-063). */
   prompts: null as import("../../src/core/personalization/prompts.js").UserPrompts | null,
   /** Memory as the app made it: a stand-in that keeps it in a list. */
@@ -165,7 +167,7 @@ vi.mock("electron", async () => {
       focus() {},
       requestSingleInstanceLock: () => true,
       whenReady: () => Promise.resolve(),
-      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : "/nonexistent"),
+      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : name === "temp" ? app.temp : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
       getApplicationNameForProtocol: () => app.emailHandler,
@@ -682,6 +684,7 @@ afterEach(() => {
   app.appData = null;
   if (app.userData !== "/nonexistent") rmSync(app.userData, { recursive: true, force: true });
   app.userData = "/nonexistent";
+  app.temp = "/nonexistent";
   app.memory = null;
   app.prompts = null;
   app.fullName = null;
@@ -1529,31 +1532,35 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect((await import("../../src/core/log.js")).isDebugLogging()).toBe(false);
   });
 
-  /** The debug items and the last recording follow debug mode in a packaged build (ADR-DESK-018,
-   * amended 2026-10-27): the menu shows them while it is on, a dictation keeps its audio only if it
-   * started with it on, and switching it off (or signing out) deletes the file. */
+  /** The debug items and the recordings follow debug mode in a packaged build (ADR-DESK-018,
+   * amended 2026-10-27 and 2026-10-29): the menu shows them while it is on, a dictation keeps its audio
+   * (each in its own file) only if it started with it on, and no recording outlives debug mode or the
+   * app's run: switching it off, signing out, quitting and launching all empty the folder. */
   describe("debug mode in a packaged build", () => {
     let folder: string;
-    const lastRecording = () => join(folder, config.debugLastRecordingFileName);
+    const recordings = () => join(folder, config.debugRecordingsFolderName);
+    const kept = () => (existsSync(recordings()) ? readdirSync(recordings()) : []);
+    const earlierFile = () => join(folder, config.earlierDebugRecordingFileName);
     const signIn = (email: string) => {
       app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email } });
     };
     const menuDebugMode = () => (app.trayState?.() as unknown as { debugMode: boolean }).debugMode;
-    const gone = () => vi.waitFor(() => expect(existsSync(lastRecording())).toBe(false));
+    const gone = () => vi.waitFor(() => expect(kept()).toEqual([]));
+    /** A recording an earlier run left behind (a crash or a force-quit). */
+    const leftBehind = () => {
+      mkdirSync(recordings(), { recursive: true });
+      writeFileSync(join(recordings(), "left-behind.wav"), "audio");
+    };
 
     beforeEach(() => {
       folder = mkdtempSync(join(tmpdir(), "voice-debug-mode-"));
-      vi.doMock("node:os", async () => ({ ...await vi.importActual<typeof import("node:os")>("node:os"), tmpdir: () => folder }));
+      app.userData = folder;
+      app.temp = folder;
       app.packaged = true;
       Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
     });
 
-    afterEach(() => {
-      vi.doUnmock("node:os");
-      rmSync(folder, { recursive: true, force: true });
-    });
-
-    test("on: the menu shows the debug items and a dictation keeps its recording", async () => {
+    test("on: the menu shows the debug items and each dictation keeps its recording, the newest played", async () => {
       app.stored.set("debugMode", true);
       signIn("tester@tabmail.ai");
       await launch("darwin");
@@ -1562,21 +1569,24 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       expect(app.trayActions?.debug.hasLastRecording()).toBe(false);
 
       app.keepRecording?.(Uint8Array.from([1, 2, 3]));
-      await vi.waitFor(() => expect(readFileSync(lastRecording())).toEqual(Buffer.from([1, 2, 3])));
-      expect(app.trayActions?.debug.hasLastRecording()).toBe(true);
+      app.keepRecording?.(Uint8Array.from([4, 5]));
+      await vi.waitFor(() => expect(kept()).toHaveLength(2));
+      expect(kept().map((name) => readFileSync(join(recordings(), name)).toString("hex")).sort()).toEqual(["010203", "0405"]);
+      await vi.waitFor(() => expect(app.trayActions?.debug.hasLastRecording()).toBe(true));
     });
 
-    test("switching it off hides the items, keeps no more and deletes the file; on again keeps again", async () => {
+    test("switching it off hides the items, keeps no more and deletes every recording; on again keeps again", async () => {
       app.stored.set("debugMode", true);
       signIn("tester@tabmail.ai");
       await launch("darwin");
       app.keepRecording?.(Uint8Array.from([1]));
-      await vi.waitFor(() => expect(existsSync(lastRecording())).toBe(true));
+      await vi.waitFor(() => expect(kept()).toHaveLength(1));
 
       expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
       expect(menuDebugMode()).toBe(false);
       expect(app.dictationSettings?.().keepsRecording).toBe(false);
       await gone();
+      expect(app.trayActions?.debug.hasLastRecording()).toBe(false);
 
       expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
       expect(menuDebugMode()).toBe(true);
@@ -1608,41 +1618,58 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       // The dictation that started with debug mode on ends now: nothing is kept.
       app.keepRecording?.(Uint8Array.from([1]));
       await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(existsSync(lastRecording())).toBe(false);
+      expect(kept()).toEqual([]);
     });
 
-    test("on at launch, and an unrelated settings change while on, keep the file", async () => {
-      writeFileSync(lastRecording(), "audio");
-      app.stored.set("debugMode", true);
-      signIn("tester@tabmail.ai");
-      await launch("darwin");
-      expect(await send({ type: "setSmartDictation", value: true })).toEqual({ error: null });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(readFileSync(lastRecording(), "utf8")).toBe("audio");
-      expect(app.trayActions?.debug.hasLastRecording()).toBe(true);
-    });
-
-    test("signing out deletes the file: no account is allowed debug mode", async () => {
+    test("on: an unrelated settings change keeps this run's recordings", async () => {
       app.stored.set("debugMode", true);
       signIn("tester@tabmail.ai");
       await launch("darwin");
       app.keepRecording?.(Uint8Array.from([1]));
-      await vi.waitFor(() => expect(existsSync(lastRecording())).toBe(true));
+      await vi.waitFor(() => expect(kept()).toHaveLength(1));
+      expect(await send({ type: "setSmartDictation", value: true })).toEqual({ error: null });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(kept()).toHaveLength(1);
+      expect(app.trayActions?.debug.hasLastRecording()).toBe(true);
+    });
+
+    test("signing out deletes every recording: no account is allowed debug mode", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      app.keepRecording?.(Uint8Array.from([1]));
+      await vi.waitFor(() => expect(kept()).toHaveLength(1));
 
       expect(await send({ type: "signOut" })).toEqual({ error: null });
       expect(menuDebugMode()).toBe(false);
       await gone();
     });
 
-    test("off at launch (switch off, or an account not allowed) deletes a file left from before", async () => {
-      for (const [email, switchOn] of [["tester@tabmail.ai", false], ["tester@example.com", true]] as const) {
-        writeFileSync(lastRecording(), "audio");
+    test("quitting deletes every recording", async () => {
+      app.stored.set("debugMode", true);
+      signIn("tester@tabmail.ai");
+      await launch("darwin");
+      app.keepRecording?.(Uint8Array.from([1]));
+      app.keepRecording?.(Uint8Array.from([2]));
+      await vi.waitFor(() => expect(kept()).toHaveLength(2));
+
+      app.appEvents.get("before-quit")?.({ preventDefault() {} });
+      await gone();
+    });
+
+    /** Whatever debug mode is at launch, what an earlier run left (a crash or a force-quit) is
+     * deleted, and so is the file earlier versions kept the last recording in. */
+    test("launching deletes what an earlier run left, whatever debug mode is", async () => {
+      for (const [email, switchOn] of [["tester@tabmail.ai", true], ["tester@tabmail.ai", false], ["tester@example.com", true]] as const) {
+        leftBehind();
+        writeFileSync(earlierFile(), "audio");
         app.stored.set("debugMode", switchOn);
         signIn(email);
         await launch("darwin");
-        expect(menuDebugMode()).toBe(false);
-        expect(app.dictationSettings?.().keepsRecording).toBe(false);
+        expect(menuDebugMode()).toBe(switchOn && email.endsWith("@tabmail.ai"));
         await gone();
+        await vi.waitFor(() => expect(existsSync(earlierFile())).toBe(false));
+        expect(app.trayActions?.debug.hasLastRecording()).toBe(false);
       }
     });
   });
