@@ -698,6 +698,19 @@ describe("UserPrompts", () => {
     expect(prompts.history).toHaveLength(1);
   });
 
+  /** Texts no account has claimed yet (a launch before any sign-in) are no one's to see either. */
+  test("while signed out, texts no account claimed yet are neither read nor written", () => {
+    const { store, prompts, account } = setup({ [kbKey]: "- unclaimed note" });
+    account.id = null;
+    const before = JSON.stringify(store.snapshot());
+    const out = everything(prompts);
+    expect(out.read).not.toContain("unclaimed note");
+    expect(out.writes).toEqual([false, false, false, false, false, false]);
+    expect(JSON.stringify(store.snapshot())).toBe(before);
+    account.id = "user-1";
+    expect(prompts.knowledgeBase).toBe("- unclaimed note");
+  });
+
   /** Root ADR-035: another account signing in wipes the texts first. While that wipe can't be saved,
    * the texts are still the first account's, so nothing of them is shown, sent or changed for the
    * next one, and the claim tries again; once the disk takes it, they are gone. The first account
