@@ -45,6 +45,8 @@ describe("LastRecording with a write in progress", () => {
     recording.keep(Uint8Array.from([1]));
 
     leave(recording);
+    // A delete that did not wait its turn has run by now, before the write lands.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     held.release();
     await recording.flush();
     await new Promise((resolve) => setTimeout(resolve, 50));
