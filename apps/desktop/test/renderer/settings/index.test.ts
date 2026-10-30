@@ -1938,13 +1938,4 @@ describe("personalization while signed out", () => {
     expect(main().textContent).toContain("Kaelthorne");
     expect(nav()?.classList.contains("unavailable")).toBe(false);
   });
-
-  test("signed in while another account's texts couldn't be cleared, it says so and shows none", async () => {
-    const notWiped: SettingsState = { ...signedIn, personalization: null };
-    await settingsPage({ error: null }, notWiped, notWiped);
-    await act(async () => button("Personalization").click());
-    const main = document.querySelector("main.content") as HTMLElement;
-    for (const text of texts) expect(main.textContent).not.toContain(text);
-    expect(main.textContent).toContain("The previous account's data couldn't be cleared from this computer, so nothing is shown. Sign out and in again to retry.");
-  });
 });

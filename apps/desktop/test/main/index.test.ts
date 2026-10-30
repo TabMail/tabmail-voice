@@ -82,6 +82,8 @@ const app = vi.hoisted(() => ({
   files: new Map<string, Map<string, unknown>>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
   savesFail: false,
+  /** The account a sign-in code verifies as, when set; every other request still fails. */
+  verifiesAs: null as { id: string; email: string } | null,
   /** Why a file couldn't be read at launch, by its path: none is saved to (`JSONFileStore.problem`). */
   problems: new Map<string, import("../../src/core/util/keyValueStore.js").StoreProblem>(),
   /** The files not there at launch, by path (`JSONFileStore.isNew`). */
@@ -313,6 +315,11 @@ vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/backend/http.js")>()),
   liveTransport: async (request: { url: string }) => {
     app.requests.push(request.url);
+    const as = app.verifiesAs;
+    if (as !== null && request.url.includes("/verify")) {
+      const body = { access_token: "access-signed-in", refresh_token: "refresh-signed-in", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: as.id, email: as.email } };
+      return { status: 200, headers: {}, body: JSON.stringify(body) };
+    }
     throw new Error("no network in tests");
   },
 }));
@@ -670,6 +677,7 @@ afterEach(() => {
   app.stored.clear();
   app.files.clear();
   app.savesFail = false;
+  app.verifiesAs = null;
   app.problems.clear();
   app.missingFiles.clear();
   app.shownFiles = [];
@@ -2397,6 +2405,65 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     signInStored();
     await launch("darwin");
     expect(texts(page()?.knowledgeBase)).toContain("Kept private.");
+  });
+
+  /** Root ADR-035 (owner, 2026-10-29): another account signs in only once the previous account's texts
+   * are wiped. When the wipe can't be saved the sign-in fails: no account is set, nothing of the texts is
+   * shown, and the user is told how to fix it; once it can be saved, the same sign-in completes with the
+   * defaults. */
+  test("another account's sign-in fails while the previous account's texts can't be wiped", async () => {
+    signInStored("user-1", "first@example.com");
+    await launch("darwin");
+    const page = () => (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState | null; email: string | null });
+    const shown = page().personalization;
+    if (shown === null) throw new Error("signed in, the texts are shown");
+    expect(await send({ type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: ["First account's note."] })).toEqual({ error: null });
+    expect(await send({ type: "signOut" })).toEqual({ error: null });
+
+    app.verifiesAs = { id: "user-2", email: "second@example.com" };
+    app.savesFail = true;
+    const path = join(app.userData, "userPrompts.json");
+    expect(await send({ type: "verify", email: "second@example.com", code: "123456" })).toEqual({
+      error: `Sign-in failed. Please try again. If it keeps happening, quit TabMail Voice, move this file to the Trash, and sign in again:\n${path}`,
+    });
+    expect(page().email).toBeNull();
+    expect(page().personalization).toBeNull();
+    expect(app.credential).toBeNull();
+    expect(app.syncSockets.every((socket) => socket.closed)).toBe(true);
+
+    app.savesFail = false;
+    expect(await send({ type: "verify", email: "second@example.com", code: "123456" })).toEqual({ error: null });
+    expect(page().email).toBe("second@example.com");
+    expect(JSON.stringify(page().personalization)).not.toContain("First account's note.");
+    expect(JSON.stringify([...(app.files.get(path)?.entries() ?? [])])).not.toContain("First account's note.");
+  });
+
+  /** A texts file that can't be read is never written and nothing of it is read, so it doesn't stop a
+   * sign-in. */
+  test("a sign-in goes through while the texts' file can't be read", async () => {
+    const path = join(app.userData, "userPrompts.json");
+    app.problems.set(path, { kind: "damaged", path, code: "invalid" });
+    app.dialogResponse = 2;
+    await launch("darwin");
+    app.verifiesAs = { id: "user-2", email: "second@example.com" };
+    expect(await send({ type: "verify", email: "second@example.com", code: "123456" })).toEqual({ error: null });
+    expect((app.handlers.get(channels.getState)?.({}, "settings") as { email: string | null }).email).toBe("second@example.com");
+  });
+
+  /** A sign-in kept from before launch is held to the same rule: when the texts are another account's
+   * and can't be wiped, the app starts signed out. */
+  test("a kept sign-in of another account is signed out at launch while the texts can't be wiped", async () => {
+    signInStored("user-1", "first@example.com");
+    await launch("darwin");
+    const shown = (app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState }).personalization;
+    expect(await send({ type: "editKnowledgeBase", shown: shown.knowledgeBase, bullets: ["First account's note."] })).toEqual({ error: null });
+
+    signInStored("user-2", "second@example.com");
+    app.savesFail = true;
+    await launch("darwin");
+    const state = app.handlers.get(channels.getState)?.({}, "settings") as { personalization: PersonalizationState | null; email: string | null };
+    expect(state.email).toBeNull();
+    expect(state.personalization).toBeNull();
   });
 
   test("the writing style and knowledge base are edited, reset and restored from Settings", async () => {

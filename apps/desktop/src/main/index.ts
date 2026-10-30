@@ -31,7 +31,7 @@ import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAct
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
-import { aiOffLine, fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
+import { aiOffLine, fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, signInFailedLine, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
@@ -293,8 +293,26 @@ function launch(): void {
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
   // The writing style and knowledge base, in a file of their own: per user of this computer, as
   // memory is (ADR-DESK-063).
-  const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));
+  const promptsPath = join(app.getPath("userData"), "userPrompts.json");
+  const promptsStore = new JSONFileStore(promptsPath);
   const prompts = new UserPrompts(promptsStore, () => account.session?.userID ?? null);
+  // Root ADR-035 (owner, 2026-10-29): an account signs in only once the texts are its own, the previous
+  // account's wiped first; when that can't be saved, the sign-in fails. A file that can't be read is
+  // never written, and nothing of it is read, so it doesn't stop a sign-in.
+  const admits = (userID: string): boolean => prompts.fileProblem !== undefined || prompts.claim(userID);
+  account.admit = (userID) => {
+    if (!admits(userID)) throw new Error(signInFailedLine(promptsPath, process.platform));
+  };
+  // A sign-in kept from before launch is held to the same rule.
+  const keptSession = account.session;
+  if (keptSession !== null && !admits(keptSession.userID)) {
+    log.error("main: signed out at launch: the previous account's texts couldn't be wiped");
+    try {
+      account.signOut();
+    } catch (error) {
+      log.error(`main: saved sign-in not removed: ${errorName(error)}`);
+    }
+  }
   // Device Sync of the writing style and the knowledge base with the user's Thunderbird and iOS apps
   // (root ADR-021), for the account signed in, while the settings let it run; the development relay
   // in debug mode.

@@ -66,9 +66,15 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   signing back in keeps its texts. A different account signing in wipes the previous account's texts
   first (`UserPrompts.claim`: defaults, history cleared, owner set; no reset sent to peers; never a
   merge on top). A damaged file is never claimed or written, so sync stays off and Settings shows the
-  damaged-file notice. When the wipe can't be saved, the texts stay the previous account's (owner
-  unchanged, so sync stays off and the next claim tries again), and the availability check below
-  keeps every one of them from the new account.
+  damaged-file notice; nothing of it is read, so it doesn't stop a sign-in. **When the wipe can't be
+  saved, the sign-in fails** (owner, 2026-10-29: "If you can't delete it, you are not allowed to log
+  in"): `AccountModel.admit` runs the claim before the session is kept, so no account is set, nothing
+  is saved to the Keychain, sync stays off and nothing is shown. Settings says "Sign-in failed. Please
+  try again. If it keeps happening, quit TabMail Voice, move this file to the Trash, and sign in
+  again:" with the texts file's path (Recycle Bin on Windows; uninstalling keeps the app's data
+  folder, so reinstalling wouldn't fix it; awaiting owner blessing). A sign-in kept from before launch
+  is held to the same rule: the app starts signed out when it can't wipe. So "signed in with another
+  account's texts" can't last; the availability check below still covers the moment between.
   **Signed out, nothing is shown or used (owner, 2026-10-29).** One check, `UserPrompts.isAvailable`,
   guards every read and write of the texts: they are available only while an account is signed in
   and they are its own, or no account's yet. Otherwise every reader (Settings' state, the history,
@@ -76,16 +82,14 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   `writeValues` refuses every write, history entries included; only the claim's wipe is let through.
   The main process pushes Settings `personalization: null` then and refuses the personalization
   commands ("Sign in to change this"); Settings › Personalization shows only "Sign in to see this."
-  (or, signed in while another account's wipe is pending, "The previous account's data couldn't be
-  cleared from this computer, so nothing is shown. Sign out and in again to retry.", awaiting owner
-  blessing), no text, control or Device Sync switch, and its sidebar entry is greyed, live on
+  no text, control or Device Sync switch, and its sidebar entry is greyed, live on
   sign-out. The same account signing back in sees its texts again. The dictionary stays the
   computer's (the settings file, never wiped on an account change), but it holds the user's own
   words, so Settings hides it the same way while signed out (UI only) and shows it again on any
   sign-in. The tray has no personalization entry.
 - **Capture epoch (R30, 2026-10-29). Superseded the same day by root ADR-035 above: the epochs,
   `endOperations` and their ordering tests were deleted, since they existed only for concurrent local
-  writes that Voice's synchronous main thread already rules out.** ** Each field has a capture epoch, in memory only. Every operation
+  writes that Voice's synchronous main thread already rules out.** Each field has a capture epoch, in memory only. Every operation
   that can await between reading a field and writing it takes the epoch once, at its start, and every
   write it makes carries it as a required argument: Settings' edits (one epoch per field view, `Shown`,
   so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a

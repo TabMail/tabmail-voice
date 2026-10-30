@@ -348,8 +348,8 @@ export class UserPrompts extends Observable implements BulletStore {
   /** Makes the texts the signed-in account's (iOS ADR-IOS-089): kept when they are its own already,
    * taken as they are when they belong to no account yet, and wiped first, back at their defaults with
    * no history, when they belong to another (root ADR-035: never a merge on top). False when the wipe
-   * couldn't be saved: the texts are still the other account's, so none of them is shown, sent or synced
-   * (`isAvailable`), and the next claim tries again. */
+   * couldn't be saved: the texts are still the other account's, and that sign-in fails
+   * (`AccountModel.admit`). */
   claim(userID: string): boolean {
     const owner = this.owner;
     if (owner === userID) return true;

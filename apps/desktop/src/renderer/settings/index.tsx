@@ -762,8 +762,6 @@ const writingStyleSectionLabels: Readonly<Record<string, string>> = { general: "
 const personalizationTabs = ["Writing style", "Knowledge base", "History"] as const;
 /** Why Device Sync isn't sending: the texts are over the relay's size. */
 const deviceSyncTooLargeLine = "Too large to sync. Remove some bullets to sync again.";
-/** Signed in, but another account's texts couldn't be wiped yet (`UserPrompts.claim`). */
-const personalizationNotWipedLine = "The previous account's data couldn't be cleared from this computer, so nothing is shown. Sign out and in again to retry.";
 type PersonalizationTab = (typeof personalizationTabs)[number];
 
 /** The writing style and the knowledge base (ADR-DESK-063), ports of iOS's Personalization pages,
@@ -782,7 +780,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
   if (state.personalization === null) {
     return (
       <div className="row personalization-unavailable">
-        <span className="caption">{state.email === null ? signedOutLine : personalizationNotWipedLine}</span>
+        <span className="caption">{signedOutLine}</span>
       </div>
     );
   }
