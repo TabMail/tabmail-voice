@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -196,11 +196,14 @@ describe("LastRecording", () => {
     expect(errors[0]).not.toContain(folder);
     expect(blocked.path).toBeNull();
 
-    mkdirSync(join(folder, "Recordings"));
-    const recording = new LastRecording(join(folder, "Recordings"));
-    recording.follow(true);
-    recording.keep(Uint8Array.from([9]));
-    await recording.flush();
-    expect(recording.path).not.toBeNull();
+    // The same store keeps the next recording once the cause is gone, and still deletes it.
+    rmSync(join(folder, "a-file"));
+    blocked.keep(Uint8Array.from([9]));
+    await blocked.flush();
+    expect([...readFileSync(blocked.path ?? "")]).toEqual([9]);
+    blocked.follow(false);
+    await blocked.flush();
+    expect(filesIn(blocked.folder)).toEqual([]);
+    expect(errors).toHaveLength(1);
   });
 });
