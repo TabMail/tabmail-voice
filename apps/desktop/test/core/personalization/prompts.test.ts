@@ -721,6 +721,44 @@ describe("UserPrompts", () => {
     expect(prompts.knowledgeBase).toBe(defaultKB);
   });
 
+  /** R30 holds for the writing style as for the knowledge base. */
+  test.each<[string, (prompts: UserPrompts) => void]>([
+    ["another account signs in", (prompts) => expect(prompts.claim("user-2")).toBe(true)],
+    ["the writing style is reset", (prompts) => expect(prompts.resetComposition()).toBe(true)],
+  ])("nothing of the writing style shown before %s is saved after it", (_, end) => {
+    const { store, prompts } = setup({ [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- one's private style" });
+    expect(prompts.claim("user-1")).toBe(true);
+    const shown = shownSection(prompts, language);
+    end(prompts);
+    const after = store.snapshot();
+    expect(prompts.editCompositionSection(language, shown, [...texts(shown), "added"])).toBe(false);
+    expect(store.snapshot()).toEqual(after);
+    expect(prompts.composition).toBe(defaultStyle);
+  });
+
+  /** R30: what a reset shows, as Settings is pushed it while the reset is saved, can be edited. */
+  test.each(["kb", "composition"] as const)("the %s shown as its reset is saved can be edited", (field) => {
+    const { prompts } = setup();
+    const section = field === "kb" ? "" : language;
+    let pushed: ShownBullet[] = [];
+    prompts.observe(() => (pushed = prompts.shown(field, section)));
+    expect(field === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition()).toBe(true);
+    const edited = [...texts(pushed), "added"];
+    expect(field === "kb" ? prompts.editKnowledgeBase(pushed, edited) : prompts.editCompositionSection(section, pushed, edited)).toBe(true);
+    expect(texts(prompts.shown(field, section))).toEqual(edited);
+  });
+
+  /** R30: a reset that couldn't be saved changed nothing, so what was shown before it can still be edited. */
+  test("a reset not saved leaves what was shown good", () => {
+    const { store, prompts } = setup({ [kbKey]: "- alpha" });
+    const shown = prompts.shown("kb", "");
+    store.failing = true;
+    expect(prompts.resetKnowledgeBase()).toBe(false);
+    store.failing = false;
+    expect(prompts.editKnowledgeBase(shown, ["alpha", "beta"])).toBe(true);
+    expect(prompts.knowledgeBase).toBe("- alpha\n- beta");
+  });
+
   test("the history keeps the newest entries only", () => {
     const { prompts } = setup();
     for (let index = 0; index <= config.promptHistoryMax; index += 1) {

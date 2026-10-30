@@ -244,9 +244,13 @@ export class BulletSync {
     this.abandonName();
     const states: Partial<Record<SyncField, FieldState>> = {};
     for (const field of fields) states[field] = defaultState(field, this.options.skeleton(field), this.catalog);
-    if (!this.write(states, "reset")) return { outcome: "unsaved", fields: [] };
+    // R30: the epochs end before the write, which tells observers, so a state shown once the reset is saved
+    // carries the new epoch; a reset not saved changes nothing, and its epochs are put back.
+    const before = fields.map((field) => [field, this.epoch(field)] as const);
     for (const field of fields) this.endEpoch(field);
-    return { outcome: "saved", fields: [...fields] };
+    if (this.write(states, "reset")) return { outcome: "saved", fields: [...fields] };
+    for (const [field, epoch] of before) this.epochs.set(field, epoch);
+    return { outcome: "unsaved", fields: [] };
   }
 
   /** DS-NAME-ABANDON for an in-process reload of the fields from storage: the next add uses a fresh
