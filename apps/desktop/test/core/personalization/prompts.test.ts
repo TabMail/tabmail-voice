@@ -39,6 +39,23 @@ class FailingStore extends MemoryStore {
   }
 }
 
+/** A store that refuses every write once `writesLeft` are used. */
+class LimitedStore extends MemoryStore {
+  writesLeft = Number.POSITIVE_INFINITY;
+
+  override set(key: string, value: unknown): boolean {
+    if (this.writesLeft <= 0) return false;
+    this.writesLeft -= 1;
+    return super.set(key, value);
+  }
+
+  override setAll(values: Readonly<Record<string, unknown>>): boolean {
+    if (this.writesLeft <= 0) return false;
+    this.writesLeft -= 1;
+    return super.setAll(values);
+  }
+}
+
 /** A store whose first `refusals` writes are refused, nothing written, as a disk with room again
  * after them. */
 class RecoveringStore extends MemoryStore {
@@ -772,15 +789,59 @@ describe("UserPrompts", () => {
     expect(texts(prompts.shown(field, section))).toEqual(edited);
   });
 
-  /** R30: a reset that couldn't be saved changed nothing, so what was shown before it can still be edited. */
-  test("a reset not saved leaves what was shown good", () => {
+  /** R30: a reset ends what was shown even when it isn't saved (an epoch is never reused); the edit is
+   * redone from what is shown now. */
+  test("a reset not saved still ends what was shown", () => {
     const { store, prompts } = setup({ [kbKey]: "- alpha" });
     const shown = prompts.shown("kb", "");
     store.failing = true;
     expect(prompts.resetKnowledgeBase()).toBe(false);
     store.failing = false;
-    expect(prompts.editKnowledgeBase(shown, ["alpha", "beta"])).toBe(true);
+    expect(prompts.editKnowledgeBase(shown, ["alpha", "beta"])).toBe(false);
+    expect(prompts.knowledgeBase).toBe("- alpha");
+    expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["alpha", "beta"])).toBe(true);
     expect(prompts.knowledgeBase).toBe("- alpha\n- beta");
+  });
+
+  /** R30: an observer that throws after a reset was saved doesn't bring back the epoch it ended. */
+  test("a saved reset still refuses an earlier request when telling its observers fails", () => {
+    const { store, prompts } = setup({ [kbKey]: "- alpha" });
+    const captured = prompts.captureKnowledgeBase();
+    const stop = prompts.observe(() => {
+      throw new Error("an observer failed");
+    });
+    expect(() => prompts.resetKnowledgeBase()).toThrow("an observer failed");
+    stop();
+    expect(prompts.knowledgeBase).toBe(defaultKB);
+    const after = store.snapshot();
+    expect(prompts.addKnowledge(captured, "Earlier request").outcome).toBe("unsaved");
+    expect(store.snapshot()).toEqual(after);
+  });
+
+  /** R30: a reset not saved, after the upgrade it waited on was: the view the upgrade pushed can be edited,
+   * and once a later reset is saved it never writes again. */
+  test.each(["kb", "composition"] as const)("the %s view pushed during a reset not saved", (field) => {
+    const store = new LimitedStore({ [kbKey]: "- Prior note", [compositionKey]: "# Language (DO NOT EDIT/DELETE THIS SECTION HEADER)\n- Prior style" });
+    store.writesLeft = 0;
+    const prompts = new UserPrompts(store);
+    expect(prompts.captureKnowledgeBase().bullets).toBeNull();
+    const section = field === "kb" ? "" : language;
+    const reset = () => (field === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition());
+    const edit = (shown: Shown, text: string) => (field === "kb" ? prompts.editKnowledgeBase(shown, [...texts(shown), text]) : prompts.editCompositionSection(section, shown, [...texts(shown), text]));
+    let pushed: Shown | undefined;
+    const stop = prompts.observe(() => (pushed = prompts.shown(field, section)));
+    // The upgrade is saved, then the reset's own writes are refused.
+    store.writesLeft = 1;
+    expect(reset()).toBe(false);
+    stop();
+    if (pushed === undefined) throw new Error("nothing pushed");
+    const view = pushed;
+    store.writesLeft = Number.POSITIVE_INFINITY;
+    expect(edit(view, "Edited once")).toBe(true);
+    expect(reset()).toBe(true);
+    const after = store.snapshot();
+    expect(edit(view, "Edited after the reset")).toBe(false);
+    expect(store.snapshot()).toEqual(after);
   });
 
   test("the history keeps the newest entries only", () => {

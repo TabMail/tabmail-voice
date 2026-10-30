@@ -180,7 +180,7 @@ export class BulletSync {
   /** Parts of incomplete snapshots, per sender and field (DS-CHUNK). */
   private readonly buffers = new Map<string, PartBuffer>();
   /** Each field's capture epoch (R30), memory only: a DS-RESET of the field, another account's claim or
-   * the texts' file reset ends it as its first step (`endingOperations`). */
+   * the texts' file reset ends it as its first step (`endOperations`). */
   private readonly epochs = new Map<SyncField, number>();
   private readonly catalog: Catalog;
 
@@ -268,20 +268,12 @@ export class BulletSync {
     return this.write(states, "reset") ? { outcome: "saved", fields: [...fields] } : { outcome: "unsaved", fields: [] };
   }
 
-  /** R30's order: `change` (a DS-RESET, another account's claim, the texts' file reset) runs with every
-   * operation in flight on `fields` already ended, so none of them writes once it has begun, and a state
-   * shown as it is saved carries the new epoch. When it changed nothing (false, or it threw), the epochs
-   * are put back: what applies is what is saved. */
-  endingOperations(fields: readonly SyncField[], change: () => boolean): boolean {
-    const before = fields.map((field) => [field, this.epoch(field)] as const);
+  /** R30's order: a DS-RESET, another account's claim and the texts' file reset call this as their first
+   * step, so no operation in flight on `fields` writes once they have begun, and a state shown as they
+   * are saved carries the new epoch. The epochs stay ended even if the change then isn't saved: an epoch
+   * is never reused, and an edit refused then is one the user redoes. */
+  endOperations(fields: readonly SyncField[]): void {
     for (const field of fields) this.epochs.set(field, this.epoch(field) + 1);
-    let changed = false;
-    try {
-      changed = change();
-    } finally {
-      if (!changed) for (const [field, epoch] of before) this.epochs.set(field, epoch);
-    }
-    return changed;
   }
 
   /** DS-NAME-ABANDON for an in-process reload of the fields from storage: the next add uses a fresh

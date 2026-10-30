@@ -54,12 +54,16 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a
   history restore. Ending is ordered, not only checked: a reset of the field, another account's claim
   and the texts' file reset end the epochs of every operation in flight as their FIRST step, before
-  they write anything (`BulletSync.endingOperations`, one place), and put them back if nothing was
-  saved. An operation can then no longer write once an ending has begun, and the state an ending
-  pushes carries the new epoch. `BulletSync` still refuses a write carrying an ended epoch, writing
-  nothing, in one check for both commit paths: that is the backstop for an operation that resumes
-  later. Sign-out never waits on an operation: it ends the agent conversation first. Settings' editor is keyed by the epoch, so a draft in a row or the field to add one is dropped
-  then. Sign-out doesn't touch the texts, so it ends nothing; the next account's claim does.
+  they write anything (`BulletSync.endOperations`, one place). An operation can then no longer write
+  once an ending has begun, and the state an ending pushes carries the new epoch. The epochs stay
+  ended even if the ending isn't saved: an epoch is never reused (putting them back was tried and
+  removed: an upgrade saved during a refused reset, or an observer throwing after a saved one, let an
+  earlier edit land after a later reset), and an edit refused then is one the user redoes.
+  `BulletSync` still refuses a write carrying an ended epoch, writing nothing, in one check for both
+  commit paths: that is the backstop for an operation that resumes later. Settings' editor is keyed
+  by the epoch, so a draft in a row or the field to add one is dropped then. Sign-out doesn't touch
+  the texts and never waits on an operation: it ends the agent conversation first, and the next
+  account's claim ends the epochs.
 - **Released Thunderbird and iOS** (`prompt_state`): imported additions only, an epoch-zero text
   skipped; nothing is deleted from what they send.
 - **Upgrade.** The texts Voice kept before are parsed once: catalog defaults take their default label,
