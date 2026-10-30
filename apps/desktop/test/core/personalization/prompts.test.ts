@@ -673,6 +673,7 @@ describe("UserPrompts", () => {
       prompts.addKnowledge("added while out").outcome === "saved",
       // A statement the stored texts hold already is refused too, never reported done as unchanged.
       prompts.addKnowledge(held).outcome !== "unsaved",
+      prompts.addKnowledge(kbDefaults[0] ?? "").outcome !== "unsaved",
       prompts.resetKnowledgeBase(),
       prompts.resetComposition(),
       prompts.restore(prompts.history[0]?.id ?? "none"),
@@ -696,7 +697,7 @@ describe("UserPrompts", () => {
     const out = everything(prompts, "first account's note");
     prompts.flushHistory();
     expect(out.read).not.toContain("first account");
-    expect(out.writes).toEqual([false, false, false, false, false, false, false]);
+    expect(out.writes).toEqual([false, false, false, false, false, false, false, false]);
     expect(JSON.stringify(store.snapshot())).toBe(before);
 
     account.id = "user-1";
@@ -712,7 +713,7 @@ describe("UserPrompts", () => {
     const before = JSON.stringify(store.snapshot());
     const out = everything(prompts, "unclaimed note");
     expect(out.read).not.toContain("unclaimed note");
-    expect(out.writes).toEqual([false, false, false, false, false, false, false]);
+    expect(out.writes).toEqual([false, false, false, false, false, false, false, false]);
     expect(JSON.stringify(store.snapshot())).toBe(before);
     account.id = "user-1";
     expect(prompts.knowledgeBase).toBe("- unclaimed note");
@@ -736,7 +737,7 @@ describe("UserPrompts", () => {
     expect(prompts.isAvailable).toBe(false);
     const out = everything(prompts, "first account's note");
     expect(out.read).not.toContain("first account");
-    expect(out.writes).toEqual([false, false, false, false, false, false, false]);
+    expect(out.writes).toEqual([false, false, false, false, false, false, false, false]);
     expect(JSON.stringify(store.snapshot())).toBe(before);
 
     account.id = "user-1";

@@ -4200,8 +4200,32 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(sent).not.toContain("First account's note");
           expect(completions.requests.filter((_, index) => completionsVars(index)?.user_kb_content !== undefined)).toEqual([]);
           expect(controller.chat).toBeNull();
+
+          // The next dictation, taken under the account now signed in, can be an agent request.
+          if (change !== "signOut") {
+            controller.handle("start");
+            controller.handle("toggleMode");
+            expect(controller.mode).toBe("agent");
+            controller.handle("cancel");
+          }
         },
       );
+
+      /** The same through a double tap's hands-free latch asking for agent mode: a tap recorded before
+       * the account change stays a dictation. */
+      test("a tap recorded before an account change isn't latched into an agent request", async () => {
+        const account = signedIn(auth);
+        prompts = new UserPrompts(new MemoryStore(), () => account.session?.userID ?? null);
+        expect(prompts.claim(Fixtures.userID)).toBe(true);
+        const { controller } = makeController({ account, capture: new CountingCapture(true) });
+        controller.handle("start");
+        controller.handle("finish");
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+        await account.verify(Fixtures.email, "123456");
+        controller.handle("startAgentHandsFree");
+        expect(controller.mode).toBe("dictation");
+        controller.handle("cancel");
+      });
 
       /** Signed out while the answer is written: it never opens a chat window. */
       test("signing out during an answer opens no chat", async () => {
