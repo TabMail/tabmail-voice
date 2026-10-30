@@ -1877,14 +1877,28 @@ describe("personalization drafts", () => {
     await act(async () => button("Reset").click());
   };
 
+  const restore = async () => {
+    await act(async () => button("History").click());
+    const entry = document.querySelector('ul[aria-label="History"] > li');
+    await act(async () => ([...(entry?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Show") as HTMLButtonElement).click());
+    await act(async () => ([...(entry?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Restore…") as HTMLButtonElement).click());
+    await act(async () => button("Restore").click());
+    await act(async () => button("Knowledge base").click());
+  };
+  const withHistory: SettingsState = {
+    ...signedIn,
+    personalization: { ...shownPersonalization, history: [{ id: "then", timestamp: new Date(Date.now() - 86_400_000).toISOString(), source: "reset", fields: ["kb"], restores: ["Likes short replies."], removes: [] }] },
+  };
+
   test.each([
     ["a reset", async () => reset()],
-    ["another account", async (push: (state: SettingsState) => Promise<void>) => push({ ...signedIn, email: "other@example.com" })],
+    ["a restore", async () => restore()],
+    ["another account", async (push: (state: SettingsState) => Promise<void>) => push({ ...withHistory, email: "other@example.com" })],
   ] as const)("a draft is dropped by %s", async (_name, replace) => {
-    const { push } = await settingsPage({ error: null }, signedIn, signedIn);
+    const { push } = await settingsPage({ error: null }, withHistory, withHistory);
     await act(async () => button("Personalization").click());
     await act(async () => type(field("Add to Knowledge base"), "Half typed"));
-    await push({ ...signedIn });
+    await push({ ...withHistory });
     expect(field("Add to Knowledge base").value).toBe("Half typed");
     await replace(push);
     expect(field("Add to Knowledge base").value).toBe("");

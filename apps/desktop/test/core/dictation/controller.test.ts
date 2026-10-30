@@ -4169,6 +4169,40 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(prompts.isCurrent(signedOut)).toBe(false);
       });
 
+      /** Root ADR-035: a dictation still recording when the account changes could yet become an agent
+       * request (Space) carrying the texts taken at its key-down; it stays a dictation instead, so
+       * nothing of the first account's texts reaches a request, under any account. */
+      test.each([["a sign-out", "signOut"], ["another account signing in", "switch"], ["a sign-out, then another account", "both"]] as const)(
+        "a dictation still recording at %s never sends the texts from before",
+        async (_name, change) => {
+          const account = signedIn(auth);
+          prompts = new UserPrompts(new MemoryStore(), () => account.session?.userID ?? null);
+          expect(prompts.claim(Fixtures.userID)).toBe(true);
+          expect(prompts.addKnowledge("First account's note.").outcome).toBe("saved");
+          const { controller } = makeController({ account });
+          transcription.enqueue(200, { text: "what is on today" });
+          completions.enqueue(200, reply("Nothing today."));
+
+          controller.handle("start");
+          expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+          if (change !== "switch") account.signOut();
+          if (change !== "signOut") {
+            auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+            await account.verify(Fixtures.email, "123456");
+            expect(prompts.claim("user-2")).toBe(true);
+          }
+          controller.handle("toggleMode");
+          expect(controller.mode).toBe("dictation");
+          controller.handle("finish");
+          expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+
+          const sent = [...transcription.requests, ...completions.requests].map((request) => request.body ?? "").join("\n");
+          expect(sent).not.toContain("First account's note");
+          expect(completions.requests.filter((_, index) => completionsVars(index)?.user_kb_content !== undefined)).toEqual([]);
+          expect(controller.chat).toBeNull();
+        },
+      );
+
       /** Signed out while the answer is written: it never opens a chat window. */
       test("signing out during an answer opens no chat", async () => {
         const account = signedIn(auth);
@@ -4743,6 +4777,40 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await holdAndRelease(controller, "agent");
             expect(await eventually(() => completions.requests.length === 3)).toBe(true);
             expect(completionsVars(2)?.user_kb_content).toBe(prompts.knowledgeBase);
+          });
+
+          /** Root ADR-035: a change saved from Settings while the request runs (its AI turn) leaves the
+           * request's kb_add saving nothing, and the model is told; the next request, taken after it,
+           * writes. Each change from Settings, through the controller's own key-down capture. */
+          test.each<[string, () => void]>([
+            ["a knowledge-base edit", () => expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["Edited in Settings."])).toBe(true)],
+            ["a writing-style edit", () => expect(prompts.editCompositionSection("language", prompts.shown("composition", "language"), ["I write in German."])).toBe(true)],
+            ["a reset of the knowledge base", () => {
+              expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), ["Edited in Settings."])).toBe(true);
+              expect(prompts.resetKnowledgeBase()).toBe(true);
+            }],
+            ["a restore from the history", () => {
+              expect(prompts.resetComposition()).toBe(true);
+              const entry = prompts.history.at(-1);
+              if (entry === undefined) throw new Error("no history");
+              expect(prompts.restore(entry.id)).toBe(true);
+            }],
+          ])("kb_add of a request running across %s in Settings saves nothing, and the next request's does", async (_change, change) => {
+            completions.gate = async () => {
+              if (completions.requests.length === 1) change();
+            };
+            const { done } = await ask([], [calling(["kb_add", JSON.stringify({ statement: "Prefers morning meetings" })]), reply("Noted.")]);
+            const { controller } = await done;
+            completions.gate = async () => {};
+            expect(JSON.parse(told(1)[0] ?? "null")).toEqual({ error: config.kbChangedSinceRequest });
+            expect(prompts.knowledgeBase).not.toContain("Prefers morning meetings");
+
+            controller.closeChat();
+            transcription.enqueue(200, { text: toolRequest });
+            completions.enqueue(200, calling(["kb_add", JSON.stringify({ statement: "Prefers morning meetings" })]));
+            completions.enqueue(200, reply("Noted."));
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => prompts.knowledgeBase.includes("Prefers morning meetings"))).toBe(true);
           });
 
           /** "Remember that, and write it": a fact and the draft in one step. The fact is kept,

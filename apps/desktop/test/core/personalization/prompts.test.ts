@@ -663,12 +663,16 @@ describe("UserPrompts", () => {
 
   /** Everything an agent request, Settings or the history could read or change: what they read is
    * returned as one string, and each write reports whether it was saved. */
-  function everything(prompts: UserPrompts): { read: string; writes: boolean[] } {
-    const read = [prompts.knowledgeBase, prompts.composition, JSON.stringify(prompts.personalization), JSON.stringify(prompts.history), JSON.stringify(prompts.shown("kb", "")), JSON.stringify(prompts.shown("composition", language)), JSON.stringify(prompts.captureKnowledgeBase().bullets), JSON.stringify(personalizationState(prompts))].join("\n");
+  function everything(prompts: UserPrompts, held: string): { read: string; writes: boolean[] } {
+    const read = [prompts.knowledgeBase, prompts.composition, JSON.stringify(prompts.personalization), JSON.stringify(prompts.history), JSON.stringify(prompts.shown("kb", "")), JSON.stringify(prompts.shown("composition", language)), JSON.stringify(prompts.captureKnowledgeBase().bullets), JSON.stringify(personalizationState(prompts)),
+      // The engine's own reads too: what it would merge, capture or send, and the texts before labels.
+      JSON.stringify([prompts.sync.state("kb"), prompts.sync.state("composition"), prompts.sync.capture("kb", [""]), prompts.sync.outgoing("kb"), prompts.sync.outgoing("composition"), prompts.read("kb"), prompts.read("composition"), prompts.legacyText("kb"), prompts.legacyText("composition")])].join("\n");
     const writes = [
       prompts.editKnowledgeBase(prompts.shown("kb", ""), ["typed while out"]),
       prompts.editCompositionSection(language, prompts.shown("composition", language), ["typed while out"]),
       prompts.addKnowledge("added while out").outcome === "saved",
+      // A statement the stored texts hold already is refused too, never reported done as unchanged.
+      prompts.addKnowledge(held).outcome !== "unsaved",
       prompts.resetKnowledgeBase(),
       prompts.resetComposition(),
       prompts.restore(prompts.history[0]?.id ?? "none"),
@@ -689,10 +693,10 @@ describe("UserPrompts", () => {
 
     account.id = null;
     expect(prompts.isAvailable).toBe(false);
-    const out = everything(prompts);
+    const out = everything(prompts, "first account's note");
     prompts.flushHistory();
     expect(out.read).not.toContain("first account");
-    expect(out.writes).toEqual([false, false, false, false, false, false]);
+    expect(out.writes).toEqual([false, false, false, false, false, false, false]);
     expect(JSON.stringify(store.snapshot())).toBe(before);
 
     account.id = "user-1";
@@ -706,9 +710,9 @@ describe("UserPrompts", () => {
     const { store, prompts, account } = setup({ [kbKey]: "- unclaimed note" });
     account.id = null;
     const before = JSON.stringify(store.snapshot());
-    const out = everything(prompts);
+    const out = everything(prompts, "unclaimed note");
     expect(out.read).not.toContain("unclaimed note");
-    expect(out.writes).toEqual([false, false, false, false, false, false]);
+    expect(out.writes).toEqual([false, false, false, false, false, false, false]);
     expect(JSON.stringify(store.snapshot())).toBe(before);
     account.id = "user-1";
     expect(prompts.knowledgeBase).toBe("- unclaimed note");
@@ -730,9 +734,9 @@ describe("UserPrompts", () => {
     store.failing = false;
     expect(prompts.owner).toBe("user-1");
     expect(prompts.isAvailable).toBe(false);
-    const out = everything(prompts);
+    const out = everything(prompts, "first account's note");
     expect(out.read).not.toContain("first account");
-    expect(out.writes).toEqual([false, false, false, false, false, false]);
+    expect(out.writes).toEqual([false, false, false, false, false, false, false]);
     expect(JSON.stringify(store.snapshot())).toBe(before);
 
     account.id = "user-1";

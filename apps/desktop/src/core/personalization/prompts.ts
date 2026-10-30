@@ -382,12 +382,16 @@ export class UserPrompts extends Observable implements BulletStore {
 
   // MARK: BulletStore
 
+  /** The engine's reads of the stored texts (`BulletSync`'s state, capture, outgoing and upgrade): none
+   * while the texts aren't available, so it sees the defaults (root ADR-035). */
   read(field: PromptField): FieldState | null {
+    if (!this.isAvailable) return null;
     const value = this.store.get(Key.state(field));
     return value === undefined ? null : storedState(field, value);
   }
 
   legacyText(field: PromptField): string | null {
+    if (!this.isAvailable) return null;
     return storedString(this.store, Key.legacyText(field));
   }
 
@@ -437,8 +441,10 @@ export class UserPrompts extends Observable implements BulletStore {
     return result;
   }
 
-  /** After a local commit: its fields recorded once edits stop (`edits`), and sent. */
+  /** After a local commit: its fields recorded once edits stop (`edits`), and sent. While the texts
+   * aren't available nothing was written, and none is reported done, not even an unchanged one. */
   private local(result: CommitResult, edits = true): CommitResult {
+    if (!this.isAvailable) return { outcome: "unsaved", fields: [] };
     const fields = result.fields as PromptField[];
     if (result.outcome === "saved") {
       if (edits) this.pending(fields);

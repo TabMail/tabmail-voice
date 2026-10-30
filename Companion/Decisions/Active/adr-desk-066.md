@@ -52,8 +52,9 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   state and greys nothing out, and Voice needs no retry: its main thread is synchronous, so it is the
   semaphore. Every command from Settings (an edit, a reset, a restore) and every `kb_add`/`kb_del` runs
   to its end there before the next one starts. Every write of the texts goes through one function,
-  `UserPrompts.writeValues` (`BulletSync` commits call `UserPrompts.write`; claim and restore use it
-  too). An agent request is the one thing that awaits between reading the knowledge base and writing
+  `UserPrompts.writeValues` (`BulletSync` commits, restore included, call `UserPrompts.write`); only
+  the claim's wipe calls the save under it (`save`) directly, and a history entry is one `store.set`
+  in `record`. An agent request is the one thing that awaits between reading the knowledge base and writing
   it (the AI turn), so it carries one change counter (`KnowledgeCapture.generation`) taken at key-down,
   and `kb_add`/`kb_del` compare it once before they write: a stale request saves nothing and tells the
   model "not saved" at once. The counter goes up on every saved change from Settings (edit, reset,
@@ -78,8 +79,13 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   **Signed out, nothing is shown or used (owner, 2026-10-29).** One check, `UserPrompts.isAvailable`,
   guards every read and write of the texts: they are available only while an account is signed in
   and they are its own, or no account's yet. Otherwise every reader (Settings' state, the history,
-  an agent request's texts and `KnowledgeCapture`, `kb_add`'s duplicate check) gets nothing and
-  `writeValues` refuses every write, history entries included; only the claim's wipe is let through.
+  an agent request's texts and `KnowledgeCapture`, `kb_add`'s duplicate check, and `BulletSync`'s own
+  reads through `UserPrompts.read`/`legacyText`, so its state, capture and outgoing see only the
+  defaults) gets nothing; `writeValues` refuses every write, `record` keeps no history entry, and a
+  commit made meanwhile is reported unsaved even when it changed nothing (a statement already held is
+  never "added"). Only the claim's wipe is let through. A dictation under way when the account changes
+  goes on as a dictation but can no longer become an agent request (Space, or a hands-free latch
+  asking for agent mode), which would send the texts taken at its key-down under the other account.
   The main process pushes Settings `personalization: null` then and refuses the personalization
   commands ("Sign in to change this"); Settings › Personalization shows only "Sign in to see this."
   no text, control or Device Sync switch, and its sidebar entry is greyed, live on
