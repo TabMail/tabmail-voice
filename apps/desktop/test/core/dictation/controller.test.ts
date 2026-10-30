@@ -4786,7 +4786,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
            * after the app started (in Settings, or from another device) can be removed by voice. */
           test("kb_del removes a statement added after the app started", async () => {
             const { done } = await ask([], [calling(["kb_del", JSON.stringify({ statement: "Added after launch" })]), reply("Forgotten.")], () => {
-              prompts.addKnowledge("Added after launch.");
+              prompts.addKnowledge(prompts.captureKnowledgeBase(), "Added after launch.");
             });
             await done;
             expect(JSON.parse(told(1)[0] ?? "null")).toBe("Removed from knowledge base.");
@@ -4801,7 +4801,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
               [calling(["kb_del", JSON.stringify({ statement: "Arrived while held" })]), reply("Not found.")],
               (controller) => {
                 controller.onPhaseChange = (phase) => {
-                  if (phase.kind === "listening" && !prompts.knowledgeBase.includes("Arrived")) prompts.addKnowledge("Arrived while held.");
+                  if (phase.kind === "listening" && !prompts.knowledgeBase.includes("Arrived")) prompts.addKnowledge(prompts.captureKnowledgeBase(), "Arrived while held.");
                 };
               },
             );

@@ -12,7 +12,7 @@ import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import { personalizationState } from "../../../src/core/personalization/page.js";
-import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { type Shown, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { formatBytes } from "../../../src/core/memory/page.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
@@ -22,12 +22,15 @@ const labels = new Map<string, string>();
 /** Bullets as Settings is pushed them, each text with its label: a text given alone is one bullet
  * wherever it shows (one label per text), and `{ text, name }` is a bullet of that text under the
  * label `name`, as a bullet deleted and added again elsewhere comes back under a new one. */
-function shownBullets(bullets: (string | { text: string; name: string })[]): ShownBullet[] {
-  return bullets.map((bullet) => {
-    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]], epoch: 0 };
-    if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
-    return { text: bullet, labels: [[labels.get(bullet) as string, 1]], epoch: 0 };
-  });
+function shownBullets(bullets: (string | { text: string; name: string })[], epoch = 0): Shown {
+  return {
+    epoch,
+    bullets: bullets.map((bullet) => {
+      if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
+      if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
+      return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
+    }),
+  };
 }
 
 const signedIn: SettingsState = {
@@ -69,9 +72,9 @@ const signedIn: SettingsState = {
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
   personalization: {
     writingStyle: [
-      { section: "general", title: "General writing style", bullets: shownBullets(["ALWAYS start with a greeting."]) },
-      { section: "language", title: "Language", bullets: shownBullets(["I write in English Only."]) },
-      { section: "links", title: "Useful links to personal website and other resources", bullets: [] },
+      { section: "general", title: "General writing style", shown: shownBullets(["ALWAYS start with a greeting."]) },
+      { section: "language", title: "Language", shown: shownBullets(["I write in English Only."]) },
+      { section: "links", title: "Useful links to personal website and other resources", shown: shownBullets([]) },
     ],
     knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
     history: [],
@@ -756,7 +759,7 @@ describe("Settings page", () => {
       // The other device deletes the bullet and adds it again: the same text under its own label.
       expect(edit(there, [])).toBe(true);
       expect(edit(there, ["Alpha."])).toBe(true);
-      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]], epoch: 0 }]);
+      expect(shown(there).bullets).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
       relay(there, here);
       await page.push(state());
 
@@ -765,36 +768,54 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
       expect(shown(here)).toEqual(shown(there));
       relay(here, there);
-      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]], epoch: 0 }]);
+      expect(shown(there).bullets).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
     });
 
-    /** A reset of the knowledge base while a default bullet is being typed in drops the draft, though the
-     * reset shows the same text under the same label: leaving the field saves nothing over the reset
-     * (R30). */
-    test("a reset drops the draft begun before it", async () => {
+    /** A reset of the field, or another account signing in, while something is being typed in a row or in
+     * the field to add one drops the draft, though a row shows the same default text under the same label
+     * afterwards: nothing typed before is saved after it (R30). Each editor; each device a real store. */
+    test.each(
+      (
+        [
+          ["the knowledge base", "kb", "Knowledge base"],
+          ["a writing-style section", "composition", "Language"],
+        ] as const
+      ).flatMap(([editor, syncField, label]) =>
+        (
+          [
+            ["a row", `${label}, item 1`],
+            ["the field to add one", `Add to ${label}`],
+          ] as const
+        ).flatMap(([draft, draftLabel]) => ["a reset", "another account signing in"].map((ending) => [editor, draft, ending, syncField, draftLabel] as const)),
+      ),
+    )("in %s, a draft in %s is dropped by %s", async (_editor, _draft, ending, syncField, draftLabel) => {
       const prompts = new UserPrompts(new MemoryStore());
-      const defaults = prompts.knowledgeBase;
+      expect(prompts.claim("user-1")).toBe(true);
+      const text = () => (syncField === "kb" ? prompts.knowledgeBase : prompts.composition);
+      const defaults = text();
       let sent: Command[] = [];
       const state = (): SettingsState => ({ ...signedIn, personalization: personalizationState(prompts) });
       const page = await settingsPage({ error: null }, () => {
         const command = sent.at(-1);
         if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
+        if (command?.type === "editWritingStyle") prompts.editCompositionSection(command.section, command.shown, command.bullets);
         return state();
       }, state());
       sent = page.commands;
       await act(async () => button("Personalization").click());
-      const item = field("Knowledge base, item 1");
-      const before = item.value;
-      await act(async () => item.focus());
-      await act(async () => type(item, "Edited."));
+      const before = field(draftLabel).value;
+      await act(async () => field(draftLabel).focus());
+      await act(async () => type(field(draftLabel), "Typed under one."));
 
-      expect(prompts.resetKnowledgeBase()).toBe(true);
+      if (ending === "a reset") expect(syncField === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition()).toBe(true);
+      else expect(prompts.claim("user-2")).toBe(true);
       await page.push(state());
 
-      expect(field("Knowledge base, item 1").value).toBe(before);
-      await act(async () => field("Knowledge base, item 1").dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      expect(field(draftLabel).value).toBe(before);
+      await act(async () => field(draftLabel).dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      await act(async () => field(draftLabel).form?.requestSubmit());
       expect(page.commands).toEqual([]);
-      expect(prompts.knowledgeBase).toBe(defaults);
+      expect(text()).toBe(defaults);
     });
 
     /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:

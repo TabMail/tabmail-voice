@@ -9,7 +9,8 @@ import * as config from "../../src/core/config.js";
 import { channels, isAudioReport, isCommand, isWindowName } from "../../src/shared/ipc.js";
 
 const compositionSections = ["general", "language", "links"];
-const shown = (text: string) => ({ text, labels: [["0000000100000001", 1]], epoch: 0 });
+const bullet = (text: string) => ({ text, labels: [["0000000100000001", 1]] });
+const shown = (...bullets: unknown[]) => ({ epoch: 0, bullets });
 
 /** The channel names the preload script writes out, read from its source: a sandboxed preload
  * can't import them. */
@@ -76,12 +77,14 @@ describe("IPC", () => {
       { type: "clearMemory" },
       { type: "searchMemory", query: "" },
       { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength) },
-      ...compositionSections.map((section) => ({ type: "editWritingStyle", section, shown: [], bullets: ["Short sentences."] })),
-      { type: "editKnowledgeBase", shown: [shown("a")], bullets: [] },
-      { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["default:kb-1", 1], ["0000000100000001", 2]], epoch: 3 }, { text: "b", labels: [], epoch: 3 }], bullets: [] },
+      ...compositionSections.map((section) => ({ type: "editWritingStyle", section, shown: shown(), bullets: ["Short sentences."] })),
+      { type: "editKnowledgeBase", shown: shown(bullet("a")), bullets: [] },
+      // An edit of an empty list carries the epoch it was shown in too.
+      { type: "editKnowledgeBase", shown: { epoch: 3, bullets: [] }, bullets: ["a"] },
+      { type: "editKnowledgeBase", shown: { epoch: 3, bullets: [{ text: "a", labels: [["default:kb-1", 1], ["0000000100000001", 2]] }, { text: "b", labels: [] }] }, bullets: [] },
       // A bullet longer than the Settings fields take, as kb_add can store, still lets
       // the knowledge base be edited.
-      { type: "editKnowledgeBase", shown: [shown("x".repeat(config.personalizationBulletMaxLength + 1)), shown("a")], bullets: ["a"] },
+      { type: "editKnowledgeBase", shown: shown(bullet("x".repeat(config.personalizationBulletMaxLength + 1)), bullet("a")), bullets: ["a"] },
       { type: "resetWritingStyle" },
       { type: "resetKnowledgeBase" },
       { type: "restorePromptHistory", id: "x".repeat(config.promptHistoryIDMaxLength) },
@@ -153,25 +156,30 @@ describe("IPC", () => {
     { type: "searchMemory" },
     { type: "searchMemory", query: 1 },
     { type: "searchMemory", query: "x".repeat(config.memorySearchMaxLength + 1) },
-    { type: "editWritingStyle", section: "# Not a section", shown: [], bullets: [] },
-    { type: "editWritingStyle", section: "General writing style", shown: [], bullets: [] },
-    { type: "editWritingStyle", section: "", shown: [], bullets: [] },
-    { type: "editKnowledgeBase", shown: ["a"], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a" }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: 1, labels: [], epoch: 0 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [] }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [], epoch: -1 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [], epoch: 1.5 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [], epoch: "0" }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["NAME", 1]], epoch: 0 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 0]], epoch: 0 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001", 1.5]], epoch: 0 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [{ text: "a", labels: [["0000000100000001"]], epoch: 0 }], bullets: [] },
-    { type: "editKnowledgeBase", shown: [null], bullets: [] },
-    { type: "editWritingStyle", section: compositionSections[0], shown: [], bullets: "Short sentences." },
-    { type: "editWritingStyle", shown: [], bullets: [] },
+    { type: "editWritingStyle", section: "# Not a section", shown: shown(), bullets: [] },
+    { type: "editWritingStyle", section: "General writing style", shown: shown(), bullets: [] },
+    { type: "editWritingStyle", section: "", shown: shown(), bullets: [] },
+    // A list without the epoch it was shown in, or with one that is no epoch.
+    { type: "editKnowledgeBase", shown: [], bullets: [] },
+    { type: "editKnowledgeBase", shown: [bullet("a")], bullets: [] },
+    { type: "editKnowledgeBase", shown: { bullets: [] }, bullets: [] },
+    { type: "editKnowledgeBase", shown: { epoch: -1, bullets: [] }, bullets: [] },
+    { type: "editKnowledgeBase", shown: { epoch: 1.5, bullets: [] }, bullets: [] },
+    { type: "editKnowledgeBase", shown: { epoch: "0", bullets: [] }, bullets: [] },
+    { type: "editKnowledgeBase", shown: { epoch: 0 }, bullets: [] },
+    { type: "editKnowledgeBase", shown: null, bullets: [] },
+    { type: "editKnowledgeBase", shown: shown("a"), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown({ text: "a" }), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown({ text: 1, labels: [] }), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown({ text: "a", labels: [["NAME", 1]] }), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown({ text: "a", labels: [["0000000100000001", 0]] }), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown({ text: "a", labels: [["0000000100000001", 1.5]] }), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown({ text: "a", labels: [["0000000100000001"]] }), bullets: [] },
+    { type: "editKnowledgeBase", shown: shown(null), bullets: [] },
+    { type: "editWritingStyle", section: compositionSections[0], shown: shown(), bullets: "Short sentences." },
+    { type: "editWritingStyle", shown: shown(), bullets: [] },
     { type: "editKnowledgeBase", bullets: [] },
-    { type: "editKnowledgeBase", shown: [], bullets: [1] },
+    { type: "editKnowledgeBase", shown: shown(), bullets: [1] },
     { type: "restorePromptHistory" },
     { type: "restorePromptHistory", id: 1 },
     { type: "restorePromptHistory", id: "x".repeat(config.promptHistoryIDMaxLength + 1) },

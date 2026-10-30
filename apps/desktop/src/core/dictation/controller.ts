@@ -241,7 +241,7 @@ export class DictationController extends Observable {
   private dictationPersonalization: Personalization;
   /** The knowledge base's labels read with it, which `kb_del` deletes from (DS-CAPTURE); null when the
    * read was refused while its upgrade was unsaved (R22). */
-  private dictationKBCapture: KnowledgeCapture | null;
+  private dictationKBCapture: KnowledgeCapture;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
   /** The app in front at key-down: the paste goes there only, and the corrections are learned from

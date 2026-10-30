@@ -147,17 +147,17 @@ export class VoiceDevice {
 
   /** The texts of `field`'s live bullets in `section`, in order. */
   texts(field: PromptField, section = ""): string[] {
-    return this.prompts.shown(field, section).map((bullet) => bullet.text);
+    return this.prompts.shown(field, section).bullets.map((bullet) => bullet.text);
   }
 
   add(field: PromptField, section: string, text: string): void {
-    if (field === "kb") this.prompts.addKnowledge(text);
+    if (field === "kb") this.prompts.addKnowledge(this.prompts.captureKnowledgeBase(), text);
     else this.prompts.editCompositionSection(section, this.prompts.shown(field, section), [...this.texts(field, section), text]);
   }
 
   remove(field: PromptField, section: string, text: string): void {
     const shown = this.prompts.shown(field, section);
-    const edited = shown.map((bullet) => bullet.text).filter((other) => other !== text);
+    const edited = shown.bullets.map((bullet) => bullet.text).filter((other) => other !== text);
     if (field === "kb") this.prompts.editKnowledgeBase(shown, edited);
     else this.prompts.editCompositionSection(section, shown, edited);
   }

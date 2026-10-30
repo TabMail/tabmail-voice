@@ -355,8 +355,16 @@ class Fuzz {
       const result = captured.filter(() => this.next() < 0.6).map((bullet) => bullet.text);
       if (this.next() < 0.5) result.push(this.text());
       this.log.push(`${device.id} commit ${capture.field}/${capture.section} [${result.join(", ")}]`);
-      for (const bullet of captured) if (!result.includes(bullet.text)) this.markLabel(capture.field, bullet);
-      device.commit(capture.field, capture.section, capture.epoch, capture.captured, result);
+      // R30: a capture whose epoch ended since (a reset of its field, the texts' file reset) writes nothing.
+      const ended = capture.epoch !== device.prompts.sync.epoch(capture.field);
+      const before = JSON.stringify(device.state(capture.field));
+      const saved = device.commit(capture.field, capture.section, capture.epoch, capture.captured, result);
+      if (ended) {
+        expect(saved, `${this.log.join("\n")}\nan ended capture was committed`).toBe(false);
+        expect(JSON.stringify(device.state(capture.field)), `${this.log.join("\n")}\nan ended capture changed the field`).toBe(before);
+      }
+      // Only a commit that was saved deleted anything.
+      if (saved) for (const bullet of captured) if (!result.includes(bullet.text)) this.markLabel(capture.field, bullet);
       return false;
     }
     if (roll < 0.85) {
@@ -403,7 +411,7 @@ class Fuzz {
     if (roll < 0.97) {
       this.log.push(`${device.id} reset of the texts' file`);
       this.cleared = true;
-      this.captures.delete(device);
+      // A capture taken before stays, to be refused at its commit (R30).
       this.forgetMerged(device);
       device.prompts.resetFile(() => device.store.replaceWith(ownedStore()));
       return false;

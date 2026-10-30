@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { defaultComposition } from "../../src/core/personalization/defaults.js";
-import { type PromptField, promptFields, type ShownBullet, UserPrompts } from "../../src/core/personalization/prompts.js";
+import { type PromptField, promptFields, type Shown, UserPrompts } from "../../src/core/personalization/prompts.js";
 import { type Bullet, type Catalog, defaultCatalog, type FieldState, parse } from "../../src/core/sync/bullets.js";
 import { DeviceSync, type SyncSocketEvents } from "../../src/core/sync/deviceSync.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
@@ -207,19 +207,19 @@ export class BulletDevice {
     return this.prompts.sync.state(field);
   }
 
-  shown(field: PromptField, section: string): ShownBullet[] {
+  shown(field: PromptField, section: string): Shown {
     return this.prompts.shown(field, section);
   }
 
   /** The user's edit of one section in Settings, from what it shows now to `texts`. */
   editSection(field: PromptField, section: string, texts: (shown: string[]) => string[]): boolean {
     const shown = this.shown(field, section);
-    const edited = texts(shown.map((bullet) => bullet.text));
+    const edited = texts(shown.bullets.map((bullet) => bullet.text));
     return field === "kb" ? this.prompts.editKnowledgeBase(shown, edited) : this.prompts.editCompositionSection(section, shown, edited);
   }
 
   add(field: PromptField, section: string, text: string): void {
-    if (field === "kb") this.prompts.addKnowledge(text);
+    if (field === "kb") this.prompts.addKnowledge(this.prompts.captureKnowledgeBase(), text);
     else this.editSection(field, section, (texts) => [...texts, text]);
   }
 
@@ -228,13 +228,12 @@ export class BulletDevice {
   }
 
   /** A section's edit committed from what `captured` held then, in the capture epoch `epoch` (DS-CAPTURE,
-   * R30). */
-  commit(field: PromptField, section: string, epoch: number, captured: readonly Bullet[] | null, result: readonly string[]): void {
+   * R30); whether it was saved. */
+  commit(field: PromptField, section: string, epoch: number, captured: readonly Bullet[] | null, result: readonly string[]): boolean {
     // A capture refused while an upgrade was unsaved saves nothing (R22).
-    if (captured === null) return;
-    const shown: ShownBullet[] = captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]], epoch }));
-    if (field === "kb") this.prompts.editKnowledgeBase(shown, result);
-    else this.prompts.editCompositionSection(section, shown, result);
+    if (captured === null) return false;
+    const shown: Shown = { epoch, bullets: captured.map((bullet) => ({ text: bullet.text, labels: [[bullet.name, bullet.n]] })) };
+    return field === "kb" ? this.prompts.editKnowledgeBase(shown, result) : this.prompts.editCompositionSection(section, shown, result);
   }
 
   reset(field: PromptField): void {

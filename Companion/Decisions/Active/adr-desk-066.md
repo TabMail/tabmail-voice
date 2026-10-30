@@ -43,10 +43,20 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   names on its bullets and on the last snapshot merged for that field. Over the relay's budget it is
   sent in parts, and a snapshot is applied only when every part arrived, agreeing; one bullet alone
   over the budget holds the field back and Settings says "Too large to sync". A malformed part drops
-  the whole snapshot. Voice never asks for state and never sends the released format. The relay
+  the whole snapshot, except one whose sender or snap is no string: it is dropped alone, since with no
+  sender there is no snapshot to key (R27). Voice never asks for state and never sends the released format. The relay
   also limits how many messages a connection sends a minute, and every part counts: a field of
   dozens of parts (megabytes, far beyond a real knowledge base) would be cut off on each connect.
   Left as it is (2026-10-29).
+- **Capture epoch (R30, 2026-10-29).** Each field has a capture epoch, in memory only. Every operation
+  that can await between reading a field and writing it takes the epoch once, at its start, and every
+  write it makes carries it as a required argument: Settings' edits (one epoch per field view, `Shown`,
+  so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a
+  history restore. A reset of the field ends its epoch before the write tells anyone (put back if the
+  write fails), and so does a reload of the fields (another account's claim, the texts' file reset).
+  `BulletSync` refuses a write carrying an ended epoch, writing nothing, in one check for both commit
+  paths. Settings' editor is keyed by the epoch, so a draft in a row or the field to add one is dropped
+  then. Sign-out doesn't touch the texts, so it ends nothing; the next account's claim does.
 - **Released Thunderbird and iOS** (`prompt_state`): imported additions only, an epoch-zero text
   skipped; nothing is deleted from what they send.
 - **Upgrade.** The texts Voice kept before are parsed once: catalog defaults take their default label,
