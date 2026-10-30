@@ -95,6 +95,7 @@ vi.mock("../../../src/main/storage/jsonFileStore.js", () => ({
     setAll() {}
     remove() {}
   },
+  restrictDataFolder() {},
 }));
 // Device Sync's relay is never reached.
 vi.mock("../../../src/main/deviceSyncSocket.js", () => ({

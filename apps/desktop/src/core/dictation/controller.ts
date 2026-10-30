@@ -239,8 +239,8 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** The knowledge base and writing style this dictation started with, read with its settings. */
   private dictationPersonalization: Personalization;
-  /** The knowledge base's labels read with it, which `kb_del` deletes from (DS-CAPTURE); null when the
-   * read was refused while its upgrade was unsaved (R22). */
+  /** The knowledge base as taken with it (`KnowledgeCapture`): the write generation its tools need
+   * unchanged (root ADR-035), and the labels `kb_del` deletes from (DS-CAPTURE). */
   private dictationKBCapture: KnowledgeCapture;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
@@ -1814,6 +1814,8 @@ export class DictationController extends Observable {
   /** Signing out, or into another account, ends the conversation and any agent request under way,
    * so neither reaches the next account; a refreshed token for the same account changes nothing. */
   private accountChanged(): void {
+    // No agent request from before writes to the knowledge base (root ADR-035).
+    this.deps.prompts.accountChanged();
     // A dictation never reaches the chat (one is open only after an agent request, and every request
     // while it is open is one): it goes on, its transcription and cleanup both from the account signed
     // in at the upload.

@@ -11,8 +11,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand.js";
-import { personalizationState } from "../../../src/core/personalization/page.js";
-import { type Shown, UserPrompts } from "../../../src/core/personalization/prompts.js";
+import { type PersonalizationState, personalizationState } from "../../../src/core/personalization/page.js";
+import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { formatBytes } from "../../../src/core/memory/page.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
@@ -22,16 +22,23 @@ const labels = new Map<string, string>();
 /** Bullets as Settings is pushed them, each text with its label: a text given alone is one bullet
  * wherever it shows (one label per text), and `{ text, name }` is a bullet of that text under the
  * label `name`, as a bullet deleted and added again elsewhere comes back under a new one. */
-function shownBullets(bullets: (string | { text: string; name: string })[], epoch = 0): Shown {
-  return {
-    epoch,
-    bullets: bullets.map((bullet) => {
-      if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
-      if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
-      return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
-    }),
-  };
+function shownBullets(bullets: (string | { text: string; name: string })[]): ShownBullet[] {
+  return bullets.map((bullet) => {
+    if (typeof bullet !== "string") return { text: bullet.text, labels: [[bullet.name, 1]] };
+    if (!labels.has(bullet)) labels.set(bullet, `00000001${(labels.size + 1).toString(16).padStart(8, "0")}`);
+    return { text: bullet, labels: [[labels.get(bullet) as string, 1]] };
+  });
 }
+
+const shownPersonalization: PersonalizationState = {
+  writingStyle: [
+    { section: "general", title: "General writing style", bullets: shownBullets(["ALWAYS start with a greeting."]) },
+    { section: "language", title: "Language", bullets: shownBullets(["I write in English Only."]) },
+    { section: "links", title: "Useful links to personal website and other resources", bullets: [] },
+  ],
+  knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
+  history: [],
+};
 
 const signedIn: SettingsState = {
   email: "person@example.com",
@@ -70,15 +77,7 @@ const signedIn: SettingsState = {
   version: "1.2.3",
   update: { kind: "idle" },
   memory: { sizeLimit: config.memorySizeLimitDefault, usage: { docs: 0, usedBytes: 0 }, unavailable: false, query: "", entries: [], searchFailed: null, status: null },
-  personalization: {
-    writingStyle: [
-      { section: "general", title: "General writing style", shown: shownBullets(["ALWAYS start with a greeting."]) },
-      { section: "language", title: "Language", shown: shownBullets(["I write in English Only."]) },
-      { section: "links", title: "Useful links to personal website and other resources", shown: shownBullets([]) },
-    ],
-    knowledgeBase: shownBullets(["Prefers morning meetings.", "Works with Sam."]),
-    history: [],
-  },
+  personalization: shownPersonalization,
   fileProblems: [],
 };
 
@@ -759,7 +758,7 @@ describe("Settings page", () => {
       // The other device deletes the bullet and adds it again: the same text under its own label.
       expect(edit(there, [])).toBe(true);
       expect(edit(there, ["Alpha."])).toBe(true);
-      expect(shown(there).bullets).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
       relay(there, here);
       await page.push(state());
 
@@ -768,61 +767,14 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
       expect(shown(here)).toEqual(shown(there));
       relay(here, there);
-      expect(shown(there).bullets).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
-    });
-
-    /** A reset of the field, or another account signing in, while something is being typed in a row or in
-     * the field to add one drops the draft, though a row shows the same default text under the same label
-     * afterwards: nothing typed before is saved after it (R30). Each editor; each device a real store. */
-    test.each(
-      (
-        [
-          ["the knowledge base", "kb", "Knowledge base"],
-          ["a writing-style section", "composition", "Language"],
-        ] as const
-      ).flatMap(([editor, syncField, label]) =>
-        (
-          [
-            ["a row", `${label}, item 1`],
-            ["the field to add one", `Add to ${label}`],
-          ] as const
-        ).flatMap(([draft, draftLabel]) => ["a reset", "another account signing in"].map((ending) => [editor, draft, ending, syncField, draftLabel] as const)),
-      ),
-    )("in %s, a draft in %s is dropped by %s", async (_editor, _draft, ending, syncField, draftLabel) => {
-      const prompts = new UserPrompts(new MemoryStore());
-      expect(prompts.claim("user-1")).toBe(true);
-      const text = () => (syncField === "kb" ? prompts.knowledgeBase : prompts.composition);
-      const defaults = text();
-      let sent: Command[] = [];
-      const state = (): SettingsState => ({ ...signedIn, personalization: personalizationState(prompts) });
-      const page = await settingsPage({ error: null }, () => {
-        const command = sent.at(-1);
-        if (command?.type === "editKnowledgeBase") prompts.editKnowledgeBase(command.shown, command.bullets);
-        if (command?.type === "editWritingStyle") prompts.editCompositionSection(command.section, command.shown, command.bullets);
-        return state();
-      }, state());
-      sent = page.commands;
-      await act(async () => button("Personalization").click());
-      const before = field(draftLabel).value;
-      await act(async () => field(draftLabel).focus());
-      await act(async () => type(field(draftLabel), "Typed under one."));
-
-      if (ending === "a reset") expect(syncField === "kb" ? prompts.resetKnowledgeBase() : prompts.resetComposition()).toBe(true);
-      else expect(prompts.claim("user-2")).toBe(true);
-      await page.push(state());
-
-      expect(field(draftLabel).value).toBe(before);
-      await act(async () => field(draftLabel).dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
-      await act(async () => field(draftLabel).form?.requestSubmit());
-      expect(page.commands).toEqual([]);
-      expect(text()).toBe(defaults);
+      expect(shown(there)).toEqual([{ text: "Alpha.", labels: [["0000000b00000001", 1]] }]);
     });
 
     /** The knowledge base changed elsewhere (`kb_add`, `kb_del`) while Settings shows it:
      * each field shows its own bullet, what is being typed in a later field stays, and is saved with
      * the list shown now, and a field left untouched saves nothing. */
     test("a knowledge base changed elsewhere keeps what is being typed", async () => {
-      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets(knowledgeBase) } });
+      const withKB = (knowledgeBase: string[]): SettingsState => ({ ...signedIn, personalization: { ...shownPersonalization, knowledgeBase: shownBullets(knowledgeBase) } });
       const { commands, push } = await open(withKB(["Alpha.", "Beta.", "Gamma."]));
       const item = field("Knowledge base, item 3");
       await act(async () => type(item, "Gamma, edited."));
@@ -877,7 +829,7 @@ describe("Settings page", () => {
     /** A bullet another writer stored with a leading space (Thunderbird or iOS) is
      * shown as stored; leaving it untouched saves nothing. */
     test("an item stored with a leading space and left untouched saves nothing", async () => {
-      const { commands } = await open({ ...signedIn, personalization: { ...signedIn.personalization, knowledgeBase: shownBullets([" Alice.", "Works with Sam."]) } });
+      const { commands } = await open({ ...signedIn, personalization: { ...shownPersonalization, knowledgeBase: shownBullets([" Alice.", "Works with Sam."]) } });
       const item = field("Knowledge base, item 1");
       expect(item.value).toBe(" Alice.");
       await act(async () => item.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
@@ -943,7 +895,7 @@ describe("Settings page", () => {
       const withHistory: SettingsState = {
         ...signedIn,
         personalization: {
-          ...signedIn.personalization,
+          ...shownPersonalization,
           history: [
             { id: "now", timestamp: new Date().toISOString(), source: "local_edit", fields: ["kb"], restores: [], removes: [] },
             { id: "then", timestamp: new Date(Date.now() - 86_400_000).toISOString(), source: "reset", fields: ["composition", "kb"], restores: ["Likes short replies."], removes: ["Works with Sam."] },
@@ -1910,5 +1862,76 @@ describe("GNOME integration", () => {
     expect(button("Enable").disabled).toBe(state === "unsupported" || state === "checking");
     if (state === "restart") expect(visibleText()).toContain("Log out of Ubuntu and back in");
     if (state === "unavailable") expect(visibleText()).toContain("could not be enabled");
+  });
+});
+
+/** Root ADR-035 in Settings › Personalization: what is being typed is dropped when the texts are
+ * replaced, by a reset saved or another account; a change made elsewhere (a tool, another device)
+ * leaves it. */
+describe("personalization drafts", () => {
+  const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
+  const reset = async () => {
+    await act(async () => button("Reset…").click());
+    await act(async () => button("Reset").click());
+  };
+
+  const restore = async () => {
+    await act(async () => button("History").click());
+    const entry = document.querySelector('ul[aria-label="History"] > li');
+    await act(async () => ([...(entry?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Show") as HTMLButtonElement).click());
+    await act(async () => ([...(entry?.querySelectorAll("button") ?? [])].find((element) => element.textContent === "Restore…") as HTMLButtonElement).click());
+    await act(async () => button("Restore").click());
+    await act(async () => button("Knowledge base").click());
+  };
+  const withHistory: SettingsState = {
+    ...signedIn,
+    personalization: { ...shownPersonalization, history: [{ id: "then", timestamp: new Date(Date.now() - 86_400_000).toISOString(), source: "reset", fields: ["kb"], restores: ["Likes short replies."], removes: [] }] },
+  };
+
+  test.each([
+    ["a reset", async () => reset()],
+    ["a restore", async () => restore()],
+    ["another account", async (push: (state: SettingsState) => Promise<void>) => push({ ...withHistory, email: "other@example.com" })],
+  ] as const)("a draft is dropped by %s", async (_name, replace) => {
+    const { push } = await settingsPage({ error: null }, withHistory, withHistory);
+    await act(async () => button("Personalization").click());
+    await act(async () => type(field("Add to Knowledge base"), "Half typed"));
+    await push({ ...withHistory });
+    expect(field("Add to Knowledge base").value).toBe("Half typed");
+    await replace(push);
+    expect(field("Add to Knowledge base").value).toBe("");
+  });
+});
+
+/** Root ADR-035 (owner, 2026-10-29: "even sign out, don't let it hide"): while signed out,
+ * Personalization and the dictionary show and change the texts and words as when signed in. */
+describe("personalization and the dictionary while signed out", () => {
+  const signedOut: SettingsState = { ...signedIn, email: null, dictionary: [{ word: "Kaelthorne", learned: false, lastUsed: 1 }] };
+  const field = (label: string) => document.querySelector<HTMLInputElement>(`:is(input, textarea)[aria-label="${label}"]`) as HTMLInputElement;
+
+  test("Personalization shows the texts and saves an edit", async () => {
+    const { commands } = await settingsPage({ error: null }, signedOut, signedOut);
+    await act(async () => button("Personalization").click());
+    const main = document.querySelector("main.content") as HTMLElement;
+    for (const text of ["ALWAYS start with a greeting.", "I write in English Only."]) expect(main.textContent).toContain(text);
+    expect(main.textContent).not.toContain("Sign in to see this.");
+    await act(async () => button("Knowledge base").click());
+    await act(async () => type(field("Add to Knowledge base"), "Typed while signed out"));
+    await act(async () => field("Add to Knowledge base").form?.requestSubmit());
+    expect(commands.at(-1)).toMatchObject({ type: "editKnowledgeBase", bullets: ["Prefers morning meetings.", "Works with Sam.", "Typed while signed out"] });
+  });
+
+  test("the dictionary shows its words, and adds and removes one", async () => {
+    const { commands } = await settingsPage({ error: null }, signedOut, signedOut);
+    await act(async () => button("Dictionary").click());
+    const main = document.querySelector("main.content") as HTMLElement;
+    expect(main.textContent).toContain("Kaelthorne");
+    expect(main.textContent).not.toContain("Sign in to see this.");
+    await act(async () => type(field("Word or name"), "Nebulaforge"));
+    expect(button("Add").disabled).toBe(false);
+    await act(async () => button("Add").click());
+    expect(commands).toContainEqual({ type: "addDictionaryWord", word: "Nebulaforge" });
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Kaelthorne"]')?.click());
+    expect(commands).toContainEqual({ type: "removeDictionaryWord", word: "Kaelthorne" });
   });
 });

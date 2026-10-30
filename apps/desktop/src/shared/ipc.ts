@@ -15,7 +15,7 @@ import type { ExcludedApp } from "../core/dictation/excludedApps.js";
 import type { StoredFile } from "../core/ui/fileProblems.js";
 import type { MemoryPageState } from "../core/memory/page.js";
 import type { PersonalizationState } from "../core/personalization/page.js";
-import type { Shown } from "../core/personalization/prompts.js";
+import type { ShownBullet } from "../core/personalization/prompts.js";
 import { displayedSections, isName } from "../core/sync/bullets.js";
 import type { UpdateState } from "../core/ui/menuModel.js";
 import type { PasteEntry } from "../core/dictation/pasteHistory.js";
@@ -251,8 +251,8 @@ export type Command =
   /** Settings › Personalization: a writing style section's or the knowledge base's bullets edited,
    * from those the page showed (`shown`); either text reset to its default; the texts put back as a
    * history entry holds them. */
-  | { type: "editWritingStyle"; section: string; shown: Shown; bullets: string[] }
-  | { type: "editKnowledgeBase"; shown: Shown; bullets: string[] }
+  | { type: "editWritingStyle"; section: string; shown: ShownBullet[]; bullets: string[] }
+  | { type: "editKnowledgeBase"; shown: ShownBullet[]; bullets: string[] }
   | { type: "resetWritingStyle" }
   | { type: "resetKnowledgeBase" }
   | { type: "restorePromptHistory"; id: string }
@@ -354,9 +354,9 @@ export function isCommand(value: unknown): value is Command {
     case "resetKnowledgeBase":
       return true;
     case "editWritingStyle":
-      return typeof command.section === "string" && displayedSections("composition").includes(command.section) && isShown(command.shown) && isBulletList(command.bullets);
+      return typeof command.section === "string" && displayedSections("composition").includes(command.section) && isShownList(command.shown) && isBulletList(command.bullets);
     case "editKnowledgeBase":
-      return isShown(command.shown) && isBulletList(command.bullets);
+      return isShownList(command.shown) && isBulletList(command.bullets);
     case "restorePromptHistory":
       return typeof command.id === "string" && command.id.length <= config.promptHistoryIDMaxLength;
     case "searchMemory":
@@ -434,16 +434,11 @@ function isBulletList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((bullet) => typeof bullet === "string");
 }
 
-/** A section as Settings showed it: the field's capture epoch then, and its bullets, each with its labels
- * (`Shown`). */
-function isShown(value: unknown): value is Shown {
-  if (!value || typeof value !== "object") return false;
-  const { epoch, bullets } = value as Record<string, unknown>;
+/** Bullets as Settings showed them, each with its labels (`ShownBullet`). */
+function isShownList(value: unknown): value is ShownBullet[] {
   return (
-    Number.isSafeInteger(epoch) &&
-    (epoch as number) >= 0 &&
-    Array.isArray(bullets) &&
-    bullets.every((bullet: unknown) => {
+    Array.isArray(value) &&
+    value.every((bullet: unknown) => {
       if (!bullet || typeof bullet !== "object") return false;
       const { text, labels } = bullet as Record<string, unknown>;
       return typeof text === "string" && Array.isArray(labels) && labels.every((label: unknown) => Array.isArray(label) && label.length === 2 && isName(label[0]) && Number.isSafeInteger(label[1]) && (label[1] as number) >= 1);

@@ -16,7 +16,7 @@ import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { formatBytes, memoryHighlights } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import type { PromptHistoryItem } from "../../core/personalization/page.js";
-import type { Shown } from "../../core/personalization/prompts.js";
+import type { ShownBullet } from "../../core/personalization/prompts.js";
 import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
@@ -748,17 +748,22 @@ type PersonalizationTab = (typeof personalizationTabs)[number];
  * showing what restoring it would change, with Restore, confirmed in place. Every tab stays
  * rendered while another shows, so what is being typed in one is still there on coming back. Above
  * the tabs, Device Sync's switch, with what stops it said under it: a choice that couldn't be saved,
- * or texts too large for the relay. */
+ * or texts too large for the relay. What is being typed is dropped when the texts are replaced, by a
+ * reset or a restore, or by another account (root ADR-035). */
 function PersonalizationPane({ state }: { state: SettingsState }) {
   const personalization = state.personalization;
   const [tab, setTab] = useState<PersonalizationTab>("Writing style");
   const [failure, setFailure] = useState<string | null>(null);
+  const [replaced, setReplaced] = useState(0);
   const id = useId();
   const run = async (command: Command) => {
     setFailure(null);
     const { error } = await send(command);
     setFailure(error);
+    if (error === null && (command.type === "resetWritingStyle" || command.type === "resetKnowledgeBase" || command.type === "restorePromptHistory")) setReplaced((count) => count + 1);
   };
+  // The editors start afresh, their drafts dropped, when the texts are replaced.
+  const texts = `${state.email ?? ""}\u0000${replaced}`;
   const [syncProblem, setSyncProblem] = useState<string | null>(null);
   const sync = async (value: boolean) => {
     setSyncProblem(null);
@@ -787,11 +792,11 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
           <TabIntro lines={["How agent mode writes emails and formal replies for you.", "Sent with requests that may write; TabMail doesn’t keep it."]}>
             <ResetButton what="writing style" onReset={() => void run({ type: "resetWritingStyle" })} />
           </TabIntro>
-          {personalization.writingStyle.map(({ section, title, shown }) => (
+          {personalization.writingStyle.map(({ section, title, bullets }) => (
             <section key={section} className="card-section">
               <h2 className="section-heading">{writingStyleSectionLabels[section] ?? title}</h2>
               <div className="group">
-                <BulletEditor key={shown.epoch} title={writingStyleSectionLabels[section] ?? title} shown={shown} onChange={(edited) => run({ type: "editWritingStyle", section, shown, bullets: edited })} />
+                <BulletEditor key={texts} title={writingStyleSectionLabels[section] ?? title} bullets={bullets} onChange={(edited) => run({ type: "editWritingStyle", section, shown: bullets, bullets: edited })} />
               </div>
             </section>
           ))}
@@ -804,7 +809,7 @@ function PersonalizationPane({ state }: { state: SettingsState }) {
             <ResetButton what="knowledge base" onReset={() => void run({ type: "resetKnowledgeBase" })} />
           </TabIntro>
           <Group>
-            <BulletEditor key={personalization.knowledgeBase.epoch} title="Knowledge base" shown={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
+            <BulletEditor key={texts} title="Knowledge base" bullets={personalization.knowledgeBase} onChange={(edited) => run({ type: "editKnowledgeBase", shown: personalization.knowledgeBase, bullets: edited })} />
           </Group>
         </>,
       )}
@@ -908,16 +913,14 @@ function ResetButton({ what, onReset }: { what: string; onReset: () => void }) {
 }
 
 /** A list of bullets: each one a field, saved as it is left or Return is pressed, with a remove
- * button; then a field to add one. `onChange` is given the whole list as edited. Keyed by the field's
- * capture epoch where it is shown, so a reset or an account change starts it afresh: nothing typed
- * before, in a row or the field to add one, is saved after it (R30). */
-function BulletEditor({ title, shown, onChange }: { title: string; shown: Shown; onChange: (bullets: string[]) => Promise<void> }) {
+ * button; then a field to add one. `onChange` is given the whole list as edited. */
+function BulletEditor({ title, bullets: shown, onChange }: { title: string; bullets: ShownBullet[]; onChange: (bullets: string[]) => Promise<void> }) {
   const [draft, setDraft] = useState("");
-  const bullets = shown.bullets.map((bullet) => bullet.text);
+  const bullets = shown.map((bullet) => bullet.text);
   // A row is its bullet: its text and the labels it carries. The same text under other labels (removed
   // and added again elsewhere) is another bullet, so a row being typed in then starts afresh, never
   // saving its edit over the newer one (DS-CAPTURE).
-  const identities = shown.bullets.map((bullet) => `${bullet.text}\u0000${JSON.stringify(bullet.labels)}`);
+  const identities = shown.map((bullet) => `${bullet.text}\u0000${JSON.stringify(bullet.labels)}`);
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (draft.trim() === "") return;

@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { type PromptField, promptFields } from "../../../src/core/personalization/prompts.js";
 import { type Bullet, displayedSections, labelKey } from "../../../src/core/sync/bullets.js";
-import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } from "../../support/bulletDevices.js";
+import { BulletDevice, BulletRelay, DeviceStore, storeStates } from "../../support/bulletDevices.js";
 import type { ReceiveOutcome } from "../../../src/core/sync/bulletSync.js";
 
 /**
@@ -75,7 +75,7 @@ class Fuzz {
   private cleared = false;
   /** Messages whose `seen` broke DS-SEEN-OUT: kept for the test, as a throw would land in the sender. */
   readonly violations: string[] = [];
-  private readonly captures = new Map<BulletDevice, { field: PromptField; section: string; epoch: number; captured: Bullet[] | null }>();
+  private readonly captures = new Map<BulletDevice, { field: PromptField; section: string; captured: Bullet[] | null }>();
   private readonly backups = new Map<BulletDevice, DeviceStore>();
   private unique = 0;
   /** Labels given to bullets in a section this version doesn't show, one each. */
@@ -187,7 +187,7 @@ class Fuzz {
   }
 
   private initialStore(): DeviceStore {
-    const store = ownedStore();
+    const store = new DeviceStore();
     const kind = this.int(4);
     if (kind === 1) storeStates(store, {});
     if (kind === 2) store.set("user_prompts:user_kb.md", [this.text(), this.text(), "plain line"].map((text) => `- ${text}`).join("\n"));
@@ -347,7 +347,7 @@ class Fuzz {
       if (capture === undefined) {
         const section = this.section(field);
         this.log.push(`${device.id} capture ${field}/${section}`);
-        this.captures.set(device, { field, section, epoch: device.prompts.sync.epoch(field), captured: device.prompts.sync.capture(field, [section]) });
+        this.captures.set(device, { field, section, captured: device.prompts.sync.capture(field, [section]) });
         return false;
       }
       this.captures.delete(device);
@@ -355,16 +355,8 @@ class Fuzz {
       const result = captured.filter(() => this.next() < 0.6).map((bullet) => bullet.text);
       if (this.next() < 0.5) result.push(this.text());
       this.log.push(`${device.id} commit ${capture.field}/${capture.section} [${result.join(", ")}]`);
-      // R30: a capture whose epoch ended since (a reset of its field, the texts' file reset) writes nothing.
-      const ended = capture.epoch !== device.prompts.sync.epoch(capture.field);
-      const before = JSON.stringify(device.state(capture.field));
-      const saved = device.commit(capture.field, capture.section, capture.epoch, capture.captured, result);
-      if (ended) {
-        expect(saved, `${this.log.join("\n")}\nan ended capture was committed`).toBe(false);
-        expect(JSON.stringify(device.state(capture.field)), `${this.log.join("\n")}\nan ended capture changed the field`).toBe(before);
-      }
-      // Only a commit that was saved deleted anything.
-      if (saved) for (const bullet of captured) if (!result.includes(bullet.text)) this.markLabel(capture.field, bullet);
+      for (const bullet of captured) if (!result.includes(bullet.text)) this.markLabel(capture.field, bullet);
+      device.commit(capture.field, capture.section, capture.captured, result);
       return false;
     }
     if (roll < 0.85) {
@@ -411,9 +403,9 @@ class Fuzz {
     if (roll < 0.97) {
       this.log.push(`${device.id} reset of the texts' file`);
       this.cleared = true;
-      // A capture taken before stays, to be refused at its commit (R30).
+      this.captures.delete(device);
       this.forgetMerged(device);
-      device.prompts.resetFile(() => device.store.replaceWith(ownedStore()));
+      device.prompts.resetFile(() => device.store.replaceWith(new DeviceStore()));
       return false;
     }
     const texts = [this.text(), this.text()];

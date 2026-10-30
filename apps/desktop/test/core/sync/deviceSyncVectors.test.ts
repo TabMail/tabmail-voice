@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { PromptField } from "../../../src/core/personalization/prompts.js";
 import { type Bullet, type Catalog, type CatalogEntry, defaultCatalog, parse, render, type SyncField, trim } from "../../../src/core/sync/bullets.js";
-import { BulletDevice, BulletRelay, type DeviceStore, ownedStore, storeStates } from "../../support/bulletDevices.js";
+import { BulletDevice, BulletRelay, DeviceStore, storeStates } from "../../support/bulletDevices.js";
 
 // The shared conformance vectors and default catalog, byte-identical in TabMail for Thunderbird, iOS and
 // Voice: a change to either is made in all three, and these hashes with it.
@@ -86,7 +86,7 @@ class ScenarioRun {
   readonly relay = new BulletRelay();
   readonly devices = new Map<string, BulletDevice>();
   readonly backups = new Map<string, DeviceStore>();
-  readonly captures = new Map<string, { device: BulletDevice; field: PromptField; section: string; epoch: number; captured: Bullet[] | null }>();
+  readonly captures = new Map<string, { device: BulletDevice; field: PromptField; section: string; captured: Bullet[] | null }>();
   private readonly specs = new Map<string, { index: number; spec: DeviceVector }>();
 
   constructor(private readonly scenario: Scenario) {
@@ -99,7 +99,7 @@ class ScenarioRun {
   }
 
   private initialStore(init: Init): DeviceStore {
-    const store = ownedStore();
+    const store = new DeviceStore();
     if (init === "new") return store;
     if (init === "empty") {
       storeStates(store, {});
@@ -174,13 +174,13 @@ class ScenarioRun {
       case "capture": {
         const device = this.device(step.device);
         const section = step.section as string;
-        this.captures.set(step.as as string, { device, field: field as PromptField, section, epoch: device.prompts.sync.epoch(field as PromptField), captured: device.prompts.sync.capture(field as PromptField, [section]) });
+        this.captures.set(step.as as string, { device, field: field as PromptField, section, captured: device.prompts.sync.capture(field as PromptField, [section]) });
         return;
       }
       case "commit": {
         const capture = this.captures.get(step.capture as string);
         if (capture === undefined) throw new Error(`no capture ${String(step.capture)}`);
-        capture.device.commit(capture.field, capture.section, capture.epoch, capture.captured, step.result as string[]);
+        capture.device.commit(capture.field, capture.section, capture.captured, step.result as string[]);
         return;
       }
       case "reset":

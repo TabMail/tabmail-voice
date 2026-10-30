@@ -46,11 +46,11 @@ describe("knowledge-base diagnostics", () => {
     });
     const store = new FailingStore({ [kbKey]: `- ${kept}.` });
     const prompts = new UserPrompts(store);
-    const tools = new KBTools(prompts, prompts.captureKnowledgeBase());
-    const run = (name: string, statement: string) => tools.run(name, { statement });
-
     // Edits from Settings, saved and not.
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), [`${kept}.`, `${asked}.`])).toBe(true);
+    // An agent request from after the saved edit (one from before it saves nothing, root ADR-035).
+    const tools = new KBTools(prompts, prompts.captureKnowledgeBase());
+    const run = (name: string, statement: string) => tools.run(name, { statement });
     store.failing = true;
     expect(prompts.editKnowledgeBase(prompts.shown("kb", ""), [`${kept}.`])).toBe(false);
     expect(run("kb_add", `${asked} again`)).toContain("error");

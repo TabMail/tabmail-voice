@@ -48,7 +48,48 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   also limits how many messages a connection sends a minute, and every part counts: a field of
   dozens of parts (megabytes, far beyond a real knowledge base) would be cut off on each connect.
   Left as it is (2026-10-29).
-- **Capture epoch (R30, 2026-10-29).** Each field has a capture epoch, in memory only. Every operation
+- **One operation at a time (root ADR-035, 2026-10-29; replaces R30 below).** Settings has no busy
+  state and greys nothing out, and Voice needs no retry: its main thread is synchronous, so it is the
+  semaphore. Every command from Settings (an edit, a reset, a restore) and every `kb_add`/`kb_del` runs
+  to its end there before the next one starts. Every write of the texts goes through one function,
+  `UserPrompts.writeValues` (`BulletSync` commits, restore included, call `UserPrompts.write`); a
+  history entry is one `store.set` in `record`. An agent request is the one thing that awaits between reading the knowledge base and writing
+  it (the AI turn), so it carries one change counter (`KnowledgeCapture.generation`) taken at key-down,
+  and `kb_add`/`kb_del` compare it once before they write: a stale request saves nothing and tells the
+  model "not saved" at once. The counter goes up on every saved change from Settings (edit, reset,
+  restore), the texts' file reset, and every account change (the dictation
+  controller's `accountChanged`, a sign-out included); not when Settings opens. Settings drops a draft
+  (a row being edited, the field to add one) after a reset, a restore or an account change: the editor
+  is keyed by the account and a count of saved resets/restores.
+  **Accounts: the texts are the device user's (owner, 2026-10-29: "App is device-user tied";
+  "the sign-in is which do I sync with & who do I bill").** One `userPrompts.json` in the app's data
+  folder, as before; no per-account split, no wipe, no owner, no claim, and no gate by sign-in state.
+  The account picks only the Device Sync group (and the subscription). Signing out stops Device Sync,
+  ends the agent turn and moves the counter; Settings › Personalization and the dictionary stay shown
+  and editable. Only what needs the account stops: the agent, cleanup and Device Sync. **An account change keeps everything**: the
+  bullets, their labels, the seen map and the writer name (`UserPrompts.accountChanged` only moves the
+  counter). Only the group changes, so the first exchange with the new group is a union: its devices'
+  writers are not in this device's seen map, nor this device's in theirs, so nothing on either side is
+  inferred deleted; DS-DEDUP collapses a text both groups hold to one line, so switching back and forth
+  keeps the line counts. A deletion still crosses between devices that were really in contact (a
+  bullet both groups have from this device). Matches Thunderbird and iOS (the shared Device Sync rule,
+  2026-10-29). Settled the same day: a catalog default deleted on this device also leaves the new
+  group's devices (every device knows the `default:<id>` names, DS-MERGE-2, as DS-DEFAULT already does
+  within one account); the device's user deleted it, so it really was deleted (owner: "deletion happens
+  only if you know the device name previously, and if you already know, you should probably really
+  delete it"). Signing into another account closes the connection opened for the previous one
+  (`DeviceSync.reconcile`), so the device leaves that group; nothing is wiped. A damaged file is never written, so Device Sync
+  stays off and Settings shows the damaged-file notice. The app's data folder is set to 0700 and the
+  files it writes to 0600 on every platform (`restrictDataFolder` at launch; `JSONFileStore` on read and
+  save), rather than left to the system's defaults. The `device_sync_owner_user_id` key a 0.5.x build
+  wrote stays in the file, unread. *History (same day, superseded):* a wipe of the previous account's
+  texts on another account's sign-in (failing the sign-in when it couldn't be saved), then per-account
+  folders, then a signed-out gate (`UserPrompts.isAvailable`, "Sign in to see this.", a dictation
+  locked out of agent mode across an account change), then a re-import on an account change; all
+  removed.
+- **Capture epoch (R30, 2026-10-29). Superseded the same day by root ADR-035 above: the epochs,
+  `endOperations` and their ordering tests were deleted, since they existed only for concurrent local
+  writes that Voice's synchronous main thread already rules out.** Each field has a capture epoch, in memory only. Every operation
   that can await between reading a field and writing it takes the epoch once, at its start, and every
   write it makes carries it as a required argument: Settings' edits (one epoch per field view, `Shown`,
   so an empty list carries one too), an agent request's `kb_add` and `kb_del` (`KnowledgeCapture`), a
@@ -79,8 +120,9 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   affect what is kept: the only timers keep the connection alive (ping every 30 s) and try it again
   (5 s doubling to 300 s, ten times, then at the next wake or return online).
 - **When it runs** is unchanged: for the account signed in, from a texts file that could be read,
-  while `AppSettings.deviceSyncAllowed`; another account signing in resets the texts to the defaults
-  (`UserPrompts.claim`).
+  while `AppSettings.deviceSyncAllowed`; another account signing in keeps the texts and syncs them
+  with its group (root ADR-035, the Accounts paragraph above; the reset to defaults by
+  `UserPrompts.claim` it once did is deleted).
 
 **Consequences:**
 - A bullet deleted on one device is deleted on the others once they exchange states, however late or

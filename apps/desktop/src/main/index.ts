@@ -60,7 +60,7 @@ import {
 } from "../shared/ipc.js";
 import { SessionAudioCapture } from "./audioCapture.js";
 import { deviceSyncSocket } from "./deviceSyncSocket.js";
-import { JSONFileStore } from "./storage/jsonFileStore.js";
+import { JSONFileStore, restrictDataFolder } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
 import { MemoryHelper, memoryFolders } from "./native/memoryHelper.js";
 import { FieldReader } from "./native/fieldReader.js";
@@ -225,6 +225,7 @@ function launch(): void {
    * (`readSuggestedName`). */
   let suggestedName = "";
 
+  restrictDataFolder(app.getPath("userData"));
   const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
   // GNOME integration holds Right Alt (the portal cannot bind a lone modifier), so other Linux
   // desktops, and a GNOME the integration doesn't support, have F8 and F9 only.
@@ -292,7 +293,8 @@ function launch(): void {
   // first start, when agent mode is first chosen.
   const memoryPage = new MemoryPage(memory, () => existsSync(memoryFolders(memoryDirectory).databaseFile), settings);
   // The writing style and knowledge base, in a file of their own: per user of this computer, as
-  // memory is (ADR-DESK-063).
+  // memory is (ADR-DESK-063), whoever is signed in, and while signed out (root ADR-035: the account
+  // picks the Device Sync group and the subscription, never whose texts they are).
   const promptsStore = new JSONFileStore(join(app.getPath("userData"), "userPrompts.json"));
   const prompts = new UserPrompts(promptsStore);
   // Device Sync of the writing style and the knowledge base with the user's Thunderbird and iOS apps

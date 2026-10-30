@@ -27,8 +27,8 @@ function deletionKey(text: string): string {
  * tools of the same names: the same argument, matching, results and errors, each result the JSON of
  * what the tool answers. They edit only the user's own knowledge base, so they ask nothing first.
  * `kb_del` removes only a bullet the request saw (`captured`, taken at key-down, DS-CAPTURE) or one
- * its own `kb_add` made, never one that arrived since. Neither writes once the knowledge base has been
- * reset or another account has signed in since key-down (R30): each write carries the capture's epoch.
+ * its own `kb_add` made, never one that arrived since. Neither writes once something was saved from
+ * Settings, or the account changed, since key-down (root ADR-035): the model is told it wasn't saved.
  */
 export class KBTools {
   /** The tools' names, as the loop offers them. */
@@ -51,6 +51,10 @@ export class KBTools {
       log.error(`KBTools: ${name} called without a statement`);
       return JSON.stringify({ error: "missing statement" });
     }
+    if (!this.prompts.isCurrent(this.captured)) {
+      log.debug(`KBTools: ${name} not saved: the knowledge base or the account changed since key-down`);
+      return JSON.stringify({ error: config.kbChangedSinceRequest });
+    }
     return JSON.stringify(name === config.kbAddTool ? this.add(statement) : this.remove(statement));
   }
 
@@ -61,16 +65,16 @@ export class KBTools {
     // Thunderbird's patch applier decides (writer policy; a bullet's identity stays exact, R25). Only
     // what it shows: a bullet in a section this version doesn't show never blocks an add.
     const wanted = `- ${text}`.toLowerCase();
-    const shown = this.prompts.sync.state("kb").bullets.filter((bullet) => bullet.section === "");
+    const shown = this.prompts.shown("kb", "");
     if (shown.some((bullet) => normalizeUnicode(`- ${bullet.text}`).toLowerCase() === wanted)) {
       log.debug(`KBTools: ${config.kbAddTool} unchanged`);
       return "No change (duplicate or unchanged).";
     }
-    const { outcome, added } = this.prompts.addKnowledge(this.captured, text);
+    const { outcome } = this.prompts.addKnowledge(text);
     log.debug(`KBTools: ${config.kbAddTool} ${outcome}`);
     if (outcome === "unsaved") return { error: this.unsaved() };
     // What it added is the request's own, for a `kb_del` after it.
-    this.captured.bullets?.push(...added);
+    this.captured.bullets?.push(...(this.prompts.captureKnowledgeBase().bullets ?? []).filter((bullet) => bullet.text === text));
     return "Added to knowledge base.";
   }
 
@@ -87,7 +91,7 @@ export class KBTools {
       log.debug(`KBTools: ${config.kbDelTool} found nothing`);
       return { error: "failed to delete from knowledge base (statement not found)" };
     }
-    const { outcome } = this.prompts.removeKnowledge(this.captured, { section: "", text: match.text });
+    const { outcome } = this.prompts.removeKnowledge(this.captured.bullets, { section: "", text: match.text });
     log.debug(`KBTools: ${config.kbDelTool} ${outcome}`);
     if (outcome === "unsaved") return { error: this.unsaved() };
     return outcome === "unchanged" ? { error: "statement not found in knowledge base" } : "Removed from knowledge base.";

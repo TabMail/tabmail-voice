@@ -434,11 +434,21 @@ export const memoryToolProgressLabel = "Looking through past requests";
 export const memoryBubbleName = "Memory";
 export const memoryBubbleDescription = "Looks back at your earlier requests, and keeps what you ask it to remember.";
 
+// MARK: The app's data folder
+
+/** The permissions of the app's data folder and of the files the app writes there, set on every
+ * platform rather than left to the system's defaults: the user's alone (root ADR-035). */
+export const privateFolderMode = 0o700;
+export const privateFileMode = 0o600;
+
 // MARK: Knowledge base and writing style (ADR-DESK-063)
 
 /** The agent loop's knowledge-base tools, as the backend names them. */
 export const kbAddTool = "kb_add";
 export const kbDelTool = "kb_del";
+/** What `kb_add` and `kb_del` tell the model when the user changed the knowledge base or writing style in
+ * Settings, or the account changed, since the request began: not saved (root ADR-035). */
+export const kbChangedSinceRequest = "not saved: the knowledge base was changed in Settings, or the account changed, while this request ran";
 /** Settings' history of the knowledge base and writing style: at most this many entries, the oldest
  * dropped first; an edit is recorded once edits have stopped for this long (ms), as on iOS. */
 export const promptHistoryMax = 100;
