@@ -203,6 +203,18 @@ Thunderbird's copy or its files.
 > here. Checked with Voice's own requests against the built helper. (Since #247, Remove Old sends
 > `previewChars`; see the amendment below.)
 
+> **Amended (2026-11-01): the helper is native-fts 0.12.2.** The pin moves to the 0.12.2 release
+> commit (`0b8f775`), through 0.12.1. A memory that can't be opened (a damaged page) is left closed
+> instead of failing `init`, so the helper still starts and `memoryClear` can recover it
+> (tabmail-native-fts#54). Space freed by a trim goes back to the disk while the helper is idle, and
+> the memory's log is bounded; an existing memory is converted once, by an idle VACUUM (#56). A
+> date-sorted search is exact however many entries match (#58). #57 changes only the email index,
+> which Voice doesn't use. The requests Voice sends and the replies it reads keep their shape (`init`,
+> `memoryIndexBatch`, `memorySearch`, `memoryRead`, `memoryStats`, `memoryTrim`,
+> `memoryRemoveBatch`); `init`'s `memoryDocs` can now be null, and Voice doesn't read it. Voice sends
+> no `sort`. The schema version is unchanged, so nothing is indexed again. Checked with Voice's own
+> requests against the built helper.
+
 > **Amended (2026-10-29, #246): Settings › Memory marks the search's words.** As Thunderbird's Chat
 > History does, a search's words are marked in each listed request and reply, so it shows why an entry
 > matched: each word of the search shown (split at white space) of at least `memoryHighlightMinLength` (2)
