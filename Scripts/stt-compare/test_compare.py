@@ -55,5 +55,46 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(summary["errors"], 1)
 
 
+class BoostTests(unittest.TestCase):
+    """compare.boosted_wav must send what the apps send (normalizePeak, ADR-DESK-040)."""
+
+    def wav(self, samples):
+        import array, tempfile, wave
+        path = pathlib.Path(tempfile.mkdtemp()) / "clip.wav"
+        with wave.open(str(path), "wb") as out:
+            out.setnchannels(1)
+            out.setsampwidth(2)
+            out.setframerate(16000)
+            out.writeframes(array.array("h", samples).tobytes())
+        return path
+
+    def samples(self, data):
+        import array, io, wave
+        with wave.open(io.BytesIO(data)) as audio:
+            return list(array.array("h", audio.readframes(audio.getnframes())))
+
+    def test_quiet_clip_peaks_at_minus_3_dbfs(self):
+        data, gain = compare.boosted_wav(self.wav([0, 1000, -2000, 500]))
+        target = round(0x7FFF * 10 ** (-3 / 20))
+        self.assertEqual(max(abs(s) for s in self.samples(data)), target)
+        self.assertEqual(self.samples(data), [0, round(1000 * gain), -target, round(500 * gain)])
+
+    def test_gain_is_capped_at_30_db(self):
+        data, gain = compare.boosted_wav(self.wav([10, -5]))
+        self.assertAlmostEqual(gain, 10 ** (30 / 20))
+        self.assertEqual(self.samples(data), [316, -158])
+
+    def test_loud_clip_and_silence_are_unchanged(self):
+        for samples in ([30000, -32000], [0, 0, 0]):
+            path = self.wav(samples)
+            data, gain = compare.boosted_wav(path)
+            self.assertEqual(gain, 1.0)
+            self.assertEqual(data, path.read_bytes())
+
+    def test_raw_sends_the_file_as_recorded(self):
+        path = self.wav([0, 1000])
+        self.assertEqual(compare.upload_audio(path, raw=True), (path.read_bytes(), 1.0))
+
+
 if __name__ == "__main__":
     unittest.main()

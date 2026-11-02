@@ -30,14 +30,22 @@ stripping punctuation and, for English, writing numbers out the way passages.txt
 ("$4,280.50" = "four thousand two hundred eighty dollars and fifty cents", "9" = "nine",
 "March 14th" = "March fourteenth", "a.m." = "am", "support@example.com" = "support at example
 dot com"), so a model isn't marked down for formatting; read the transcripts for punctuation,
-casing and number style. $/hour = the reported cost over the seconds of audio sent, so it
+casing and number style.
+
+Each recording is boosted the way the apps boost a dictation before upload (ADR-DESK-040,
+ADR-IOS-085): one gain for the whole clip so its loudest sample sits at −3 dBFS, at most +30 dB,
+never quieter. --raw sends the recordings as captured instead. Runs before 2026-11-01 were raw.
+$/hour = the reported cost over the seconds of audio sent, so it
 includes any per-request minimum billing on short dictation-length clips.
 """
 import argparse
+import array
 import base64
 import concurrent.futures
 import datetime
+import io
 import json
+import math
 import os
 import pathlib
 import re
@@ -79,6 +87,10 @@ DEFAULT_MODELS = [
 ZDR_LIST = "https://openrouter.ai/api/v1/endpoints/zdr"
 MODEL_ENDPOINTS = "https://openrouter.ai/api/v1/models/{model}/endpoints"
 TIMEOUT_SECONDS = 60
+# The apps' upload boost: apps/desktop/src/core/config.ts normalizedPeakDecibels and
+# maxNormalizationGainDecibels (the iOS app uses the same two values). Keep them equal.
+NORMALIZED_PEAK_DECIBELS = -3
+MAX_NORMALIZATION_GAIN_DECIBELS = 30
 PARALLEL_REQUESTS = 6
 
 
@@ -151,6 +163,40 @@ def word_errors(reference: str, hypothesis: str):
     return previous[-1], max(len(ref), 1)
 
 
+def boosted_wav(wav: pathlib.Path):
+    """(wav bytes, gain): the recording peak-normalized as the apps do before upload (normalizePeak
+    in apps/desktop/src/core/audio/recorder.ts): one gain so the loudest sample sits at
+    NORMALIZED_PEAK_DECIBELS, at most MAX_NORMALIZATION_GAIN_DECIBELS, never below 1."""
+    with wave.open(str(wav)) as audio:
+        params = audio.getparams()
+        frames = audio.readframes(audio.getnframes())
+    if params.sampwidth != 2:
+        sys.exit(f"{wav.name}: expected 16-bit PCM, got {8 * params.sampwidth}-bit.")
+    samples = array.array("h", frames)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    peak = max((abs(sample) for sample in samples), default=0)
+    if peak == 0:
+        return wav.read_bytes(), 1.0
+    gain = min(0x7FFF * 10 ** (NORMALIZED_PEAK_DECIBELS / 20) / peak, 10 ** (MAX_NORMALIZATION_GAIN_DECIBELS / 20))
+    if gain <= 1:
+        return wav.read_bytes(), 1.0
+    # Rounded half away from zero, as the apps do; every scaled sample is at most the target.
+    scaled = array.array("h", (int(math.copysign(math.floor(abs(sample) * gain + 0.5), sample)) for sample in samples))
+    if sys.byteorder != "little":
+        scaled.byteswap()
+    out = io.BytesIO()
+    with wave.open(out, "wb") as boosted:
+        boosted.setparams(params)
+        boosted.writeframes(scaled.tobytes())
+    return out.getvalue(), gain
+
+
+def upload_audio(wav: pathlib.Path, raw: bool):
+    """(wav bytes to send, gain applied): boosted like the apps unless raw."""
+    return (wav.read_bytes(), 1.0) if raw else boosted_wav(wav)
+
+
 def audio_seconds(wav: pathlib.Path) -> float:
     with wave.open(str(wav)) as audio:
         return audio.getnframes() / audio.getframerate()
@@ -211,13 +257,15 @@ def rescore(files):
                 by_model.setdefault(result["model"], []).append(score(dict(result), refs))
         for model, results in by_model.items():
             rows.append({"model": model, "run": run, "language": saved.get("language") or "auto-detect",
+                         "audio": saved.get("audio", "raw"),
                          "clips": len(results), **summarize(results, lengths.__getitem__)})
     rows.sort(key=lambda r: (r["wer"] is None, r["wer"] or 0))
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     lines = [f"# STT re-score {stamp}", "", "Runs: " + ", ".join(pathlib.Path(f).name for f in files), "",
-             table_row(["Model", "Run", "Language", "Clips"] + SUMMARY_HEADER),
-             table_row(["---"] * (4 + len(SUMMARY_HEADER)))]
-    lines += [table_row([r["model"], r["run"], r["language"], str(r["clips"])] + summary_cells(r)) for r in rows]
+             table_row(["Model", "Run", "Audio", "Language", "Clips"] + SUMMARY_HEADER),
+             table_row(["---"] * (5 + len(SUMMARY_HEADER)))]
+    lines += [table_row([r["model"], r["run"], r["audio"], r["language"], str(r["clips"])] + summary_cells(r))
+              for r in rows]
     out = HERE / "results"
     out.mkdir(exist_ok=True)
     report = out / f"rescore-{stamp}.md"
@@ -272,10 +320,10 @@ def zdr_status(models):
     return status
 
 
-def transcribe(key: str, model: str, wav: pathlib.Path, language):
+def transcribe(key: str, model: str, audio: bytes, language):
     body = {
         "model": model,
-        "input_audio": {"data": base64.b64encode(wav.read_bytes()).decode(), "format": "wav"},
+        "input_audio": {"data": base64.b64encode(audio).decode(), "format": "wav"},
         "temperature": 0,
     }
     if language:
@@ -307,6 +355,8 @@ def main() -> None:
     parser.add_argument("--language", help="ISO-639-1 code, e.g. en (default: auto-detect)")
     parser.add_argument("--speak", help="record this sentence with macOS `say` and use it instead of recordings/")
     parser.add_argument("--voice", help="the `say` voice for --speak, e.g. Yuna for Korean (default: the system voice)")
+    parser.add_argument("--raw", action="store_true",
+                        help="send the recordings as captured, without the apps' upload boost")
     parser.add_argument("--rescore", nargs="+", metavar="RESULTS_JSON",
                         help="re-score saved results/*.json runs into one table; sends no requests")
     args = parser.parse_args()
@@ -337,11 +387,15 @@ def main() -> None:
     for model, state in zdr.items():
         if not state.startswith("all"):
             print(f"  ⚠️  {model}: ZDR endpoints {state}")
+    uploads = {wav.stem: upload_audio(wav, args.raw) for wav in wavs}
+    audio_label = "raw" if args.raw else "boosted"
+    gains = sorted(20 * math.log10(gain) for _, gain in uploads.values())
+    print(f"Audio: {audio_label}" + ("" if args.raw else f", gain {gains[0]:+.1f} to {gains[-1]:+.1f} dB"))
     jobs = [(model, wav) for model in args.models for wav in wavs]
     print(f"{len(args.models)} models × {len(wavs)} recordings = {len(jobs)} requests…")
     results = {}
     with concurrent.futures.ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
-        futures = {pool.submit(transcribe, key, m, w, args.language): (m, w.stem) for m, w in jobs}
+        futures = {pool.submit(transcribe, key, m, uploads[w.stem][0], args.language): (m, w.stem) for m, w in jobs}
         for done, future in enumerate(concurrent.futures.as_completed(futures), 1):
             model, pid = futures[future]
             result = score({"passage": pid, **future.result()}, refs)
@@ -354,7 +408,10 @@ def main() -> None:
                for model in args.models]
     summary.sort(key=lambda s: (s["wer"] is None, s["wer"] or 0))
 
-    lines = [f"# STT comparison {stamp}", "", f"Language: {args.language or 'auto-detect'}", "",
+    audio_line = ("Audio: raw (as recorded)" if args.raw else
+                  f"Audio: boosted like the apps (peak {NORMALIZED_PEAK_DECIBELS} dBFS, gain "
+                  f"{gains[0]:+.1f} to {gains[-1]:+.1f} dB)")
+    lines = [f"# STT comparison {stamp}", "", f"Language: {args.language or 'auto-detect'}", "", audio_line, "",
              table_row(["Model", "ZDR endpoints"] + SUMMARY_HEADER), table_row(["---"] * (2 + len(SUMMARY_HEADER)))]
     lines += [table_row([s["model"], s["zdr"]] + summary_cells(s)) for s in summary]
     for wav in wavs:
@@ -366,9 +423,9 @@ def main() -> None:
     report = out / f"{stamp}.md"
     report.write_text("\n".join(lines) + "\n")
     (out / f"{stamp}.json").write_text(json.dumps(
-        {"language": args.language, "summary": summary,
+        {"language": args.language, "audio": audio_label, "summary": summary,
          "results": [{"model": m, "passage": p, **r} for (m, p), r in results.items()]}, indent=2))
-    print("\n" + "\n".join(lines[4:6 + len(summary)]))
+    print("\n" + "\n".join(lines[6:8 + len(summary)]))
     print(f"\nFull report: {report}")
 
 

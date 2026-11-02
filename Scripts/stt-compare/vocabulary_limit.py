@@ -45,7 +45,7 @@ import time
 import urllib.error
 import urllib.request
 
-from compare import ENDPOINT, HERE, TIMEOUT_SECONDS, key_from_env_file
+from compare import ENDPOINT, HERE, TIMEOUT_SECONDS, key_from_env_file, upload_audio
 
 DEFAULT_MODEL = "microsoft/mai-transcribe-2"
 DEFAULT_COUNTS = [0, 10, 50, 51, 100, 200, 500, 1000, 2000]
@@ -103,20 +103,20 @@ def filler_terms(count: int, chars: int = 0, kind: str = "names"):
     return terms
 
 
-def transcribe(key: str, model: str, wav: pathlib.Path, terms):
+def transcribe(key: str, model: str, audio: bytes, terms):
     """One request, sent again after a rate limit (HTTP 429) up to RATE_LIMIT_RETRIES times."""
     for _ in range(RATE_LIMIT_RETRIES):
-        result = transcribe_once(key, model, wav, terms)
+        result = transcribe_once(key, model, audio, terms)
         if result["status"] != 429:
             return result
         time.sleep(RATE_LIMIT_WAIT_SECONDS)
     return result
 
 
-def transcribe_once(key: str, model: str, wav: pathlib.Path, terms):
+def transcribe_once(key: str, model: str, audio: bytes, terms):
     body = {
         "model": model,
-        "input_audio": {"data": base64.b64encode(wav.read_bytes()).decode(), "format": "wav"},
+        "input_audio": {"data": base64.b64encode(audio).decode(), "format": "wav"},
         "temperature": 0,
     }
     if terms:
@@ -144,6 +144,8 @@ def main() -> None:
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(FORMATS))
     parser.add_argument("--counts", nargs="+", type=int, default=DEFAULT_COUNTS, help="list lengths to try, in order")
     parser.add_argument("--recording", default="05-jargon", help="a recordings/<id>.wav (default 05-jargon)")
+    parser.add_argument("--raw", action="store_true",
+                        help="send the recording as captured, without the apps' upload boost (compare.py)")
     parser.add_argument("--speak", help="record this sentence with macOS `say` and use it instead of --recording")
     parser.add_argument("--bisect", nargs=2, type=int, metavar=("LO", "HI"),
                         help="find the largest list taken between LO and HI instead of trying --counts")
@@ -179,6 +181,7 @@ def main() -> None:
         source = f"recording {args.recording}"
     if not wav.is_file():
         sys.exit(f"No recording {wav}.")
+    audio, _ = upload_audio(wav, args.raw)
 
     rows = []
 
@@ -186,7 +189,7 @@ def main() -> None:
         terms = filler_terms(count, args.term_chars, args.filler)
         if args.canary and count > 0:
             terms[0 if args.canary_position == "first" else -1] = args.canary
-        result = transcribe(key, args.model, wav, terms)
+        result = transcribe(key, args.model, audio, terms)
         canary_heard = bool(args.canary) and count > 0 and args.canary.lower() in result["text"].lower()
         rows.append({"count": count, "canary_heard": canary_heard, **result})
         outcome = f"HTTP {result['status']}" + (f" {result['error'][:160]}" if result["error"] else "")
