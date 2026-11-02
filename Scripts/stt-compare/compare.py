@@ -56,6 +56,7 @@ DEFAULT_MODELS = [
     "mistralai/voxtral-mini-transcribe",
     "mistralai/voxtral-mini-3b-2507",
     "mistralai/voxtral-small-24b-2507-stt",
+    "mistralai/voxtral-small-transcribe-3-0",
     "assemblyai/universal-3-5-pro",
     "deepgram/nova-3",
     "fish-audio/transcribe-1",
