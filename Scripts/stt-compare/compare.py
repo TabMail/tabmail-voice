@@ -19,9 +19,19 @@ Sends the same request shape the TabMail backend sends.
 --speak records one sentence with macOS `say` (--voice picks the voice, e.g. Yuna for Korean) and
 scores it instead of recordings/; leave out --language to see whether a model detects the language.
 
+    python3 Scripts/stt-compare/compare.py --rescore results/20260924-220953.json results/20261101-222917.json
+
+--rescore sends nothing: it re-scores saved runs with the current scoring and passages.txt and
+writes one combined table (results/rescore-<timestamp>.md), so runs from different days compare.
+
 Writes results/<timestamp>.md (summary table + every transcript) and .json.
-WER = word error rate against passages.txt after lower-casing and stripping punctuation, so it
-ignores formatting; read the transcripts for punctuation, casing and number formatting.
+WER = word errors over all reference words (corpus WER) against passages.txt, after lower-casing,
+stripping punctuation and, for English, writing numbers out the way passages.txt reads them
+("$4,280.50" = "four thousand two hundred eighty dollars and fifty cents", "9" = "nine",
+"March 14th" = "March fourteenth", "a.m." = "am", "support@example.com" = "support at example
+dot com"), so a model isn't marked down for formatting; read the transcripts for punctuation,
+casing and number style. $/hour = the reported cost over the seconds of audio sent, so it
+includes any per-request minimum billing on short dictation-length clips.
 """
 import argparse
 import base64
@@ -31,11 +41,13 @@ import json
 import os
 import pathlib
 import re
+import statistics
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import wave
 
 HERE = pathlib.Path(__file__).resolve().parent
 ENDPOINT = "https://openrouter.ai/api/v1/audio/transcriptions"
@@ -79,21 +91,139 @@ def references():
     return refs
 
 
-def words(text: str):
-    text = text.lower().replace("’", "'")
+ONES = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+        "fifteen sixteen seventeen eighteen nineteen").split()
+TENS = "_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()
+IRREGULAR_ORDINALS = {"one": "first", "two": "second", "three": "third", "five": "fifth",
+                      "eight": "eighth", "nine": "ninth", "twelve": "twelfth"}
+MONTHS = "january february march april may june july august september october november december".split()
+
+
+def cardinal(n: int) -> str:
+    if n < 20:
+        return ONES[n]
+    if n < 100:
+        return TENS[n // 10] + ("" if n % 10 == 0 else " " + ONES[n % 10])
+    if n < 1000:
+        return ONES[n // 100] + " hundred" + ("" if n % 100 == 0 else " " + cardinal(n % 100))
+    return cardinal(n // 1000) + " thousand" + ("" if n % 1000 == 0 else " " + cardinal(n % 1000))
+
+
+def ordinal(n: int) -> str:
+    spoken = cardinal(n).split()
+    last = spoken[-1]
+    spoken[-1] = IRREGULAR_ORDINALS.get(last, last[:-1] + "ieth" if last.endswith("y") else last + "th")
+    return " ".join(spoken)
+
+
+def spell_numbers(text: str) -> str:
+    """English text with numbers, money, times and email addresses written as passages.txt reads them."""
+    text = re.sub(r"([a-z0-9])@([a-z0-9])", r"\1 at \2", text)
+    text = re.sub(r"([a-z])\.(com|org|net)\b", r"\1 dot \2", text)
+    text = re.sub(r"\b([ap])\.?\s?m\b\.?", r"\1m", text)
+    text = re.sub(r"\$([\d,]+)\.(\d\d)\b", lambda m: f"{cardinal(int(m[1].replace(',', '')))} dollars and {cardinal(int(m[2]))} cents", text)
+    text = re.sub(r"\$([\d,]+)", lambda m: f"{cardinal(int(m[1].replace(',', '')))} dollars", text)
+    text = re.sub(r"\b(\d+)(st|nd|rd|th)\b", lambda m: ordinal(int(m[1])), text)
+    text = re.sub(r"\b(" + "|".join(MONTHS) + r") (\d{1,2})\b", lambda m: f"{m[1]} {ordinal(int(m[2]))}", text)
+    # Four or more digits without a $ are an ID or reference number, read digit by digit.
+    text = re.sub(r"\b(\d{4,})\b", lambda m: " ".join(ONES[int(d)] for d in m[1]), text)
+    return re.sub(r"\b(\d{1,3})\b", lambda m: cardinal(int(m[1])), text)
+
+
+def words(text: str, english: bool):
+    text = text.lower().replace("\u2019", "'").replace("\u2014", " ").replace("\u2013", " ")
+    if english:
+        text = spell_numbers(text)
     text = re.sub(r"[^\w\s']", " ", text)
     return text.split()
 
 
-def wer(reference: str, hypothesis: str) -> float:
-    ref, hyp = words(reference), words(hypothesis)
+def word_errors(reference: str, hypothesis: str):
+    """(word edits, reference words). Numbers are written out only for an English (ASCII) reference."""
+    english = reference.isascii()
+    ref, hyp = words(reference, english), words(hypothesis, english)
     previous = list(range(len(hyp) + 1))
     for i, r in enumerate(ref, 1):
         current = [i] + [0] * len(hyp)
         for j, h in enumerate(hyp, 1):
             current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (r != h))
         previous = current
-    return previous[-1] / max(len(ref), 1)
+    return previous[-1], max(len(ref), 1)
+
+
+def audio_seconds(wav: pathlib.Path) -> float:
+    with wave.open(str(wav)) as audio:
+        return audio.getnframes() / audio.getframerate()
+
+
+def summarize(rows, seconds_of):
+    """One summary row from a model's results; seconds_of(passage) is that recording's length."""
+    ok = [r for r in rows if not r["error"]]
+    errors = sum(r["word_errors"] for r in ok)
+    total = sum(r["reference_words"] for r in ok)
+    audio = sum(seconds_of(r["passage"]) for r in ok)
+    cost = sum(r["cost"] for r in ok)
+    return {
+        "wer": errors / total if total else None,
+        "median_seconds": statistics.median(r["seconds"] for r in ok) if ok else None,
+        "cost": cost,
+        "cost_per_hour": cost / audio * 3600 if audio else None,
+        "errors": len(rows) - len(ok),
+    }
+
+
+def score(result, refs):
+    """Adds wer, word_errors and reference_words to a result (None when it errored)."""
+    if result["error"]:
+        result.update(wer=None, word_errors=None, reference_words=None)
+    else:
+        edits, total = word_errors(refs[result["passage"]], result["text"])
+        result.update(wer=edits / total, word_errors=edits, reference_words=total)
+    return result
+
+
+def table_row(cells):
+    return "| " + " | ".join(cells) + " |"
+
+
+def summary_cells(s):
+    return [f"{s['wer']:.1%}" if s["wer"] is not None else "—",
+            f"{s['median_seconds']:.2f}" if s["median_seconds"] is not None else "—",
+            f"{s['cost']:.5f}",
+            f"{s['cost_per_hour']:.2f}" if s["cost_per_hour"] is not None else "—",
+            str(s["errors"])]
+
+
+SUMMARY_HEADER = ["WER", "Median latency (s)", "Cost ($)", "$/hour of audio", "Errors"]
+
+
+def rescore(files):
+    """Re-scores saved runs (no requests) and writes one combined table."""
+    refs = references()
+    lengths = {w.stem: audio_seconds(w) for w in (HERE / "recordings").glob("*.wav")}
+    rows = []
+    for file in files:
+        saved = json.loads(pathlib.Path(file).read_text())
+        run = pathlib.Path(file).stem
+        by_model = {}
+        for result in saved["results"]:
+            if result["passage"] in refs and result["passage"] in lengths:
+                by_model.setdefault(result["model"], []).append(score(dict(result), refs))
+        for model, results in by_model.items():
+            rows.append({"model": model, "run": run, "language": saved.get("language") or "auto-detect",
+                         "clips": len(results), **summarize(results, lengths.__getitem__)})
+    rows.sort(key=lambda r: (r["wer"] is None, r["wer"] or 0))
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    lines = [f"# STT re-score {stamp}", "", "Runs: " + ", ".join(pathlib.Path(f).name for f in files), "",
+             table_row(["Model", "Run", "Language", "Clips"] + SUMMARY_HEADER),
+             table_row(["---"] * (4 + len(SUMMARY_HEADER)))]
+    lines += [table_row([r["model"], r["run"], r["language"], str(r["clips"])] + summary_cells(r)) for r in rows]
+    out = HERE / "results"
+    out.mkdir(exist_ok=True)
+    report = out / f"rescore-{stamp}.md"
+    report.write_text("\n".join(lines) + "\n")
+    print("\n".join(lines[4:]))
+    print(f"\nReport: {report}")
 
 
 def key_from_env_file(path: pathlib.Path, use_sudo: bool):
@@ -177,7 +307,12 @@ def main() -> None:
     parser.add_argument("--language", help="ISO-639-1 code, e.g. en (default: auto-detect)")
     parser.add_argument("--speak", help="record this sentence with macOS `say` and use it instead of recordings/")
     parser.add_argument("--voice", help="the `say` voice for --speak, e.g. Yuna for Korean (default: the system voice)")
+    parser.add_argument("--rescore", nargs="+", metavar="RESULTS_JSON",
+                        help="re-score saved results/*.json runs into one table; sends no requests")
     args = parser.parse_args()
+    if args.rescore:
+        rescore(args.rescore)
+        return
 
     key = os.environ.get("OPENROUTER_API_KEY") or key_from_env_file(args.env_file.expanduser(), args.sudo)
     if not key:
@@ -209,31 +344,19 @@ def main() -> None:
         futures = {pool.submit(transcribe, key, m, w, args.language): (m, w.stem) for m, w in jobs}
         for done, future in enumerate(concurrent.futures.as_completed(futures), 1):
             model, pid = futures[future]
-            result = future.result()
-            result["wer"] = None if result["error"] else wer(refs[pid], result["text"])
+            result = score({"passage": pid, **future.result()}, refs)
             results[(model, pid)] = result
             print(f"  {done}/{len(jobs)} {model} {pid} {'ERROR' if result['error'] else 'ok'}")
 
-    summary = []
-    for model in args.models:
-        rows = [results[(model, w.stem)] for w in wavs]
-        ok = [r for r in rows if not r["error"]]
-        summary.append({
-            "model": model,
-            "zdr": zdr[model],
-            "wer": sum(r["wer"] for r in ok) / len(ok) if ok else None,
-            "seconds": sum(r["seconds"] for r in ok) / len(ok) if ok else None,
-            "cost": sum(r["cost"] for r in ok),
-            "errors": len(rows) - len(ok),
-        })
+    lengths = {wav.stem: audio_seconds(wav) for wav in wavs}
+    summary = [{"model": model, "zdr": zdr[model],
+                **summarize([results[(model, w.stem)] for w in wavs], lengths.__getitem__)}
+               for model in args.models]
     summary.sort(key=lambda s: (s["wer"] is None, s["wer"] or 0))
 
     lines = [f"# STT comparison {stamp}", "", f"Language: {args.language or 'auto-detect'}", "",
-             "| Model | ZDR endpoints | WER | Avg latency (s) | Cost ($) | Errors |", "|---|---|---|---|---|---|"]
-    for s in summary:
-        wer_text = f"{s['wer']:.1%}" if s["wer"] is not None else "—"
-        secs = f"{s['seconds']:.2f}" if s["seconds"] is not None else "—"
-        lines.append(f"| {s['model']} | {s['zdr']} | {wer_text} | {secs} | {s['cost']:.5f} | {s['errors']} |")
+             table_row(["Model", "ZDR endpoints"] + SUMMARY_HEADER), table_row(["---"] * (2 + len(SUMMARY_HEADER)))]
+    lines += [table_row([s["model"], s["zdr"]] + summary_cells(s)) for s in summary]
     for wav in wavs:
         lines += ["", f"## {wav.stem}", "", f"**Reference:** {refs[wav.stem]}", ""]
         for s in summary:
