@@ -53,7 +53,6 @@
       "dmg",
       "zip"
     ],
-    "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-*/*.node",
     "minimumSystemVersion": "15.0",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,

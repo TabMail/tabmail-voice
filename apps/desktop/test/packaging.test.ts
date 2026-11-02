@@ -215,16 +215,12 @@ describe("the Mac app's packaging", () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  /** Every Mac app carries the keychain's binaries for both architectures (the sign-in): npm installs
-   * only the build machine's, and the build installs the other's (scripts/macos/build-native.mts).
-   * The universal app is joined from an Apple silicon and an Intel build, which must hold the same
-   * files; the keychain's two binaries are the same in both, each one architecture's, which the
-   * join accepts only for the files `x64ArchFiles` names. */
-  test("every Mac app carries both architectures' keychain binaries", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { files: string[]; mac: { x64ArchFiles: string } };
-
+  /** Both loader paths carry universal binaries, so universal packaging needs no exception
+   * that permits an Intel-only component inside an Apple silicon app. */
+  test("Mac packaging does not exempt Intel-only keychain binaries", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { files: string[]; mac: { x64ArchFiles?: string } };
     expect(builder.files.filter((pattern) => pattern.includes("keyring"))).toEqual([]);
-    expect(builder.mac.x64ArchFiles).toBe("Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-*/*.node");
+    expect(builder.mac.x64ArchFiles).toBeUndefined();
   });
 
   /** electron-builder joins the universal app from an Apple silicon and an Intel build, and refuses

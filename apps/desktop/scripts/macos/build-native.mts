@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodedRustFlagsWithoutHome, refuseHomeFolder } from "../home-folder.mts";
 import { buildMemoryHelper } from "../memory-helper.mts";
+import { universalKeyring } from "./universal-keyring.mts";
 
 /** Each app architecture (electron-builder's name) and what builds its helpers. */
 const architectures = {
@@ -75,6 +76,7 @@ export async function buildNative(root: string): Promise<void> {
   const arch = process.env.VOICE_MAC_ARCH ?? process.arch;
   if (arch !== "arm64" && arch !== "x64" && arch !== "universal") throw new Error(`The Mac app's architecture is ${arch}, not arm64, x64 or universal`);
   await installMacPackages(root);
+  universalKeyring(root);
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });
   if (arch === "universal") {

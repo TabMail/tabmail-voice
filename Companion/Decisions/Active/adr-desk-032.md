@@ -343,3 +343,15 @@ clean.
   runs only its own architecture's half.
 - macOS 26 is the last macOS for Intel Macs, so this app serves them on macOS 15 and 26.
 
+
+### Amendment 2026-11-02 — no Intel-only keyring component in native Mac apps
+
+The two architecture-specific keyring loader paths remain, but their binary files are now
+universal: the build joins the two lockfile-verified slices with `lipo` and copies the result to
+both paths before packaging/signing. This supersedes the October 11 single-slice keyring layout
+and removes the `x64ArchFiles` exception. macOS can warn about an Intel-only component even when
+the app itself runs natively. Apple silicon and universal release bundles must have an ARM64
+slice in every Mach-O component; universal bundles must also retain every Intel slice. The
+release helper checks the actual signed bundle, in addition to its existing signing/notarization
+and helper checks. The addon’s two original slices are preserved; no credential-store behavior
+or existing sign-in is changed. Installed copies receive this through the next signed update.
