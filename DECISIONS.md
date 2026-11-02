@@ -41,7 +41,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-029](Companion/Decisions/Active/adr-desk-029.md)**: Shortcuts, listed and run through the `shortcuts` command
 - **[ADR-DESK-030](Companion/Decisions/Active/adr-desk-030.md)**: The web, searched on the backend, read and opened on this computer
 - **[ADR-DESK-031](Companion/Decisions/Active/adr-desk-031.md)**: While fn is the hotkey, the Globe key's own action is off
-- **[ADR-DESK-032](Companion/Decisions/Active/adr-desk-032.md)**: One Electron app for macOS, Windows and Linux
+- **[ADR-DESK-032](Companion/Decisions/Active/adr-desk-032.md)**: One Electron app for macOS, Windows and Linux; universal keyring slices prevent Intel-only Mac components
 - **[ADR-DESK-033](Companion/Decisions/Active/adr-desk-033.md)**: The bubbles surround the pill, one for each app Answer reaches *(placement superseded by ADR-DESK-036)*
 - **[ADR-DESK-034](Companion/Decisions/Active/adr-desk-034.md)**: A bubble under the pointer grows and says what it is
 - **[ADR-DESK-035](Companion/Decisions/Active/adr-desk-035.md)**: Agent mode sends the user's name, set in the wizard or Settings

@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildNative } from "../../scripts/macos/build-native.mts";
 import { buildMemoryHelper } from "../../scripts/memory-helper.mts";
+import { universalKeyring } from "../../scripts/macos/universal-keyring.mts";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -19,6 +20,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 // The memory helper's own build is tested in memoryHelperBuild.test.ts: here it writes a file
 // marked with the Rust target it was given.
 vi.mock("../../scripts/memory-helper.mts", () => ({ buildMemoryHelper: vi.fn() }));
+// Real Mach-O joining and refusal cases are exercised by universalKeyring.test.ts.
+vi.mock("../../scripts/macos/universal-keyring.mts", () => ({ universalKeyring: vi.fn() }));
 
 /** The real `execFileSync` (the mock's first implementation), which runs `tar` for the fixtures. */
 const realExecFileSync = vi.mocked(execFileSync).getMockImplementation() ?? execFileSync;
@@ -44,6 +47,7 @@ describe("the macOS helper build", () => {
     const source = join(root, "tarball-source", name);
     file(join(source, "package/package.json"), JSON.stringify({ name, version }));
     file(join(source, "package/binary.node"), `${name} binary`);
+    file(join(source, `package/keyring.darwin-${name.endsWith("arm64") ? "arm64" : "x64"}.node`), `${name} binary`);
     const path = join(source, "package.tgz");
     realExecFileSync("tar", ["-czf", path, "-C", source, "package"]);
     const bytes = readFileSync(path);
@@ -75,6 +79,7 @@ describe("the macOS helper build", () => {
         writeFileSync(path, readFileSync(path, "utf8").replace(/ \[debug map [^\]]*\]/g, ""));
         return Buffer.alloc(0);
       }
+      if (command === "lipo" && args[0] === "-archs") return "arm64 x86_64\n";
       if (command === "lipo") {
         const output = args[args.indexOf("-output") + 1] ?? "";
         file(output, `lipo of ${args.slice(1, args.indexOf("-output")).map((input) => readFileSync(input, "utf8")).join(" and ")}`);
@@ -187,6 +192,29 @@ describe("the macOS helper build", () => {
     ]);
     for (const helper of helpers) expect(readFileSync(join(root, "dist/helpers", helper), "utf8")).toBe(`${helper} x86_64-apple-macosx15.0 x86_64-apple-darwin`);
     expect(readFileSync(join(root, "dist/helpers/voice-memory"), "utf8")).toBe("voice-memory x86_64-apple-darwin");
+  });
+
+  test.each(["arm64", "x64", "universal"])("a %s build leaves both loader paths with both keyring slices", async (arch) => {
+    const scratch = mkdtempSync(join(tmpdir(), "voice-keyring-build-"));
+    roots.push(scratch);
+    const packages: Record<string, object> = {};
+    const served: Record<string, Buffer> = {};
+    for (const cpu of ["arm64", "x64"]) {
+      const name = `@napi-rs/keyring-darwin-${cpu}`;
+      const archive = tarball(join(scratch, cpu), name, "2.0.0");
+      const url = `https://registry.example.com/${cpu}.tgz`;
+      packages[`node_modules/${name}`] = { version: "2.0.0", resolved: url, integrity: archive.integrity, os: ["darwin"], cpu: [cpu] };
+      served[url] = archive.bytes;
+    }
+    const { root } = checkout(packages, served);
+    process.env.VOICE_MAC_ARCH = arch;
+    const actual = await vi.importActual<typeof import("../../scripts/macos/universal-keyring.mts")>("../../scripts/macos/universal-keyring.mts");
+    vi.mocked(universalKeyring).mockImplementationOnce(actual.universalKeyring);
+    await buildNative(root);
+    for (const cpu of ["arm64", "x64"]) {
+      const binary = readFileSync(join(root, `node_modules/@napi-rs/keyring-darwin-${cpu}/keyring.darwin-${cpu}.node`), "utf8");
+      expect(binary).toBe("lipo of @napi-rs/keyring-darwin-arm64 binary and @napi-rs/keyring-darwin-x64 binary");
+    }
   });
 
   test("the universal app's helpers join both architectures' builds", async () => {
