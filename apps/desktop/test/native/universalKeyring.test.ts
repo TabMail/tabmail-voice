@@ -3,14 +3,28 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { universalKeyring } from "../../scripts/macos/universal-keyring.mts";
 
+vi.mock("node:fs", async (original) => {
+  const actual = await original<typeof import("node:fs")>();
+  return { ...actual, copyFileSync: vi.fn(actual.copyFileSync) };
+});
+vi.mock("node:os", async (original) => {
+  const actual = await original<typeof import("node:os")>();
+  return { ...actual, tmpdir: vi.fn(actual.tmpdir) };
+});
+const realCopy = vi.mocked(copyFileSync).getMockImplementation() ?? copyFileSync;
+const realTmpdir = vi.mocked(tmpdir).getMockImplementation() ?? tmpdir;
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  vi.mocked(copyFileSync).mockReset().mockImplementation(realCopy);
+  vi.mocked(tmpdir).mockReset().mockImplementation(realTmpdir);
+});
 function fixture(): { root: string; binaries: string[]; slices: Buffer[] } {
   const root = mkdtempSync(join(tmpdir(), "voice-keyring-test-"));
   roots.push(root);
@@ -54,4 +68,18 @@ test.skipIf(process.platform !== "darwin")("invalid Mach-O input refuses without
   const before = binaries.map(binary => readFileSync(binary));
   expect(() => universalKeyring(root)).toThrow();
   expect(binaries.map(binary => readFileSync(binary))).toEqual(before);
+});
+
+
+test.skipIf(process.platform !== "darwin").each(["success", "missing", "malformed", "first copy", "second copy"])("temporary output is removed after %s", (outcome) => {
+  const { root, binaries } = fixture();
+  if (outcome === "missing") rmSync(binaries[0] ?? "");
+  if (outcome === "malformed") writeFileSync(binaries[1] ?? "", "invalid synthetic binary");
+  if (outcome === "second copy") vi.mocked(copyFileSync).mockImplementationOnce(realCopy);
+  if (outcome.endsWith("copy")) vi.mocked(copyFileSync).mockImplementationOnce(() => { throw new Error("synthetic copy failure"); });
+  const before = readdirSync(root).sort();
+  vi.mocked(tmpdir).mockReturnValue(root);
+  if (outcome === "success") universalKeyring(root);
+  else expect(() => universalKeyring(root)).toThrow();
+  expect(readdirSync(root).sort()).toEqual(before);
 });
