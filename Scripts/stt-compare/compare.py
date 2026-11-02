@@ -132,6 +132,7 @@ def spell_numbers(text: str) -> str:
     """English text with numbers, money, times and email addresses written as passages.txt reads them."""
     text = re.sub(r"([a-z0-9])@([a-z0-9])", r"\1 at \2", text)
     text = re.sub(r"([a-z])\.(com|org|net)\b", r"\1 dot \2", text)
+    text = re.sub(r"\b(\d{1,2}):00\b", r"\1", text)  # "10:00 a.m." is said "ten a.m."
     text = re.sub(r"\b([ap])\.?\s?m\b\.?", r"\1m", text)
     text = re.sub(r"\$([\d,]+)\.(\d\d)\b", lambda m: f"{cardinal(int(m[1].replace(',', '')))} dollars and {cardinal(int(m[2]))} cents", text)
     text = re.sub(r"\$([\d,]+)", lambda m: f"{cardinal(int(m[1].replace(',', '')))} dollars", text)

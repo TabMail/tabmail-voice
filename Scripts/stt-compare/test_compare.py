@@ -25,6 +25,7 @@ class ScoringTests(unittest.TestCase):
             ("my three o'clock", "my 3 o'clock"),
             ("the third quarter", "the 3rd quarter"),
             ("Wednesday at ten a.m.", "Wednesday at 10 AM"),
+            ("Wednesday at ten a.m.", "Wednesday at 10:00 a.m."),
             ("Send the draft to support at example dot com", "Send the draft to support@example.com"),
             ("Sounds good, thanks!", "Sounds good. Thanks."),
             ("I'll review them", "I’ll review them"),
