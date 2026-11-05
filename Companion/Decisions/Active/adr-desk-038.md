@@ -348,3 +348,35 @@ Ubuntu/GNOME all have them, for the languages the user has, and nothing ships.
   is not one), so the menu can tell the user how to install one from the system (#334).
 - Nothing ships; the helper keeps what it loaded (Linux) or the checkers it made (Windows) for its life.
 - TabMail on iOS still picks by the sentence-start rule (TabMail/tabmail-ios#383).
+
+### Amendment 2026-11-04 (#334): the menu names a language without a spelling dictionary
+
+**Decision:** each `knownWords` answer (the launch warm-up, then every dictation) tells the app the
+user's preferred languages no system dictionary serves (`NativeWordChecker`'s third argument; the
+launch warm-up runs once the main helper has started, which refuses a request before), and
+the tray menu names them (`missingDictionaries` in `core/ui/missingDictionaries.ts`, `MenuState.missingDictionaries`):
+
+- each language once, by its language alone in English ("Korean"): the helper reports a tag only
+  when no dictionary of its language is there at all, so a region would mislead;
+- never a language written without spaces (Chinese, Japanese, Thai, Lao, Khmer, Burmese): screen
+  terms are split at spaces, so no spelling dictionary would tell their words apart, and Chinese and
+  Japanese are left for now (owner);
+- Windows and Linux, where one can be installed: the icon carries the attention mark (tooltip "TabMail
+  Voice needs a spelling dictionary", after a file problem and a missing permission) and an "Install a
+  Spelling Dictionary for Korean…" item per language opens the steps, as the menu's Fix items do:
+  Windows, Settings > Time & language > Language & region; Ubuntu, Settings > System > Region &
+  Language > Manage Installed
+  Languages, or the `hunspell-<language>` package (`apt search`). The item goes at the next answer
+  that no longer names the language;
+- macOS, whose spell checker covers the languages it has and takes none added: a dimmed "No macOS
+  spelling dictionary for …" line, no mark (on this Mac it has 45 languages, Korean among them; of the
+  common ones it lacks mostly those written without spaces).
+
+The menu was chosen over Settings because it is where the app already sends the user to fix
+something (the file problems' Fix items). A failed or out-of-shape answer leaves the menu as it was.
+The dialog has only Close: a button opening Windows' language settings was dropped in review, as the
+steps already name the page (deletion over a launch path and its failure handling).
+
+**Consequences:** the warning follows the system's languages, not what is on screen: a user who
+prefers a language without a dictionary sees it even if they never read that language. Awaiting the
+owner's blessing: the macOS line without the mark, and the languages never warned.

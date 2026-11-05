@@ -34,6 +34,7 @@ import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
 import { aiOffLine, fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
+import { type MissingDictionary, missingDictionaries, missingDictionaryNotice } from "../core/ui/missingDictionaries.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
 import { PasteHistory } from "../core/dictation/pasteHistory.js";
@@ -360,9 +361,13 @@ function launch(): void {
   );
 
   // Which of the screen's words are everyday words of the user's languages (ADR-DESK-038, amended
-  // 2026-11-04): the system's spelling dictionaries, for its preferred languages.
-  const wordChecker = new NativeWordChecker(nativeHelper, () => app.getPreferredSystemLanguages());
-  wordChecker.warmUp();
+  // 2026-11-04): the system's spelling dictionaries, for its preferred languages. The menu names a
+  // language without one, from each answer.
+  let unavailableDictionaries: readonly MissingDictionary[] = [];
+  const wordChecker = new NativeWordChecker(nativeHelper, () => app.getPreferredSystemLanguages(), (languages) => {
+    unavailableDictionaries = missingDictionaries(languages);
+    tray.update();
+  });
   const history = new PasteHistory();
   const tips = new TipBook(store);
   const controller = new DictationController({
@@ -464,6 +469,7 @@ function launch(): void {
     requestMicrophone: () => void permissions.requestMicrophone(),
     requestAccessibility: () => permissions.requestAccessibility(),
     showFileProblem,
+    showMissingDictionary,
     toggleDictation: () => controller.toggle(),
     quit: () => app.quit(),
     checkForUpdates: () => updater?.checkNow(),
@@ -622,6 +628,7 @@ function launch(): void {
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       fileProblems: unreadableFiles(),
+      missingDictionaries: unavailableDictionaries,
       optsOutOfAI: settings.optsOutOfAI,
       hotkey: settings.hotkey,
       debugMode: settings.isDebugMode(account.email),
@@ -709,6 +716,13 @@ function launch(): void {
       if (response === 0) shell.showItemInFolder(problem.path);
       if (response === 1) void resetFile(file);
     });
+  }
+
+  /** Tells how to install `missing`'s spelling dictionary from the system (Windows and Linux). */
+  function showMissingDictionary(missing: MissingDictionary): void {
+    const { message, detail } = missingDictionaryNotice(missing, process.platform);
+    app.focus({ steal: true });
+    void dialog.showMessageBox({ type: "warning", message, detail, buttons: ["Close"], defaultId: 0, cancelId: 0 });
   }
 
   /** The user's factory reset of `file` (owner, 2026-10-27), asked only from its fix dialog: one
@@ -1314,6 +1328,8 @@ function launch(): void {
 
   hotkeyHelper.start();
   nativeHelper.start();
+  // Once the main helper runs (it refuses a request before), and the tray its answer updates exists.
+  wordChecker.warmUp();
   screenReaderHelper.start();
   fieldReaderHelper.start();
   void gnomeIntegration?.refresh();

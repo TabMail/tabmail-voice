@@ -64,7 +64,7 @@ apps/desktop/
 │   │   ├── sync/                    Device Sync of the knowledge base and writing style with Thunderbird and iOS through the relay (ADR-DESK-066): `bullets.ts` (labelled bullets: parse, render, labels, local operations, merge, defaults), `bulletSync.ts` (`BulletSync`: the writer name, commits, `bullet_state` messages and their parts), `deviceSync.ts` (`DeviceSync`: the connection's life, what is sent and when), `device-sync-default-catalog.json` (the defaults every app shares, SHA-256 pinned)
 │   │   ├── hotkey/                  The hotkey, the modes and the gesture's actions (`bindings.ts`); macos/globeKeyAction.ts (the Globe key's own action while fn is it) (ADR-DESK-031)
 │   │   ├── onboarding/              The welcome wizard, permissions, tips (the one-time what's-new tip among them), VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
-│   │   ├── ui/                      Where the overlay sits; what the tray menu shows
+│   │   ├── ui/                      Where the overlay sits; what the tray menu shows (file problems, missing spelling dictionaries)
 │   │   └── util/                    observable, keyValueStore, timeout, text, localDateTime (the backend's dates in the local zone)
 │   ├── main/                The main process (Node + Electron)
 │   │   ├── index.ts                 Wires everything: helpers, controller, windows, IPC, tray

@@ -36,7 +36,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], optsOutOfAI: false, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
+const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, fileProblems: [], missingDictionaries: [], optsOutOfAI: false, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
 
 function actionsFrom(clicked: string[]): TrayActions {
   const action = (name: string) => () => void clicked.push(name);
@@ -46,6 +46,7 @@ function actionsFrom(clicked: string[]): TrayActions {
     requestMicrophone: action("requestMicrophone"),
     requestAccessibility: action("requestAccessibility"),
     showFileProblem: (file) => void clicked.push(`showFileProblem:${file}`),
+    showMissingDictionary: (missing) => void clicked.push(`showMissingDictionary:${missing.language}`),
     toggleDictation: action("toggleDictation"),
     quit: action("quit"),
     checkForUpdates: action("checkForUpdates"),
@@ -179,6 +180,11 @@ function onLinux(desktop: string, run: () => void) {
 /** While a permission is missing the icon carries a mark, so the user can see why dictation won't start. */
 describe("TrayMenu's permission mark", () => {
   const icon = () => (tray.icons.at(-1) as { file?: string }).file;
+  /** Whether the last icon is the marked one: by its file, or on Linux by its fainter pixels. */
+  const marked = () => {
+    const last = tray.icons.at(-1) as { file?: string; bitmap?: Buffer };
+    return last.bitmap ? last.bitmap[3] === 64 : last.file === "trayTemplateMarked.png";
+  };
 
   // The macOS icons, whatever the machine running the tests (the Windows and Linux release builds run them too).
   const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -246,6 +252,50 @@ describe("TrayMenu's permission mark", () => {
     expect(clicked).toEqual(["showFileProblem:knowledgeBase", "showFileProblem:settings"]);
  
     expect(menu(null, () => ({ ...ready, fileProblems: ["knowledgeBase"] })).labels).not.toContain(aiOffLine);
+  });
+
+  /** Without a spelling dictionary for one of the user's languages, every capitalized word in it is
+   * taken for a name (ADR-DESK-038): where one can be installed the icon is marked and an item per
+   * language tells how; macOS, with none to install, only says so. */
+  test.each(["win32", "linux"])("on %s a missing spelling dictionary marks the icon, with an Install item per language, until it is there", (os) => {
+    Object.defineProperty(process, "platform", { value: os, configurable: true });
+    const korean = { language: "ko", name: "Korean" };
+    let state: MenuState = { ...ready, missingDictionaries: [korean, { language: "el", name: "Greek" }] };
+    const { trayMenu, labels, item, clicked } = menu(null, () => state);
+    expect(marked()).toBe(true);
+    expect(tray.toolTip).toBe("TabMail Voice needs a spelling dictionary");
+    expect(labels).toContain("Install a Spelling Dictionary for Korean…");
+    expect(labels).toContain("Install a Spelling Dictionary for Greek…");
+    item("Install a Spelling Dictionary for Greek…")?.click?.();
+    item("Install a Spelling Dictionary for Korean…")?.click?.();
+    expect(clicked).toEqual(["showMissingDictionary:el", "showMissingDictionary:ko"]);
+
+    state = ready;
+    trayMenu.update();
+    expect(marked()).toBe(false);
+    expect(tray.toolTip).toBe("TabMail Voice");
+  });
+
+  test("on macOS a missing spelling dictionary is a line, without the mark", () => {
+    const { labels, item } = menu(null, () => ({ ...ready, missingDictionaries: [{ language: "hr", name: "Croatian" }] }));
+    expect(icon()).toBe("trayTemplate.png");
+    expect(tray.toolTip).toBe("TabMail Voice");
+    expect(labels).toContain("No macOS spelling dictionary for Croatian");
+    expect(item("No macOS spelling dictionary for Croatian")?.enabled).toBe(false);
+  });
+
+  /** The tooltip names the first thing to fix, and follows it while the icon stays marked. */
+  test("the tooltip follows what is missing while the mark stays", () => {
+    Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+    let state: MenuState = { ...ready, microphoneGranted: false, missingDictionaries: [{ language: "ko", name: "Korean" }] };
+    const { trayMenu } = menu(null, () => state);
+    expect(tray.toolTip).toBe("TabMail Voice needs a permission");
+    state = { ...state, microphoneGranted: true };
+    trayMenu.update();
+    expect(tray.toolTip).toBe("TabMail Voice needs a spelling dictionary");
+    state = { ...state, fileProblems: ["settings"] };
+    trayMenu.update();
+    expect(tray.toolTip).toBe("TabMail Voice can't read one of its files");
   });
 
   test("an unchanged state leaves the icon alone", () => {

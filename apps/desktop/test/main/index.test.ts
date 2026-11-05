@@ -114,7 +114,7 @@ const app = vi.hoisted(() => ({
   /** The main helper's `knownWords` answer: by default English knows "today" and Korean "회의". */
   knownWords: null as ((params: { languages: string[]; words: string[] }) => unknown) | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; playLastRecording: () => void; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; showMissingDictionary: (missing: import("../../src/core/ui/missingDictionaries.js").MissingDictionary) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; playLastRecording: () => void; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
   /** Every request that reached the network (`liveTransport`), by URL. */
@@ -126,7 +126,7 @@ const app = vi.hoisted(() => ({
     makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
     knownWords: (words: readonly string[]) => Promise<ReadonlySet<string>>;
   } | null,
-  trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
+  trayState: null as (() => { update: unknown; fileProblems?: unknown; missingDictionaries?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
@@ -137,6 +137,8 @@ const app = vi.hoisted(() => ({
   squirrel: null as import("node:events").EventEmitter | null,
   /** How often the app refreshed its tray menu. */
   trayUpdates: 0,
+  /** The missing dictionaries the tray menu last showed: read at its last update, as the real one. */
+  publishedDictionaries: undefined as unknown,
   /** The application menu the app set, as its template; null for none set. */
   applicationMenu: null as unknown[] | null,
   /** The message boxes shown, and the button each is answered with. */
@@ -472,6 +474,8 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     readonly replies = new Map<string, unknown>();
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
+      // As the real client: a helper not started yet answers nothing.
+      if (method === "knownWords" && !this.lifecycle.includes("start")) throw new Error("knownWords: exited");
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
       if (typeof this.replies.get(method) === "function") return (this.replies.get(method) as (params: unknown) => unknown)(params);
@@ -605,6 +609,7 @@ vi.mock("../../src/main/tray.js", () => ({
     }
     update() {
       app.trayUpdates += 1;
+      app.publishedDictionaries = (app.trayState?.() as { missingDictionaries?: unknown } | undefined)?.missingDictionaries;
     }
   },
 }));
@@ -728,6 +733,7 @@ afterEach(() => {
   app.autoUpdater = null;
   app.squirrel = null;
   app.trayUpdates = 0;
+  app.publishedDictionaries = undefined;
   app.dialogs = [];
   app.dialogsAfterLaunch = [];
   app.dialogResponse = 1;
@@ -3032,6 +3038,41 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.savesFail = false;
     expect(await send({ type: "setMemorySizeLimit", value: choice })).toEqual({ error: null });
     expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls]).toEqual([choice, choice, [[choice]]]);
+  });
+
+  /** A preferred language the system has no spelling dictionary for is named in the menu from the
+   * started main helper's answer at launch (ADR-DESK-038), kept through an answer out of shape or a
+   * failed ask, and gone at the answer that no longer names it; its item tells how to install one. */
+  test.each(["win32", "linux"] as const)("on %s a language without a spelling dictionary is named in the menu until it is there", async (platform) => {
+    app.preferredLanguages = ["en-US", "ko-KR", "ja-JP"];
+    app.knownWords = () => ({ known: [], unavailable: ["ko-KR", "ja-JP"] });
+    await launch(platform);
+    const korean = { language: "ko", name: "Korean" };
+    const published = () => JSON.stringify(app.publishedDictionaries);
+    expect(await eventually(() => published() === JSON.stringify([korean]))).toBe(true);
+    const main = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-linux")!;
+    expect(main.requests.filter((request) => request.method === "knownWords").map((request) => request.params)).toEqual([{ languages: ["en-US", "ko-KR", "ja-JP"], words: [] }]);
+
+    app.trayActions?.showMissingDictionary(korean);
+    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
+    expect(app.dialogs[0]).toMatchObject({ type: "warning", message: "Your system has no spelling dictionary for Korean.", buttons: ["Close"], defaultId: 0, cancelId: 0 });
+    expect(app.dialogs[0]?.detail).toContain(platform === "win32" ? "Settings > Time & language" : "Manage Installed Languages");
+
+    const knownWords = app.backend!.knownWords;
+    app.knownWords = () => ({ known: [], unavailable: [1] });
+    await expect(knownWords(["Today"])).rejects.toThrow("Invalid knownWords reply.");
+    app.knownWords = () => { throw new Error("exited"); };
+    await expect(knownWords(["Today"])).rejects.toThrow("exited");
+    expect(published()).toBe(JSON.stringify([korean]));
+
+    // Another language missing in its place (the preferred languages changed) replaces it.
+    app.knownWords = () => ({ known: [], unavailable: ["el-GR"] });
+    await knownWords(["Today"]);
+    expect(published()).toBe(JSON.stringify([{ language: "el", name: "Greek" }]));
+
+    app.knownWords = () => ({ known: ["today"], unavailable: [] });
+    expect(await knownWords(["Today"])).toEqual(new Set(["Today"]));
+    expect(published()).toBe("[]");
   });
 
   test("a knowledge base file that can't be read leaves Settings › Memory reaching memory", async () => {

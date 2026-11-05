@@ -38,8 +38,19 @@ describe("NativeWordChecker", () => {
     expect(await checker(request, ["fi-FI", "ko-KR"]).known(["회의", "huomenna"])).toEqual(new Set(["회의"]));
   });
 
+  /** The menu names a language without a dictionary from each answer (ADR-DESK-038). */
+  test("tells the languages no dictionary serves at each answer, and nothing when the ask fails", async () => {
+    const told: (readonly string[])[] = [];
+    const request = vi.fn().mockResolvedValueOnce({ known: [], unavailable: ["ko-KR"] }).mockResolvedValueOnce({ known: [], unavailable: [] }).mockRejectedValueOnce(new Error("exited"));
+    const words = new NativeWordChecker({ request } as Pick<HelperClient, "request">, () => ["en-US", "ko-KR"], (languages) => told.push(languages));
+    await words.known(["Xyvora"]);
+    await words.known(["Xyvora"]);
+    await expect(words.known(["Xyvora"])).rejects.toThrow("exited");
+    expect(told).toEqual([["ko-KR"], []]);
+  });
+
   test("a reply out of shape fails the ask", async () => {
-    for (const reply of [null, "today", {}, { known: "today", unavailable: [] }, { known: [1], unavailable: [] }, { known: [] }, { known: [], unavailable: "fi" }]) {
+    for (const reply of [null, "today", {}, { known: "today", unavailable: [] }, { known: [1], unavailable: [] }, { known: [] }, { known: [], unavailable: "fi" }, { known: [], unavailable: [1] }]) {
       await expect(checker(vi.fn().mockResolvedValue(reply)).known(["Today"])).rejects.toThrow("Invalid knownWords reply.");
     }
   });
