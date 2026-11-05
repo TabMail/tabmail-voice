@@ -15,7 +15,7 @@ enum Redactor {
         guard result.count == lines.count, zip(result, lines).allSatisfy({ $0.count == $1.count }) else { throw Failure.refused }
         return result
     }
-    enum Operation { case redact, context, policy, text, address, viewport, screen, request, walk }
+    enum Operation { case redact, context, policy, text, address, viewport, screen, request, walk, dictionaries }
     static func request(_ input: Data, operation: Operation = .redact) throws -> Data {
         guard voice_core_abi_version() == 1 else { throw Failure.refused }
         let call = switch operation {
@@ -28,6 +28,7 @@ enum Redactor {
         case .screen: voice_core_screen_json
         case .request: voice_core_request_json
         case .walk: voice_core_walk_json
+        case .dictionaries: voice_core_dictionaries_json
         }
         var output = VoiceCoreBuffer(data: nil, length: 0)
         let status = input.withUnsafeBytes { bytes in

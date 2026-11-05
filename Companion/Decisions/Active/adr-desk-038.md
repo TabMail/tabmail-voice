@@ -280,3 +280,67 @@ more where the dictionary leaves room) no longer count toward the 500. The owner
 the screen after the same first 100, up to 500 more screen terms; the whole window's terms in the
 first 100 don't count toward the 500; `dictation/controller.test.ts` › with no dictionary sends as many
 screen terms as there is room for; dictionary words on screen take none of the screen terms' room.
+
+**Amendment 2026-11-04 (owner, #333): screen terms are picked by the system's spelling dictionaries
+of the user's languages, not by sentence positions.** The owner's dictation log showed the rule's blind
+spot: a chat app's author line starts with the author's full name ("Xyvora Brevalle  [Today at 4:12
+PM]"), which the rule took for a sentence's first word and dropped, so only the surname went; the speech
+model then guessed the first name, and the wrong spelling, pasted back into the chat, came back from the
+screen as a term on the next dictation, both spellings now competing. The owner: use a real dictionary,
+not one of our own; ready for every language; skip Chinese and Japanese for now and split on spaces; keep
+the capital-letter test for now; "it's okay to be imperfect". A first cut shipped permissively licensed
+Hunspell dictionaries (18 languages, about 14 MB compressed, none for German, Italian or Czech, whose
+dictionaries are GPL); the owner then chose the system's own dictionaries instead: macOS, Windows and
+Ubuntu/GNOME all have them, for the languages the user has, and nothing ships.
+- **The rule.** A word may be a term (`termCandidates`) when it has a capital letter anywhere (a
+  titlecase letter counts), or is in a script without case (Hangul, Arabic: no letter changes case);
+  never when it holds a digit or is part of an address. It is a term when no dictionary of the user's
+  languages knows its lowercase form, so "Today" starting a sentence is not one, a name the dictionary
+  keeps capitalized ("Paris") is, and so is one it lacks ("Xyvora"), wherever it stands. Runs of cased
+  terms join as before, up to `dictionaryWordMaxWords`; a caseless word stands alone, since its script
+  marks no name. The sentence-start rule and `correctionCommonWords` leave the term picker (the
+  corrections keep the list); `correctionMinWordLength` and `dictionaryWord` still apply, so a
+  two-syllable Hangul word is no term.
+- **The check.** The app asks the main helper (`knownWords`, `NativeWordChecker`) once per dictation
+  for the words of both reads, in lowercase, with the system's preferred languages
+  (`app.getPreferredSystemLanguages()`, read at each ask), for at most `knownWordsTimeout` (500 ms); one
+  that fails or doesn't answer in time sends no screen terms, as a screen read not done in time does. The
+  helper answers `{"known":[word…],"unavailable":[tag…]}` with the system's dictionaries: the macOS spell
+  checker (`NSSpellChecker`, asked from its own actor, off the main thread), the Windows one
+  (`ISpellCheckerFactory`, on the request thread, each language's checker kept), and on Linux the
+  installed Hunspell files (`/usr/share/hunspell`, then the older myspell folders; `HelperConfig`). Which
+  of a system's dictionaries serves a language is the shared core's (`words::dictionaries`,
+  `voice_core_dictionaries_json`; ADR-DESK-054): its language and region, else its language alone, else
+  the first of its language by name; a POSIX locale's encoding and a script subtag are ignored. On Linux
+  the whole answer is the core's (`words::known`, `voice_core_known_words_json`): files read in the
+  encoding their `.aff` names (`encoding_rs`; Ubuntu's Greek is ISO 8859-7, Polish ISO 8859-2,
+  Brazilian Portuguese names none, so ISO 8859-1), parsed with `spellbook` (MPL-2.0; its dependencies
+  `hashbrown` and `foldhash`, MIT/Apache and Zlib), each loaded once per process. The app has the helper
+  ready them as it starts (`warmUp`).
+- **Measured** (2026-11-04): the macOS checker takes about 0.1 ms a word per language (a few hundred
+  candidates, tens of ms); Ubuntu 26.04 installs English (five regions) and French, and a language's
+  `hunspell-<lang>` when the user adds it; 18 of 19 Ubuntu dictionaries tried load in 1 to 122 ms each
+  (Turkish fails to parse in `spellbook` 0.4.2), a check then about a microsecond. Finding the nearest
+  real word to tell a typo from a name was tried and dropped: about 55 ms a word, and as many names as
+  typos lie within one or two edits of a real word ("Kwan", "Zen").
+- Tests: `dictionary/known-words-cases.json` (Rust: the choice rule, and the Linux answer against
+  made-up Hunspell files in `dictionary/hunspell/`, one ISO 8859-7, one naming no encoding, one an
+  unknown encoding), the core's folder-order and refusal tests, `dictionary/contextTerms.test.ts`,
+  `dictation/controller.test.ts` (a name starting a line goes whole, asked once; a failed or late answer
+  sends no screen terms; a long dictation canceled while its first chunk waits sends no chunk),
+  `main/native/wordChecker.test.ts` (lowercase forms asked once and mapped back, reply validation,
+  warm-up), and the helpers' `knownWords` wire tests against the real system dictionaries (macOS
+  `MacServiceRequestTests`, Windows `system-protocol.mjs`, Linux `foreground-lifecycle.py`).
+
+**Consequences (amendment):**
+- A name that is also an everyday word ("Will", "Grace") is not biased, and a capitalized typo is.
+  Owner: those need no biasing, and imperfect is fine.
+- Each system judges words its own way: the macOS checker knows capitalized names from the user's
+  contacts (the lowercase ask keeps them terms), Ubuntu's Ukrainian dictionary accepts every word in
+  Latin letters by design, and a Linux language without its `hunspell-<lang>` installed (or one
+  `spellbook` can't parse) has no dictionary: its capitalized words all count as terms, and a screen in a
+  caseless script sends many of its words, the most frequent first. The helper's reply names the
+  user's languages no dictionary serves (`unavailable`; a tag naming no language, as the POSIX "C",
+  is not one), so the menu can tell the user how to install one from the system (#334).
+- Nothing ships; the helper keeps what it loaded (Linux) or the checkers it made (Windows) for its life.
+- TabMail on iOS still picks by the sentence-start rule (TabMail/tabmail-ios#383).

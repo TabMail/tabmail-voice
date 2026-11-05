@@ -251,6 +251,11 @@ export const vocabularyScreenShare = 30;
 export const vocabularyTypedShare = 50;
 export const cleanupScreenMaxTerms = 500;
 export const cleanupDictionaryMaxWords = 500;
+/** The longest a dictation waits, at its upload, for which of the screen's words are everyday words
+ * of the user's languages (ADR-DESK-038, amended 2026-11-04): the main helper answers in about a
+ * millisecond for a screen read, its dictionaries loaded when the app starts. Past it, no screen terms
+ * go. */
+export const knownWordsTimeout = 500;
 /** The dictionary keeps at most this many words, at most `dictionaryMaxTypedWords` of them typed, and
  * learned words in the rest, far more than a dictation sends (#310): a learned word kept is sent when
  * it is among the most recently used. Each word is at most `dictionaryWordMaxChars` characters and

@@ -5,6 +5,7 @@
 import { LocalPDFReader } from "./documents/pdfReader.js";
 import { parsePDF } from "./documents/pdfProcess.js";
 import { NativeTextRedactor } from "./native/textRedactor.js";
+import { NativeWordChecker } from "./native/wordChecker.js";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
@@ -358,6 +359,10 @@ function launch(): void {
     (read) => screenReader.stop(read),
   );
 
+  // Which of the screen's words are everyday words of the user's languages (ADR-DESK-038, amended
+  // 2026-11-04): the system's spelling dictionaries, for its preferred languages.
+  const wordChecker = new NativeWordChecker(nativeHelper, () => app.getPreferredSystemLanguages());
+  wordChecker.warmUp();
   const history = new PasteHistory();
   const tips = new TipBook(store);
   const controller = new DictationController({
@@ -395,6 +400,7 @@ function launch(): void {
     ),
     // Learn corrections locally, the field read by voice-field-reader (ADR-DESK-038).
     corrections: nativeAudio ? new CorrectionWatch(fieldReader, (words) => settings.learnWords(words)) : undefined,
+    knownWords: (words) => wordChecker.known(words),
     useWords: (texts) => settings.useWords(texts),
     memory,
     prompts,

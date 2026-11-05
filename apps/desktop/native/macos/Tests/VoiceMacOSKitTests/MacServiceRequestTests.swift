@@ -94,6 +94,26 @@ struct MacServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
+    /// The screen terms' test (ADR-DESK-038, amended 2026-11-04): the system spell checker's answer
+    /// through the helper's wire, for the dictionary the shared core picks for each language (every Mac
+    /// has English's); a word a dictionary keeps capitalized is not known in lowercase.
+    @Test func knownWordsAreTheSpellCheckersAnswer() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(on: channel)
+        await channel.handle(line: Data(#"{"id":1,"method":"knownWords","params":{"languages":["en-US","xx-YY"],"words":["today","xyvora","paris","the"]}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":2,"method":"knownWords","params":{"languages":[],"words":["today"]}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":3,"method":"knownWords","params":{"languages":["en"],"words":[1]}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":4,"method":"knownWords","params":{"languages":"en","words":[]}}"#.utf8))
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == 4)
+        guard replies.count == 4 else { return }
+        #expect(replies[0]["result"] as? NSDictionary == ["known": ["today", "the"], "unavailable": ["xx-YY"]])
+        #expect(replies[1]["result"] as? NSDictionary == ["known": [String](), "unavailable": [String]()])
+        for reply in replies[2...] { #expect(reply["error"] != nil && reply["result"] == nil) }
+        withExtendedLifetime(service) {}
+    }
+
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
