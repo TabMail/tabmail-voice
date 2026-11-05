@@ -493,8 +493,8 @@ enum ScreenContextReader {
                         // Looked inside whether shown or not: an excluded page under it refuses the window.
                         switch try look(.caption) {
                         case .refuse: return false
-                        case .marker: if step.shown == true { context.append(.text, context.hiddenMarker, frame: placed) }
-                        case .read: if step.shown == true { context.append(.text, title, frame: placed) }
+                        case .marker: if step.shown == true { context.append(.caption, context.hiddenMarker, frame: placed) }
+                        case .read: if step.shown == true { context.append(.caption, title, frame: placed) }
                         }
                         continue
                     }

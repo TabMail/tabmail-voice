@@ -110,6 +110,141 @@
       }
     },
     {
+      "name": "the captions of controls side by side are words of their own, however close their boxes",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caption",
+            "text": "Messages",
+            "frame": [
+              1341,
+              175,
+              102,
+              42
+            ]
+          },
+          {
+            "kind": "caption",
+            "text": "Files & links",
+            "frame": [
+              1447,
+              175,
+              116,
+              42
+            ]
+          },
+          {
+            "kind": "caption",
+            "text": "Pins",
+            "frame": [
+              1567,
+              175,
+              70,
+              42
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Messages Files & links Pins"
+      }
+    },
+    {
+      "name": "a caption against a piece of text on its line is a word of its own",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Author",
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "caption",
+            "text": "Reply",
+            "frame": [
+              40,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "later",
+            "frame": [
+              70,
+              0,
+              30,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Author Reply later"
+      }
+    },
+    {
+      "name": "a caption that looks like a key is redacted, and the text beside it kept",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Token",
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "caption",
+            "text": "sk-ReviewCaption1234567890",
+            "frame": [
+              40,
+              0,
+              120,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "here",
+            "frame": [
+              160,
+              0,
+              30,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Token [redacted] here"
+      }
+    },
+    {
       "name": "the pieces of one line keep the screen's spaces, and none where they abut",
       "request": {
         "blocks": [

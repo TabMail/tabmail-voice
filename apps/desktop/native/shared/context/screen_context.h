@@ -31,7 +31,7 @@ inline std::string normalizedContextText(const std::string& text, const std::opt
 // Formatting mirrors ScreenContext.swift. Coordinates share the provider’s window space;
 // ratios and reading order are independent of the Windows display scale.
 struct ContextFrame { double x, y, width, height; };
-enum class ContextKind { text, heading, link, row, field, caret };
+enum class ContextKind { text, caption, heading, link, row, field, caret };
 struct ContextBlock {
     ContextKind kind;
     std::string text;
@@ -117,7 +117,7 @@ private:
     bool caretSelectionOnly = false;
     size_t bytes = 0;
     std::vector<ContextBlock> blocks;
-    static constexpr const char* kinds[] = {"text", "heading", "link", "row", "field", "caret"};
+    static constexpr const char* kinds[] = {"text", "caption", "heading", "link", "row", "field", "caret"};
     static nlohmann::json blockJSON(const ContextBlock& block) {
         nlohmann::json value = {{"kind", kinds[static_cast<size_t>(block.kind)]}, {"text", block.text}};
         if (block.source) value["source"] = *block.source;
