@@ -460,6 +460,105 @@ struct MarkerCaretSourceTests {
         #expect(provider.read()?.parts == ["First line.", "", "\nSecond line."])
     }
 
+    /// Gecko's marker for a caret on an empty line is in the line above's element, as for a caret
+    /// ending that line (Overleaf's code editor in Firefox on the Mac, 2026-11-05, issue #355): only
+    /// where the caret is drawn tells them apart. Drawn at the line's start, or on the row below,
+    /// the caret starts the empty line and the break is before it; drawn right after the "." it
+    /// ends the line above. Without bounds, with bounds of no height or not a rectangle, with bounds
+    /// that are not numbers JSON can carry, or when the character before the caret has no marker of
+    /// its own (its index does not round-trip, so the range asked about would be the caret's), the
+    /// element decides, and the read goes on.
+    @Test func aGeckoCaretOnAnEmptyLineGetsTheBreakBeforeIt() throws {
+        func read(caret: CGRect?, before: CGRect?, unrounded: Int? = nil, bounds: CFTypeRef? = nil) -> [String]? {
+            let provider = Provider(text: "First line.\nNext.", selection: NSRange(location: 11, length: 0))
+            provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, 5)]
+            provider.caretLine = provider.lines[0]
+            provider.unrounded = unrounded
+            provider.bounds = bounds
+            provider.drawn = { range in
+                range == NSRange(location: 11, length: 0) ? caret : range == NSRange(location: 10, length: 1) ? before : nil
+            }
+            return provider.read()?.parts
+        }
+        let period = CGRect(x: 100, y: 0, width: 10, height: 20)
+        let startsEmptyLine = ["First line.\n", "", "\nNext."], endsFirstLine = ["First line.", "", "\n\nNext."]
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: period) == startsEmptyLine)
+        #expect(read(caret: CGRect(x: 110, y: 20, width: 1, height: 20), before: period) == startsEmptyLine)
+        #expect(read(caret: CGRect(x: 110, y: 0, width: 1, height: 20), before: period) == endsFirstLine)
+        #expect(read(caret: nil, before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: nil) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 0), before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: CGRect(x: 100, y: 0, width: 10, height: 0)) == endsFirstLine)
+        #expect(read(caret: CGRect(x: CGFloat.nan, y: 0, width: 1, height: 20), before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: CGFloat.infinity), before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 1e300, y: -1e300, width: 1, height: 20), before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: CGRect(x: CGFloat.nan, y: 0, width: 10, height: 20)) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: CGRect(x: 100, y: 0, width: 10, height: CGFloat.infinity)) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: period, unrounded: 10) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 110, y: 0, width: 1, height: 20), before: period, unrounded: 10) == endsFirstLine)
+        var point = CGPoint(x: 0, y: 0)
+        #expect(read(caret: nil, before: nil, bounds: AXValueCreate(.cgPoint, &point)) == endsFirstLine)
+        #expect(read(caret: nil, before: nil, bounds: "bounds" as NSString) == endsFirstLine)
+    }
+
+    /// A selection's bounds cover all its lines, not where it starts, so the screen is not asked
+    /// about one: a selection from the end of a line keeps the break the text leaves out inside it.
+    @Test func aGeckoSelectionIsPlacedByItsElementAlone() throws {
+        let provider = Provider(text: "First line.\nNext.", selection: NSRange(location: 11, length: 6))
+        provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, 5)]
+        provider.caretLine = provider.lines[0]
+        provider.drawn = { range in range.length > 1 ? CGRect(x: 0, y: 0, width: 110, height: 60) : CGRect(x: 100, y: 0, width: 10, height: 20) }
+        #expect(provider.read()?.parts == ["First line.", "\n\nNext.", ""])
+        #expect(provider.boundsAsked.isEmpty)
+    }
+
+    /// The caret's diagnostic asks Accessibility nothing of its own (it is built in every build,
+    /// whether or not the app keeps the line): a read whose caret marker is in an element asks the
+    /// same of the field's elements as one whose marker is in none, and measures only the caret
+    /// and the character before it.
+    @Test func theCaretsDiagnosticAsksNothingOfItsElement() throws {
+        func asked(caretInElement: Bool) -> (attributes: [String], bounds: [NSRange]) {
+            let provider = Provider(text: "First line.\nNext.", selection: NSRange(location: 11, length: 0))
+            provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, 5)]
+            provider.caretLine = caretInElement ? provider.lines[0] : nil
+            provider.drawn = { range in range.length == 0 ? CGRect(x: 0, y: 20, width: 1, height: 20) : CGRect(x: 100, y: 0, width: 10, height: 20) }
+            _ = provider.read()
+            return (provider.attributesAsked, provider.boundsAsked)
+        }
+        let inElement = asked(caretInElement: true), inNone = asked(caretInElement: false)
+        #expect(!inElement.attributes.isEmpty)
+        #expect(inElement.attributes == inNone.attributes)
+        #expect(inElement.bounds == [NSRange(location: 11, length: 0), NSRange(location: 10, length: 1)])
+    }
+
+    /// The caret's diagnostic gives places and bounds, never the field's text, and asks for
+    /// no text of its own: a token far past any window the read takes is in no line of the debug
+    /// log (stderr) and in no request. The read runs in a process of its own, whose stderr is read
+    /// whole, as in `TextInserterTests`.
+    @Test func theCaretsDiagnosticCarriesNoText() async throws {
+        let token = "Token\(UUID().uuidString)"
+        let result = try await #require(processExitsWith: .success, observing: [\.standardErrorContent]) { [token = token as String] in
+            if !Self.readsAround(far: token) { exit(1) }
+        }
+        let lines = String(decoding: result.standardErrorContent, as: UTF8.self).split(separator: "\n").map(String.init)
+        #expect(lines.contains { $0.contains("the caret is drawn at 0.0,20.0 1.0x20.0, the character before it at 100.0,0.0 10.0x20.0") })
+        #expect(!lines.contains { $0.contains(token) || $0.contains("First line") })
+    }
+
+    /// A read of a field whose caret is on an empty line, `token` at its far end; whether it read the
+    /// caret's window without asking for any of the token's text.
+    private static func readsAround(far token: String) -> Bool {
+        let text = "First line.\nNext." + String(repeating: "word ", count: 60000) + token
+        let length = text.utf16.count
+        let provider = Provider(text: text, selection: NSRange(location: 11, length: 0))
+        provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, length - 12)]
+        provider.caretLine = provider.lines[0]
+        provider.drawn = { range in range.length == 0 ? CGRect(x: 0, y: 20, width: 1, height: 20) : CGRect(x: 100, y: 0, width: 10, height: 20) }
+        guard provider.read() != nil else { return false }
+        let far = NSRange(location: provider.origin + length - token.utf16.count, length: token.utf16.count)
+        return provider.requests.allSatisfy { NSIntersectionRange($0, far).length == 0 }
+    }
+
     /// A secret on one line whose element is misplaced (past the field's end) is redacted whole in
     /// the helper's reply: no break is put inside it, which would leave each half unredacted
     /// (ADR-DESK-046).
@@ -574,11 +673,20 @@ struct MarkerCaretSourceTests {
         var lines: [LineNode] = []
         var caretLine: LineNode?
         var unrounded: Int?
+        /// Where Accessibility draws a range (field offsets), none when it gives no bounds; the
+        /// ranges asked about.
+        var drawn: ((NSRange) -> CGRect?)?
+        var boundsAsked: [NSRange] = []
+        /// An answer for every range's bounds, in place of `drawn`'s.
+        var bounds: CFTypeRef?
+        /// The attributes asked of the field's elements, each with the element's span.
+        var attributesAsked: [String] = []
         init(text: String, selection: NSRange) { self.text = text as NSString; self.selection = selection }
         func read() -> SharedContext.CaretWindow? {
             let field = LineNode(0, text.length, role: "AXTextArea")
             // Read through the helper's own Accessibility wiring, over these elements.
             let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks.accessibility(field: field, attribute: { node, name in
+                self.attributesAsked.append("\(name) \((node as! LineNode).span)")
                 if name == kAXChildrenAttribute as String { return node === field ? self.lines as NSArray : NSArray() }
                 if name == kAXRoleAttribute as String { return (node as! LineNode).role as NSString }
                 return nil
@@ -601,6 +709,14 @@ struct MarkerCaretSourceTests {
                 let ends = [origin + node.span.location, origin + NSMaxRange(node.span)]
                 return NSArray(array: node.reversed ? ends.reversed() : ends)
             case "AXUIElementForTextMarker": return caretLine ?? field
+            case "AXBoundsForTextMarkerRange":
+                let pair = argument as! NSArray
+                let start = (pair[0] as! NSNumber).intValue - origin
+                let range = NSRange(location: start, length: (pair[1] as! NSNumber).intValue - origin - start)
+                boundsAsked.append(range)
+                if let bounds { return bounds }
+                guard var rect = drawn?(range) else { return nil }
+                return AXValueCreate(.cgRect, &rect)
             case "AXStringForTextMarkerRange":
                 let pair = argument as! NSArray
                 let start = (pair[0] as! NSNumber).intValue
