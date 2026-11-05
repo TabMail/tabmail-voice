@@ -24,10 +24,17 @@
 //! "child"}}` (the children of that child of the element at that depth of the walk; depth null for
 //! the field itself) or `{"place": {"depth", "child", "phase"}}`. A walk that is not complete gives no starts.
 //!
-//! `{"endsLine": {"startsBefore", "reachesSelection"}}` → `{"endsLine": bool}`: a selection whose
-//! start is in an element starting before it and reaching it is at the end of that element's
-//! line, not at the start of the block after it (the text gives both places one offset; measured
-//! in Chromium, 2026-10-06).
+//! `{"endsLine": {"startsBefore", "reachesSelection", "caret"?, "before"?}}` → `{"endsLine": bool}`:
+//! a selection whose start is in an element starting before it and reaching it is at the end of
+//! that element's line, not at the start of the block after it (the text gives both places one
+//! offset; measured in Chromium, 2026-10-06). Unless the screen says otherwise: `caret` and
+//! `before` are where a collapsed caret and the character before it are drawn (`{x, y, width,
+//! height}`, y growing down, from the OS), and a caret drawn left of that character's middle, or
+//! below it, is not right after it, so it starts its line. Gecko puts the marker of a caret on an
+//! empty line in the line above's last element, and draws that caret at the line's start
+//! (Overleaf's code editor in Firefox on the Mac, 2026-11-05; Windows and Linux give that caret
+//! its own line's place). Without both rectangles, or with one of no height (no place on screen),
+//! the element decides alone.
 
 use serde_json::{Value, json};
 
@@ -39,6 +46,27 @@ fn number(value: &Value) -> Result<usize, u32> {
 }
 fn flag(value: &Value) -> Result<bool, u32> {
     value.as_bool().ok_or(1)
+}
+
+/// Where something is drawn on screen.
+struct Rect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// A rectangle the helper sent, none when it sent none or one of no height (no place on screen).
+fn drawn(value: Option<&Value>) -> Result<Option<Rect>, u32> {
+    let Some(value) = value else { return Ok(None) };
+    let number = |key: &str| value[key].as_f64().ok_or(1u32);
+    let rect = Rect {
+        x: number("x")?,
+        y: number("y")?,
+        width: number("width")?,
+        height: number("height")?,
+    };
+    Ok((rect.height > 0.0).then_some(rect))
 }
 
 /// One element whose children are being walked: their count, the halving's bounds, the child
@@ -231,8 +259,16 @@ pub(crate) fn process(input: &Value) -> Result<Value, u32> {
         if fields.len() != 1 {
             return Err(1);
         }
+        let caret = drawn(line.get("caret"))?;
+        let before = drawn(line.get("before"))?;
+        let follows = match (caret, before) {
+            (Some(caret), Some(before)) => {
+                caret.x >= before.x + before.width / 2.0 && caret.y < before.y + before.height
+            }
+            _ => true,
+        };
         return Ok(
-            json!({"endsLine": flag(&line["startsBefore"])? && flag(&line["reachesSelection"])?}),
+            json!({"endsLine": flag(&line["startsBefore"])? && flag(&line["reachesSelection"])? && follows}),
         );
     }
     if fields.len() != 2 {

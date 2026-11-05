@@ -249,6 +249,106 @@ fn a_line_ends_where_the_selections_element_runs_up_to_it() {
     assert_eq!(ends(true, false), false);
 }
 
+/// A collapsed caret the screen draws away from the character before it (Gecko's on an empty line
+/// on the Mac, its marker in the line above's element) starts its line; one drawn right after that
+/// character ends it. Rectangles as measured in Overleaf's code editor in Firefox, 2026-11-05.
+#[test]
+fn a_caret_drawn_away_from_the_text_before_it_starts_its_line() {
+    let rect = |x: f64, y: f64, width: f64, height: f64| json!({"x": x, "y": y, "width": width, "height": height});
+    let period = rect(1224.0, 100.0, 12.0, 25.0);
+    let ends = |before: bool, reaches: bool, caret: Option<Value>, previous: Option<Value>| {
+        let mut facts = json!({"startsBefore": before, "reachesSelection": reaches});
+        if let Some(caret) = caret {
+            facts["caret"] = caret;
+        }
+        if let Some(previous) = previous {
+            facts["before"] = previous;
+        }
+        process(&json!({"endsLine": facts})).map(|reply| reply["endsLine"].clone())
+    };
+    let drawn = |caret: Value| ends(true, true, Some(caret), Some(period.clone()));
+    // Right after the period: the end of its line. At the editor's left edge: an empty line's start.
+    assert_eq!(drawn(rect(1236.0, 100.0, 1.0, 25.0)), Ok(json!(true)));
+    assert_eq!(drawn(rect(888.0, 100.0, 1.0, 31.5)), Ok(json!(false)));
+    // The character's middle is the line between the two; a caret on the row below starts its line.
+    assert_eq!(drawn(rect(1230.0, 100.0, 1.0, 25.0)), Ok(json!(true)));
+    assert_eq!(drawn(rect(1229.5, 100.0, 1.0, 25.0)), Ok(json!(false)));
+    assert_eq!(drawn(rect(1236.0, 124.5, 1.0, 25.0)), Ok(json!(true)));
+    assert_eq!(drawn(rect(1236.0, 125.0, 1.0, 25.0)), Ok(json!(false)));
+    // The screen only takes a line end away: an element that starts no line still starts none.
+    assert_eq!(
+        ends(
+            false,
+            true,
+            Some(rect(1236.0, 100.0, 1.0, 25.0)),
+            Some(period.clone())
+        ),
+        Ok(json!(false))
+    );
+    assert_eq!(
+        ends(
+            true,
+            false,
+            Some(rect(1236.0, 100.0, 1.0, 25.0)),
+            Some(period.clone())
+        ),
+        Ok(json!(false))
+    );
+    // Without both rectangles, or with one of no height, the element decides alone.
+    let away = rect(888.0, 100.0, 1.0, 31.5);
+    assert_eq!(ends(true, true, Some(away.clone()), None), Ok(json!(true)));
+    assert_eq!(
+        ends(true, true, None, Some(period.clone())),
+        Ok(json!(true))
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(rect(888.0, 100.0, 1.0, 0.0)),
+            Some(period.clone())
+        ),
+        Ok(json!(true))
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(away.clone()),
+            Some(rect(1224.0, 100.0, 12.0, 0.0))
+        ),
+        Ok(json!(true))
+    );
+    // A rectangle that is not one is refused, even beside one of no height.
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(json!({"x": "888", "y": 100, "width": 1, "height": 25})),
+            Some(period.clone())
+        ),
+        Err(1)
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(json!({"x": 888, "y": 100, "width": 1})),
+            Some(period.clone())
+        ),
+        Err(1)
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(rect(888.0, 100.0, 1.0, 0.0)),
+            Some(json!(true))
+        ),
+        Err(1)
+    );
+}
+
 /// A reply to anything but what was asked, or a state no walk gives, is refused.
 #[test]
 fn answers_out_of_turn_are_refused() {

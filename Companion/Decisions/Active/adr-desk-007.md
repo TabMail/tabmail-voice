@@ -438,3 +438,22 @@ round-trip, as the text is; one that isn't has no place, and the read then puts 
 all: a misplaced start would put a break inside a line, and inside a secret on it, leaving each
 half unredacted (ADR-DESK-046). A field with no block inside it (a plain text area, the address bar)
 and a field read with no elements are read as before. Windows and Linux are not changed.
+
+**Amendment 2026-11-05 — a Gecko caret on an empty line is told by where it is drawn (#355).**
+Gecko gives the end of a line and the empty line after it one index, and on the Mac puts the
+marker of a caret on that empty line in the last element of the line above, so the read above took
+the caret to end that line: the restored break went after the caret and a dictation there was
+still spaced from the line's "." (Overleaf in Firefox; logged: the caret's marker in the line
+above's last text element, the caret drawn at the editor's left edge, x 888, where a caret ending
+that line is drawn right after its last character, x 1236 against a character at 1224, 12 wide).
+The Mac read now also asks where a collapsed caret and the character before it are drawn
+(`AXBoundsForTextMarkerRange`) and sends both rectangles to the shared core's `endsLine` step
+(`caret`, `before`), which decides: a caret drawn left of that character's middle, or below its
+bottom, is not right after it and starts its line, whatever element its marker is in. Without both
+rectangles, or with one of no height, the element decides, as before; a selection is not measured
+(its bounds cover all its lines, not where it starts). The rule is the core's, so any helper whose
+OS gives the same ambiguity sends the same two rectangles. Windows (UI Automation) and Linux
+(AT-SPI) give that caret its own line's place and need no rectangles: measured in the test VMs
+with Firefox 159 and 157 on a CodeMirror-shaped page, the caret on an empty line, at the end of the
+line above and at the start of the line below all read right on main (2026-11-05), once the browser's accessibility was running when the field took the focus (#357 is the Windows read before then). The Chromium
+read is unchanged: its caret marker on an empty line is in that line's element (2026-10-06).

@@ -22,6 +22,9 @@ enum MarkerCaretSource {
         let range: (AnyObject) -> CFTypeRef?
         /// The element a marker is in (`AXUIElementForTextMarker`), nil for the field itself.
         let element: (CFTypeRef) -> AnyObject?
+        /// An element's role and parent, for the debug log only.
+        let role: (AnyObject) -> String?
+        let parent: (AnyObject) -> AnyObject?
 
         /// What Accessibility says of `field`'s elements: their children (`AXChildren`), which are
         /// blocks by their role (`HelperConfig.blockRoles`), each one's marker range and the element
@@ -37,6 +40,10 @@ enum MarkerCaretSource {
                 parameterized("AXTextMarkerRangeForUIElement", node)
             }, element: { marker in
                 parameterized("AXUIElementForTextMarker", marker).flatMap { isElement($0) && !CFEqual($0, field) ? $0 : nil }
+            }, role: { node in
+                attribute(node, kAXRoleAttribute as String) as? String
+            }, parent: { node in
+                attribute(node, kAXParentAttribute as String).flatMap { isElement($0) && !CFEqual($0, field) ? $0 : nil }
             })
         }
     }
@@ -68,6 +75,12 @@ enum MarkerCaretSource {
             guard result[0] <= result[2], result[2] <= result[3], result[3] <= result[1] else { return nil }
             return result
         }
+        func textRange(_ start: Int, _ end: Int) -> CFTypeRef? {
+            guard let first = parameterized("AXTextMarkerForIndex", NSNumber(value: start)),
+                  let last = parameterized("AXTextMarkerForIndex", NSNumber(value: end)),
+                  index(first) == start, index(last) == end else { return nil }
+            return parameterized("AXTextMarkerRangeForUnorderedTextMarkers", [first, last] as CFArray)
+        }
         guard let initial = snapshot(), let positions = endpoints(initial) else { return nil }
         HelperLog.debug("ScreenContext: caret \(positions[2] - positions[0])+\(positions[3] - positions[2]) of \(positions[1] - positions[0]) chars, from the marker indices")
         guard let unavailable = try? SharedContext.CaretWindow.unread(selectsText: positions[3] > positions[2]) else { return nil }
@@ -93,9 +106,34 @@ enum MarkerCaretSource {
             let starts = blockStarts(in: blocks.field, around: selection, within: limits.paragraphStartUnits,
                                      elements: limits.caretSourceElements, children: blocks.children, isBlock: blocks.isBlock, span: span)
             // The element the caret is in, to tell the end of a line from the start of the block after it.
-            let caretElement = parameterized("AXStartTextMarkerForTextMarkerRange", initial.selection)
-                .flatMap(blocks.element).flatMap(span)
-            let ends = endsLine(caretElement: caretElement, at: selection.location)
+            let caretMarker = parameterized("AXStartTextMarkerForTextMarkerRange", initial.selection)
+            let caretNode = caretMarker.flatMap(blocks.element)
+            let caretElement = caretNode.flatMap(span)
+            // Where a caret and the character before it are drawn, for the core to tell a caret
+            // ending a line from one starting the next: Gecko puts the marker of a caret on an empty
+            // line in the line above's element (#355). A selection's bounds cover all its lines, so
+            // only a collapsed caret is measured.
+            func drawn(_ range: CFTypeRef?) -> CGRect? {
+                guard let range, let value = parameterized("AXBoundsForTextMarkerRange", range),
+                      CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+                var rect = CGRect.zero
+                return AXValueGetValue(value as! AXValue, .cgRect, &rect) ? rect : nil
+            }
+            let collapsed = selection.length == 0
+            let caretRect = collapsed ? drawn(initial.selection) : nil
+            let previousRect = collapsed && selection.location > 0
+                ? drawn(textRange(origin + selection.location - 1, origin + selection.location)) : nil
+            let ends = endsLine(caretElement: caretElement, at: selection.location, caret: caretRect, before: previousRect)
+            // Where the caret's marker is and where it is drawn: roles, places and bounds only.
+            func shown(_ rect: CGRect?) -> String {
+                rect.map { "\($0.origin.x),\($0.origin.y) \($0.size.width)x\($0.size.height)" } ?? "nowhere"
+            }
+            func describe(_ node: AnyObject?) -> String {
+                guard let node else { return "the field" }
+                let place = span(node).map { "\($0.location - selection.location)+\($0.length)" } ?? "no place"
+                return "\(blocks.role(node) ?? "no role") at \(place) from the caret\(blocks.isBlock(node) ? ", a block" : "")"
+            }
+            HelperLog.debug("ScreenContext: the caret's marker is in \(describe(caretNode)), inside \(describe(caretNode.flatMap(blocks.parent))); the caret is drawn at \(shown(caretRect)), the character before it at \(shown(previousRect))")
             HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms; the caret \(ends ? "ends a line" : "starts its text")")
             return starts.map { (starts: $0, caretEndsLine: ends) }
         }
@@ -103,11 +141,7 @@ enum MarkerCaretSource {
             let result = try BoundedCaretSource.read(count: positions[1] - origin, selection: selection,
                                                      paragraphStarts: layout?.starts, caretEndsLine: layout?.caretEndsLine ?? false) { requested in
                 let start = origin + requested.location
-                let end = start + requested.length
-                guard let first = parameterized("AXTextMarkerForIndex", NSNumber(value: start)),
-                      let last = parameterized("AXTextMarkerForIndex", NSNumber(value: end)),
-                      index(first) == start, index(last) == end,
-                      let range = parameterized("AXTextMarkerRangeForUnorderedTextMarkers", [first, last] as CFArray) else { return nil }
+                guard let range = textRange(start, start + requested.length) else { return nil }
                 return parameterized("AXStringForTextMarkerRange", range) as? NSString
             }
             let final = snapshot()
@@ -221,9 +255,22 @@ enum MarkerCaretSource {
     /// Chromium tells them apart by the element its start marker is in (`span`, its place in the
     /// field's text), the line's text or block ending there or the block starting there (measured
     /// 2026-10-06). The shared core decides; it then puts that block's break after the caret.
-    static func endsLine(caretElement span: NSRange?, at location: Int) -> Bool {
+    /// `caret` and `before`: where a collapsed caret and the character before it are drawn, when
+    /// Accessibility says (Gecko's caret marker on an empty line is in the line above's element,
+    /// and only the screen tells that caret from one ending the line above).
+    static func endsLine(caretElement span: NSRange?, at location: Int, caret: CGRect? = nil, before: CGRect? = nil) -> Bool {
         guard let span else { return false }
-        let reply = blocks(["endsLine": ["startsBefore": span.location < location, "reachesSelection": NSMaxRange(span) >= location]])
+        var facts: [String: Any] = ["startsBefore": span.location < location, "reachesSelection": NSMaxRange(span) >= location]
+        // JSON carries finite numbers only: a rectangle that isn't finite has no place to send.
+        func sent(_ rect: CGRect?) -> [String: Double]? {
+            guard let rect else { return nil }
+            let numbers = ["x": Double(rect.origin.x), "y": Double(rect.origin.y),
+                           "width": Double(rect.size.width), "height": Double(rect.size.height)]
+            return numbers.values.allSatisfy(\.isFinite) ? numbers : nil
+        }
+        if let caret = sent(caret) { facts["caret"] = caret }
+        if let before = sent(before) { facts["before"] = before }
+        let reply = blocks(["endsLine": facts])
         return reply?["endsLine"] as? Bool ?? false
     }
 
