@@ -109,6 +109,10 @@ const app = vi.hoisted(() => ({
   memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string }; stops: number }) | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
+  /** `app.getPreferredSystemLanguages()`, read at each call. */
+  preferredLanguages: ["en-US"],
+  /** The main helper's `knownWords` answer: by default English knows "today" and Korean "회의". */
+  knownWords: null as ((params: { languages: string[]; words: string[] }) => unknown) | null,
   /** The tray menu's actions and state, as the app gives them. */
   trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; playLastRecording: () => void; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
@@ -120,6 +124,7 @@ const app = vi.hoisted(() => ({
     warmUp: (baseURL: string, accessToken: string) => Promise<void>;
     makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient;
     makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
+    knownWords: (words: readonly string[]) => Promise<ReadonlySet<string>>;
   } | null,
   trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
@@ -174,6 +179,7 @@ vi.mock("electron", async () => {
       getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
+      getPreferredSystemLanguages: () => app.preferredLanguages,
       getApplicationNameForProtocol: () => app.emailHandler,
       dock: { hide() {} },
       on: (event: string, handler: (...args: unknown[]) => void) => {
@@ -438,6 +444,10 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       app.helpers.set(options.name, this);
       this.replies.set("captureTarget", { window: options.name === "voice-screen-reader" ? "00000000-0000-0000-0000-000000000001" : 42, pid: 42 });
       this.replies.set("preparePaste", { transaction: 7 });
+      this.replies.set("knownWords", (params: { languages: string[]; words: string[] }) => app.knownWords?.(params) ?? {
+        known: params.words.filter((word) => (word === "today" && params.languages.includes("en-US")) || (word === "회의" && params.languages.includes("ko-KR"))),
+        unavailable: [],
+      });
     }
     /** "start", "stop" and "restart", as the app called them. */
     readonly lifecycle: string[] = [];
@@ -488,7 +498,7 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient; makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
+    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient; makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient; knownWords: (words: readonly string[]) => Promise<ReadonlySet<string>>; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
       app.dictationSettings = dependencies.settings;
       app.backend = dependencies;
       app.keepRecording = dependencies.keepRecording;
@@ -705,6 +715,8 @@ afterEach(() => {
   app.memory = null;
   app.prompts = null;
   app.fullName = null;
+  app.preferredLanguages = ["en-US"];
+  app.knownWords = null;
   app.trayActions = null;
   app.dictationSettings = null;
   app.keepRecording = undefined;
@@ -742,6 +754,26 @@ function signInStored(id = "user", email = "tester@example.com"): void {
 }
 
 describe("main process wiring", () => {
+  /** Screen terms are the words the system's spelling dictionaries of the user's preferred languages
+   * don't know (ADR-DESK-038): the controller's `knownWords` asks the main helper with the languages
+   * preferred at each ask, and launch readies the dictionaries with an empty ask. */
+  test.each(["darwin", "win32", "linux"] as const)("on %s the controller's everyday words are the main helper's answer for the preferred languages", async (platform) => {
+    await launch(platform);
+    const helper = app.helpers.get(platform === "darwin" ? "voice-macos" : platform === "win32" ? "voice-windows" : "voice-linux")!;
+    const asks = () => helper.requests.filter((request) => request.method === "knownWords").map((request) => request.params);
+    expect(await eventually(() => asks().length === 1)).toBe(true);
+    expect(asks()).toEqual([{ languages: ["en-US"], words: [] }]);
+    const knownWords = app.backend!.knownWords;
+    expect(await knownWords(["Today", "Xyvora", "회의"])).toEqual(new Set(["Today"]));
+    app.preferredLanguages = ["en-US", "ko-KR"];
+    expect(await knownWords(["Today", "Xyvora", "회의"])).toEqual(new Set(["Today", "회의"]));
+    expect(asks()).toEqual([
+      { languages: ["en-US"], words: [] },
+      { languages: ["en-US"], words: ["today", "xyvora", "회의"] },
+      { languages: ["en-US", "ko-KR"], words: ["today", "xyvora", "회의"] },
+    ]);
+  });
+
 test("the real capture pipeline reads the delayed captured identity in both scopes after focus changes", async () => {
   await launch("darwin");
   const reader = app.helpers.get("voice-screen-reader")!;

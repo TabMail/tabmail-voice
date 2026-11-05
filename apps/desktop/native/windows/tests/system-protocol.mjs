@@ -70,6 +70,14 @@ try {
   for (const params of [{}, { text: null }, { text: "😀".repeat(32769) }, { text: "Public.", before: null }]) {
     assert.ok((await request("redactText", params)).error, "invalid explicit text redaction refuses");
   }
+  // The screen terms' test (ADR-DESK-038, amended 2026-11-04): the Windows spell checker's answer, for
+  // the dictionary the shared core picks for each language (every Windows has English's); a word a
+  // dictionary keeps capitalized is not known in lowercase.
+  assert.deepEqual((await request("knownWords", { languages: ["en-US", "xx-YY"], words: ["today", "xyvora", "paris", "the"] })).result,
+    { known: ["today", "the"], unavailable: ["xx-YY"] });
+  assert.deepEqual((await request("knownWords", { languages: [], words: ["today"] })).result, { known: [], unavailable: [] });
+  assert.ok((await request("knownWords", { languages: ["en-US"], words: [1] })).error);
+  assert.ok((await request("knownWords", { languages: "en-US", words: [] })).error);
   const front = (await request("frontmostApp")).result;
   assert.ok(front === null || (Number.isSafeInteger(front.window) && front.window > 0));
   assert.deepEqual((await request("caretAnchor", { window: 0 })).result, null);

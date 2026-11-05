@@ -22,6 +22,7 @@ pub mod source;
 mod terminal_box;
 mod viewport;
 mod walk;
+mod words;
 
 #[cfg(test)]
 mod allocation_tests;

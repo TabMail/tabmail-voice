@@ -13,6 +13,7 @@ import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.j
 import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
 import { NativeTextRedactor } from "../../../src/main/native/textRedactor.js";
+import { NativeWordChecker } from "../../../src/main/native/wordChecker.js";
 import { MacSystem } from "../../../src/main/native/macos/system.js";
 import { decodeSamples, NativeMicrophone } from "../../../src/main/native/microphone.js";
 import { FieldReader } from "../../../src/main/native/fieldReader.js";
@@ -63,7 +64,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
       requests.push({ method, params });
       if (method === "captureTarget") return { window: "00000000-0000-0000-0000-000000000001", pid: 123 };
       if (method === "preparePaste") return { transaction: 7 };
-      return { text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, calendars: [], occurrence: null, recurrence: null };
+      return { known: [], unavailable: [], text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, calendars: [], occurrence: null, recurrence: null };
     },
     on() {},
   } as unknown as HelperClient;
@@ -75,6 +76,7 @@ describe("helper wire contract", () => {
     const { helper, requests } = recordingHelper();
     const mac = new MacSystem(helper);
     await new NativeTextRedactor(helper).redact("Example", new AbortController().signal, { before: "Earlier", after: "Later" });
+    await new NativeWordChecker(helper, () => ["en-US"]).known(["Example"]);
     const app = "org.example.app";
     mac.saveClipboard();
     await mac.paste("text");

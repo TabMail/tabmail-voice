@@ -167,6 +167,38 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
     }
 }
 
+/// Which of a system's dictionaries serves each of the user's languages (`words::dictionaries`): for
+/// the macOS and Windows spell checkers, the screen terms' test (ADR-DESK-038, amended 2026-11-04).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_dictionaries_json(
+    data: *const u8,
+    length: usize,
+    output: *mut Buffer,
+) -> u32 {
+    unsafe {
+        process(data, length, output, |input| {
+            let request: serde_json::Value = serde_json::from_slice(input).map_err(|_| 1u32)?;
+            serde_json::to_vec(&crate::words::dictionaries(&request)?).map_err(|_| 3)
+        })
+    }
+}
+
+/// Which words are everyday words of the user's languages, by the system's Hunspell dictionaries
+/// (`words::known`): the Linux helper's screen terms' test (ADR-DESK-038, amended 2026-11-04).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_known_words_json(
+    data: *const u8,
+    length: usize,
+    output: *mut Buffer,
+) -> u32 {
+    unsafe {
+        process(data, length, output, |input| {
+            let request: serde_json::Value = serde_json::from_slice(input).map_err(|_| 1u32)?;
+            serde_json::to_vec(&crate::words::known(&request)?).map_err(|_| 3)
+        })
+    }
+}
+
 unsafe fn process(
     data: *const u8,
     length: usize,

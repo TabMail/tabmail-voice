@@ -11,6 +11,7 @@
 #include "insertion.h"
 #include "gnome_caret.h"
 #include "keyboard_language.h"
+#include "helper_config.h"
 
 namespace {
 using JSON = nlohmann::json;
@@ -50,6 +51,12 @@ int main() {
     voice::Channel channel(output, [&](const std::string& method, const JSON& params, voice::Channel::Reply reply, int64_t id) {
         if (method == "redactText") {
             reply(voice::core::request(params, voice_core_redact_text_json), true);
+        } else if (method == "knownWords") {
+            // Answered from the system's Hunspell dictionaries, in the folders the system keeps them in.
+            JSON request = params.is_object() ? params : JSON::object();
+            request["folders"] = JSON::array();
+            for (const auto* folder : voice::HelperConfig::dictionaryFolders) request["folders"].push_back(folder);
+            reply(voice::core::request(request, voice_core_known_words_json), true);
         } else if (method == "cancel") {
             if (params.is_object() && params.contains("id") && params["id"].is_number_integer()) inserter.cancel(params["id"].get<int64_t>());
         } else if (method == "insert") {
