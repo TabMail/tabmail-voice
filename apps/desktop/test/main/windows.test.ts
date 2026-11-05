@@ -230,6 +230,16 @@ describe("Windows", () => {
     expect(settingsWindow("linux")).toMatchObject({ backgroundColor: palette.dark.window });
   });
 
+  /** Settings opens at its default size and can be resized from there (owner, 2026-11-04), never
+   * below the minimum that still fits the sidebar beside a card. */
+  test.each(["darwin", "win32", "linux"] as const)("the Settings window opens at its size and is resizable on %s", (platform) => {
+    const made = settingsWindow(platform);
+    expect(made).toMatchObject({ ...config.settingsWindowSize, useContentSize: true, minWidth: config.settingsWindowMinSize.width, minHeight: config.settingsWindowMinSize.height });
+    expect(made?.resizable ?? true).toBe(true);
+    expect(config.settingsWindowMinSize.width).toBeLessThanOrEqual(config.settingsWindowSize.width);
+    expect(config.settingsWindowMinSize.height).toBeLessThanOrEqual(config.settingsWindowSize.height);
+  });
+
   /** The overlay is never focused, so every click on it is a first click: the chat window's close
    * button and links answer only because a first click counts. Until the chat opens it lets clicks
    * through, while the pointer's moves still reach the page, for a bubble to show what it is. */
