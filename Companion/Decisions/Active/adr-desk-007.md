@@ -416,5 +416,8 @@ delimiter`). The marker read now walks the field's elements the same way (`Marke
 children, block roles, each element's marker range placed by `AXIndexForTextMarker` from the
 field's start, and the element the caret's marker is in), and hands the shared core the block
 starts near the caret and whether the caret ends a line, so it puts back each left-out break as it
-does for Chromium. A field with no block inside it (a plain text area, the address bar) and a field
-read with no elements are read as before. Windows and Linux are not changed.
+does for Chromium. An element is placed only inside the field and by indices whose markers
+round-trip, as the text is; one that isn't has no place, and the read then puts back no break at
+all: a misplaced start would put a break inside a line, and inside a secret on it, leaving each
+half unredacted (ADR-DESK-046). A field with no block inside it (a plain text area, the address bar)
+and a field read with no elements are read as before. Windows and Linux are not changed.

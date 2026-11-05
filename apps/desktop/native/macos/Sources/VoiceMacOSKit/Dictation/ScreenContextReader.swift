@@ -226,16 +226,11 @@ enum ScreenContextReader {
             CaretLocator.parameterized(element, name, value)
         }, focused: {
             (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
-        }, blocks: MarkerCaretSource.Blocks(field: element, children: { node in
-            ((CaretLocator.attribute(node as! AXUIElement, kAXChildrenAttribute) as? [AXUIElement]) ?? []).map { $0 as AnyObject }
-        }, isBlock: { node in
-            (CaretLocator.attribute(node as! AXUIElement, kAXRoleAttribute) as? String).map(HelperConfig.blockRoles.contains) ?? false
-        }, range: { node in
-            CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", node)
-        }, element: { marker in
-            CaretLocator.parameterized(element, "AXUIElementForTextMarker", marker)
-                .flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() && !CFEqual($0, element) ? $0 as AnyObject : nil }
-        }), otherwise: {
+        }, blocks: .accessibility(field: element, attribute: { node, name in
+            CaretLocator.attribute(node as! AXUIElement, name)
+        }, parameterized: { name, value in
+            CaretLocator.parameterized(element, name, value)
+        }, isElement: { CFGetTypeID($0) == AXUIElementGetTypeID() }), otherwise: {
             valueCaretWindow(of: element)
         })
     }

@@ -22,6 +22,23 @@ enum MarkerCaretSource {
         let range: (AnyObject) -> CFTypeRef?
         /// The element a marker is in (`AXUIElementForTextMarker`), nil for the field itself.
         let element: (CFTypeRef) -> AnyObject?
+
+        /// What Accessibility says of `field`'s elements: their children (`AXChildren`), which are
+        /// blocks by their role (`HelperConfig.blockRoles`), each one's marker range and the element
+        /// a marker is in, other than the field. `isElement`: whether an answer is an element.
+        static func accessibility(field: AnyObject, attribute: @escaping (AnyObject, String) -> CFTypeRef?,
+                                  parameterized: @escaping (String, CFTypeRef) -> CFTypeRef?,
+                                  isElement: @escaping (AnyObject) -> Bool) -> Blocks {
+            Blocks(field: field, children: { node in
+                (attribute(node, kAXChildrenAttribute as String) as? [AnyObject]) ?? []
+            }, isBlock: { node in
+                (attribute(node, kAXRoleAttribute as String) as? String).map(HelperConfig.blockRoles.contains) ?? false
+            }, range: { node in
+                parameterized("AXTextMarkerRangeForUIElement", node)
+            }, element: { marker in
+                parameterized("AXUIElementForTextMarker", marker).flatMap { isElement($0) && !CFEqual($0, field) ? $0 : nil }
+            })
+        }
     }
 
     /// The text around the caret, read by its markers. Where the markers place the caret but give no
@@ -59,11 +76,18 @@ enum MarkerCaretSource {
         let layout = blocks.flatMap { blocks -> (starts: [Int], caretEndsLine: Bool)? in
             let looked = Date()
             guard let limits = try? SharedContext.sourceLimits() else { return nil }
+            // An element is placed only inside the field and by indices that round-trip, as the
+            // text is read; one that isn't has no place, and the walk then gives no starts: a
+            // misplaced start would put a break inside a line, and inside a secret on it, which the
+            // shared core would then redact in neither half (ADR-DESK-046).
+            func roundTrips(_ offset: Int) -> Bool {
+                parameterized("AXTextMarkerForIndex", NSNumber(value: offset)).flatMap(index) == offset
+            }
             func span(_ node: AnyObject) -> NSRange? {
                 guard let whole = blocks.range(node),
                       let first = parameterized("AXStartTextMarkerForTextMarkerRange", whole).flatMap(index),
                       let last = parameterized("AXEndTextMarkerForTextMarkerRange", whole).flatMap(index),
-                      first >= origin, last >= first else { return nil }
+                      origin <= first, first <= last, last <= positions[1], roundTrips(first), roundTrips(last) else { return nil }
                 return NSRange(location: first - origin, length: last - first)
             }
             let starts = blockStarts(in: blocks.field, around: selection, within: limits.paragraphStartUnits,

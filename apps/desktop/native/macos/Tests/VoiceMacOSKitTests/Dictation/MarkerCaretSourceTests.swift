@@ -404,7 +404,7 @@ struct MarkerCaretSourceTests {
     /// whose caret is inside a line.
     @Test func aGeckoCaretInsideALineOrAPlainFieldGetsNoBreak() throws {
         let plain = Provider(text: "First line.Second", selection: NSRange(location: 11, length: 0))
-        plain.lines = [LineNode(0, 17, block: false)]
+        plain.lines = [LineNode(0, 17, role: "AXStaticText")]
         plain.caretLine = plain.lines[0]
         #expect(plain.read()?.parts == ["First line.", "", "Second"])
 
@@ -412,6 +412,52 @@ struct MarkerCaretSourceTests {
         inside.lines = [LineNode(0, 11), LineNode(11, 12)]
         inside.caretLine = inside.lines[0]
         #expect(inside.read()?.parts == ["First ", "", "line.\nSecond line."])
+    }
+
+    /// An element placed outside the field, by indices in reverse, or by an index whose marker does
+    /// not round-trip has no place, and the read then puts back no break at all, never one inside a
+    /// line.
+    @Test(arguments: ["past the end", "before the start", "reversed", "unrounded"])
+    func aGeckoElementWithNoPlaceGivesNoBreak(fault: String) throws {
+        let provider = Provider(text: "First line.Second line.", selection: NSRange(location: 11, length: 0))
+        let first = fault == "before the start" ? LineNode(-1, 7) : LineNode(0, 6)
+        let middle = LineNode(6, 5), second = LineNode(11, fault == "past the end" ? 13 : 12)
+        if fault == "reversed" { middle.reversed = true }
+        if fault == "unrounded" { provider.unrounded = 6 }
+        provider.lines = [first, middle, second]
+        provider.caretLine = second
+        #expect(provider.read()?.parts == ["First line.", "", "Second line."])
+
+        // The same field, every element in place: the break before the caret's line, and the one
+        // at 6, where the text has none either.
+        let placed = Provider(text: "First line.Second line.", selection: NSRange(location: 11, length: 0))
+        placed.lines = [LineNode(0, 6), LineNode(6, 5), LineNode(11, 12)]
+        placed.caretLine = placed.lines[2]
+        #expect(placed.read()?.parts == ["First \nline.\n", "", "Second line."])
+    }
+
+    /// A secret on one line whose element is misplaced (past the field's end) is redacted whole in
+    /// the helper's reply: no break is put inside it, which would leave each half unredacted
+    /// (ADR-DESK-046).
+    @Test func aGeckoSecretOnOneLineIsRedactedWholeThoughAnElementIsMisplaced() throws {
+        let head = "sk" + "-" + "a1B2c3D4e", tail = "5F6g7H8i9J0k1L2"
+        let text = "Key " + head + tail + " end"
+        let caret = 4 + head.utf16.count
+        let provider = Provider(text: text, selection: NSRange(location: caret, length: 0))
+        let rest = LineNode(caret, text.utf16.count - caret + 1)
+        provider.lines = [LineNode(0, caret), rest]
+        provider.caretLine = rest
+        let window = try #require(provider.read())
+        var context = ScreenContext(appName: "Example Browser", bundleID: "org.example.browser")
+        context.textBeforeCaret = window.parts[0]
+        context.selectedText = window.parts[1]
+        context.textAfterCaret = window.parts[2]
+        context.appendCaret()
+        let reply = context.json
+        for name in ["textBeforeCaret", "textAfterCaret", "renderedText", "logDescription"] {
+            let value = try #require(reply[name]?.string)
+            #expect(!value.contains(head) && !value.contains(tail), "\(name)")
+        }
     }
 
     /// A Gmail compose field as Chromium's tree gives it (measured 2026-10-06): a line of text, an
@@ -479,13 +525,15 @@ struct MarkerCaretSourceTests {
         }
     }
 
-    /// One of a Gecko field's lines: its place in the field's text, and whether it is a block.
+    /// One of a Gecko field's elements: its place in the field's text (its range's indices given
+    /// in reverse when `reversed`) and its role.
     private final class LineNode {
         let span: NSRange
-        let block: Bool
-        init(_ start: Int, _ length: Int, block: Bool = true) {
+        let role: String
+        var reversed = false
+        init(_ start: Int, _ length: Int, role: String = "AXGroup") {
             span = NSRange(location: start, length: length)
-            self.block = block
+            self.role = role
         }
     }
 
@@ -498,41 +546,54 @@ struct MarkerCaretSourceTests {
         var changeOnRead = false
         var otherwise: () -> SharedContext.CaretWindow? = { nil }
         /// The field's elements, as Gecko gives them (none: the read is given no `blocks`), and the
-        /// one the caret's marker is in.
+        /// one the caret's marker is in; an offset whose marker does not round-trip.
         var lines: [LineNode] = []
         var caretLine: LineNode?
+        var unrounded: Int?
         init(text: String, selection: NSRange) { self.text = text as NSString; self.selection = selection }
         func read() -> SharedContext.CaretWindow? {
-            let field = LineNode(0, text.length, block: false)
-            let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks(field: field, children: { node in
-                node === field ? self.lines : []
-            }, isBlock: { ($0 as! LineNode).block }, range: { node in
-                let span = (node as! LineNode).span
-                return NSArray(array: [self.origin + span.location, self.origin + NSMaxRange(span)])
-            }, element: { _ in self.caretLine })
-            return read(blocks: blocks)
+            let field = LineNode(0, text.length, role: "AXTextArea")
+            // Read through the helper's own Accessibility wiring, over these elements.
+            let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks.accessibility(field: field, attribute: { node, name in
+                if name == kAXChildrenAttribute as String { return node === field ? self.lines as NSArray : NSArray() }
+                if name == kAXRoleAttribute as String { return (node as! LineNode).role as NSString }
+                return nil
+            }, parameterized: { name, value in
+                self.answer(name, value, field: field)
+            }, isElement: { $0 is LineNode })
+            return read(blocks: blocks, field: field)
         }
-        private func read(blocks: MarkerCaretSource.Blocks?) -> SharedContext.CaretWindow? {
+        private func answer(_ name: String, _ argument: CFTypeRef, field: LineNode?) -> CFTypeRef? {
+            switch name {
+            case "AXStartTextMarkerForTextMarkerRange": return (argument as! NSArray)[0] as AnyObject
+            case "AXEndTextMarkerForTextMarkerRange": return (argument as! NSArray)[1] as AnyObject
+            case "AXIndexForTextMarker": return argument
+            case "AXTextMarkerForIndex":
+                let offset = (argument as! NSNumber).intValue
+                return NSNumber(value: offset + (wrongMarker || offset == unrounded.map { origin + $0 } ? 1 : 0))
+            case "AXTextMarkerRangeForUnorderedTextMarkers": return argument
+            case "AXTextMarkerRangeForUIElement":
+                guard let node = argument as? LineNode else { return nil }
+                let ends = [origin + node.span.location, origin + NSMaxRange(node.span)]
+                return NSArray(array: node.reversed ? ends.reversed() : ends)
+            case "AXUIElementForTextMarker": return caretLine ?? field
+            case "AXStringForTextMarkerRange":
+                let pair = argument as! NSArray
+                let start = (pair[0] as! NSNumber).intValue
+                let end = (pair[1] as! NSNumber).intValue
+                requests.append(NSRange(location: start, length: end - start))
+                if changeOnRead { selection.location += 1; changeOnRead = false }
+                guard start >= origin, end <= origin + text.length else { return nil }
+                return text.substring(with: NSRange(location: start - origin, length: end - start)) as NSString
+            default: return nil
+            }
+        }
+        private func read(blocks: MarkerCaretSource.Blocks?, field: LineNode?) -> SharedContext.CaretWindow? {
             MarkerCaretSource.read(snapshot: {
                 (NSArray(array: [self.origin + self.selection.location, self.origin + self.selection.location + self.selection.length]),
                  NSArray(array: [self.origin, self.origin + self.text.length]))
             }, parameterized: { name, argument in
-                switch name {
-                case "AXStartTextMarkerForTextMarkerRange": return (argument as! NSArray)[0] as AnyObject
-                case "AXEndTextMarkerForTextMarkerRange": return (argument as! NSArray)[1] as AnyObject
-                case "AXIndexForTextMarker": return argument
-                case "AXTextMarkerForIndex": return NSNumber(value: (argument as! NSNumber).intValue + (self.wrongMarker ? 1 : 0))
-                case "AXTextMarkerRangeForUnorderedTextMarkers": return argument
-                case "AXStringForTextMarkerRange":
-                    let pair = argument as! NSArray
-                    let start = (pair[0] as! NSNumber).intValue
-                    let end = (pair[1] as! NSNumber).intValue
-                    self.requests.append(NSRange(location: start, length: end - start))
-                    if self.changeOnRead { self.selection.location += 1; self.changeOnRead = false }
-                    guard start >= self.origin, end <= self.origin + self.text.length else { return nil }
-                    return self.text.substring(with: NSRange(location: start - self.origin, length: end - start)) as NSString
-                default: return nil
-                }
+                self.answer(name, argument, field: field)
             }, focused: { true }, blocks: blocks, otherwise: otherwise)
         }
     }
