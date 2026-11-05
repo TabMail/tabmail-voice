@@ -5,6 +5,7 @@
 import type { Phase } from "../dictation/controller.js";
 import { type DictationHotkey, hotkeyNames } from "../hotkey/bindings.js";
 import type { StoredFile } from "./fileProblems.js";
+import type { MissingDictionary } from "./missingDictionaries.js";
 
 /** What the tray menu shows, from the app's state. */
 export interface MenuState {
@@ -15,6 +16,9 @@ export interface MenuState {
   /** The app's files that couldn't be read at launch, each with its Fix item until it is fixed and the
    * app relaunches, or the user resets it. */
   fileProblems: readonly StoredFile[];
+  /** The user's languages the system has no spelling dictionary for, as the last `knownWords` reply
+   * named them (ADR-DESK-038). */
+  missingDictionaries: readonly MissingDictionary[];
   /** The user opted out of AI (`AppSettings.optsOutOfAI`): no dictation starts. */
   optsOutOfAI: boolean;
   hotkey: DictationHotkey;

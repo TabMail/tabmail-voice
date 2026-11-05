@@ -17,15 +17,18 @@ export class NativeWordChecker {
   constructor(
     private readonly helper: Pick<HelperClient, "request">,
     private readonly languages: () => readonly string[],
+    /** Told the languages no dictionary serves, at each answer. */
+    private readonly onUnavailable: (languages: readonly string[]) => void = () => {},
   ) {}
 
   async known(words: readonly string[]): Promise<ReadonlySet<string>> {
     const lowercase = [...new Set(words.map((word) => word.toLowerCase()))];
     const reply = await this.helper.request<unknown>("knownWords", { languages: [...this.languages()], words: lowercase }, knownWordsTimeout);
     if (typeof reply !== "object" || reply === null || !("known" in reply) || !Array.isArray(reply.known) || !reply.known.every((word) => typeof word === "string")
-      || !("unavailable" in reply) || !Array.isArray(reply.unavailable)) throw new Error("Invalid knownWords reply.");
-    const unavailable = reply.unavailable.length;
-    if (unavailable > 0) log.debug(() => `NativeWordChecker: ${unavailable} of the system's languages have no spelling dictionary`);
+      || !("unavailable" in reply) || !Array.isArray(reply.unavailable) || !reply.unavailable.every((language) => typeof language === "string")) throw new Error("Invalid knownWords reply.");
+    const unavailable: readonly string[] = reply.unavailable;
+    if (unavailable.length > 0) log.debug(() => `NativeWordChecker: ${unavailable.length} of the system's languages have no spelling dictionary`);
+    this.onUnavailable(unavailable);
     const known = new Set(reply.known);
     return new Set(words.filter((word) => known.has(word.toLowerCase())));
   }
