@@ -512,7 +512,26 @@ struct MarkerCaretSourceTests {
         #expect(provider.boundsAsked.isEmpty)
     }
 
-    /// The caret's diagnostic gives places, roles and bounds, never the field's text, and asks for
+    /// The caret's diagnostic asks Accessibility nothing of its own (it is built in every build,
+    /// whether or not the app keeps the line): a read whose caret marker is in an element asks the
+    /// same of the field's elements as one whose marker is in none, and measures only the caret
+    /// and the character before it.
+    @Test func theCaretsDiagnosticAsksNothingOfItsElement() throws {
+        func asked(caretInElement: Bool) -> (attributes: [String], bounds: [NSRange]) {
+            let provider = Provider(text: "First line.\nNext.", selection: NSRange(location: 11, length: 0))
+            provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, 5)]
+            provider.caretLine = caretInElement ? provider.lines[0] : nil
+            provider.drawn = { range in range.length == 0 ? CGRect(x: 0, y: 20, width: 1, height: 20) : CGRect(x: 100, y: 0, width: 10, height: 20) }
+            _ = provider.read()
+            return (provider.attributesAsked, provider.boundsAsked)
+        }
+        let inElement = asked(caretInElement: true), inNone = asked(caretInElement: false)
+        #expect(!inElement.attributes.isEmpty)
+        #expect(inElement.attributes == inNone.attributes)
+        #expect(inElement.bounds == [NSRange(location: 11, length: 0), NSRange(location: 10, length: 1)])
+    }
+
+    /// The caret's diagnostic gives places and bounds, never the field's text, and asks for
     /// no text of its own: a token far past any window the read takes is in no line of the debug
     /// log (stderr) and in no request. The read runs in a process of its own, whose stderr is read
     /// whole, as in `TextInserterTests`.
@@ -522,7 +541,7 @@ struct MarkerCaretSourceTests {
             if !Self.readsAround(far: token) { exit(1) }
         }
         let lines = String(decoding: result.standardErrorContent, as: UTF8.self).split(separator: "\n").map(String.init)
-        #expect(lines.contains { $0.contains("the caret is drawn at 0.0,0.0 1.0x20.0") })
+        #expect(lines.contains { $0.contains("the caret is drawn at 0.0,20.0 1.0x20.0, the character before it at 100.0,0.0 10.0x20.0") })
         #expect(!lines.contains { $0.contains(token) || $0.contains("First line") })
     }
 
@@ -534,7 +553,7 @@ struct MarkerCaretSourceTests {
         let provider = Provider(text: text, selection: NSRange(location: 11, length: 0))
         provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, length - 12)]
         provider.caretLine = provider.lines[0]
-        provider.drawn = { _ in CGRect(x: 0, y: 0, width: 1, height: 20) }
+        provider.drawn = { range in range.length == 0 ? CGRect(x: 0, y: 20, width: 1, height: 20) : CGRect(x: 100, y: 0, width: 10, height: 20) }
         guard provider.read() != nil else { return false }
         let far = NSRange(location: provider.origin + length - token.utf16.count, length: token.utf16.count)
         return provider.requests.allSatisfy { NSIntersectionRange($0, far).length == 0 }
@@ -660,11 +679,14 @@ struct MarkerCaretSourceTests {
         var boundsAsked: [NSRange] = []
         /// An answer for every range's bounds, in place of `drawn`'s.
         var bounds: CFTypeRef?
+        /// The attributes asked of the field's elements, each with the element's span.
+        var attributesAsked: [String] = []
         init(text: String, selection: NSRange) { self.text = text as NSString; self.selection = selection }
         func read() -> SharedContext.CaretWindow? {
             let field = LineNode(0, text.length, role: "AXTextArea")
             // Read through the helper's own Accessibility wiring, over these elements.
             let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks.accessibility(field: field, attribute: { node, name in
+                self.attributesAsked.append("\(name) \((node as! LineNode).span)")
                 if name == kAXChildrenAttribute as String { return node === field ? self.lines as NSArray : NSArray() }
                 if name == kAXRoleAttribute as String { return (node as! LineNode).role as NSString }
                 return nil
