@@ -492,6 +492,8 @@ struct MarkerCaretSourceTests {
         #expect(read(caret: CGRect(x: CGFloat.nan, y: 0, width: 1, height: 20), before: period) == endsFirstLine)
         #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: CGFloat.infinity), before: period) == endsFirstLine)
         #expect(read(caret: CGRect(x: 1e300, y: -1e300, width: 1, height: 20), before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: CGRect(x: CGFloat.nan, y: 0, width: 10, height: 20)) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: CGRect(x: 100, y: 0, width: 10, height: CGFloat.infinity)) == endsFirstLine)
         #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: period, unrounded: 10) == endsFirstLine)
         #expect(read(caret: CGRect(x: 110, y: 0, width: 1, height: 20), before: period, unrounded: 10) == endsFirstLine)
         var point = CGPoint(x: 0, y: 0)
