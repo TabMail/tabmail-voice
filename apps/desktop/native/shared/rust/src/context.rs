@@ -30,7 +30,11 @@ struct Block {
 impl Block {
     fn read(value: &Value) -> Result<Self, u32> {
         let kind = value["kind"].as_str().ok_or(1u32)?;
-        if !["text", "heading", "link", "row", "field", "caret"].contains(&kind) {
+        if ![
+            "text", "caption", "heading", "link", "row", "field", "caret",
+        ]
+        .contains(&kind)
+        {
             return Err(1);
         }
         let mut text = value["text"].as_str().ok_or(1u32)?.to_owned();
@@ -114,7 +118,7 @@ impl Block {
         json!({"kind":self.kind,"text":self.text,"frame":self.frame})
     }
     fn inline(&self) -> bool {
-        self.kind == "text" || self.kind == "link"
+        matches!(self.kind.as_str(), "text" | "caption" | "link")
     }
 }
 /// How far apart, as a share of the smaller box's height, two pieces of one line may be and still be
@@ -137,7 +141,10 @@ fn read_box(value: &Value) -> Result<[f64; 4], u32> {
 }
 /// What goes between two blocks as the screen shows them: a line break (two at a jump up to the
 /// next column), or, between two pieces of one line, a space where the screen shows one and
-/// nothing where they abut (a run of bold or a link inside a word).
+/// nothing where they abut (a run of bold or a link inside a word). A control's caption is a word
+/// of its own: its box is the control's, padding and all, and says nothing of where its text
+/// starts or ends, so a space goes between it and the piece beside it however close the boxes
+/// (a bar of tabs drawn a few points apart).
 fn separator(a: &Block, b: &Block) -> &'static str {
     let (Some(a_frame), Some(b_frame)) = (a.frame, b.frame) else {
         return "\n";
@@ -162,7 +169,10 @@ fn separator(a: &Block, b: &Block) -> &'static str {
     if a.inline() && b.inline() && bx >= ax && overlap >= ah.min(bh) * 0.5 {
         // The text's own edge says more than the boxes: a piece that starts with a line break goes
         // on the next line, wherever the box of that break is.
-        let gap = if (bx - (ax + aw)).abs() > ah.min(bh) * ABUTTING_GAP {
+        let gap = if a.kind == "caption"
+            || b.kind == "caption"
+            || (bx - (ax + aw)).abs() > ah.min(bh) * ABUTTING_GAP
+        {
             " "
         } else {
             ""

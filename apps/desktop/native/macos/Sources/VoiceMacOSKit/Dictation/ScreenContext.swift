@@ -12,7 +12,8 @@ struct ScreenContext: Sendable, Equatable {
     struct Block: Sendable, Equatable {
         enum Kind: String, Sendable {
             /// The focused field, where the dictation goes: the core renders it from the caret's parts.
-            case heading, text, link, row, field, caret
+            /// A `caption` is a control's title, a word of its own beside the pieces of its line.
+            case heading, text, caption, link, row, field, caret
         }
         var kind: Kind
         var text: String

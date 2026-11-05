@@ -259,6 +259,22 @@ struct ScreenContextTests {
         return context
     }
 
+    /// A page's bar of tabs, each a control titled with its label and drawn a few points from the
+    /// next in a box much taller than its text (measured in Slack's channel tabs, 2026-11-04), reads
+    /// as words of their own: a caption's box is the control's, so it never abuts its neighbour.
+    @Test func walkReadsAPageTabBarAsSeparateWords() throws {
+        let tabs = FakeElement("AXTabGroup", frame: CGRect(x: 1341, y: 175, width: 300, height: 42), children: [
+            FakeElement("AXRadioButton", [kAXTitleAttribute: "Messages"], frame: CGRect(x: 1341, y: 175, width: 102, height: 42)),
+            FakeElement("AXRadioButton", [kAXTitleAttribute: "Files & links"], frame: CGRect(x: 1447, y: 175, width: 116, height: 42)),
+            FakeElement("AXRadioButton", [kAXTitleAttribute: "Pins"], frame: CGRect(x: 1567, y: 175, width: 70, height: 42)),
+        ])
+        let web = FakeElement("AXWebArea", frame: CGRect(x: 0, y: 0, width: 1600, height: 1200), children: [tabs])
+        let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 1600, height: 1200), children: [web])
+        let context = walk(window)
+        #expect(context.blocks.map(\.kind) == [.caption, .caption, .caption])
+        #expect(try context.renderedText() == "Messages Files & links Pins")
+    }
+
     /// Who wrote a message reaches the prompt: the author and time on one line, the message below,
     /// with neither scrolled-out text nor icon labels, and the caret block after. Reading the whole
     /// window (ADR-DESK-016 amendment), the message scrolled out of view is read too, each of its

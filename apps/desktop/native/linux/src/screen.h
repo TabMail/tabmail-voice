@@ -923,7 +923,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             if (outcome == "refuse") throw PrivacyHidden{};
             if (outcome == "marker") {
                 if (step.action != "caption" || step.shown)
-                    context.append(step.action == "field" ? ContextKind::field : ContextKind::text, VisibleContext::hiddenMarker(), frame);
+                    context.append(step.action == "field" ? ContextKind::field : step.action == "caption" ? ContextKind::caption : ContextKind::text, VisibleContext::hiddenMarker(), frame);
                 continue;
             }
             if (step.action == "field") {
@@ -947,7 +947,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             // A page's control: its name, or, having none, what it holds.
             const auto label = tree.label(node);
             if (!label.empty()) {
-                if (step.shown) context.append(ContextKind::text, label, frame);
+                if (step.shown) context.append(ContextKind::caption, label, frame);
                 continue;
             }
         }

@@ -1041,12 +1041,12 @@ private:
                 const auto outcome = look("caption");
                 if (outcome == "refuse") return refuse();
                 if (outcome == "marker") {
-                    if (step.shown) context.append(ContextKind::text, VisibleContext::hiddenMarker(), geometry);
+                    if (step.shown) context.append(ContextKind::caption, VisibleContext::hiddenMarker(), geometry);
                     continue;
                 }
                 const auto caption = safeTextSubtree(node) ? controlText(entry.document.Get(), node, place->frame) : "";
                 if (!caption.empty()) {
-                    if (step.shown) context.append(ContextKind::text, caption, geometry);
+                    if (step.shown) context.append(ContextKind::caption, caption, geometry);
                     continue;
                 }
             } else if (step.host && !walkedHost && page && page->kind == PageHost::Kind::host) {

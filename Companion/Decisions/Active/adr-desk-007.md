@@ -384,6 +384,17 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   frames. The OS code only measures; the decision stays in Rust. Each platform's real-Chromium test
   reads a key split by bold where the bold run wraps, and one where the run after the key wraps;
   the Mac run fails without the ends.
+- *(Amended 2026-11-04, owner: a control's caption is a word of its own.)* Slack's channel tabs read
+  as one word, `MessagesFiles & linksBookmarksPins`, and each half went out as a screen term. Each
+  tab is a control (Mac `AXRadioButton`) whose title the walk reads as its caption, laid out with the
+  control's box: 42 points tall, 4 points from the next tab, under the tenth of the smaller box's
+  height that makes two pieces abut. A control's box holds its padding, so it says nothing of where
+  its text starts or ends. The helpers now give a caption as a block kind of its own (`caption`; the
+  hidden marker in a control's place too), and the core puts at least a space between a caption and
+  the piece beside it on its line, however close the boxes; otherwise it is laid out, redacted and
+  rendered as text. Pinned by the shared cases (Slack's measured tab boxes; a caption between two
+  pieces of text), the Mac walk of a page's tab bar, the Linux walk of two page controls, and each
+  platform's real-Chromium test (two buttons drawn touching read `Alpha Beta`).
 
 **Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
 (issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the
