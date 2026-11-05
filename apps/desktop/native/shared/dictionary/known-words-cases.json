@@ -23,6 +23,8 @@
     { "name": "a dictionary in an encoding not known serves no language", "languages": ["xx", "en-US"], "words": ["word", "today"], "known": ["today"], "unavailable": ["xx"], "dictionaries": 1 },
     { "name": "a dictionary that knows a word in no language serves none, its language's next one serving", "languages": ["uk-UA"], "words": ["xyvora", "слово"], "known": ["слово"], "unavailable": [], "dictionaries": 1 },
     { "name": "a language whose only dictionary knows a word in no language has none", "languages": ["la", "en-US"], "words": ["xyvora", "today"], "known": ["today"], "unavailable": ["la"], "dictionaries": 1 },
+    { "name": "with no word asked, a language whose only dictionary knows a word in no language still has none", "languages": ["la"], "words": [], "known": [], "unavailable": ["la"], "dictionaries": 0 },
+    { "name": "with no word asked, its language's next dictionary still serves", "languages": ["uk-UA"], "words": [], "known": [], "unavailable": [], "dictionaries": 1 },
     { "name": "a dictionary without its .aff is not one", "languages": ["yy"], "words": ["word"], "known": [], "unavailable": ["yy"], "dictionaries": 0 },
     { "name": "a language without a dictionary knows nothing", "languages": ["fi-FI", "C"], "words": ["today"], "known": [], "unavailable": ["fi-FI"], "dictionaries": 0 },
     { "name": "no languages know no word", "languages": [], "words": ["today"], "known": [], "unavailable": [], "dictionaries": 0 }

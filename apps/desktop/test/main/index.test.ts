@@ -779,6 +779,11 @@ describe("main process wiring", () => {
       { languages: ["en-US"], words: ["today", "xyvora", "회의"] },
       { languages: ["en-US", "ko-KR"], words: ["today", "xyvora", "회의"] },
     ]);
+    // No dictionary that works (#348): the controller is told so, to pick terms by capitals, and the
+    // menu still names the language.
+    app.knownWords = () => ({ known: [], unavailable: ["ko-KR"], dictionaries: 0 });
+    expect(await knownWords([])).toBeNull();
+    expect(app.publishedDictionaries).toEqual([{ language: "ko", name: "Korean" }]);
   });
 
 test("the real capture pipeline reads the delayed captured identity in both scopes after focus changes", async () => {
