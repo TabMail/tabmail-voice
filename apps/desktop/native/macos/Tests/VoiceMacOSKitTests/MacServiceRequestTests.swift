@@ -105,12 +105,15 @@ struct MacServiceRequestTests {
         await channel.handle(line: Data(#"{"id":2,"method":"knownWords","params":{"languages":[],"words":["today"]}}"#.utf8))
         await channel.handle(line: Data(#"{"id":3,"method":"knownWords","params":{"languages":["en"],"words":[1]}}"#.utf8))
         await channel.handle(line: Data(#"{"id":4,"method":"knownWords","params":{"languages":"en","words":[]}}"#.utf8))
+        // Every preferred language's dictionary is asked: a word only French knows is known too.
+        await channel.handle(line: Data(#"{"id":5,"method":"knownWords","params":{"languages":["en-US","fr-FR"],"words":["today","établissements","xyvora"]}}"#.utf8))
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
-        #expect(replies.count == 4)
-        guard replies.count == 4 else { return }
+        #expect(replies.count == 5)
+        guard replies.count == 5 else { return }
         #expect(replies[0]["result"] as? NSDictionary == ["known": ["today", "the"], "unavailable": ["xx-YY"]])
         #expect(replies[1]["result"] as? NSDictionary == ["known": [String](), "unavailable": [String]()])
-        for reply in replies[2...] { #expect(reply["error"] != nil && reply["result"] == nil) }
+        for reply in replies[2...3] { #expect(reply["error"] != nil && reply["result"] == nil) }
+        #expect(replies[4]["result"] as? NSDictionary == ["known": ["today", "établissements"], "unavailable": [String]()])
         withExtendedLifetime(service) {}
     }
 

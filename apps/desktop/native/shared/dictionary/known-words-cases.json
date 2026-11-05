@@ -1,5 +1,5 @@
 {
-  "comment": "Which words are everyday words of the user's languages, answered with the system's spelling dictionaries (ADR-DESK-038, amended 2026-11-04). `dictionaries`: which of a system's dictionaries (`available`, as the macOS and Windows spell checkers name theirs) serves each of the user's languages. `known`: the Linux answer, from the Hunspell files in `hunspell/` (made up for these tests; el_GR's is ISO 8859-7, pt_BR's names no encoding and is ISO 8859-1, xx's names one not known, yy has no .aff). The app sends words in lowercase; `known` lists them as given, in the order asked.",
+  "comment": "Which words are everyday words of the user's languages, answered with the system's spelling dictionaries (ADR-DESK-038, amended 2026-11-04). `dictionaries`: which of a system's dictionaries (`available`, as the macOS and Windows spell checkers name theirs) serves each of the user's languages. `known`: the Linux answer, from the Hunspell files in `hunspell/` (made up for these tests; en_US has an affix rule, el_GR's is ISO 8859-7, pt_BR's names no encoding and is ISO 8859-1, ru's and th's name their encodings as Hunspell's own aliases, xx's names one not known, yy has no .aff). The app sends words in lowercase; `known` lists them as given, in the order asked.",
   "dictionaries": [
     { "name": "a language's region is matched", "languages": ["en-GB"], "available": ["en", "en_GB", "en_US"], "dictionaries": ["en_GB"], "unavailable": [] },
     { "name": "else the language alone", "languages": ["en-NZ"], "available": ["en_US", "en", "en_GB"], "dictionaries": ["en"], "unavailable": [] },
@@ -13,11 +13,13 @@
   ],
   "known": [
     { "name": "an everyday word is known, a made-up name is not", "languages": ["en-US"], "words": ["today", "xyvora", "brevalle", "the"], "known": ["today", "the"], "unavailable": [] },
+    { "name": "a word an affix rule makes is known", "languages": ["en-US"], "words": ["workflow", "workflows", "workflowed"], "known": ["workflow", "workflows"], "unavailable": [] },
     { "name": "a name the dictionary keeps capitalized is not known in lowercase", "languages": ["en-US"], "words": ["paris", "monday"], "known": [], "unavailable": [] },
     { "name": "the language's region picks its dictionary", "languages": ["en-GB"], "words": ["colour", "color"], "known": ["colour"], "unavailable": [] },
     { "name": "a word of another language is not known without its dictionary", "languages": ["en-US"], "words": ["회의", "논문"], "known": [], "unavailable": [] },
     { "name": "every language's dictionary is asked", "languages": ["en-US", "ko-KR"], "words": ["회의", "today", "xyvora", "논문"], "known": ["회의", "today", "논문"], "unavailable": [] },
     { "name": "a dictionary in another encoding is read in it", "languages": ["el-GR", "pt-BR"], "words": ["σήμερα", "você", "hoje", "xyvora"], "known": ["σήμερα", "você", "hoje"], "unavailable": [] },
+    { "name": "an encoding named by Hunspell's aliases for Windows Cyrillic and Thai is read in it", "languages": ["ru", "th"], "words": ["слово", "ทดสอบ", "xyvora"], "known": ["слово", "ทดสอบ"], "unavailable": [] },
     { "name": "a dictionary in an encoding not known serves no language", "languages": ["xx", "en-US"], "words": ["word", "today"], "known": ["today"], "unavailable": ["xx"] },
     { "name": "a dictionary without its .aff is not one", "languages": ["yy"], "words": ["word"], "known": [], "unavailable": ["yy"] },
     { "name": "a language without a dictionary knows nothing", "languages": ["fi-FI", "C"], "words": ["today"], "known": [], "unavailable": ["fi-FI"] },

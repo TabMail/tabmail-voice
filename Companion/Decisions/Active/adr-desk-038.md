@@ -324,13 +324,17 @@ Ubuntu/GNOME all have them, for the languages the user has, and nothing ships.
   real word to tell a typo from a name was tried and dropped: about 55 ms a word, and as many names as
   typos lie within one or two edits of a real word ("Kwan", "Zen").
 - Tests: `dictionary/known-words-cases.json` (Rust: the choice rule, and the Linux answer against
-  made-up Hunspell files in `dictionary/hunspell/`, one ISO 8859-7, one naming no encoding, one an
-  unknown encoding), the core's folder-order and refusal tests, `dictionary/contextTerms.test.ts`,
+  made-up Hunspell files in `dictionary/hunspell/`, one with an affix rule, one ISO 8859-7, one naming
+  no encoding, two named by Hunspell's Windows-Cyrillic and Thai aliases, one an unknown encoding), the
+  core's folder-order and refusal tests, `dictionary/contextTerms.test.ts`,
   `dictation/controller.test.ts` (a name starting a line goes whole, asked once; a failed or late answer
-  sends no screen terms; a long dictation canceled while its first chunk waits sends no chunk),
-  `main/native/wordChecker.test.ts` (lowercase forms asked once and mapped back, reply validation,
-  warm-up), and the helpers' `knownWords` wire tests against the real system dictionaries (macOS
-  `MacServiceRequestTests`, Windows `system-protocol.mjs`, Linux `foreground-lifecycle.py`).
+  sends no screen terms; a window read landing during the ask adds no word it didn't judge; a long
+  dictation canceled while its first chunk waits sends no chunk), `main/native/wordChecker.test.ts`
+  (lowercase forms asked once and mapped back, reply validation, warm-up), `main/index.test.ts` (the
+  controller wired to the main helper with the languages preferred at each ask, and the launch warm-up,
+  on each platform), and the helpers' `knownWords` wire tests against the real system dictionaries
+  (macOS `MacServiceRequestTests`, with two languages' dictionaries asked; Windows
+  `system-protocol.mjs`, Linux `foreground-lifecycle.py`).
 
 **Consequences (amendment):**
 - A name that is also an everyday word ("Will", "Grace") is not biased, and a capitalized typo is.

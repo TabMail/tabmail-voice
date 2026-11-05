@@ -692,6 +692,29 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Drake", "Brevalle Labs", "Quillon"]);
     });
 
+    /** The window's terms are the words the dictionary was asked about: a window read that lands while
+     * the answer is awaited brings no word that answer didn't judge. */
+    test("a window read landing while the everyday-word answer is awaited adds no word it didn't judge", async () => {
+      transcription.enqueue(200, cleanedReply);
+      const reply = deferred<ReadonlySet<string>>();
+      let asked: readonly string[] = [];
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: (words) => { asked = [...words]; return reply.promise; } });
+      controller.captureContext = async () => blankScreen({ appName: "Example Chat", renderedText: "Xyvora Brevalle" });
+      const window = deferred<ScreenRead | null>();
+      controller.captureWindow = () => window.promise;
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => asked.includes("Xyvora"))).toBe(true);
+      window.resolve(blankScreen({ appName: "Example Chat", renderedText: "Today met Dravennas" }));
+      await sleep(10);
+      reply.resolve(new Set(asked.filter((word) => everydayWords.has(word.toLowerCase()))));
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(pastes).toEqual([cleaned]);
+      expect(transcription.body(0).vocabulary).toContain("Xyvora Brevalle");
+      expect(transcription.body(0).vocabulary).not.toContain("Today");
+    });
+
     test("only as many as there is room for in the first 100, the rest for the cleanup", async () => {
       const dictionary = Array.from({ length: config.vocabularyModelMaxTerms - 2 }, (_, index) => `Zephrin${index}`);
       prefs.value = { ...defaultSettings(), dictionary: { typed: dictionary, learned: [] } };
