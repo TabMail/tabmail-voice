@@ -379,6 +379,41 @@ struct MarkerCaretSourceTests {
         #expect(!MarkerCaretSource.endsLine(caretElement: nil, at: 55))
     }
 
+    /// Gecko's text joins two lines that are each a block and gives a break only for an empty line
+    /// (Overleaf's code editor in Firefox, 2026-11-04): a caret starting a line, or on an empty
+    /// line, is read after the break the text leaves out, not right after the line above's "."
+    /// (issue #339). A caret ending a line has that break after it.
+    @Test func aGeckoCaretStartingALineGetsTheBreakItsTextLeavesOut() throws {
+        // "First line." / "Second line."
+        let first = LineNode(0, 11), second = LineNode(11, 12)
+        let joined = Provider(text: "First line.Second line.", selection: NSRange(location: 11, length: 0))
+        joined.lines = [first, second]
+        joined.caretLine = second
+        #expect(joined.read()?.parts == ["First line.\n", "", "Second line."])
+        joined.caretLine = first
+        #expect(joined.read()?.parts == ["First line.", "", "\nSecond line."])
+
+        // "First line." / "" (the caret) / "" / "Next.": each empty line is its own break.
+        let empty = Provider(text: "First line.\n\nNext.", selection: NSRange(location: 11, length: 0))
+        empty.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, 1), LineNode(13, 5)]
+        empty.caretLine = empty.lines[1]
+        #expect(empty.read()?.parts == ["First line.\n", "", "\n\nNext."])
+    }
+
+    /// A field with no block inside it (a plain text area: one run of text) gets no break, nor one
+    /// whose caret is inside a line.
+    @Test func aGeckoCaretInsideALineOrAPlainFieldGetsNoBreak() throws {
+        let plain = Provider(text: "First line.Second", selection: NSRange(location: 11, length: 0))
+        plain.lines = [LineNode(0, 17, block: false)]
+        plain.caretLine = plain.lines[0]
+        #expect(plain.read()?.parts == ["First line.", "", "Second"])
+
+        let inside = Provider(text: "First line.Second line.", selection: NSRange(location: 6, length: 0))
+        inside.lines = [LineNode(0, 11), LineNode(11, 12)]
+        inside.caretLine = inside.lines[0]
+        #expect(inside.read()?.parts == ["First ", "", "line.\nSecond line."])
+    }
+
     /// A Gmail compose field as Chromium's tree gives it (measured 2026-10-06): a line of text, an
     /// empty <div>, a <div> holding a sentence edited into runs, and the signature's <div>. Each
     /// block, and text after one, starts where the text may leave out its break.
@@ -444,6 +479,16 @@ struct MarkerCaretSourceTests {
         }
     }
 
+    /// One of a Gecko field's lines: its place in the field's text, and whether it is a block.
+    private final class LineNode {
+        let span: NSRange
+        let block: Bool
+        init(_ start: Int, _ length: Int, block: Bool = true) {
+            span = NSRange(location: start, length: length)
+            self.block = block
+        }
+    }
+
     private final class Provider {
         let origin = 12345
         let text: NSString
@@ -452,8 +497,22 @@ struct MarkerCaretSourceTests {
         var wrongMarker = false
         var changeOnRead = false
         var otherwise: () -> SharedContext.CaretWindow? = { nil }
+        /// The field's elements, as Gecko gives them (none: the read is given no `blocks`), and the
+        /// one the caret's marker is in.
+        var lines: [LineNode] = []
+        var caretLine: LineNode?
         init(text: String, selection: NSRange) { self.text = text as NSString; self.selection = selection }
         func read() -> SharedContext.CaretWindow? {
+            let field = LineNode(0, text.length, block: false)
+            let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks(field: field, children: { node in
+                node === field ? self.lines : []
+            }, isBlock: { ($0 as! LineNode).block }, range: { node in
+                let span = (node as! LineNode).span
+                return NSArray(array: [self.origin + span.location, self.origin + NSMaxRange(span)])
+            }, element: { _ in self.caretLine })
+            return read(blocks: blocks)
+        }
+        private func read(blocks: MarkerCaretSource.Blocks?) -> SharedContext.CaretWindow? {
             MarkerCaretSource.read(snapshot: {
                 (NSArray(array: [self.origin + self.selection.location, self.origin + self.selection.location + self.selection.length]),
                  NSArray(array: [self.origin, self.origin + self.text.length]))
@@ -474,7 +533,7 @@ struct MarkerCaretSourceTests {
                     return self.text.substring(with: NSRange(location: start - self.origin, length: end - start)) as NSString
                 default: return nil
                 }
-            }, focused: { true }, otherwise: otherwise)
+            }, focused: { true }, blocks: blocks, otherwise: otherwise)
         }
     }
 }

@@ -8,12 +8,31 @@ import VoiceHelperSupport
 /// Converts opaque provider markers to bounded native ranges. Marker indices can be
 /// document-relative, so the focused element's start is retained as an explicit origin.
 enum MarkerCaretSource {
+    /// A field's elements, for the breaks its text leaves out where a block starts. Gecko's text
+    /// joins two lines that are each a block (a rich editor's element per line: Overleaf's code
+    /// editor in Firefox, 2026-11-04) and gives a break only for an empty line, so a caret starting
+    /// a line read as right after the line above, and a dictation there was spaced from its "."
+    /// (issue #339). The shared core puts those breaks back, as it does for Chromium's (`blockStarts`,
+    /// ADR-DESK-007).
+    struct Blocks {
+        let field: AnyObject
+        let children: (AnyObject) -> [AnyObject]
+        let isBlock: (AnyObject) -> Bool
+        /// The marker range an element covers (`AXTextMarkerRangeForUIElement`).
+        let range: (AnyObject) -> CFTypeRef?
+        /// The element a marker is in (`AXUIElementForTextMarker`), nil for the field itself.
+        let element: (CFTypeRef) -> AnyObject?
+    }
+
     /// The text around the caret, read by its markers. Where the markers place the caret but give no
     /// text around it (Firefox's address bar: its value and selected range read fine), the field is
     /// read as `otherwise` reads it, and is unread only when that gives nothing either; a field that
     /// changed while it was read is unread.
+    /// `blocks`: the field's elements, placed by their markers' indices, so the shared core puts
+    /// back the break the text leaves out at each block start near the caret.
     static func read(snapshot: () -> (selection: CFTypeRef, whole: CFTypeRef)?,
                      parameterized: (String, CFTypeRef) -> CFTypeRef?, focused: () -> Bool,
+                     blocks: Blocks? = nil,
                      otherwise: () -> SharedContext.CaretWindow?) -> SharedContext.CaretWindow? {
         func index(_ marker: CFTypeRef) -> Int? {
             guard let result = parameterized("AXIndexForTextMarker", marker) as? NSNumber else { return nil }
@@ -35,10 +54,30 @@ enum MarkerCaretSource {
         guard let initial = snapshot(), let positions = endpoints(initial) else { return nil }
         HelperLog.debug("ScreenContext: caret \(positions[2] - positions[0])+\(positions[3] - positions[2]) of \(positions[1] - positions[0]) chars, from the marker indices")
         guard let unavailable = try? SharedContext.CaretWindow.unread(selectsText: positions[3] > positions[2]) else { return nil }
+        let origin = positions[0]
+        let selection = NSRange(location: positions[2] - origin, length: positions[3] - positions[2])
+        let layout = blocks.flatMap { blocks -> (starts: [Int], caretEndsLine: Bool)? in
+            let looked = Date()
+            guard let limits = try? SharedContext.sourceLimits() else { return nil }
+            func span(_ node: AnyObject) -> NSRange? {
+                guard let whole = blocks.range(node),
+                      let first = parameterized("AXStartTextMarkerForTextMarkerRange", whole).flatMap(index),
+                      let last = parameterized("AXEndTextMarkerForTextMarkerRange", whole).flatMap(index),
+                      first >= origin, last >= first else { return nil }
+                return NSRange(location: first - origin, length: last - first)
+            }
+            let starts = blockStarts(in: blocks.field, around: selection, within: limits.paragraphStartUnits,
+                                     elements: limits.caretSourceElements, children: blocks.children, isBlock: blocks.isBlock, span: span)
+            // The element the caret is in, to tell the end of a line from the start of the block after it.
+            let caretElement = parameterized("AXStartTextMarkerForTextMarkerRange", initial.selection)
+                .flatMap(blocks.element).flatMap(span)
+            let ends = endsLine(caretElement: caretElement, at: selection.location)
+            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms; the caret \(ends ? "ends a line" : "starts its text")")
+            return starts.map { (starts: $0, caretEndsLine: ends) }
+        }
         do {
-            let origin = positions[0]
-            let result = try BoundedCaretSource.read(count: positions[1] - origin,
-                selection: NSRange(location: positions[2] - origin, length: positions[3] - positions[2])) { requested in
+            let result = try BoundedCaretSource.read(count: positions[1] - origin, selection: selection,
+                                                     paragraphStarts: layout?.starts, caretEndsLine: layout?.caretEndsLine ?? false) { requested in
                 let start = origin + requested.location
                 let end = start + requested.length
                 guard let first = parameterized("AXTextMarkerForIndex", NSNumber(value: start)),
