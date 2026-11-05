@@ -166,14 +166,11 @@ struct ClipboardKeeperTests {
     /// paste's text, never the clipboard as it was; that goes back once the app has read the text.
     @Test func aBusyAppReadingAfterTheDelayGetsThePastesText() async {
         copy("user text")
-        let rules = SharedRequest.clipboardRules
-        // Whether the wait for a read ran out, rather than the read ending it: told by what happened,
-        // not by how long it took, which a loaded run stretches several times over.
-        let ranOut = OSAllocatedUnfairLock(initialState: false)
-        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules, delay: { milliseconds in
-            do { try await Task.sleep(for: .milliseconds(milliseconds)) } catch { return }
-            if milliseconds == rules.readWait { ranOut.withLock { $0 = true } }
-        })
+        // The shipped rules, but with a wait for a read far past `stuck`: the clipboard back within
+        // `stuck` went back on the read, however long a loaded run takes, never on the wait running out.
+        var rules = SharedRequest.clipboardRules
+        rules.readWait = Int(Self.stuck / .milliseconds(1)) * 6
+        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules)
         keeper.save()
         await keeper.saveTask?.value
         let pasteboard = pasteboard
@@ -185,10 +182,11 @@ struct ClipboardKeeperTests {
             }
         }).insert("Dictated text")
         #expect(await app?.value == "Dictated text")
-        await keeper.restoreTask?.value
+        let giveUp = ContinuousClock.now.advanced(by: Self.stuck)
+        while pasteboard.string(forType: .string) != "user text", ContinuousClock.now < giveUp {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
         #expect(pasteboard.string(forType: .string) == "user text")
-        // Back once the app read the text, not once `readWait` ran out.
-        #expect(!ranOut.withLock { $0 })
     }
 
     /// The whole of `readWait` is waited for: an app reading near its end, well past most of it,
