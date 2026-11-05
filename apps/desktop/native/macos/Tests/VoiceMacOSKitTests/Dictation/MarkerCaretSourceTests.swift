@@ -436,6 +436,30 @@ struct MarkerCaretSourceTests {
         #expect(placed.read()?.parts == ["First \nline.\n", "", "Second line."])
     }
 
+    /// An element whose end alone does not round-trip has no place either: "Middle." ends at 14,
+    /// where "Last." starts, with the break between "First." and "Middle." already in the text.
+    @Test func aGeckoElementWhoseEndDoesNotRoundTripGivesNoBreak() throws {
+        func read(unrounded: Int?) -> [String]? {
+            let provider = Provider(text: "First.\nMiddle.Last.", selection: NSRange(location: 14, length: 0))
+            provider.lines = [LineNode(0, 6), LineNode(7, 7), LineNode(14, 5)]
+            provider.caretLine = provider.lines[2]
+            provider.unrounded = unrounded
+            return provider.read()?.parts
+        }
+        #expect(read(unrounded: 6) == ["First.\nMiddle.", "", "Last."])
+        #expect(read(unrounded: nil) == ["First.\nMiddle.\n", "", "Last."])
+    }
+
+    /// A caret whose marker names the field itself, not a line, starts the line at its offset: the
+    /// break goes before it. One whose marker names the line above ends that line.
+    @Test func aGeckoCaretInTheFieldItselfStartsTheLine() throws {
+        let provider = Provider(text: "First line.Second line.", selection: NSRange(location: 11, length: 0))
+        provider.lines = [LineNode(0, 11), LineNode(11, 12)]
+        #expect(provider.read()?.parts == ["First line.\n", "", "Second line."])
+        provider.caretLine = provider.lines[0]
+        #expect(provider.read()?.parts == ["First line.", "", "\nSecond line."])
+    }
+
     /// A secret on one line whose element is misplaced (past the field's end) is redacted whole in
     /// the helper's reply: no break is put inside it, which would leave each half unredacted
     /// (ADR-DESK-046).
