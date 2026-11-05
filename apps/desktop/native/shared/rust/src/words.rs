@@ -9,6 +9,8 @@
 //! does not depend on the OS is here: which of a system's dictionaries serves a language
 //! (`dictionaries`, for the spell checkers' lists), and on Linux the whole answer (`known`), the
 //! system's Hunspell files read with `spellbook`, each loaded once for the life of the process.
+//! A dictionary that knows `MADE_UP` is not used (amended 2026-11-05, #348): every helper asks the
+//! dictionaries chosen whether they know it, and has the choice made again without those that do.
 
 use serde_json::{Value, json};
 use spellbook::Dictionary;
@@ -17,6 +19,11 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock, PoisonError},
 };
+
+/// A word in no language. A dictionary that knows it tells no name from an everyday word (Ubuntu's
+/// Ukrainian takes every word in Latin letters), so it serves no language: the choice is made again
+/// without it, its language's next dictionary serving if there is one (#348).
+pub const MADE_UP: &str = "qxzvjwkq";
 
 /// A language tag ("en-US", "zh-Hant-TW", a POSIX locale "pt_BR.UTF-8") or a dictionary's name
 /// ("en_GB", "fr", "pt_BR") as its language and region, both lowercase; `None` when it names no
@@ -79,9 +86,11 @@ fn languages(request: &Value) -> Result<Vec<&str>, u32> {
         .collect())
 }
 
-/// `{"languages":[tag…],"available":[name…]}` gives `{"dictionaries":[name…],"unavailable":[tag…]}`:
-/// the system's dictionaries that serve the user's languages, each once, in the languages' order, and
-/// the languages none serves (a tag naming no language is neither).
+/// `{"languages":[tag…],"available":[name…]}` gives
+/// `{"dictionaries":[name…],"unavailable":[tag…],"madeUp":word}`: the system's dictionaries that serve
+/// the user's languages, each once, in the languages' order, the languages none serves (a tag naming no
+/// language is neither), and the word in no language (`MADE_UP`): the helper asks again without each
+/// chosen dictionary that knows it.
 pub fn dictionaries(request: &Value) -> Result<Value, u32> {
     let languages = languages(request)?;
     let available = strings(request, "available")?;
@@ -94,7 +103,7 @@ pub fn dictionaries(request: &Value) -> Result<Value, u32> {
             None => unavailable.push(*language),
         }
     }
-    Ok(json!({"dictionaries": dictionaries, "unavailable": unavailable}))
+    Ok(json!({"dictionaries": dictionaries, "unavailable": unavailable, "madeUp": MADE_UP}))
 }
 
 /// The Hunspell dictionaries in `folders`: each `<name>.dic` beside a `<name>.aff`, by name, the first
@@ -169,9 +178,10 @@ fn dictionary(base: &Path) -> Option<Arc<Dictionary>> {
 }
 
 /// `{"folders":[folder…],"languages":[tag…],"words":[word…]}` gives
-/// `{"known":[word…],"unavailable":[tag…]}`: the words, as given and in the order asked, that a
-/// Hunspell dictionary in `folders` (absolute paths, the system's) serving one of the languages has,
-/// and the languages none serves or whose dictionary could not be read.
+/// `{"known":[word…],"unavailable":[tag…],"dictionaries":count}`: the words, as given and in the order
+/// asked, that a Hunspell dictionary in `folders` (absolute paths, the system's) serving one of the
+/// languages has, the languages none serves, and how many dictionaries answered. A dictionary that
+/// could not be read, or that knows `MADE_UP`, is left out and the choice made again without it.
 pub fn known(request: &Value) -> Result<Value, u32> {
     let folders = strings(request, "folders")?;
     let languages = languages(request)?;
@@ -183,17 +193,30 @@ pub fn known(request: &Value) -> Result<Value, u32> {
         return Err(1);
     }
     let installed = installed(&folders);
-    let names: Vec<&str> = installed.keys().map(String::as_str).collect();
-    let mut dictionaries: Vec<(PathBuf, Arc<Dictionary>)> = Vec::new();
-    let mut unavailable = Vec::new();
-    for (language, chosen) in languages.iter().zip(choose(&languages, &names)) {
-        let base = chosen.map(|name| &installed[name]);
-        match base.and_then(|base| Some((base, dictionary(base)?))) {
-            Some((base, _)) if dictionaries.iter().any(|(loaded, _)| loaded == base) => {}
-            Some((base, dictionary)) => dictionaries.push((base.clone(), dictionary)),
-            None => unavailable.push(*language),
+    let mut names: Vec<&str> = installed.keys().map(String::as_str).collect();
+    // Each pass leaves out one more dictionary, so the choice is made at most once per dictionary.
+    let (dictionaries, unavailable) = 'choice: loop {
+        let mut dictionaries: Vec<(&PathBuf, Arc<Dictionary>)> = Vec::new();
+        let mut unavailable = Vec::new();
+        for (language, chosen) in languages.iter().zip(choose(&languages, &names)) {
+            let Some(name) = chosen else {
+                unavailable.push(*language);
+                continue;
+            };
+            let base = &installed[name];
+            if dictionaries.iter().any(|(loaded, _)| *loaded == base) {
+                continue;
+            }
+            match dictionary(base).filter(|dictionary| !dictionary.check(MADE_UP)) {
+                Some(dictionary) => dictionaries.push((base, dictionary)),
+                None => {
+                    names.retain(|other| *other != name);
+                    continue 'choice;
+                }
+            }
         }
-    }
+        break (dictionaries, unavailable);
+    };
     let known: Vec<&str> = words
         .into_iter()
         .filter(|word| {
@@ -202,7 +225,7 @@ pub fn known(request: &Value) -> Result<Value, u32> {
                 .any(|(_, dictionary)| dictionary.check(word))
         })
         .collect();
-    Ok(json!({"known": known, "unavailable": unavailable}))
+    Ok(json!({"known": known, "unavailable": unavailable, "dictionaries": dictionaries.len()}))
 }
 
 #[cfg(test)]

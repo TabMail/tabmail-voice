@@ -110,11 +110,25 @@ struct MacServiceRequestTests {
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == 5)
         guard replies.count == 5 else { return }
-        #expect(replies[0]["result"] as? NSDictionary == ["known": ["today", "the"], "unavailable": ["xx-YY"]])
-        #expect(replies[1]["result"] as? NSDictionary == ["known": [String](), "unavailable": [String]()])
+        #expect(replies[0]["result"] as? NSDictionary == ["known": ["today", "the"], "unavailable": ["xx-YY"], "dictionaries": 1])
+        #expect(replies[1]["result"] as? NSDictionary == ["known": [String](), "unavailable": [String](), "dictionaries": 0])
         for reply in replies[2...3] { #expect(reply["error"] != nil && reply["result"] == nil) }
-        #expect(replies[4]["result"] as? NSDictionary == ["known": ["today", "établissements"], "unavailable": [String]()])
+        #expect(replies[4]["result"] as? NSDictionary == ["known": ["today", "établissements"], "unavailable": [String](), "dictionaries": 2])
         withExtendedLifetime(service) {}
+    }
+
+    /// A dictionary that knows a word in no language tells no name from an everyday word (Ubuntu's
+    /// Ukrainian takes every word in Latin letters): its language's next one serves, and a language
+    /// with no other has none (amended 2026-11-05). The checker here knows every word in `en_GB` and
+    /// `la`, and only "colour" in `en`.
+    @Test func aDictionaryKnowingAWordInNoLanguageServesNone() async throws {
+        let check = SpellCheck(available: { ["en", "en_GB", "la"] }, knows: { word, language in
+            language == "en_GB" || language == "la" || (language == "en" && word == "colour")
+        })
+        let reply = try await check.known(languages: ["en-GB", "la"], words: ["colour", "xyvora"])
+        #expect(reply == ["known": ["colour"], "unavailable": ["la"], "dictionaries": 1])
+        let none = try await check.known(languages: ["la"], words: ["xyvora"])
+        #expect(none == ["known": [], "unavailable": ["la"], "dictionaries": 0])
     }
 
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {

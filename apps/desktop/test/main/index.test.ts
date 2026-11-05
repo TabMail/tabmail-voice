@@ -124,7 +124,7 @@ const app = vi.hoisted(() => ({
     warmUp: (baseURL: string, accessToken: string) => Promise<void>;
     makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient;
     makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
-    knownWords: (words: readonly string[]) => Promise<ReadonlySet<string>>;
+    knownWords: (words: readonly string[]) => Promise<ReadonlySet<string> | null>;
   } | null,
   trayState: null as (() => { update: unknown; fileProblems?: unknown; missingDictionaries?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
@@ -449,6 +449,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       this.replies.set("knownWords", (params: { languages: string[]; words: string[] }) => app.knownWords?.(params) ?? {
         known: params.words.filter((word) => (word === "today" && params.languages.includes("en-US")) || (word === "회의" && params.languages.includes("ko-KR"))),
         unavailable: [],
+        dictionaries: params.languages.length,
       });
     }
     /** "start", "stop" and "restart", as the app called them. */
@@ -3045,7 +3046,7 @@ test("the real capture pipeline reads the delayed captured identity in both scop
    * failed ask, and gone at the answer that no longer names it; its item tells how to install one. */
   test.each(["win32", "linux"] as const)("on %s a language without a spelling dictionary is named in the menu until it is there", async (platform) => {
     app.preferredLanguages = ["en-US", "ko-KR", "ja-JP"];
-    app.knownWords = () => ({ known: [], unavailable: ["ko-KR", "ja-JP"] });
+    app.knownWords = () => ({ known: [], unavailable: ["ko-KR", "ja-JP"], dictionaries: 1 });
     await launch(platform);
     const korean = { language: "ko", name: "Korean" };
     const published = () => JSON.stringify(app.publishedDictionaries);
@@ -3059,18 +3060,18 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     expect(app.dialogs[0]?.detail).toContain(platform === "win32" ? "Settings > Time & language" : "Manage Installed Languages");
 
     const knownWords = app.backend!.knownWords;
-    app.knownWords = () => ({ known: [], unavailable: [1] });
+    app.knownWords = () => ({ known: [], unavailable: [1], dictionaries: 1 });
     await expect(knownWords(["Today"])).rejects.toThrow("Invalid knownWords reply.");
     app.knownWords = () => { throw new Error("exited"); };
     await expect(knownWords(["Today"])).rejects.toThrow("exited");
     expect(published()).toBe(JSON.stringify([korean]));
 
     // Another language missing in its place (the preferred languages changed) replaces it.
-    app.knownWords = () => ({ known: [], unavailable: ["el-GR"] });
+    app.knownWords = () => ({ known: [], unavailable: ["el-GR"], dictionaries: 1 });
     await knownWords(["Today"]);
     expect(published()).toBe(JSON.stringify([{ language: "el", name: "Greek" }]));
 
-    app.knownWords = () => ({ known: ["today"], unavailable: [] });
+    app.knownWords = () => ({ known: ["today"], unavailable: [], dictionaries: 1 });
     expect(await knownWords(["Today"])).toEqual(new Set(["Today"]));
     expect(published()).toBe("[]");
   });

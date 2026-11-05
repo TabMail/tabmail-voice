@@ -561,6 +561,22 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(asked).toEqual([["Launch", "Xyvora", "Brevalle", "Today", "PM"]]);
   });
 
+  /** #348 (owner, 2026-11-05): with no spelling dictionary for the user's languages (none installed,
+   * or each knowing a word in no language), the screen's terms are picked as before the dictionaries,
+   * by capitals with a sentence's first word left out, not every capitalized word and every word in a
+   * script without case. */
+  test("a dictation no spelling dictionary answers for picks screen terms by capitals", async () => {
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async () => null });
+    controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "Launch", renderedText: "Xyvora Brevalle said hi 회의는\nThe report: ask Kaelthorne about TabMail" });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(pastes).toEqual([cleaned]);
+    expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Kaelthorne", "TabMail"]);
+  });
+
   /** The dictionaries' answer is best effort, like the screen read: one that fails, or doesn't come
    * within `knownWordsTimeout`, sends no screen terms; the dictation goes on with the dictionary's. */
   test.each<[string, DictationDependencies["knownWords"]]>([

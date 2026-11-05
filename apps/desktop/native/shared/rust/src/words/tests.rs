@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::{dictionaries, known};
+use super::{MADE_UP, dictionaries, known};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -32,7 +32,7 @@ fn dictionaries_cases() {
                 .unwrap();
         assert_eq!(
             reply,
-            json!({"dictionaries": case["dictionaries"], "unavailable": case["unavailable"]}),
+            json!({"dictionaries": case["dictionaries"], "unavailable": case["unavailable"], "madeUp": MADE_UP}),
             "{}",
             case["name"]
         );
@@ -49,7 +49,7 @@ fn known_cases() {
         .unwrap();
         assert_eq!(
             reply,
-            json!({"known": case["known"], "unavailable": case["unavailable"]}),
+            json!({"known": case["known"], "unavailable": case["unavailable"], "dictionaries": case["dictionaries"]}),
             "{}",
             case["name"]
         );
@@ -74,7 +74,7 @@ fn the_first_folder_with_a_dictionary_is_read() {
     std::fs::remove_dir_all(&first).unwrap();
     assert_eq!(
         reply,
-        json!({"known": ["zorvek", "회의"], "unavailable": []})
+        json!({"known": ["zorvek", "회의"], "unavailable": [], "dictionaries": 2})
     );
 }
 

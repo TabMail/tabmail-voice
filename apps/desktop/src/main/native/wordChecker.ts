@@ -11,7 +11,9 @@ import type { HelperClient } from "./helperClient.js";
  * system's spelling dictionaries (`knownWords`, ADR-DESK-038 amended 2026-11-04): the macOS and
  * Windows spell checkers, the Hunspell dictionaries installed on Linux. `languages()` are the
  * system's preferred languages, read at each ask. A word is known when its lowercase form is, so
- * "Today" starting a sentence is, and a name a dictionary keeps capitalized ("Paris") is not.
+ * "Today" starting a sentence is, and a name a dictionary keeps capitalized ("Paris") is not. A
+ * dictionary that knows a word in no language serves none (the shared core's `MADE_UP`, amended
+ * 2026-11-05); with none of the user's languages served, `known` answers null.
  */
 export class NativeWordChecker {
   constructor(
@@ -21,14 +23,17 @@ export class NativeWordChecker {
     private readonly onUnavailable: (languages: readonly string[]) => void = () => {},
   ) {}
 
-  async known(words: readonly string[]): Promise<ReadonlySet<string>> {
+  /** The `words` a dictionary of the user's languages knows; null when no dictionary serves them. */
+  async known(words: readonly string[]): Promise<ReadonlySet<string> | null> {
     const lowercase = [...new Set(words.map((word) => word.toLowerCase()))];
     const reply = await this.helper.request<unknown>("knownWords", { languages: [...this.languages()], words: lowercase }, knownWordsTimeout);
     if (typeof reply !== "object" || reply === null || !("known" in reply) || !Array.isArray(reply.known) || !reply.known.every((word) => typeof word === "string")
-      || !("unavailable" in reply) || !Array.isArray(reply.unavailable) || !reply.unavailable.every((language) => typeof language === "string")) throw new Error("Invalid knownWords reply.");
+      || !("unavailable" in reply) || !Array.isArray(reply.unavailable) || !reply.unavailable.every((language) => typeof language === "string")
+      || !("dictionaries" in reply) || !Number.isSafeInteger(reply.dictionaries) || (reply.dictionaries as number) < 0) throw new Error("Invalid knownWords reply.");
     const unavailable: readonly string[] = reply.unavailable;
     if (unavailable.length > 0) log.debug(() => `NativeWordChecker: ${unavailable.length} of the system's languages have no spelling dictionary`);
     this.onUnavailable(unavailable);
+    if (reply.dictionaries === 0) return null;
     const known = new Set(reply.known);
     return new Set(words.filter((word) => known.has(word.toLowerCase())));
   }

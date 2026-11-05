@@ -74,8 +74,8 @@ try {
   // the dictionary the shared core picks for each language (every Windows has English's); a word a
   // dictionary keeps capitalized is not known in lowercase.
   assert.deepEqual((await request("knownWords", { languages: ["en-US", "xx-YY"], words: ["today", "xyvora", "paris", "the"] })).result,
-    { known: ["today", "the"], unavailable: ["xx-YY"] });
-  assert.deepEqual((await request("knownWords", { languages: [], words: ["today"] })).result, { known: [], unavailable: [] });
+    { known: ["today", "the"], unavailable: ["xx-YY"], dictionaries: 1 });
+  assert.deepEqual((await request("knownWords", { languages: [], words: ["today"] })).result, { known: [], unavailable: [], dictionaries: 0 });
   assert.ok((await request("knownWords", { languages: ["en-US"], words: [1] })).error);
   assert.ok((await request("knownWords", { languages: "en-US", words: [] })).error);
   const front = (await request("frontmostApp")).result;

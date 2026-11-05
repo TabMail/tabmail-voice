@@ -37,6 +37,9 @@ add_test(NAME voice-activation-retry COMMAND voice-activation-retry-tests)
 add_executable(voice-page-selection-tests tests/page-selection.cpp)
 target_link_libraries(voice-page-selection-tests PRIVATE nlohmann_json::nlohmann_json voice-core)
 add_test(NAME voice-page-selection COMMAND voice-page-selection-tests)
+add_executable(voice-dictionary-choice-tests tests/dictionary-choice.cpp)
+target_link_libraries(voice-dictionary-choice-tests PRIVATE nlohmann_json::nlohmann_json voice-core)
+add_test(NAME voice-dictionary-choice COMMAND voice-dictionary-choice-tests)
 
 if(BUILD_TESTING)
   # Exercise the exact production worker with synthetic OS/provider boundaries.

@@ -130,8 +130,9 @@ export interface DictationDependencies {
    * microphone path. */
   corrections?: { watch(target: number, pasted: string, exclusions: ScreenExclusions): void; stop(): void };
   /** Which of `words` are everyday words of the user's languages (`NativeWordChecker`): the screen
-   * terms' test (ADR-DESK-038, amended 2026-11-04). */
-  knownWords: (words: readonly string[]) => Promise<ReadonlySet<string>>;
+   * terms' test (ADR-DESK-038, amended 2026-11-04); null when no spelling dictionary serves them
+   * (amended 2026-11-05). */
+  knownWords: (words: readonly string[]) => Promise<ReadonlySet<string> | null>;
   /** Marks the dictionary's words in a dictation's transcript and cleaned text used
    * (`AppSettings.useWords`), so a full dictionary keeps them (ADR-DESK-038). */
   useWords: (texts: readonly string[]) => void;
@@ -697,24 +698,28 @@ export class DictationController extends Observable {
    * ADR-DESK-016, 2026-10-25); none when the screen is not read. With `cleans`, the screen's terms that
    * don't fit the speech model's share follow, for the cleanup. Which words are everyday words is
    * asked once for both reads (`knownWords`, amended 2026-11-04), for at most `knownWordsTimeout`; a
-   * dictation whose answer doesn't come sends no screen terms. */
+   * dictation whose answer doesn't come sends no screen terms, and one no spelling dictionary answered
+   * picks them by capital letters (amended 2026-11-05). */
   private async vocabulary(dictionary: DictionaryWords, cleans: boolean): Promise<string[]> {
     const textOf = (screen: ScreenContext | null) => (screen ? `${screen.windowTitle ?? ""}\n${screen.renderedText}` : null);
     const shown = textOf(this.screenRead);
     const window = textOf(this.screenRead && this.windowScreen);
     const candidates = [...new Set([shown, window].flatMap((text) => (text === null ? [] : termCandidates(text))))];
     let known: ReadonlySet<string> | null = new Set();
+    let answered = true;
     if (candidates.length > 0) {
       const asking = performance.now();
       try {
         known = await withTimeout(config.knownWordsTimeout, () => this.deps.knownWords(candidates));
-        log.debug(() => `DictationController: ${known?.size ?? 0} of ${candidates.length} screen word(s) are everyday words, answered in ${elapsed(asking)}`);
+        log.debug(() => known === null
+          ? `DictationController: no spelling dictionary of the user's languages, answered in ${elapsed(asking)}; screen terms by capital letters`
+          : `DictationController: ${known.size} of ${candidates.length} screen word(s) are everyday words, answered in ${elapsed(asking)}`);
       } catch (error) {
         log.debug(() => `DictationController: everyday words not answered (${errorName(error)}) after ${elapsed(asking)}; no screen terms`);
-        known = null;
+        answered = false;
       }
     }
-    const termsOf = (text: string | null) => (text === null || known === null ? [] : contextTerms(text, known));
+    const termsOf = (text: string | null) => (text === null || !answered ? [] : contextTerms(text, known));
     const vocabulary = dictationVocabulary(dictionary, termsOf(shown), termsOf(window), cleans);
     log.debug(() => `DictationController: sending ${vocabulary.length} term(s) of ${dictionary.typed.length} typed and ${dictionary.learned.length} learned word(s)${cleans ? ", for the speech model and the cleanup" : ""}`);
     return vocabulary;
