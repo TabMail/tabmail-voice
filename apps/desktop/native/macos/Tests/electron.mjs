@@ -47,7 +47,7 @@ const page = `
     [contenteditable] div { margin: 0; }
     p { font: 14px/20px Arial; margin: 0 0 10px; }
   </style>
-  <div style="position:fixed;left:560px;top:20px"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p><p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p><p><button style="font:14px Arial;margin:0;padding:11px 6px;border:0">Alpha</button><button style="font:14px Arial;margin:0;padding:11px 6px;border:0">Beta</button></p></div>
+  <div style="position:fixed;left:560px;top:20px"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p><p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p><div><button style="font:14px Arial;margin:0;padding:11px 6px;border:0">Alpha</button><button style="font:14px Arial;margin:0;padding:11px 6px;border:0">Beta</button></div></div>
   <!-- A key split by bold where one piece wraps onto more lines (a Slack message). -->
   <div style="position:fixed;left:560px;top:200px;width:200px"><p>Wrap <b>words that wrap onto a second line sk-ReviewWrap</b>Glued1234567890ab end</p><p>Start sk-ReviewStart<b>Tail1234567890abcd words that wrap onto more lines</b></p></div>
   <input id="empty" placeholder="Subject">
