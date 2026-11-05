@@ -200,6 +200,51 @@
       }
     },
     {
+      "name": "a caption that looks like a key is redacted, and the text beside it kept",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Token",
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "caption",
+            "text": "sk-ReviewCaption1234567890",
+            "frame": [
+              40,
+              0,
+              120,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "here",
+            "frame": [
+              160,
+              0,
+              30,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Token [redacted] here"
+      }
+    },
+    {
       "name": "the pieces of one line keep the screen's spaces, and none where they abut",
       "request": {
         "blocks": [

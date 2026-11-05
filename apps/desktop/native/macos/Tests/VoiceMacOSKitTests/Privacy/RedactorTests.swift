@@ -90,6 +90,7 @@ struct RedactorTests {
         context.textAfterCaret = " \(secret) end"
         context.append(.heading, "Keys \(secret)")
         context.append(.row, "name | \(secret)")
+        context.append(.caption, "Copy \(secret)")
         context.append(.field, "export KEY=\(secret)")
         context.appendCaret()
         context.nodesVisited = 4
@@ -100,7 +101,7 @@ struct RedactorTests {
         #expect(reply["textBeforeCaret"]?.string == "key \(gone) ")
         #expect(reply["selectedText"]?.string == gone)
         #expect(reply["textAfterCaret"]?.string == " \(gone) end")
-        #expect(reply["renderedText"]?.string == "## Keys \(gone)\n| name | \(gone)\n> export KEY=\(gone)\n» key \(gone) ‸\(gone)‸ \(gone) end")
+        #expect(reply["renderedText"]?.string == "## Keys \(gone)\n| name | \(gone)\nCopy \(gone)\n> export KEY=\(gone)\n» key \(gone) ‸\(gone)‸ \(gone) end")
         #expect(reply["logDescription"]?.string?.contains(secret) == false)
         #expect(reply["logDescription"]?.string?.contains("--- text before the caret ---\nkey \(gone) \n") == true)
         // What isn't text read off the screen is left as read.
