@@ -577,6 +577,58 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Kaelthorne", "TabMail"]);
   });
 
+  /** Whether a dictionary works is asked with no word to judge too: a screen whose only name a
+   * dictionary would never be asked about (it has a digit) still has it picked by capitals when none
+   * works, and not when one does. */
+  test.each<[string, ReadonlySet<string> | null, string[] | undefined]>([
+    ["no spelling dictionary works", null, ["Xyvora4"]],
+    // An empty vocabulary is left out of the request.
+    ["a spelling dictionary works", new Set<string>(), undefined],
+  ])("a screen with no word to judge, when %s", async (_, known, terms) => {
+    transcription.enqueue(200, cleanedReply);
+    const asked: (readonly string[])[] = [];
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async (words) => { asked.push([...words]); return known; } });
+    controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "notes", renderedText: "ask Xyvora4" });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(pastes).toEqual([cleaned]);
+    expect(asked).toEqual([[]]);
+    expect(transcription.body(0).vocabulary).toEqual(terms);
+  });
+
+  /** With no spelling dictionary, every way a dictation reads the screen picks its terms by capitals:
+   * with the cleanup or without, in agent mode, from what the window shows and from the whole window. */
+  describe.each<[string, DictationMode, boolean]>([
+    ["dictation with the cleanup", "dictation", true],
+    ["dictation without the cleanup", "dictation", false],
+    ["agent mode", "agent", true],
+  ])("%s with no spelling dictionary", (_, mode, smartDictation) => {
+    const text = "Xyvora Brevalle said hi 회의는\nThe report: ask Kaelthorne about TabMail";
+    test.each<[string, string, string | null]>([
+      ["what the window shows", text, null],
+      ["the whole window", "notes", text],
+    ])("picks terms by capitals from %s", async (_, shown, whole) => {
+      prefs.value = { ...defaultSettings(), smartDictation, enabledTools: ["compose"] };
+      transcription.enqueue(200, mode === "dictation" && smartDictation ? cleanedReply : { text: request });
+      if (mode === "agent") completions.enqueue(200, writes("compose", "Synthetic composed result."));
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async () => null });
+      controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "notes", renderedText: shown });
+      const windows: string[] = [];
+      controller.captureWindow = whole === null ? undefined : async () => {
+        windows.push(whole);
+        return blankScreen({ appName: "Example Chat", windowTitle: "notes", renderedText: whole });
+      };
+
+      await holdAndRelease(controller, mode);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(windows).toEqual(whole === null ? [] : [whole]);
+      expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Kaelthorne", "TabMail"]);
+    });
+  });
+
   /** The dictionaries' answer is best effort, like the screen read: one that fails, or doesn't come
    * within `knownWordsTimeout`, sends no screen terms; the dictation goes on with the dictionary's. */
   test.each<[string, DictationDependencies["knownWords"]]>([

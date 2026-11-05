@@ -129,6 +129,9 @@ struct MacServiceRequestTests {
         #expect(reply == ["known": ["colour"], "unavailable": ["la"], "dictionaries": 1])
         let none = try await check.known(languages: ["la"], words: ["xyvora"])
         #expect(none == ["known": [], "unavailable": ["la"], "dictionaries": 0])
+        // A request with no word, as the app sends at launch, is told the same of each dictionary.
+        #expect(try await check.known(languages: ["en-GB", "la"], words: []) == ["known": [], "unavailable": ["la"], "dictionaries": 1])
+        #expect(try await check.known(languages: ["la"], words: []) == ["known": [], "unavailable": ["la"], "dictionaries": 0])
     }
 
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {

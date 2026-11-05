@@ -699,7 +699,8 @@ export class DictationController extends Observable {
    * don't fit the speech model's share follow, for the cleanup. Which words are everyday words is
    * asked once for both reads (`knownWords`, amended 2026-11-04), for at most `knownWordsTimeout`; a
    * dictation whose answer doesn't come sends no screen terms, and one no spelling dictionary answered
-   * picks them by capital letters (amended 2026-11-05). */
+   * picks them by capital letters (amended 2026-11-05). It is asked whenever the screen was read, with
+   * no word to judge too: whether a dictionary works decides which words may be terms at all. */
   private async vocabulary(dictionary: DictionaryWords, cleans: boolean): Promise<string[]> {
     const textOf = (screen: ScreenContext | null) => (screen ? `${screen.windowTitle ?? ""}\n${screen.renderedText}` : null);
     const shown = textOf(this.screenRead);
@@ -707,7 +708,7 @@ export class DictationController extends Observable {
     const candidates = [...new Set([shown, window].flatMap((text) => (text === null ? [] : termCandidates(text))))];
     let known: ReadonlySet<string> | null = new Set();
     let answered = true;
-    if (candidates.length > 0) {
+    if (shown !== null) {
       const asking = performance.now();
       try {
         known = await withTimeout(config.knownWordsTimeout, () => this.deps.knownWords(candidates));

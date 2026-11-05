@@ -400,7 +400,9 @@ a made-up word; with no working dictionary, use the rule from before #333.
   that know it (`SpellCheck.known`; Windows `workingDictionaries`); each pass leaves one more out, so
   it ends.
 - **How many answered.** Every helper's `knownWords` reply carries `dictionaries`, the number of
-  dictionaries that answered; `NativeWordChecker.known` answers null when it is 0.
+  dictionaries that answered; `NativeWordChecker.known` answers null when it is 0. A dictation asks
+  whenever the screen was read, with no word to judge too: whether a dictionary works decides which
+  words may be terms at all (a name with a digit is never asked about, and is one by capitals).
 - **No dictionary: the rule from before #333.** `contextTerms(text, null)`: a word with a capital
   inside it, or at its start where no sentence starts (a line's start, or after `.` `!` `?`), not an
   everyday word (`correctionCommonWords`), no address; runs, punctuation, frequency and the backend's

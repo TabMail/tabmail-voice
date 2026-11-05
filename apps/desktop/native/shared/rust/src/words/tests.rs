@@ -78,6 +78,26 @@ fn the_first_folder_with_a_dictionary_is_read() {
     );
 }
 
+/// A dictionary that can't be read serves no language, and its language's next dictionary serves it
+/// instead: a regional one the loader refuses leaves the language to another of the same language.
+#[test]
+fn an_unreadable_dictionary_leaves_its_language_to_the_next() {
+    let unreadable =
+        std::env::temp_dir().join(format!("tabmail-voice-unreadable-{}", std::process::id()));
+    std::fs::create_dir_all(&unreadable).unwrap();
+    std::fs::write(unreadable.join("en_CA.aff"), "SET NO-SUCH-ENCODING\n").unwrap();
+    std::fs::write(unreadable.join("en_CA.dic"), "1\ntoday\n").unwrap();
+    let folders = json!([unreadable.to_str().unwrap(), fixtures()]);
+    let reply =
+        known(&json!({"folders": folders, "languages": ["en-CA"], "words": ["today", "xyvora"]}))
+            .unwrap();
+    std::fs::remove_dir_all(&unreadable).unwrap();
+    assert_eq!(
+        reply,
+        json!({"known": ["today"], "unavailable": [], "dictionaries": 1})
+    );
+}
+
 #[test]
 fn a_request_out_of_shape_is_refused() {
     let folder = fixtures();
