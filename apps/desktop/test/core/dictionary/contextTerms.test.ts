@@ -97,3 +97,80 @@ describe("contextTerms", () => {
     expect(contextTerms("Today Xyvora", new Set())).toEqual(["Today Xyvora"]);
   });
 });
+
+/** With no spelling dictionary for the user's languages (amended 2026-11-05: a dictionary that knows a
+ * word in no language serves none), terms are picked as before the dictionaries: by capital letters,
+ * a sentence's first word left out, and the everyday-word list. */
+describe("contextTerms with no spelling dictionary", () => {
+  const terms = (text: string) => contextTerms(text, null);
+
+
+  test("picks names and terms, not everyday words", () => {
+    expect(terms("I spoke with Xyvora about the launch plan.")).toEqual(["Xyvora"]);
+    expect(terms("the brevalle report is late")).toEqual([]);
+  });
+
+  /** A capital at a sentence's start is the sentence's, not a name's; after `.`, `!` or `?`, or at a
+   * line's start, a new sentence starts. */
+  test("a capital starting a sentence is not a term", () => {
+    expect(terms("Tomorrow works. Friday works too? Maybe ask Xyvora.")).toEqual(["Xyvora"]);
+    expect(terms("Tomorrow works\nFriday too")).toEqual([]);
+    expect(terms("Tomorrow works\u2028Friday too")).toEqual([]);
+    expect(terms('It works." Friday too')).toEqual([]);
+    // A bullet or a dash is not a word: the sentence still starts after it.
+    expect(terms("- Review the launch\n• Tomorrow we ship\nDone. — Monday works")).toEqual([]);
+  });
+
+  /** A capital inside a word marks a term wherever it is: "TabMail", "OKR", "iOS". */
+  test("a capital inside a word is a term anywhere", () => {
+    expect(terms("TabMail ships the OKR list for iOS.")).toEqual(["TabMail", "OKR", "iOS"]);
+  });
+
+  /** Names of more than one word are kept together, up to a dictionary word's length; punctuation
+   * between them splits them; a longer run of capitals is a heading, its words counted alone. */
+  test("runs of capitals are kept together", () => {
+    expect(terms("From: Kaelthorne Drake")).toEqual(["Kaelthorne Drake"]);
+    expect(terms("I met Kaelthorne, Drake and Xyvora.")).toEqual(["Kaelthorne", "Drake", "Xyvora"]);
+    expect(terms("Thanks Xyvora [Brevalle Labs] shipped it")).toEqual(["Xyvora", "Brevalle Labs"]);
+    expect(terms("met Xyvora (Brevalle Labs) and cc Kaelthorne \"Drake\" today")).toEqual(["Xyvora", "Brevalle Labs", "Kaelthorne", "Drake"]);
+    expect(terms("see Brevalle Xyvora Labs Kaelthorne Drake Quill")).toEqual(["Brevalle Xyvora Labs Kaelthorne Drake Quill"]);
+    const heading = terms("see the Quarterly Planning Review Notes Brevalle Engineering Staff");
+    expect(heading).toContain("Brevalle");
+    expect(heading).toContain("Quarterly");
+    expect(heading.some((term) => term.includes(" "))).toBe(false);
+  });
+
+  test("everyday words and addresses are not terms", () => {
+    expect(terms("and then The report came")).toEqual([]);
+    expect(terms("write to Xyvora <person@example.com> or https://Example.com/Brevalle")).toEqual(["Xyvora"]);
+    expect(terms("ask 2026 or ### today")).toEqual([]);
+    expect(terms("or write to Person@Example.com today")).toEqual([]);
+  });
+
+  /** Each term is one the backend takes: never a refused character, a short word or a long one. */
+  test("every term is a valid dictionary word", () => {
+    expect(terms("ask Al and Bo about Xy<vora today")).toEqual([]);
+    expect(terms(`ask X${"y".repeat(config.dictionaryWordMaxChars)} today`)).toEqual([]);
+    expect(terms("a Kaelthorne Drake note, from Brevalle Xyvora Labs")).toEqual(["Kaelthorne Drake", "Brevalle Xyvora Labs"]);
+  });
+
+  /** The most frequent first, then the earliest; none twice, whatever its case; all of them, however
+   * many (#310: `dictationVocabulary` takes as many as it has room for). */
+  test("the most frequent first, distinct, and all of them", () => {
+    const text = "ask Brevalle and Xyvora. then Xyvora again, and XYVORA, and Kaelthorne";
+    expect(terms(text)).toEqual(["Xyvora", "Brevalle", "Kaelthorne"]);
+    const names = Array.from({ length: config.cleanupScreenMaxTerms + config.dictionaryMaxEntries }, (_, index) => `Brevalle${index}`);
+    expect(terms(`ask ${names.join(", ")}`)).toEqual(names);
+  });
+
+  test("picks in any script", () => {
+    expect(terms("회의는 내일 Brevalle 에서")).toEqual(["Brevalle"]);
+    expect(terms("회의는 내일")).toEqual([]);
+  });
+
+  /** The rule's known blind spot, the reason for the dictionaries (#333), kept where they're missing. */
+  test("a name starting a line is left out, and no word in a script without case is a term", () => {
+    expect(terms("Xyvora Brevalle said hi\nthanks Kaelthorne")).toEqual(["Brevalle", "Kaelthorne"]);
+    expect(terms("회의는 오늘밤 서윤아")).toEqual([]);
+  });
+});

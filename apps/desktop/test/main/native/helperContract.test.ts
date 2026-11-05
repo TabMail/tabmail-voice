@@ -64,7 +64,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
       requests.push({ method, params });
       if (method === "captureTarget") return { window: "00000000-0000-0000-0000-000000000001", pid: 123 };
       if (method === "preparePaste") return { transaction: 7 };
-      return { known: [], unavailable: [], text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, calendars: [], occurrence: null, recurrence: null };
+      return { known: [], unavailable: [], dictionaries: 1, text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, calendars: [], occurrence: null, recurrence: null };
     },
     on() {},
   } as unknown as HelperClient;

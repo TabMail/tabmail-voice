@@ -32,8 +32,13 @@ export function termCandidates(text: string): string[] {
  * another; each a valid dictionary word; all of them (`dictationVocabulary` sends as many as it has
  * room for, once the user's dictionary words are left out). TabMail on iOS picks terms by its own
  * rules (its ADR-IOS-086).
+ *
+ * `known` is null when no spelling dictionary serves the user's languages (amended 2026-11-05): a
+ * term is then, as before the dictionaries, a word with a capital letter inside it, or at its start
+ * where no sentence starts (a line's start, or after `.` `!` `?`), not an everyday word
+ * (`correctionCommonWords`), no address.
  */
-export function contextTerms(text: string, known: ReadonlySet<string>): string[] {
+export function contextTerms(text: string, known: ReadonlySet<string> | null): string[] {
   const tallies = new Map<string, { term: string; count: number; first: number }>();
   const tally = (term: string) => {
     const word = dictionaryWord(term);
@@ -54,11 +59,15 @@ export function contextTerms(text: string, known: ReadonlySet<string>): string[]
       }
       run = [];
     };
+    let sentenceStart = true;
     for (const token of line.split(/\s+/).filter((token) => token !== "")) {
       const word = trimmed(token);
       // Punctuation before a word ends a run too ("Xyvora (Brevalle Labs)", a link's "[").
       if (!token.startsWith(word)) endRun();
-      if (mayBeTerm(word, token) && !known.has(word)) {
+      if (known === null) {
+        if (isCapitalTerm(word, token, sentenceStart)) run.push(word);
+        else endRun();
+      } else if (mayBeTerm(word, token) && !known.has(word)) {
         if (isCaseless(word)) {
           endRun();
           tally(word);
@@ -68,8 +77,9 @@ export function contextTerms(text: string, known: ReadonlySet<string>): string[]
       } else {
         endRun();
       }
-      // Punctuation after a word ends a run ("Kaelthorne, Drake").
+      // Punctuation after a word ends a run ("Kaelthorne, Drake"); a full stop also ends the sentence.
       if (word === "" || !token.endsWith(word)) endRun();
+      if (word !== "") sentenceStart = endsSentence(token);
     }
     endRun();
   }
@@ -83,6 +93,21 @@ export function contextTerms(text: string, known: ReadonlySet<string>): string[]
 function mayBeTerm(word: string, token: string): boolean {
   if (word === "" || token.includes("@") || token.includes("://") || /\p{N}/u.test(word)) return false;
   return /\p{Lu}|\p{Lt}/u.test(word) || isCaseless(word);
+}
+
+/** Whether a word is a term with no spelling dictionary: a capital inside it, or a capital at its start
+ * where no sentence starts; not an everyday word; not an address. */
+function isCapitalTerm(word: string, token: string, sentenceStart: boolean): boolean {
+  if (word === "" || token.includes("@") || token.includes("://")) return false;
+  const [first, ...rest] = [...word];
+  if (rest.some((character) => /\p{Lu}/u.test(character))) return true;
+  if (sentenceStart || !/\p{Lu}/u.test(first!)) return false;
+  return !config.correctionCommonWords.has(word.toLowerCase());
+}
+
+/** Whether the punctuation after a word ends its sentence (`Drake.` or `Drake?"`). */
+function endsSentence(token: string): boolean {
+  return /[.!?]/.test(/[^\p{L}\p{N}\p{M}]*$/u.exec(token)![0]);
 }
 
 /** Whether a word's letters have no case (Hangul, Han, Arabic): none would change case. */

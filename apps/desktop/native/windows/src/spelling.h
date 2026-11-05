@@ -6,19 +6,22 @@
 #include <windows.h>
 #include <spellcheck.h>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
 #include "com.h"
+#include "dictionary_choice.h"
 #include "text.h"
 #include "../../shared/rust/VoiceCore.h"
 
 namespace voice {
 /// Which words are everyday words of the user's languages, by the Windows spell checker: the screen
 /// terms' test (ADR-DESK-038, amended 2026-11-04). The shared core picks which of the checker's
-/// languages serves each of the user's; the words are checked as given (the app sends them in
-/// lowercase). Called on the helper's request thread only, which keeps COM, the factory and each
-/// language's checker for the life of the process.
+/// languages serves each of the user's, without one that knows a word in no language
+/// (`workingDictionaries`); the words are checked as given (the app sends them in lowercase). Called
+/// on the helper's request thread only, which keeps COM, the factory and each language's checker for
+/// the life of the process.
 inline nlohmann::json knownWords(const nlohmann::json& params) {
     if (!params.is_object() || !params.contains("words") || !params["words"].is_array()) throw std::runtime_error("knownWords needs words");
     std::vector<std::wstring> words;
@@ -41,26 +44,27 @@ inline nlohmann::json knownWords(const nlohmann::json& params) {
         available.push_back(utf8(name));
         CoTaskMemFree(name);
     }
-    const auto chosen = core::request({{"languages", params.value("languages", nlohmann::json())}, {"available", available}}, voice_core_dictionaries_json);
+    const auto checker = [&](const std::string& language) {
+        const auto tag = utf16(language);
+        auto& created = checkers[tag];
+        if (!created) require(factory->CreateSpellChecker(tag.c_str(), &created));
+        return created.Get();
+    };
+    const auto knows = [](ISpellChecker* dictionary, const std::wstring& word) {
+        ComPtr<IEnumSpellingError> errors;
+        require(dictionary->Check(word.c_str(), &errors));
+        ComPtr<ISpellingError> error;
+        return errors->Next(&error) == S_FALSE;
+    };
+    const auto chosen = workingDictionaries(params.value("languages", nlohmann::json()), available,
+        [&](const std::string& word, const std::string& language) { return knows(checker(language), utf16(word)); });
     std::vector<ISpellChecker*> dictionaries;
-    for (const auto& language : chosen.at("dictionaries")) {
-        const auto tag = utf16(language.get<std::string>());
-        auto& checker = checkers[tag];
-        if (!checker) require(factory->CreateSpellChecker(tag.c_str(), &checker));
-        dictionaries.push_back(checker.Get());
-    }
+    for (const auto& language : chosen.at("dictionaries")) dictionaries.push_back(checker(language.get<std::string>()));
     nlohmann::json known = nlohmann::json::array();
     for (size_t index = 0; index < words.size(); ++index) {
-        for (auto* checker : dictionaries) {
-            ComPtr<IEnumSpellingError> errors;
-            require(checker->Check(words[index].c_str(), &errors));
-            ComPtr<ISpellingError> error;
-            if (errors->Next(&error) == S_FALSE) {
-                known.push_back(params["words"][index]);
-                break;
-            }
-        }
+        if (std::any_of(dictionaries.begin(), dictionaries.end(), [&](auto* dictionary) { return knows(dictionary, words[index]); }))
+            known.push_back(params["words"][index]);
     }
-    return {{"known", known}, {"unavailable", chosen.at("unavailable")}};
+    return {{"known", known}, {"unavailable", chosen.at("unavailable")}, {"dictionaries", dictionaries.size()}};
 }
 }

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::{dictionaries, known};
+use super::{MADE_UP, dictionaries, known};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -32,7 +32,7 @@ fn dictionaries_cases() {
                 .unwrap();
         assert_eq!(
             reply,
-            json!({"dictionaries": case["dictionaries"], "unavailable": case["unavailable"]}),
+            json!({"dictionaries": case["dictionaries"], "unavailable": case["unavailable"], "madeUp": MADE_UP}),
             "{}",
             case["name"]
         );
@@ -49,7 +49,7 @@ fn known_cases() {
         .unwrap();
         assert_eq!(
             reply,
-            json!({"known": case["known"], "unavailable": case["unavailable"]}),
+            json!({"known": case["known"], "unavailable": case["unavailable"], "dictionaries": case["dictionaries"]}),
             "{}",
             case["name"]
         );
@@ -74,7 +74,27 @@ fn the_first_folder_with_a_dictionary_is_read() {
     std::fs::remove_dir_all(&first).unwrap();
     assert_eq!(
         reply,
-        json!({"known": ["zorvek", "회의"], "unavailable": []})
+        json!({"known": ["zorvek", "회의"], "unavailable": [], "dictionaries": 2})
+    );
+}
+
+/// A dictionary that can't be read serves no language, and its language's next dictionary serves it
+/// instead: a regional one the loader refuses leaves the language to another of the same language.
+#[test]
+fn an_unreadable_dictionary_leaves_its_language_to_the_next() {
+    let unreadable =
+        std::env::temp_dir().join(format!("tabmail-voice-unreadable-{}", std::process::id()));
+    std::fs::create_dir_all(&unreadable).unwrap();
+    std::fs::write(unreadable.join("en_CA.aff"), "SET NO-SUCH-ENCODING\n").unwrap();
+    std::fs::write(unreadable.join("en_CA.dic"), "1\ntoday\n").unwrap();
+    let folders = json!([unreadable.to_str().unwrap(), fixtures()]);
+    let reply =
+        known(&json!({"folders": folders, "languages": ["en-CA"], "words": ["today", "xyvora"]}))
+            .unwrap();
+    std::fs::remove_dir_all(&unreadable).unwrap();
+    assert_eq!(
+        reply,
+        json!({"known": ["today"], "unavailable": [], "dictionaries": 1})
     );
 }
 

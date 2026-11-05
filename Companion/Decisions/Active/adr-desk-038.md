@@ -380,3 +380,41 @@ steps already name the page (deletion over a launch path and its failure handlin
 **Consequences:** the warning follows the system's languages, not what is on screen: a user who
 prefers a language without a dictionary sees it even if they never read that language. Awaiting the
 owner's blessing: the macOS line without the mark, and the languages never warned.
+
+### Amendment 2026-11-05 (owner, #348): a dictionary that knows a made-up word serves no language; with none, terms by capitals
+
+**Context:** each system judges words its own way, and one may know any word: Ubuntu's Ukrainian
+dictionary takes every word in Latin letters (#344; the same shape as a dictionary of single letters
+that compound), so with Ukrainian preferred no Latin-script name was ever a term. The macOS spell
+checker does the same for many languages: on macOS 27.2, measured 2026-11-05, those of Arabic,
+Bulgarian, Czech, Greek, Hebrew, Hindi, Hungarian, Indonesian, Lithuanian, Slovenian, Ukrainian and
+others took every word, a made-up one too, while none of 45 LibreOffice dictionaries knew the made-up
+word. And with no
+dictionary at all for the user's languages, every capitalized word and every word in a script without
+case counted as a term. Owner, as for TabMail on iOS: a dictionary counts as working only if it flags
+a made-up word; with no working dictionary, use the rule from before #333.
+
+**Decision:**
+- **A word in no language.** The shared core names one (`words::MADE_UP`, in the `dictionaries` reply
+  as `madeUp`). A dictionary that knows it is left out and the choice made again without it, so its
+  language's next dictionary serves if there is one, else the language is `unavailable`, as one with
+  no dictionary is (the menu names it, #334). On Linux the core does it all (`words::known`; a file
+  that can't be read now gives way to its language's next too); the macOS and Windows helpers ask
+  their spell checker about `madeUp` for each dictionary chosen and ask the core again without those
+  that know it (`SpellCheck.known`; Windows `workingDictionaries`); each pass leaves one more out, so
+  it ends.
+- **How many answered.** Every helper's `knownWords` reply carries `dictionaries`, the number of
+  dictionaries that answered; `NativeWordChecker.known` answers null when it is 0. A dictation asks
+  whenever the screen was read, with no word to judge too: whether a dictionary works decides which
+  words may be terms at all (a name with a digit is never asked about, and is one by capitals).
+- **No dictionary: the rule from before #333.** `contextTerms(text, null)`: a word with a capital
+  inside it, or at its start where no sentence starts (a line's start, or after `.` `!` `?`), not an
+  everyday word (`correctionCommonWords`), no address; runs, punctuation, frequency and the backend's
+  word rules as with the dictionaries. A word in a script without case is no term then.
+- The menu's warning stays.
+
+**Consequences:** a user whose only language has a dictionary that knows every word is told to
+install one, though one is installed: its steps name the system's dictionaries, and the user may
+add another language's. The made-up word is in Latin letters: a dictionary taking every word of
+another script is not caught. A name starting a line is missed again where no dictionary works.
+

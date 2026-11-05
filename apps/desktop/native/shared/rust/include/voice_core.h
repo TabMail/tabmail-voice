@@ -38,10 +38,12 @@ uint32_t voice_core_walk_json(const uint8_t *data, size_t length, VoiceCoreBuffe
 /* The screen terms' test (ADR-DESK-038, amended 2026-11-04): which words are everyday words of the
  * user's languages, by the system's spelling dictionaries.
  * voice_core_dictionaries_json: {"languages":[tag…],"available":[name…]} gives
- * {"dictionaries":[name…],"unavailable":[tag…]}, which of the system spell checker's languages
- * (macOS, Windows) serves each of the user's.
+ * {"dictionaries":[name…],"unavailable":[tag…],"madeUp":word}, which of the system spell checker's
+ * languages (macOS, Windows) serves each of the user's; a dictionary that knows `madeUp`, a word in
+ * no language, serves none, and the helper asks again without it (amended 2026-11-05).
  * voice_core_known_words_json (Linux): {"folders":[absolute folder…],"languages":[tag…],"words":[…]}
- * gives {"known":[the words a Hunspell dictionary there serving a language has…],"unavailable":[tag…]};
+ * gives {"known":[the words a Hunspell dictionary there serving a language has…],"unavailable":[tag…],
+ * "dictionaries":count}, a dictionary that can't be read or knows the word in no language left out;
  * files in another encoding than UTF-8 are read in theirs, each loaded once for the process. */
 uint32_t voice_core_dictionaries_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 uint32_t voice_core_known_words_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);

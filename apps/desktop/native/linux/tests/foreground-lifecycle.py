@@ -136,8 +136,8 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             # The screen terms' test (ADR-DESK-038, amended 2026-11-04): the system's Hunspell dictionaries
             # (Ubuntu installs English's); a word a dictionary keeps capitalized is not known in lowercase.
             assert request('knownWords', {'languages': ['en-US', 'xx-YY'], 'words': ['today', 'xyvora', 'paris', 'the']}) == \
-                {'known': ['today', 'the'], 'unavailable': ['xx-YY']}
-            assert request('knownWords', {'languages': [], 'words': ['today']}) == {'known': [], 'unavailable': []}
+                {'known': ['today', 'the'], 'unavailable': ['xx-YY'], 'dictionaries': 1}
+            assert request('knownWords', {'languages': [], 'words': ['today']}) == {'known': [], 'unavailable': [], 'dictionaries': 0}
             request('knownWords', {'languages': ['en-US'], 'words': [1]}, refused=True)
             request('knownWords', {'languages': 'en-US', 'words': []}, refused=True)
             request('readScreen', refused=True)
