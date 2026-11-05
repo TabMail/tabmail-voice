@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import AppKit
+import os
 import Testing
 @testable import VoiceMacOSKit
 
@@ -47,7 +48,9 @@ struct TextInserterTests {
     /// The paste's steps, the clipboard's save and its put-back included, are timed in the debug
     /// log (stderr, which the app keeps in debug mode), with nothing of the text or the clipboard. No
     /// other test in this target redirects stderr; each target runs alone. Their order is not
-    /// checked: other tests in the target paste at the same time, and log the same steps.
+    /// checked: other tests in the target paste at the same time, and log the same steps. The pipe is
+    /// read while it stands in for stderr: every test in the process writes there meanwhile, and once
+    /// a pipe nobody reads is full each of those writes waits, this test's own steps too, for ever.
     @Test func timesThePasteStepsWithoutTheText() async throws {
         let marker = "Dictated \(UUID().uuidString)"
         let copied = "Copied \(UUID().uuidString)"
@@ -55,6 +58,14 @@ struct TextInserterTests {
         pasteboard.setString(copied, forType: .string)
         let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: .init(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
         let pipe = Pipe()
+        // Read on a thread of its own from the start: not on the main actor this test holds, nor on a
+        // pool whose threads may all be waiting to write.
+        let reader = pipe.fileHandleForReading
+        let drained = OSAllocatedUnfairLock<Data?>(initialState: nil)
+        DispatchQueue.global().async {
+            let data = reader.readDataToEndOfFile()
+            drained.withLock { $0 = data }
+        }
         let saved = dup(STDERR_FILENO)
         dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
         keeper.save()
@@ -65,7 +76,11 @@ struct TextInserterTests {
         close(saved)
         try pipe.fileHandleForWriting.close()
 
-        let lines = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").map(String.init)
+        let giveUp = ContinuousClock.now.advanced(by: .seconds(5))
+        while drained.withLock({ $0 }) == nil, ContinuousClock.now < giveUp {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let lines = String(decoding: try #require(drained.withLock { $0 }), as: UTF8.self).split(separator: "\n").map(String.init)
         let steps = ["ClipboardKeeper: clipboard saved", "TextInserter: clipboard written", "TextInserter: paste keystroke sent", "ClipboardKeeper: clipboard put back"].map { step in
             lines.firstIndex { $0.wholeMatch(of: try! Regex("debug \(step) after \\d+ms")) != nil }
         }
