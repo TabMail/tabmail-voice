@@ -11,7 +11,12 @@ import VoiceHelperSupport
 
 /// An app or a website the user excludes from screen reading is never read: not its screen as a
 /// dictation starts, not its focused field after the paste. Over stand-ins that record what was
-/// read; no real app is read.
+/// read; no real app is read. The walks of a whole element budget run for long in a debug build: on
+/// the main actor they held up every test waiting there past its deadline, and all at once they held
+/// up every test waiting for a thread. So they are `@concurrent` (`nonisolated` alone is not enough: a
+/// synchronous test runs where the suite's generated thunk calls it, on the main actor), and the suite
+/// runs one test at a time.
+@Suite(.serialized)
 @MainActor
 struct ScreenExclusionTests {
     /// What the stand-ins were asked to read.
@@ -237,11 +242,11 @@ struct ScreenExclusionTests {
         }
     }
 
-    private func page(_ host: String, _ text: String) -> FakeElement {
+    nonisolated private func page(_ host: String, _ text: String) -> FakeElement {
         FakeElement("AXWebArea", ["host": host], children: [FakeElement("AXStaticText", [kAXValueAttribute: text])])
     }
 
-    private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = [],
+    nonisolated private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = [],
                       excluding hosts: [String], whole: Bool = false) -> (read: Bool, text: String) {
         var context = ScreenContext(appName: "Example")
         context.wholeWindow = whole
@@ -317,9 +322,9 @@ struct ScreenExclusionTests {
         func isEditable(_ element: FakeElement) -> Bool { tree.isEditable(element) }
     }
 
-    private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
+    nonisolated private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
 
-    private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement],
+    nonisolated private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement],
                         excluding hosts: [String], whole: Bool = false) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
         var start = ScreenContext(appName: "Example")
         start.wholeWindow = whole
@@ -331,7 +336,7 @@ struct ScreenExclusionTests {
 
     /// A window too large to walk to its end keeps what was read: only a page of an excluded
     /// website refuses a read, not the budget. The walk has no time limit.
-    @Test func aReadStoppedByItsBudgetIsKept() throws {
+    @Test @concurrent func aReadStoppedByItsBudgetIsKept() async throws {
         let texts = (0 ..< HelperConfig.contextNodeBudget + 10).map { FakeElement("AXStaticText", [kAXValueAttribute: "line \($0)"]) }
         let large = gather(FakeElement("AXWindow", [kAXTitleAttribute: "Large"], children: texts), focused: nil, focusPath: [],
                            excluding: ["example.com"])
@@ -551,7 +556,7 @@ struct ScreenExclusionTests {
 
     /// An excluded page behind more elements than the look's budget, among the last it lists, is
     /// found: in the focused field, before its caret is read, and in text read whole.
-    @Test func anExcludedPageBehindAWideElementIsFound() throws {
+    @Test @concurrent func anExcludedPageBehindAWideElementIsFound() async throws {
         let fillers = (0 ..< HelperConfig.contextNodeBudget + 1).map { _ in FakeElement("AXGroup") }
         let page = FakeElement("AXWebArea", ["host": "pay.example.com"])
         let field = FakeElement("AXTextArea", Self.caret, children: fillers + [page])
@@ -653,7 +658,7 @@ struct ScreenExclusionTests {
     /// budget, and a page it did not reach might be an excluded one. One element fewer, and the
     /// field is looked through whole and read.
     @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
-    func aFieldTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) throws {
+    @concurrent func aFieldTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) async throws {
         let shown = CGRect(x: 10, y: 40, width: 200, height: 40)
         func read(fillers: Int, behind host: String?) -> String {
             // The look takes the last child first: the page, when there is one, is reached last.
@@ -766,7 +771,7 @@ struct ScreenExclusionTests {
     /// budget, and a page it did not reach might be an excluded one. The marker stands in its
     /// place and the rest is read. One element fewer, and it is looked through whole.
     @Test(arguments: ["AXRow", "AXHeading", "AXLink", "AXStaticText", "AXButton"], [true, false])
-    func aLabelledElementTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) throws {
+    @concurrent func aLabelledElementTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) async throws {
         func read(fillers: Int, behind host: String?) -> (read: Bool, text: String) {
             // The look takes the last child first: the page, when there is one, is reached last.
             let page = host.map { [self.page($0, "card 4242")] } ?? []
@@ -881,7 +886,7 @@ struct ScreenExclusionTests {
 
     /// Past the walk's node budget, or the time a look is given (the screen read gives it none),
     /// the focused element is taken to hold no excluded page, as a walk stopped by them keeps its read.
-    @Test func theLookInsideTheFocusedElementKeepsToTheBudgets() throws {
+    @Test @concurrent func theLookInsideTheFocusedElementKeepsToTheBudgets() async throws {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"])
         func holds(_ element: FakeElement, intoPages: Bool = true, within seconds: Double = .infinity, since started: Date = Date()) -> Bool {
             ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),

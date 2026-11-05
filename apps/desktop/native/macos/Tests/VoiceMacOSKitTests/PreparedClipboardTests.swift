@@ -60,10 +60,15 @@ import VoiceHelperSupport
     @Test func aPreparationIsCleanedUpEvenWhenNoAcknowledgementOrFinishArrives() async throws {
         let fixture = Fixture(); defer { fixture.close() }
         await fixture.save()
-        try await fixture.prepare(1, deadline: floor(Date().timeIntervalSince1970 * 1000) + 100)
+        // The deadline leaves the preparation time to land however busy the run is (one of 100 ms
+        // expired before it could, in a full run); the cleanup at the deadline is waited for.
+        try await fixture.prepare(1, deadline: fixture.deadline)
         #expect(fixture.board.string(forType: .string) == "Synthetic dictated text")
-        try await Task.sleep(for: .milliseconds(200))
-        await fixture.keeper.restoreTask?.value
+        let giveUp = ContinuousClock.now.advanced(by: .seconds(5))
+        while fixture.board.string(forType: .string) != "Synthetic prior copy", ContinuousClock.now < giveUp {
+            try await Task.sleep(for: .milliseconds(20))
+            await fixture.keeper.restoreTask?.value
+        }
         #expect(fixture.board.string(forType: .string) == "Synthetic prior copy")
     }
 
