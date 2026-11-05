@@ -385,7 +385,11 @@ owner's blessing: the macOS line without the mark, and the languages never warne
 
 **Context:** each system judges words its own way, and one may know any word: Ubuntu's Ukrainian
 dictionary takes every word in Latin letters (#344; the same shape as a dictionary of single letters
-that compound), so with Ukrainian preferred no Latin-script name was ever a term. And with no
+that compound), so with Ukrainian preferred no Latin-script name was ever a term. The macOS spell
+checker does the same for many languages: on macOS 27.2, measured 2026-11-05, those of Arabic,
+Bulgarian, Czech, Greek, Hebrew, Hindi, Hungarian, Indonesian, Lithuanian, Slovenian, Ukrainian and
+others took every word, a made-up one too, while none of 45 LibreOffice dictionaries knew the made-up
+word. And with no
 dictionary at all for the user's languages, every capitalized word and every word in a script without
 case counted as a term. Owner, as for TabMail on iOS: a dictionary counts as working only if it flags
 a made-up word; with no working dictionary, use the rule from before #333.

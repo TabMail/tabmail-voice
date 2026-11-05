@@ -629,6 +629,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
   });
 
+  /** With the screen not read, no dictionary is asked about it: the dictation sends the user's
+   * dictionary alone, without waiting on the helper. */
+  test("a dictation with screen reading off asks no spelling dictionary", async () => {
+    prefs.value = { ...defaultSettings(), readsScreen: false, dictionary: { typed: ["Zephrin"], learned: [] } };
+    transcription.enqueue(200, cleanedReply);
+    let asks = 0;
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async () => { asks += 1; return null; } });
+    controller.captureContext = async () => blankScreen({ appName: "Example Chat", renderedText: "ask Xyvora4 and Brevalle" });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(pastes).toEqual([cleaned]);
+    expect(asks).toBe(0);
+    expect(transcription.body(0).vocabulary).toEqual(["Zephrin"]);
+  });
+
   /** The dictionaries' answer is best effort, like the screen read: one that fails, or doesn't come
    * within `knownWordsTimeout`, sends no screen terms; the dictation goes on with the dictionary's. */
   test.each<[string, DictationDependencies["knownWords"]]>([
