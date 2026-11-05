@@ -319,6 +319,25 @@ fn a_caret_drawn_away_from_the_text_before_it_starts_its_line() {
         ),
         Ok(json!(true))
     );
+    // Nor with one of negative height: no place on screen either.
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(rect(888.0, 100.0, 1.0, -31.5)),
+            Some(period.clone())
+        ),
+        Ok(json!(true))
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(away.clone()),
+            Some(rect(1224.0, 100.0, 12.0, -25.0))
+        ),
+        Ok(json!(true))
+    );
     // A rectangle that is not one is refused, even beside one of no height.
     assert_eq!(
         ends(
