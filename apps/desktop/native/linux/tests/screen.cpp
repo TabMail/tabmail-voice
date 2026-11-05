@@ -476,8 +476,9 @@ int main() {
         expect(shows(screen, "Quarterly plan") && !shows(screen, "Archive"), "a row's button outside a page is chrome");
         allowed.children = {&focus, &row};
         expect(shows(read({&allowed}, {&allowed, &frame}), "Quarterly plan | Archive"), "a row's button in a page is its caption");
-        // A page's controls side by side, a few points apart in boxes much taller than their text
-        // (a bar of tabs), are words of their own: a caption's box is its control's.
+        // A page's controls side by side, a few points apart in boxes much taller than their text,
+        // are words of their own: a caption's box is its control's. (Radio buttons here: Chromium
+        // gives a web page's tab the page-tab role, which the walk does not read as a control.)
         Element firstTab{ATSPI_ROLE_RADIO_BUTTON, "Messages", {}, {}};
         Element secondTab{ATSPI_ROLE_RADIO_BUTTON, "Files & links", {}, {}};
         firstTab.bounds = voice::ContextFrame{20, 10, 102, 42};

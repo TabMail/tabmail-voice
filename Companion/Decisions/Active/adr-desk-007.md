@@ -394,7 +394,13 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   the piece beside it on its line, however close the boxes; otherwise it is laid out, redacted and
   rendered as text. Pinned by the shared cases (Slack's measured tab boxes; a caption between two
   pieces of text), the Mac walk of a page's tab bar, the Linux walk of two page controls, and each
-  platform's real-Chromium test (two buttons drawn touching read `Alpha Beta`).
+  platform's real-Chromium test (two buttons drawn touching read `Alpha Beta`). On Windows and Linux
+  Chromium gives a web page's tab the page-tab role, which the walk does not read as a control, so
+  the Slack tab bar takes this path only on the Mac; on those two the change reaches a page's
+  buttons, check boxes, radio buttons and combo boxes. Awaiting the owner's blessing: since the space is put in
+  however close the boxes are, a key whose first part is text and whose rest is the title of a
+  control drawn touching it with no padding reads as two words and is not redacted whole (before, it
+  was); real controls carry padding, and a reviewer's probe, not an app, made the case.
 
 **Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
 (issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the

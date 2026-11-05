@@ -11,8 +11,9 @@ import VoiceHelperSupport
 struct ScreenContext: Sendable, Equatable {
     struct Block: Sendable, Equatable {
         enum Kind: String, Sendable {
-            /// The focused field, where the dictation goes: the core renders it from the caret's parts.
-            /// A `caption` is a control's title, a word of its own beside the pieces of its line.
+            /// `caption`: a control's title, a word of its own beside the pieces of its line.
+            /// `field`: the focused field, where the dictation goes: the core renders it from the
+            /// caret's parts.
             case heading, text, caption, link, row, field, caret
         }
         var kind: Kind
