@@ -361,6 +361,24 @@ fn a_caret_drawn_away_from_the_text_before_it_starts_its_line() {
         ends(
             true,
             true,
+            Some(json!({"x": 888, "y": "100", "width": 1, "height": 25})),
+            Some(period.clone())
+        ),
+        Err(1)
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
+            Some(away.clone()),
+            Some(json!({"x": 1224, "y": 100, "height": 25}))
+        ),
+        Err(1)
+    );
+    assert_eq!(
+        ends(
+            true,
+            true,
             Some(rect(888.0, 100.0, 1.0, 0.0)),
             Some(json!(true))
         ),

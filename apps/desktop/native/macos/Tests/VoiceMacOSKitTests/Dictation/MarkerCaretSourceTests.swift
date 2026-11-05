@@ -464,13 +464,17 @@ struct MarkerCaretSourceTests {
     /// ending that line (Overleaf's code editor in Firefox on the Mac, 2026-11-05, issue #355): only
     /// where the caret is drawn tells them apart. Drawn at the line's start, or on the row below,
     /// the caret starts the empty line and the break is before it; drawn right after the "." it
-    /// ends the line above. Without bounds, with bounds of no height, or with bounds that are not
-    /// numbers JSON can carry, the element decides, and the read goes on.
+    /// ends the line above. Without bounds, with bounds of no height or not a rectangle, with bounds
+    /// that are not numbers JSON can carry, or when the character before the caret has no marker of
+    /// its own (its index does not round-trip, so the range asked about would be the caret's), the
+    /// element decides, and the read goes on.
     @Test func aGeckoCaretOnAnEmptyLineGetsTheBreakBeforeIt() throws {
-        func read(caret: CGRect?, before: CGRect?) -> [String]? {
+        func read(caret: CGRect?, before: CGRect?, unrounded: Int? = nil, bounds: CFTypeRef? = nil) -> [String]? {
             let provider = Provider(text: "First line.\nNext.", selection: NSRange(location: 11, length: 0))
             provider.lines = [LineNode(0, 11), LineNode(11, 1), LineNode(12, 5)]
             provider.caretLine = provider.lines[0]
+            provider.unrounded = unrounded
+            provider.bounds = bounds
             provider.drawn = { range in
                 range == NSRange(location: 11, length: 0) ? caret : range == NSRange(location: 10, length: 1) ? before : nil
             }
@@ -488,6 +492,11 @@ struct MarkerCaretSourceTests {
         #expect(read(caret: CGRect(x: CGFloat.nan, y: 0, width: 1, height: 20), before: period) == endsFirstLine)
         #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: CGFloat.infinity), before: period) == endsFirstLine)
         #expect(read(caret: CGRect(x: 1e300, y: -1e300, width: 1, height: 20), before: period) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 0, y: 0, width: 1, height: 20), before: period, unrounded: 10) == endsFirstLine)
+        #expect(read(caret: CGRect(x: 110, y: 0, width: 1, height: 20), before: period, unrounded: 10) == endsFirstLine)
+        var point = CGPoint(x: 0, y: 0)
+        #expect(read(caret: nil, before: nil, bounds: AXValueCreate(.cgPoint, &point)) == endsFirstLine)
+        #expect(read(caret: nil, before: nil, bounds: "bounds" as NSString) == endsFirstLine)
     }
 
     /// A selection's bounds cover all its lines, not where it starts, so the screen is not asked
@@ -647,6 +656,8 @@ struct MarkerCaretSourceTests {
         /// ranges asked about.
         var drawn: ((NSRange) -> CGRect?)?
         var boundsAsked: [NSRange] = []
+        /// An answer for every range's bounds, in place of `drawn`'s.
+        var bounds: CFTypeRef?
         init(text: String, selection: NSRange) { self.text = text as NSString; self.selection = selection }
         func read() -> SharedContext.CaretWindow? {
             let field = LineNode(0, text.length, role: "AXTextArea")
@@ -679,6 +690,7 @@ struct MarkerCaretSourceTests {
                 let start = (pair[0] as! NSNumber).intValue - origin
                 let range = NSRange(location: start, length: (pair[1] as! NSNumber).intValue - origin - start)
                 boundsAsked.append(range)
+                if let bounds { return bounds }
                 guard var rect = drawn?(range) else { return nil }
                 return AXValueCreate(.cgRect, &rect)
             case "AXStringForTextMarkerRange":

@@ -22,9 +22,6 @@ enum MarkerCaretSource {
         let range: (AnyObject) -> CFTypeRef?
         /// The element a marker is in (`AXUIElementForTextMarker`), nil for the field itself.
         let element: (CFTypeRef) -> AnyObject?
-        /// An element's role and parent, for the debug log only.
-        let role: (AnyObject) -> String?
-        let parent: (AnyObject) -> AnyObject?
 
         /// What Accessibility says of `field`'s elements: their children (`AXChildren`), which are
         /// blocks by their role (`HelperConfig.blockRoles`), each one's marker range and the element
@@ -40,10 +37,6 @@ enum MarkerCaretSource {
                 parameterized("AXTextMarkerRangeForUIElement", node)
             }, element: { marker in
                 parameterized("AXUIElementForTextMarker", marker).flatMap { isElement($0) && !CFEqual($0, field) ? $0 : nil }
-            }, role: { node in
-                attribute(node, kAXRoleAttribute as String) as? String
-            }, parent: { node in
-                attribute(node, kAXParentAttribute as String).flatMap { isElement($0) && !CFEqual($0, field) ? $0 : nil }
             })
         }
     }
@@ -124,16 +117,14 @@ enum MarkerCaretSource {
             let previousRect = collapsed && selection.location > 0
                 ? drawn(textRange(origin + selection.location - 1, origin + selection.location)) : nil
             let ends = endsLine(caretElement: caretElement, at: selection.location, caret: caretRect, before: previousRect)
-            // Where the caret's marker is and where it is drawn: roles, places and bounds only.
+            // Where the caret's element is and where the caret is drawn, from what was already
+            // asked: places and bounds only, and no request of its own.
             func shown(_ rect: CGRect?) -> String {
                 rect.map { "\($0.origin.x),\($0.origin.y) \($0.size.width)x\($0.size.height)" } ?? "nowhere"
             }
-            func describe(_ node: AnyObject?) -> String {
-                guard let node else { return "the field" }
-                let place = span(node).map { "\($0.location - selection.location)+\($0.length)" } ?? "no place"
-                return "\(blocks.role(node) ?? "no role") at \(place) from the caret\(blocks.isBlock(node) ? ", a block" : "")"
-            }
-            HelperLog.debug("ScreenContext: the caret's marker is in \(describe(caretNode)), inside \(describe(caretNode.flatMap(blocks.parent))); the caret is drawn at \(shown(caretRect)), the character before it at \(shown(previousRect))")
+            let place = caretElement.map { "at \($0.location - selection.location)+\($0.length) from the caret" }
+                ?? (caretNode == nil ? "the field" : "not placed")
+            HelperLog.debug("ScreenContext: the caret's element is \(place); the caret is drawn at \(shown(caretRect)), the character before it at \(shown(previousRect))")
             HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms; the caret \(ends ? "ends a line" : "starts its text")")
             return starts.map { (starts: $0, caretEndsLine: ends) }
         }
