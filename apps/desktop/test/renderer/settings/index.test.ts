@@ -322,6 +322,21 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([{ type: "setClosesChatElsewhere", value: false }]);
     });
 
+    /** That switch is at the top of agent mode, right after the name (owner, 2026-11-04), before
+     * every tool's and app's switch. */
+    test("agent mode shows the name, then the switch for closing the chat, then the tools", async () => {
+      await open(signedIn);
+      const name = document.querySelector<HTMLInputElement>('input[aria-label="Your name"]');
+      const closes = toggle("Close the chat when I click elsewhere");
+      const pane = closes.closest("main > div");
+      if (!name || !pane) throw new Error("no agent mode pane");
+      const switches = [...pane.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+      expect(switches.length).toBeGreaterThan(1);
+      expect(switches[0]).toBe(closes);
+      expect(name.compareDocumentPosition(closes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(toggle("Edit").compareDocumentPosition(closes) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    });
+
     test("the learning switch sends the choice, and shows only where corrections can be learned", async () => {
       const page = await open(signedIn);
       expect(toggle("Learn from my corrections").checked).toBe(true);

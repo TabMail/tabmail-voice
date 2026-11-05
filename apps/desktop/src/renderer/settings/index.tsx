@@ -421,8 +421,9 @@ function hasName(state: SettingsState): boolean {
   return (state.userName ?? "").trim() !== "";
 }
 
-/** The user's name, then a switch for each switchable agent tool (Answer, always on, has none) and
- * each app Answer reaches, alphabetically (owner, 2026-09-28), as the bubbles under the pill first
+/** The user's name; the switch that closes the chat on a click elsewhere, right under it (owner,
+ * 2026-11-04); then a switch for each switchable agent tool (Answer, always on, has none) and each
+ * app Answer reaches, alphabetically (owner, 2026-09-28), as the bubbles under the pill first
  * show. */
 function AgentPane({ state }: { state: SettingsState }) {
   return (
@@ -438,6 +439,11 @@ function AgentPane({ state }: { state: SettingsState }) {
           <span>Your name</span>
           <NameField initial={state.userName ?? ""} placeholder={state.suggestedName === "" ? "Your name" : state.suggestedName} />
         </div>
+      </Group>
+      <Group>
+        <Toggle label="Close the chat when I click elsewhere" checked={state.closesChatElsewhere} onChange={(value) => send({ type: "setClosesChatElsewhere", value })}>
+          It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.
+        </Toggle>
       </Group>
       <Group>
         {alphabetical([...switchableAgentToolIDs, ...state.connectors]).map((key) =>
@@ -464,11 +470,6 @@ function AgentPane({ state }: { state: SettingsState }) {
             </Toggle>
           ),
         )}
-      </Group>
-      <Group>
-        <Toggle label="Close the chat when I click elsewhere" checked={state.closesChatElsewhere} onChange={(value) => send({ type: "setClosesChatElsewhere", value })}>
-          It also closes when you switch to another app. It stays open while it’s listening, thinking, or waiting for your answer.
-        </Toggle>
       </Group>
       {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
       {offeredAgentToolIDs.includes("thunderbird") && <EmailClientPicker state={state} />}

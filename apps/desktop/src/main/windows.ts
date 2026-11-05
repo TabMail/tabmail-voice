@@ -87,7 +87,7 @@ export class Windows {
       process.platform === "darwin"
         ? { titleBarStyle: "hiddenInset", vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
         : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.dark.window : palette.light.window };
-    this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
+    this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", minWidth: config.settingsWindowMinSize.width, minHeight: config.settingsWindowMinSize.height, minimizable: false, maximizable: false, fullscreenable: false });
   }
 
   showWelcome(): void {

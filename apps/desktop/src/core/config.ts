@@ -654,6 +654,9 @@ export const vscodeSettingsIndent = 4;
 /** Settings: a sidebar of sections (frosted on macOS) beside the chosen section's cards (owner,
  * 2026-09-27: "themed and look professional", not the bland gray; chose the branded sidebar). */
 export const settingsWindowSize = { width: 700, height: 500 };
+/** Settings opens at `settingsWindowSize` and can be resized from there (owner, 2026-11-04: "a fixed
+ * size ... is super annoying"), down to this: the sidebar beside a pane wide enough for a card. */
+export const settingsWindowMinSize = { width: 520, height: 360 };
 export const settingsSidebarWidth = 200;
 export const settingsAppIconSize = 36;
 export const settingsSectionIconSize = 16;
