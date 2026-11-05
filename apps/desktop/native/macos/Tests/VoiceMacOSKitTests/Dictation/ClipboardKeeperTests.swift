@@ -92,15 +92,22 @@ struct ClipboardKeeperTests {
     @Test func thePasteNeverWaitsForTheSave() async {
         copy("user text")
         let gate = Gate()
+        let saveRead = OSAllocatedUnfairLock(initialState: false)
         let keeper = keeper { pasteboard, rules in
             gate.wait()
+            saveRead.withLock { $0 = true }
             return ClipboardKeeper.readItems(pasteboard, rules)
         }
         keeper.save()
-        let started = ContinuousClock.now
+        // Opened in the end whatever happens: a paste wrongly waiting for the save then fails below,
+        // rather than waiting for ever.
+        let unstick = Task { try? await Task.sleep(for: Self.stuck); gate.open() }
         await paste("Dictated text", with: keeper)
-        #expect(started.duration(to: .now) < .seconds(1))
+        // Done while the save is still held: told by what happened, not by how long it took, which a
+        // loaded run stretches several times over.
+        #expect(!saveRead.withLock { $0 })
         gate.open()
+        unstick.cancel()
         await keeper.saveTask?.value
         await keeper.restoreTask?.value
         #expect(pasteboard.string(forType: .string) == "Dictated text")
@@ -160,12 +167,17 @@ struct ClipboardKeeperTests {
     @Test func aBusyAppReadingAfterTheDelayGetsThePastesText() async {
         copy("user text")
         let rules = SharedRequest.clipboardRules
-        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules)
+        // Whether the wait for a read ran out, rather than the read ending it: told by what happened,
+        // not by how long it took, which a loaded run stretches several times over.
+        let ranOut = OSAllocatedUnfairLock(initialState: false)
+        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules, delay: { milliseconds in
+            do { try await Task.sleep(for: .milliseconds(milliseconds)) } catch { return }
+            if milliseconds == rules.readWait { ranOut.withLock { $0 = true } }
+        })
         keeper.save()
         await keeper.saveTask?.value
         let pasteboard = pasteboard
         var app: Task<String?, Never>?
-        let keys = ContinuousClock.now
         await TextInserter(clipboard: keeper, pasteKeystroke: {
             app = Task {
                 try? await Task.sleep(for: .milliseconds(rules.restoreDelay + 200))
@@ -176,7 +188,7 @@ struct ClipboardKeeperTests {
         await keeper.restoreTask?.value
         #expect(pasteboard.string(forType: .string) == "user text")
         // Back once the app read the text, not once `readWait` ran out.
-        #expect(keys.duration(to: .now) < .milliseconds(rules.readWait / 2))
+        #expect(!ranOut.withLock { $0 })
     }
 
     /// The whole of `readWait` is waited for: an app reading near its end, well past most of it,
@@ -562,15 +574,19 @@ private final class HeldDelays: Sendable {
     func open(_ call: Int) { _ = state.withLock { $0.open.insert(call) } }
 }
 
-/// Holds reads until opened, on the save's own thread; once open, it stays open.
+/// Holds reads until opened, on the save's own thread; once open, it stays open, opened again or not.
 private final class Gate: Sendable {
     private let group: DispatchGroup = {
         let group = DispatchGroup()
         group.enter()
         return group
     }()
+    private let opened = OSAllocatedUnfairLock(initialState: false)
     func wait() { group.wait() }
-    func open() { group.leave() }
+    func open() {
+        guard opened.withLock({ (wasOpen: inout Bool) in defer { wasOpen = true }; return !wasOpen }) else { return }
+        group.leave()
+    }
 }
 
 /// Clipboard data an app hands over only when asked, counting the asks.
