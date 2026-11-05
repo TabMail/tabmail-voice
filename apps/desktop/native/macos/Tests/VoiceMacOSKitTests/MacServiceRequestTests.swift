@@ -26,6 +26,9 @@ struct MacServiceRequestTests {
             let capturedReply = try JSONDecoder().decode(JSON.self, from: #require(lines.withLock { $0.last }))
             let captured = try #require(capturedReply["result"])
             if different { fixture.field = AXUIElementCreateApplication(505) }
+            // The shared core takes a deadline only a few seconds ahead of the real clock: take it as
+            // the request is sent, not when the fixture was made, however long the test waited since.
+            fixture.time = Date().timeIntervalSince1970 * 1000
             let paste: JSON = ["id": 2, "method": "pasteTarget", "params": ["target": captured, "transaction": 7, "deadline": .number(floor(fixture.deadline))]]
             await channel.handle(line: try JSONEncoder().encode(paste))
             #expect(lines.withLock { $0.count } == 2)

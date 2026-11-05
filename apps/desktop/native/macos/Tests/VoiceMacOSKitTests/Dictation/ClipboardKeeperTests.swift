@@ -92,15 +92,22 @@ struct ClipboardKeeperTests {
     @Test func thePasteNeverWaitsForTheSave() async {
         copy("user text")
         let gate = Gate()
+        let saveRead = OSAllocatedUnfairLock(initialState: false)
         let keeper = keeper { pasteboard, rules in
             gate.wait()
+            saveRead.withLock { $0 = true }
             return ClipboardKeeper.readItems(pasteboard, rules)
         }
         keeper.save()
-        let started = ContinuousClock.now
+        // Opened in the end whatever happens: a paste wrongly waiting for the save then fails below,
+        // rather than waiting for ever.
+        let unstick = Task { try? await Task.sleep(for: Self.stuck); gate.open() }
         await paste("Dictated text", with: keeper)
-        #expect(started.duration(to: .now) < .seconds(1))
+        // Done while the save is still held: told by what happened, not by how long it took, which a
+        // loaded run stretches several times over.
+        #expect(!saveRead.withLock { $0 })
         gate.open()
+        unstick.cancel()
         await keeper.saveTask?.value
         await keeper.restoreTask?.value
         #expect(pasteboard.string(forType: .string) == "Dictated text")
@@ -159,13 +166,15 @@ struct ClipboardKeeperTests {
     /// paste's text, never the clipboard as it was; that goes back once the app has read the text.
     @Test func aBusyAppReadingAfterTheDelayGetsThePastesText() async {
         copy("user text")
-        let rules = SharedRequest.clipboardRules
+        // The shipped rules, but with a wait for a read far past `stuck`: the clipboard back within
+        // `stuck` went back on the read, however long a loaded run takes, never on the wait running out.
+        var rules = SharedRequest.clipboardRules
+        rules.readWait = Int(Self.stuck / .milliseconds(1)) * 6
         let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: rules)
         keeper.save()
         await keeper.saveTask?.value
         let pasteboard = pasteboard
         var app: Task<String?, Never>?
-        let keys = ContinuousClock.now
         await TextInserter(clipboard: keeper, pasteKeystroke: {
             app = Task {
                 try? await Task.sleep(for: .milliseconds(rules.restoreDelay + 200))
@@ -173,10 +182,11 @@ struct ClipboardKeeperTests {
             }
         }).insert("Dictated text")
         #expect(await app?.value == "Dictated text")
-        await keeper.restoreTask?.value
+        let giveUp = ContinuousClock.now.advanced(by: Self.stuck)
+        while pasteboard.string(forType: .string) != "user text", ContinuousClock.now < giveUp {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
         #expect(pasteboard.string(forType: .string) == "user text")
-        // Back once the app read the text, not once `readWait` ran out.
-        #expect(keys.duration(to: .now) < .milliseconds(rules.readWait / 2))
     }
 
     /// The whole of `readWait` is waited for: an app reading near its end, well past most of it,
@@ -562,15 +572,19 @@ private final class HeldDelays: Sendable {
     func open(_ call: Int) { _ = state.withLock { $0.open.insert(call) } }
 }
 
-/// Holds reads until opened, on the save's own thread; once open, it stays open.
+/// Holds reads until opened, on the save's own thread; once open, it stays open, opened again or not.
 private final class Gate: Sendable {
     private let group: DispatchGroup = {
         let group = DispatchGroup()
         group.enter()
         return group
     }()
+    private let opened = OSAllocatedUnfairLock(initialState: false)
     func wait() { group.wait() }
-    func open() { group.leave() }
+    func open() {
+        guard opened.withLock({ (wasOpen: inout Bool) in defer { wasOpen = true }; return !wasOpen }) else { return }
+        group.leave()
+    }
 }
 
 /// Clipboard data an app hands over only when asked, counting the asks.
