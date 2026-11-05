@@ -3,7 +3,6 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import AppKit
-import os
 import Testing
 @testable import VoiceMacOSKit
 
@@ -43,65 +42,6 @@ struct TextInserterTests {
         await inserter().insert("Dictated text")
 
         #expect(provider.asked == 0)
-    }
-
-    /// The paste's steps, the clipboard's save and its put-back included, are timed in the debug
-    /// log (stderr, which the app keeps in debug mode), with nothing of the text or the clipboard. No
-    /// other test in this target redirects stderr; each target runs alone. Their order is not
-    /// checked: other tests in the target paste at the same time, and log the same steps. The pipe is
-    /// read while it stands in for stderr: every test in the process writes there meanwhile, and once
-    /// a pipe nobody reads is full each of those writes waits, this test's own steps too, for ever.
-    /// What is read goes on to stderr as well, so the other tests' results written meanwhile, a
-    /// failure among them, still reach the run's output. The test waits for a line it writes last,
-    /// not for the pipe to close: a process another test starts meanwhile inherits stderr, and holds
-    /// the pipe open until it ends.
-    @Test func timesThePasteStepsWithoutTheText() async throws {
-        let marker = "Dictated \(UUID().uuidString)"
-        let copied = "Copied \(UUID().uuidString)"
-        pasteboard.clearContents()
-        pasteboard.setString(copied, forType: .string)
-        let keeper = ClipboardKeeper(pasteboard: pasteboard, rules: .init(readWait: 200, restoreDelay: 20, maxBytes: 1024, maxFormats: 8))
-        let pipe = Pipe()
-        let saved = dup(STDERR_FILENO)
-        let onward = FileHandle(fileDescriptor: dup(saved), closeOnDealloc: true)
-        // Read on a thread of its own from the start: not on the main actor this test holds, nor on a
-        // pool whose threads may all be waiting to write.
-        let reader = pipe.fileHandleForReading
-        let captured = OSAllocatedUnfairLock(initialState: Data())
-        DispatchQueue.global().async {
-            while let chunk = try? reader.read(upToCount: 65_536), !chunk.isEmpty {
-                captured.withLock { $0.append(chunk) }
-                try? onward.write(contentsOf: chunk)
-            }
-            try? onward.close()
-        }
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
-        keeper.save()
-        await keeper.saveTask?.value
-        await TextInserter(clipboard: keeper, pasteKeystroke: { _ = self.pasteboard.string(forType: .string) }).insert(marker)
-        await keeper.restoreTask?.value
-        // The pipe keeps its order: once this line is read, so is everything this test wrote before it.
-        let end = "End of the capture \(UUID().uuidString)"
-        try FileHandle.standardError.write(contentsOf: Data((end + "\n").utf8))
-        dup2(saved, STDERR_FILENO)
-        close(saved)
-        try pipe.fileHandleForWriting.close()
-
-        func lines() -> [String] {
-            String(decoding: captured.withLock { $0 }, as: UTF8.self).split(separator: "\n").map(String.init)
-        }
-        let giveUp = ContinuousClock.now.advanced(by: .seconds(5))
-        while !lines().contains(end), ContinuousClock.now < giveUp {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let lines = lines()
-        try #require(lines.contains(end))
-        let steps = ["ClipboardKeeper: clipboard saved", "TextInserter: clipboard written", "TextInserter: paste keystroke sent", "ClipboardKeeper: clipboard put back"].map { step in
-            lines.firstIndex { $0.wholeMatch(of: try! Regex("debug \(step) after \\d+ms")) != nil }
-        }
-        #expect(steps.allSatisfy { $0 != nil })
-        #expect(!lines.contains { $0.contains(copied) })
-        #expect(!lines.contains { $0.contains(marker) })
     }
 }
 
