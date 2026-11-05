@@ -404,3 +404,20 @@ those sides as recognition-only: they consume source allowance, reserve no prese
 and appear in no reply field, rendered block, summary or content log. The selected bytes have
 no new source edge where the hidden neighbors meet them. A whole-window read still carries no
 independent caret source or selection.
+
+**Amendment 2026-11-04 — Gecko's marker read puts back the breaks its text leaves out (#339).**
+Firefox's text for a rich editor joins two lines that are each a block (Overleaf's code editor: an
+element per line) and gives a break only for an empty line, as Chromium's does (2026-10-06). Firefox
+keeps the marker read (`MarkerCaretSource.read`), which never ran the block walk, so a caret
+starting a line read as right after the line above, and a dictation there was spaced from that
+line's "." (log: `caret 732+0 of 2293 chars, from the marker indices`, the text before the caret
+ending `}.`, the text after starting with the empty lines' breaks, `a space added after the
+delimiter`). The marker read now walks the field's elements the same way (`MarkerCaretSource.Blocks`:
+children, block roles, each element's marker range placed by `AXIndexForTextMarker` from the
+field's start, and the element the caret's marker is in), and hands the shared core the block
+starts near the caret and whether the caret ends a line, so it puts back each left-out break as it
+does for Chromium. An element is placed only inside the field and by indices whose markers
+round-trip, as the text is; one that isn't has no place, and the read then puts back no break at
+all: a misplaced start would put a break inside a line, and inside a secret on it, leaving each
+half unredacted (ADR-DESK-046). A field with no block inside it (a plain text area, the address bar)
+and a field read with no elements are read as before. Windows and Linux are not changed.

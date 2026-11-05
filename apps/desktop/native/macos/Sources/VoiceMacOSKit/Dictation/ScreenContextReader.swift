@@ -226,7 +226,11 @@ enum ScreenContextReader {
             CaretLocator.parameterized(element, name, value)
         }, focused: {
             (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
-        }, otherwise: {
+        }, blocks: .accessibility(field: element, attribute: { node, name in
+            CaretLocator.attribute(node as! AXUIElement, name)
+        }, parameterized: { name, value in
+            CaretLocator.parameterized(element, name, value)
+        }, isElement: { CFGetTypeID($0) == AXUIElementGetTypeID() }), otherwise: {
             valueCaretWindow(of: element)
         })
     }
