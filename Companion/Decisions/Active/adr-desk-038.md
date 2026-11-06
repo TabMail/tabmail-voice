@@ -472,7 +472,11 @@ this one before it merged.
 - **The rule** (`contextTerms`, written afresh; TabMail on iOS applies the same):
   1. Every word on screen is checked, split on spaces with the punctuation around it trimmed, as
      before; a word with a digit (`\p{N}`) or in an address (`@`, `://`) is skipped, as is one with no
-     letter (`termCandidates`).
+     letter and one longer than a dictionary word (`dictionaryWordMaxChars`, 50: never a term)
+     (`termCandidates`). The client asks about them in requests of at most
+     `wordFrequenciesRequestMaxBytes` (512 KiB), asked together: a whole window's read with a word
+     list open holds more words than the Windows and Linux main helpers take in one request line
+     (1 MiB), and a longer line ends the helper.
   2. A word is ordinary when the word list sees it at least `screenTermCommonZipf` (Zipf 4.0) often.
   3. In a script no list is written in (null), a word with a capital letter is a term; others are not.
   4. A term is a word that is not ordinary. Each word stands alone: no runs of names, no trimming.

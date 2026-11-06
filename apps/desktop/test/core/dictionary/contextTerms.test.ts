@@ -61,10 +61,11 @@ describe("contextTerms", () => {
     expect(contextTerms(`Xy ${long} Xy<vora Bre>valle Xyv`, zipf)).toEqual(["Xyv"]);
   });
 
-  test("the candidates are every word with a letter, each once, without digits or addresses", () => {
+  test("the candidates are every word with a letter, each once, without digits or addresses, no longer than a dictionary word", () => {
     expect(termCandidates("Ask Xyvora, ask\u0085Xyvora: (Brevalle) Xyvora4 2026 -- user@example.com https://example.com/x 'kubectl'")).toEqual(
       ["Ask", "Xyvora", "ask", "Brevalle", "kubectl"],
     );
+    expect(termCandidates(`Xyvora ${"X".repeat(config.dictionaryWordMaxChars + 1)} ${"y".repeat(config.dictionaryWordMaxChars)}`)).toEqual(["Xyvora", "y".repeat(config.dictionaryWordMaxChars)]);
     expect(termCandidates("")).toEqual([]);
     expect(contextTerms("", new Map())).toEqual([]);
   });

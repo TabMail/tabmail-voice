@@ -878,6 +878,18 @@
       "terms": [
         "Xyvora"
       ]
+    },
+    {
+      "name": "a word longer than a dictionary word (50 characters) is not asked about: it can never be a term",
+      "text": "Xyvora Xyvorabrevallekaelthornequillonvexmarathandrielsoph Xyvorabrevallekaelthornequillonvexmarathandrielsop",
+      "zipf": {
+        "Xyvora": 0,
+        "Xyvorabrevallekaelthornequillonvexmarathandrielsop": 0
+      },
+      "terms": [
+        "Xyvora",
+        "Xyvorabrevallekaelthornequillonvexmarathandrielsop"
+      ]
     }
   ],
   "cutoff": 40

@@ -30,6 +30,23 @@ describe("NativeWordFrequencies", () => {
     expect(request).toHaveBeenCalledExactlyOnceWith("wordFrequencies", { folder, words: ["Today", "today", "Xyvora", "สวัสดี"] }, wordFrequenciesTimeout);
   });
 
+  /** A whole window's read can hold more words than the Windows and Linux main helpers take in one
+   * request line (1 MiB): they go in several requests, each line under it, every word answered. */
+  test("a screen's words too many for one request line are asked in several", async () => {
+    const helperLineMaxBytes = 1024 * 1024;
+    const syllable = (index: number) => String.fromCodePoint(0xac00 + (index % 11_172));
+    const words = Array.from({ length: 120_000 }, (_, index) => `${syllable(Math.floor(index / 11_172))}${syllable(index)}${syllable(index * 7)}${syllable(index * 13)}`);
+    const zipf = (word: string) => word.codePointAt(1)! % 100;
+    const request = vi.fn(async (_method: string, params: { words: string[] }) => ({ zipf: params.words.map(zipf) }));
+    const answers = await lists(request).frequencies(words);
+    expect(request.mock.calls.length).toBeGreaterThan(1);
+    for (const [method, params] of request.mock.calls) {
+      expect(Buffer.byteLength(`${JSON.stringify({ id: Number.MAX_SAFE_INTEGER, method, params })}\n`)).toBeLessThan(helperLineMaxBytes);
+    }
+    expect(request.mock.calls.flatMap(([, params]) => params.words)).toEqual([...new Set(words)]);
+    expect(answers).toEqual(new Map(words.map((word) => [word, zipf(word)])));
+  });
+
   test("a reply out of shape fails the ask", async () => {
     for (const reply of [null, "56", {}, { zipf: "56" }, { zipf: [] }, { zipf: [56, 0] }, { zipf: [-1] }, { zipf: [5.5] }, { zipf: ["56"] }, { zipf: [undefined] }]) {
       await expect(lists(vi.fn().mockResolvedValue(reply)).frequencies(["Today"])).rejects.toThrow("Invalid wordFrequencies reply.");

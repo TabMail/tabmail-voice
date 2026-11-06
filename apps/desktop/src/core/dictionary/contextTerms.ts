@@ -11,8 +11,9 @@ export type WordFrequencies = ReadonlyMap<string, number | null>;
 
 /**
  * The words in `text` that `contextTerms` asks about, each once (ADR-DESK-038, amended 2026-11-05):
- * every word, split on spaces with the punctuation around it trimmed, that has a letter, no digit, and
- * is no part of an address.
+ * every word, split on spaces with the punctuation around it trimmed, that has a letter, no digit, is
+ * no part of an address, and is no longer than a dictionary word (`dictionaryWordMaxChars`: a longer
+ * one is never a term, so it isn't asked about).
  */
 export function termCandidates(text: string): string[] {
   const candidates = new Set<string>();
@@ -53,9 +54,10 @@ export function contextTerms(text: string, frequencies: WordFrequencies, cutoff 
     .map(({ term }) => term);
 }
 
-/** Whether a word is asked about: a letter in it, no digit, not part of an address. */
+/** Whether a word is asked about: a letter in it, no digit, not part of an address, not longer than
+ * a dictionary word. */
 function isCandidate(word: string, token: string): boolean {
-  return /\p{L}/u.test(word) && !/\p{N}/u.test(word) && !token.includes("@") && !token.includes("://");
+  return word.length <= config.dictionaryWordMaxChars && /\p{L}/u.test(word) && !/\p{N}/u.test(word) && !token.includes("@") && !token.includes("://");
 }
 
 /** The token without the punctuation around it. */
