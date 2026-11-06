@@ -584,7 +584,8 @@ struct MarkerCaretSourceTests {
     }
 
     /// A selection over a line start in a field of more elements than the walk's budget: the
-    /// selection's own walk keeps that start, so the selected text keeps its break.
+    /// selection's own walk keeps that start, so the selected text keeps its break; and one ending
+    /// right at a line start keeps that start too, so the text after it starts with its break.
     @Test func aSelectionOverALineStartInADenseEditorKeepsItsBreak() throws {
         let width = 5
         var lines: [LineNode] = []
@@ -598,6 +599,10 @@ struct MarkerCaretSourceTests {
         provider.caretLine = lines[line - 1]
         let parts = try #require(provider.read()?.parts)
         #expect(parts[1] == "xxx\nxx")
+        provider.selection = NSRange(location: start - 3, length: 3)
+        let ending = try #require(provider.read()?.parts)
+        #expect(ending[1] == "xxx")
+        #expect(ending[2].hasPrefix("\nx"))
     }
 
     /// Elements Accessibility misplaces, but inside the field and round-tripping, put a line's start

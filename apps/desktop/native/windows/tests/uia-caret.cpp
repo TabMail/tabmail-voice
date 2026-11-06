@@ -763,6 +763,10 @@ static int run() {
             result = selectedOver.read(layout(selectedOver, turns, caretLine - 1));
             expect(!result.selectionUnavailable && result.parts[1] == "xxx" + blockBreak + "xx",
                 "a selection over a line start of a dense editor keeps its break");
+            Provider selectedTo(turnsText, caretAt - 3, caretAt);
+            result = selectedTo.read(layout(selectedTo, turns, caretLine - 1));
+            expect(!result.selectionUnavailable && result.parts[1] == "xxx" && result.parts[2].rfind(blockBreak + "x", 0) == 0,
+                "a selection ending at a line start of a dense editor keeps the break after it");
         }
         viewportContracts();
         editContracts();
