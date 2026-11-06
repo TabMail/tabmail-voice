@@ -440,7 +440,9 @@ fn left_out_breaks(
 /// recognized it by: a misplaced start inside a label (`pass|word = …`), or in a value whose label
 /// is in another screen block, is caught by the final redaction instead, which also reads the
 /// caret's text without the breaks put back (`addedBreaks`, `privacy::taken_across_breaks`, issue
-/// #365). Do not widen this check toward labels or neighbouring blocks.
+/// #365). So is a misplaced start inside a key the text glues to the word before, which this check
+/// cannot find without the edge the key's own block start gives: that reading keeps an edge where
+/// each break was. Do not widen this check toward labels or neighbouring blocks.
 fn splits_a_find(taken: &[std::ops::Range<usize>], at: usize) -> bool {
     taken.iter().any(|run| run.start < at && at < run.end)
 }
@@ -1973,6 +1975,59 @@ mod budget_tests {
                 json!(["[redacted]\n", "", "[redacted]"]),
                 "{breaks:?}"
             );
+        }
+    }
+    /// What the text read without the caret's own break takes across it never carries that break
+    /// along: a secret on the line before the caret and one after it each keep their own marker,
+    /// and the break stays between them.
+    #[test]
+    fn a_secret_either_side_of_the_carets_own_break_keeps_its_own_marker() {
+        let key = concat!("sk", "-", "a1B2c3D4e5F6g7H8i9J0");
+        for (parts, breaks, expected) in [
+            // The joined reading takes the label after the caret into the value before it.
+            (
+                json!(["token = abc123\n", "", "password=def456"]),
+                json!([[14], [], []]),
+                json!(["token = [redacted]\n", "", "[redacted]"]),
+            ),
+            // The joined reading takes the short value before the caret into the key after it.
+            (
+                json!(["token = ab\n", "", key]),
+                json!([[10], [], []]),
+                json!(["token = [redacted]\n", "", "[redacted]"]),
+            ),
+        ] {
+            let reply = call(json!({"blocks":[],"caret":parts,"caretBreaks":breaks}));
+            assert_eq!(reply["caret"], expected, "{parts}");
+        }
+    }
+    /// Two block starts the OS gave in a rich editor whose text runs paragraphs together, one where
+    /// a key's paragraph starts and one misplaced inside the key: the text read without the breaks
+    /// put back keeps a word edge where each was, so a key that needs one is still found, whole,
+    /// and none of it is shown (issue #365).
+    #[test]
+    fn a_second_start_inside_a_key_glued_to_the_paragraph_before_never_shows_it() {
+        let token = "9fK2xQ7mZ1pL8vR3wTaB4c";
+        let bearer = format!("Bearer {token}");
+        let key = format!("{}{token}", concat!("sk", "-"));
+        for (text, inside) in [
+            (&bearer, 3),
+            (&bearer, "Bearer ".len() + 10),
+            (&key, 3 + 17),
+            (&key, 3 + 16),
+        ] {
+            let field = format!("Notes{text}");
+            let starts = json!([5, 5 + inside]);
+            let read = call(
+                json!({"caretWindow":{"parts":[field,"",""],"startKnown":true,"endKnown":true,"paragraphStarts":starts}}),
+            );
+            let reply =
+                call(json!({"blocks":[],"caret":read["parts"],"caretBreaks":read["addedBreaks"]}));
+            let shown = reply["caret"][0].as_str().unwrap();
+            assert!(shown.starts_with("Notes\n"), "{starts}: {shown}");
+            for piece in [&token[..4], &token[token.len() - 4..]] {
+                assert!(!shown.contains(piece), "{starts}: {shown}");
+            }
         }
     }
     /// The break at the limit gives up the before part's first character even when every caret

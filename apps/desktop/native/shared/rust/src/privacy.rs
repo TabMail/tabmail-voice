@@ -83,10 +83,14 @@ pub fn taken_across_breaks(
     }
     let without = String::from_utf8(kept.iter().map(|at| text.as_bytes()[*at]).collect())
         .map_err(|_| Error::InvalidBoundary)?;
+    // A removed break still marks where a block starts: the joined reading keeps a word edge
+    // there, or a key glued to the text before a second, misplaced start would lose it.
     let mut moved: Vec<usize> = edges
         .iter()
+        .chain(joined)
         .map(|edge| kept.partition_point(|at| at < edge))
         .collect();
+    moved.sort_unstable();
     moved.dedup();
     let mut taken = laid_out.clone();
     for found in scan::scan(&without, &moved, redactors) {
