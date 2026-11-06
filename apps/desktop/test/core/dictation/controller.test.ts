@@ -20,6 +20,7 @@ import { PasteTargetError } from "../../../src/core/dictation/targetWindow.js";
 import { DictationController, type DictationDependencies, isResting, nothingHeardMessage, notCopiedMessage, notPastedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { CorrectionWatch } from "../../../src/core/dictionary/correctionWatch.js";
+import type { WordFrequencies } from "../../../src/core/dictionary/contextTerms.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
@@ -57,12 +58,15 @@ const request = "make this friendlier";
 const cleanedStream = Fixtures.reply(cleaned);
 /** A dictation's transcription, cleaned up by the backend in the same request (backend ADR-027). */
 const cleanedReply = { text: transcript, cleaned_text: cleaned };
-/** What the dictionaries of the user's languages know in these tests' screens (ADR-DESK-038, amended
- * 2026-11-04): the words starting their sentences, which the shared core finds in English's. */
 /** A made-up name, `stem` and letters from `index` (up to 676): a name holding a digit is no screen
  * term (ADR-DESK-038, amended 2026-11-04). */
 const lettered = (stem: string, index: number) => stem + [Math.floor(index / 26) % 26, index % 26].map((digit) => String.fromCharCode(97 + digit)).join("");
+/** The everyday words of these tests' screens (ADR-DESK-038, amended 2026-11-05): the word list sees
+ * them, and every lowercase word, often; every other word, none (`seenIn`). */
 const everydayWords = new Set(["the", "launch", "earlier", "meet", "weekly", "note", "and", "ask", "then", "hello", "hi", "thanks", "from", "to", "re", "subject", "inbox", "draft", "new", "message", "send", "reply", "meeting", "notes", "today", "tomorrow", "please", "see", "we", "it", "this", "that"]);
+/** How often the word list sees `words`, as the main helper answers (`NativeWordFrequencies`). */
+const seenIn = (words: readonly string[]): WordFrequencies =>
+  new Map(words.map((word) => [word, everydayWords.has(word.toLowerCase()) || (!/\p{Lu}|\p{Lt}/u.test(word) && word.toUpperCase() !== word) ? 60 : 0]));
 const reply = Fixtures.reply;
 /** The loop's round that pastes `text` with the writing tool `tool`, ending the request. */
 const writes = (tool: "compose" | "edit", text: string) => Fixtures.toolCalls([{ id: "call_write", name: tool, arguments: JSON.stringify({ text }) }]);
@@ -156,7 +160,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"]; knownWords?: DictationDependencies["knownWords"] } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"]; wordFrequencies?: DictationDependencies["wordFrequencies"] } = {},
   ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory; clipboardSaves: () => number } {
     const pastes: string[] = [];
     const copies: string[] = [];
@@ -203,8 +207,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       connectorTools: options.connectorTools ?? [],
       corrections: options.corrections,
       keepRecording: options.keepRecording,
-      // The dictionaries of the user's languages, as the main helper answers (`NativeWordChecker`).
-      knownWords: options.knownWords ?? (async (words) => new Set(words.filter((word) => everydayWords.has(word.toLowerCase())))),
+      wordFrequencies: options.wordFrequencies ?? (async (words) => seenIn(words)),
       useWords: (texts) => used.push([...texts]),
       memory,
       prompts,
@@ -535,21 +538,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
     await holdAndRelease(controller);
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-    expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Brevalle Labs", "Kaelthorne Drake", "TabMail"]);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Brevalle", "Labs", "Kaelthorne", "Drake", "TabMail"]);
     expect(cleanupVars(0)?.dictionary).toBe("Xyvora");
   });
 
-  /** #333: a chat's author line starts with the author's full name; the name goes whole, the first
-   * name included, since no dictionary knows it (ADR-DESK-038, amended 2026-11-04). The dictionaries
-   * are asked once, for every word of the screen that may be a term. */
-  test("sends a name that starts a line, asking once which words are everyday words", async () => {
+  /** #333: a chat's author line starts with the author's full name; each of its words goes, the first
+   * name included, since the word list doesn't see them (ADR-DESK-038, amended 2026-11-05). It is
+   * asked once, about every word of the screen. */
+  test("sends a name that starts a line, asking once how often the words are seen", async () => {
     transcription.enqueue(200, cleanedReply);
     const asked: string[][] = [];
     const { controller, pastes } = makeController({
       capture: new CountingCapture(true),
-      knownWords: async (words) => {
+      wordFrequencies: async (words) => {
         asked.push([...words]);
-        return new Set(words.filter((word) => everydayWords.has(word.toLowerCase())));
+        return seenIn(words);
       },
     });
     controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "Launch", renderedText: "Xyvora Brevalle  [Today at 4:12 PM]\nwe ship it, Xyvora" });
@@ -557,63 +560,53 @@ describe("DictationController", { timeout: 20_000 }, () => {
     await holdAndRelease(controller);
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-    expect(transcription.body(0).vocabulary).toEqual(["Xyvora Brevalle", "Xyvora"]);
-    expect(asked).toEqual([["Launch", "Xyvora", "Brevalle", "Today", "PM"]]);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Brevalle"]);
+    expect(asked).toEqual([["Launch", "Xyvora", "Brevalle", "Today", "at", "PM", "we", "ship", "it"]]);
   });
 
-  /** #348 (owner, 2026-11-05): with no spelling dictionary for the user's languages (none installed,
-   * or each knowing a word in no language), the screen's terms are picked as before the dictionaries,
-   * by capitals with a sentence's first word left out, not every capitalized word and every word in a
-   * script without case. */
-  test("a dictation no spelling dictionary answers for picks screen terms by capitals", async () => {
-    transcription.enqueue(200, cleanedReply);
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async () => null });
-    controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "Launch", renderedText: "Xyvora Brevalle said hi 회의는\nThe report: ask Kaelthorne about TabMail" });
-
-    await holdAndRelease(controller);
-
-    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-    expect(pastes).toEqual([cleaned]);
-    expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Kaelthorne", "TabMail"]);
-  });
-
-  /** Whether a dictionary works is asked with no word to judge too: a screen whose only name a
-   * dictionary would never be asked about (it has a digit) still has it picked by capitals when none
-   * works, and not when one does. */
-  test.each<[string, ReadonlySet<string> | null, string[] | undefined]>([
-    ["no spelling dictionary works", null, ["Xyvora4"]],
+  /** A word the lists give no answer for (in a script none is written in) is never a term, and a
+   * screen with no word to judge is asked about too, with none. */
+  test.each<[string, string, string[][], string[] | undefined]>([
+    ["a word in a script no list is written in", "ask สวัสดีครับ and Brevalle", [["ask", "สวัสดีครับ", "and", "Brevalle"]], ["Brevalle"]],
     // An empty vocabulary is left out of the request.
-    ["a spelling dictionary works", new Set<string>(), undefined],
-  ])("a screen with no word to judge, when %s", async (_, known, terms) => {
+    ["no word to judge", "2026 Xyvora4 ###", [[]], undefined],
+  ])("a screen with %s", async (_, renderedText, expectedAsks, terms) => {
     transcription.enqueue(200, cleanedReply);
     const asked: (readonly string[])[] = [];
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async (words) => { asked.push([...words]); return known; } });
-    controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "notes", renderedText: "ask Xyvora4" });
+    const { controller, pastes } = makeController({
+      capture: new CountingCapture(true),
+      wordFrequencies: async (words) => {
+        asked.push([...words]);
+        const seen = seenIn(words);
+        return new Map(words.map((word) => [word, /\p{Script=Thai}/u.test(word) ? null : seen.get(word)!]));
+      },
+    });
+    controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "", renderedText });
 
     await holdAndRelease(controller);
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
     expect(pastes).toEqual([cleaned]);
-    expect(asked).toEqual([[]]);
+    expect(asked).toEqual(expectedAsks);
     expect(transcription.body(0).vocabulary).toEqual(terms);
   });
 
-  /** With no spelling dictionary, every way a dictation reads the screen picks its terms by capitals:
-   * with the cleanup or without, in agent mode, from what the window shows and from the whole window. */
+  /** Every way a dictation reads the screen picks its terms by how often the lists see them: with the
+   * cleanup or without, in agent mode, from what the window shows and from the whole window. */
   describe.each<[string, DictationMode, boolean]>([
     ["dictation with the cleanup", "dictation", true],
     ["dictation without the cleanup", "dictation", false],
     ["agent mode", "agent", true],
-  ])("%s with no spelling dictionary", (_, mode, smartDictation) => {
+  ])("%s", (_, mode, smartDictation) => {
     const text = "Xyvora Brevalle said hi 회의는\nThe report: ask Kaelthorne about TabMail";
     test.each<[string, string, string | null]>([
       ["what the window shows", text, null],
       ["the whole window", "notes", text],
-    ])("picks terms by capitals from %s", async (_, shown, whole) => {
+    ])("picks screen terms by word frequencies from %s", async (_, shown, whole) => {
       prefs.value = { ...defaultSettings(), smartDictation, enabledTools: ["compose"] };
       transcription.enqueue(200, mode === "dictation" && smartDictation ? cleanedReply : { text: request });
       if (mode === "agent") completions.enqueue(200, writes("compose", "Synthetic composed result."));
-      const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async () => null });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.captureContext = async () => blankScreen({ appName: "Example Chat", windowTitle: "notes", renderedText: shown });
       const windows: string[] = [];
       controller.captureWindow = whole === null ? undefined : async () => {
@@ -625,17 +618,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(windows).toEqual(whole === null ? [] : [whole]);
-      expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Kaelthorne", "TabMail"]);
+      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Brevalle", "회의는", "Kaelthorne", "TabMail"]);
     });
   });
 
-  /** With the screen not read, no dictionary is asked about it: the dictation sends the user's
+  /** With the screen not read, the word list is not asked about it: the dictation sends the user's
    * dictionary alone, without waiting on the helper. */
-  test("a dictation with screen reading off asks no spelling dictionary", async () => {
+  test("a dictation with screen reading off asks no word frequencies", async () => {
     prefs.value = { ...defaultSettings(), readsScreen: false, dictionary: { typed: ["Zephrin"], learned: [] } };
     transcription.enqueue(200, cleanedReply);
     let asks = 0;
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: async () => { asks += 1; return null; } });
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), wordFrequencies: async () => { asks += 1; return new Map(); } });
     controller.captureContext = async () => blankScreen({ appName: "Example Chat", renderedText: "ask Xyvora4 and Brevalle" });
 
     await holdAndRelease(controller);
@@ -646,15 +639,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(transcription.body(0).vocabulary).toEqual(["Zephrin"]);
   });
 
-  /** The dictionaries' answer is best effort, like the screen read: one that fails, or doesn't come
-   * within `knownWordsTimeout`, sends no screen terms; the dictation goes on with the dictionary's. */
-  test.each<[string, DictationDependencies["knownWords"]]>([
+  /** The word list's answer is best effort, like the screen read: one that fails, or doesn't come
+   * within `wordFrequenciesTimeout`, sends no screen terms; the dictation goes on with the dictionary's. */
+  test.each<[string, DictationDependencies["wordFrequencies"]]>([
     ["fails", async () => { throw new Error("helper exited"); }],
     ["doesn't come in time", () => new Promise(() => {})],
-  ])("a dictation whose everyday-word answer %s sends no screen terms", async (_, knownWords) => {
+  ])("a dictation whose word-frequency answer %s sends no screen terms", async (_, wordFrequencies) => {
     prefs.value = { ...defaultSettings(), dictionary: { typed: ["Zephrin"], learned: [] } };
     transcription.enqueue(200, cleanedReply);
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords });
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), wordFrequencies });
     controller.captureContext = async () => blankScreen({ appName: "Example Chat", renderedText: "ask Xyvora Brevalle about TabMail" });
 
     await holdAndRelease(controller);
@@ -774,16 +767,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(windows).toEqual(captured);
-      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Drake", "Brevalle Labs", "Quillon"]);
+      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne", "Drake", "Brevalle", "Labs", "Quillon"]);
     });
 
-    /** The window's terms are the words the dictionary was asked about: a window read that lands while
+    /** The window's terms are the words the lists were asked about: a window read that lands while
      * the answer is awaited brings no word that answer didn't judge. */
-    test("a window read landing while the everyday-word answer is awaited adds no word it didn't judge", async () => {
+    test("a window read landing while the word-frequency answer is awaited adds no word it didn't judge", async () => {
       transcription.enqueue(200, cleanedReply);
-      const reply = deferred<ReadonlySet<string>>();
+      const reply = deferred<WordFrequencies>();
       let asked: readonly string[] = [];
-      const { controller, pastes } = makeController({ capture: new CountingCapture(true), knownWords: (words) => { asked = [...words]; return reply.promise; } });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), wordFrequencies: (words) => { asked = [...words]; return reply.promise; } });
       controller.captureContext = async () => blankScreen({ appName: "Example Chat", renderedText: "Xyvora Brevalle" });
       const window = deferred<ScreenRead | null>();
       controller.captureWindow = () => window.promise;
@@ -792,16 +785,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => asked.includes("Xyvora"))).toBe(true);
       window.resolve(blankScreen({ appName: "Example Chat", renderedText: "Today met Dravennas" }));
       await sleep(10);
-      reply.resolve(new Set(asked.filter((word) => everydayWords.has(word.toLowerCase()))));
+      reply.resolve(seenIn(asked));
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(pastes).toEqual([cleaned]);
-      expect(transcription.body(0).vocabulary).toContain("Xyvora Brevalle");
-      expect(transcription.body(0).vocabulary).not.toContain("Today");
+      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Brevalle"]);
     });
 
     test("only as many as there is room for in the first 100, the rest for the cleanup", async () => {
-      const dictionary = Array.from({ length: config.vocabularyModelMaxTerms - 2 }, (_, index) => `Zephrin${index}`);
+      const dictionary = Array.from({ length: config.vocabularyModelMaxTerms - 3 }, (_, index) => `Zephrin${index}`);
       prefs.value = { ...defaultSettings(), dictionary: { typed: dictionary, learned: [] } };
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -811,8 +803,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await holdAndRelease(controller);
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-      // The first 100: the dictionary, the shown term, one from the whole window; the cleanup gets the rest.
-      expect(transcription.body(0).vocabulary).toEqual([...dictionary, "Kaelthorne Drake", "Brevalle Labs", "Xyvora", "Quillon"]);
+      // The first 100: the dictionary, the shown terms, one from the whole window; the cleanup gets the rest.
+      expect(transcription.body(0).vocabulary).toEqual([...dictionary, "Kaelthorne", "Drake", "Brevalle", "Labs", "Xyvora", "Quillon"]);
     });
 
     test.each<[string, Promise<ScreenRead | null>]>([
@@ -829,7 +821,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await holdAndRelease(controller);
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Drake"]);
+      expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne", "Drake"]);
     });
 
     /** An earlier dictation's whole window answering once a newer one has started and read its own
@@ -857,7 +849,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("finish");
 
       expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
-      expect(transcription.body(1).vocabulary).toEqual(["Xyvora", "Ondrava Quist", "Talvenor Group"]);
+      expect(transcription.body(1).vocabulary).toEqual(["Xyvora", "Ondrava", "Quist", "Talvenor", "Group"]);
     });
   });
 
@@ -2718,7 +2710,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(stops).toEqual([read.promise]);
       expect(pastes).toEqual([cleaned]);
       expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
-      expect(transcription.body(0).vocabulary).toEqual(["Brevalle Labs", "Kaelthorne Drake"]);
+      expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Labs", "Kaelthorne", "Drake"]);
     });
 
     /** A dictation cancelled while its upload waits for the keyboard's language, then a new hold:
@@ -2795,7 +2787,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(pastes).toEqual([cleaned]);
       expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
-      expect(transcription.body(0).vocabulary).toEqual(["Brevalle Labs", "Kaelthorne Drake"]);
+      expect(transcription.body(0).vocabulary).toEqual(["Brevalle", "Labs", "Kaelthorne", "Drake"]);
     });
   });
 
@@ -8182,9 +8174,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return concat(...seconds.flatMap((length, index) => (index === seconds.length - 1 ? [speech(length, rand)] : [speech(length, rand), room(1.5, rand)])));
     }
 
-    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"]; account?: AccountModel; knownWords?: DictationDependencies["knownWords"] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
+    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"]; account?: AccountModel; wordFrequencies?: DictationDependencies["wordFrequencies"] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
       const capture = new CountingCapture();
-      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste, account: options.account, knownWords: options.knownWords });
+      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste, account: options.account, wordFrequencies: options.wordFrequencies });
       made.controller.chunkRetryDelays = options.chunkRetryDelays ?? [1];
       made.controller.transcriptionRetryDelays = [1, 1];
       made.controller.transcriptionRetryNoticeDelay = 0;
@@ -9060,20 +9052,20 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(idle);
     });
 
-    /** A chunk waits for the screen terms' everyday-word answer (ADR-DESK-038, amended 2026-11-04): a
+    /** A chunk waits for the screen terms' word-frequency answer (ADR-DESK-038, amended 2026-11-05): a
      * dictation canceled meanwhile sends no chunk once the answer comes. */
-    test("canceled while its first chunk waits for the everyday-word answer, it sends no chunk", async () => {
+    test("canceled while its first chunk waits for the word-frequency answer, it sends no chunk", async () => {
       const backend = new ChunkBackend(part);
-      let answer: (known: ReadonlySet<string>) => void = () => {};
+      let answer: (frequencies: WordFrequencies) => void = () => {};
       let asked = 0;
-      const { controller, capture, pastes } = makeLong(backend, { knownWords: () => { asked += 1; return new Promise((resolve) => { answer = resolve; }); } });
+      const { controller, capture, pastes } = makeLong(backend, { wordFrequencies: () => { asked += 1; return new Promise((resolve) => { answer = resolve; }); } });
       controller.captureContext = async () => blankScreen({ appName: "Example Chat", renderedText: "ask Xyvora Brevalle about TabMail" });
 
       await startHearing(controller, capture, pausedSpeech(9, 12, 12, 4));
       expect(await eventually(() => asked === 1)).toBe(true);
       controller.handle("cancel");
       expect(await eventually(() => settled(controller))).toBe(true);
-      answer(new Set());
+      answer(new Map());
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(backend.sent).toEqual([]);

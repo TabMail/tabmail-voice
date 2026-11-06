@@ -97,44 +97,26 @@ struct MacServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
-    /// The screen terms' test (ADR-DESK-038, amended 2026-11-04): the system spell checker's answer
-    /// through the helper's wire, for the dictionary the shared core picks for each language (every Mac
-    /// has English's); a word a dictionary keeps capitalized is not known in lowercase.
-    @Test func knownWordsAreTheSpellCheckersAnswer() async throws {
+    /// The screen terms' test (ADR-DESK-038, amended 2026-11-05): the shared core's answer from the
+    /// app's word list through the helper's wire; the rule's own cases run in the core.
+    @Test func wordFrequenciesAreTheSharedCoresAnswer() async throws {
+        let lists = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../shared/dictionary").standardizedFileURL.path
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
         let service = MacService.register(on: channel)
-        await channel.handle(line: Data(#"{"id":1,"method":"knownWords","params":{"languages":["en-US","xx-YY"],"words":["today","xyvora","paris","the"]}}"#.utf8))
-        await channel.handle(line: Data(#"{"id":2,"method":"knownWords","params":{"languages":[],"words":["today"]}}"#.utf8))
-        await channel.handle(line: Data(#"{"id":3,"method":"knownWords","params":{"languages":["en"],"words":[1]}}"#.utf8))
-        await channel.handle(line: Data(#"{"id":4,"method":"knownWords","params":{"languages":"en","words":[]}}"#.utf8))
-        // Every preferred language's dictionary is asked: a word only French knows is known too.
-        await channel.handle(line: Data(#"{"id":5,"method":"knownWords","params":{"languages":["en-US","fr-FR"],"words":["today","établissements","xyvora"]}}"#.utf8))
+        let ask = { (id: Int, params: [String: Any]) in
+            try JSONSerialization.data(withJSONObject: ["id": id, "method": "wordFrequencies", "params": params])
+        }
+        await channel.handle(line: try ask(1, ["folder": lists, "words": ["Today", "Xyvora", "สวัสดี"]]))
+        await channel.handle(line: try ask(2, ["folder": lists, "words": [1]]))
+        await channel.handle(line: try ask(3, ["folder": "dictionary", "words": ["Today"]]))
+        await channel.handle(line: try ask(4, ["folder": lists + "/missing", "words": ["Today"]]))
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
-        #expect(replies.count == 5)
-        guard replies.count == 5 else { return }
-        #expect(replies[0]["result"] as? NSDictionary == ["known": ["today", "the"], "unavailable": ["xx-YY"], "dictionaries": 1])
-        #expect(replies[1]["result"] as? NSDictionary == ["known": [String](), "unavailable": [String](), "dictionaries": 0])
-        for reply in replies[2...3] { #expect(reply["error"] != nil && reply["result"] == nil) }
-        #expect(replies[4]["result"] as? NSDictionary == ["known": ["today", "établissements"], "unavailable": [String](), "dictionaries": 2])
+        #expect(replies.count == 4)
+        guard replies.count == 4 else { return }
+        #expect(replies[0]["result"] as? NSDictionary == ["zipf": [56, 0, NSNull()]])
+        for reply in replies[1...] { #expect(reply["error"] != nil && reply["result"] == nil) }
         withExtendedLifetime(service) {}
-    }
-
-    /// A dictionary that knows a word in no language tells no name from an everyday word (Ubuntu's
-    /// Ukrainian takes every word in Latin letters): its language's next one serves, and a language
-    /// with no other has none (amended 2026-11-05). The checker here knows every word in `en_GB` and
-    /// `la`, and only "colour" in `en`.
-    @Test func aDictionaryKnowingAWordInNoLanguageServesNone() async throws {
-        let check = SpellCheck(available: { ["en", "en_GB", "la"] }, knows: { word, language in
-            language == "en_GB" || language == "la" || (language == "en" && word == "colour")
-        })
-        let reply = try await check.known(languages: ["en-GB", "la"], words: ["colour", "xyvora"])
-        #expect(reply == ["known": ["colour"], "unavailable": ["la"], "dictionaries": 1])
-        let none = try await check.known(languages: ["la"], words: ["xyvora"])
-        #expect(none == ["known": [], "unavailable": ["la"], "dictionaries": 0])
-        // A request with no word, as the app sends at launch, is told the same of each dictionary.
-        #expect(try await check.known(languages: ["en-GB", "la"], words: []) == ["known": [], "unavailable": ["la"], "dictionaries": 1])
-        #expect(try await check.known(languages: ["la"], words: []) == ["known": [], "unavailable": ["la"], "dictionaries": 0])
     }
 
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {

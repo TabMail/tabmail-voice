@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import { mkdtempSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const temporary = mkdtempSync(join(tmpdir(), "voice-app-info-"));
 const picked = join(temporary, "Synthetic 앱.EXE");
@@ -70,14 +71,13 @@ try {
   for (const params of [{}, { text: null }, { text: "😀".repeat(32769) }, { text: "Public.", before: null }]) {
     assert.ok((await request("redactText", params)).error, "invalid explicit text redaction refuses");
   }
-  // The screen terms' test (ADR-DESK-038, amended 2026-11-04): the Windows spell checker's answer, for
-  // the dictionary the shared core picks for each language (every Windows has English's); a word a
-  // dictionary keeps capitalized is not known in lowercase.
-  assert.deepEqual((await request("knownWords", { languages: ["en-US", "xx-YY"], words: ["today", "xyvora", "paris", "the"] })).result,
-    { known: ["today", "the"], unavailable: ["xx-YY"], dictionaries: 1 });
-  assert.deepEqual((await request("knownWords", { languages: [], words: ["today"] })).result, { known: [], unavailable: [], dictionaries: 0 });
-  assert.ok((await request("knownWords", { languages: ["en-US"], words: [1] })).error);
-  assert.ok((await request("knownWords", { languages: "en-US", words: [] })).error);
+  // The screen terms' test (ADR-DESK-038, amended 2026-11-05): the shared core's answer from the app's
+  // word list; the rule's own cases run in the core.
+  const lists = fileURLToPath(new URL("../../shared/dictionary", import.meta.url));
+  assert.deepEqual((await request("wordFrequencies", { folder: lists, words: ["Today", "Xyvora", "สวัสดี"] })).result, { zipf: [56, 0, null] });
+  assert.ok((await request("wordFrequencies", { folder: lists, words: [1] })).error);
+  assert.ok((await request("wordFrequencies", { folder: "dictionary", words: ["Today"] })).error);
+  assert.ok((await request("wordFrequencies", { folder: join(lists, "missing"), words: ["Today"] })).error);
   const front = (await request("frontmostApp")).result;
   assert.ok(front === null || (Number.isSafeInteger(front.window) && front.window > 0));
   assert.deepEqual((await request("caretAnchor", { window: 0 })).result, null);

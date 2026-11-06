@@ -141,10 +141,14 @@ an open-source dictation app: one Electron app for macOS, Windows and Linux, and
 its correction learner, which the dictionary's learning from the user's corrections is modeled on.
 It is our own app and code, not a fork of OpenWhispr.
 
-The names and terms Voice picks from the screen are checked against your system's spell-check
-dictionaries for your languages; on Linux, the installed Hunspell dictionaries are read with
-[spellbook](https://github.com/helix-editor/spellbook) (MPL-2.0) and
-[encoding_rs](https://github.com/hsivonen/encoding_rs) (MIT or Apache-2.0). Voice ships no dictionary.
+The names and terms Voice picks from the screen are judged by how often words are seen, by word
+lists Voice ships (`apps/desktop/native/shared/dictionary/`) adapted from
+[wordfreq](https://github.com/rspeer/wordfreq) by Robyn Speer and, for Korean,
+[FrequencyWords](https://github.com/hermitdave/FrequencyWords) by Hermit Dave (from OpenSubtitles
+2018), both CC BY-SA 4.0, with each language's letters from [Unicode CLDR](https://cldr.unicode.org).
+The lists are licensed CC BY-SA 4.0; that folder's README says what was changed. They are read with
+[fst](https://github.com/BurntSushi/fst) (MIT or Unlicense) and
+[unicode-script](https://github.com/unicode-rs/unicode-script) (MIT or Apache-2.0).
 
 ## License
 

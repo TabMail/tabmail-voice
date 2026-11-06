@@ -11,7 +11,4 @@ inline constexpr long long eventOccurrenceToleranceMs = 2LL * 60 * 60 * 1000;
 inline constexpr long long eventOccurrenceSearchSpanMs = 31LL * 24 * 60 * 60 * 1000;
 // A read of calendars, memos or tasks that a change interrupts is made this many times in all.
 inline constexpr unsigned calendarReadAttempts = 3;
-// Where the system keeps its Hunspell dictionaries (Debian and Ubuntu, Fedora; older packages'
-// myspell folders), the screen terms' test reads the user's languages' from (ADR-DESK-038).
-inline constexpr const char* dictionaryFolders[] = {"/usr/share/hunspell", "/usr/share/myspell", "/usr/share/myspell/dicts"};
 }

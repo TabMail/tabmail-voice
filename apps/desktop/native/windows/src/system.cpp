@@ -17,7 +17,6 @@
 #include "accessibility_activator.h"
 #include "update_signature.h"
 #include "target_windows.h"
-#include "spelling.h"
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -34,7 +33,8 @@ voice::ClipboardRules clipboardRules() {
 
 JSON handle(const std::string& method, const JSON& params) {
     if (method == "redactText") return voice::core::request(params, voice_core_redact_text_json);
-    if (method == "knownWords") return voice::knownWords(params);
+    // How often the lists the app ships see the words on screen: the screen terms' test (ADR-DESK-038).
+    if (method == "wordFrequencies") return voice::core::request(params, voice_core_word_frequencies_json);
     if (method == "appInfo") return voice::privacy::appInfo(params);
     if (method == "shellExclusionBounds") return voice::shellExclusionBounds();
     if (method == "frontmostApp") {
