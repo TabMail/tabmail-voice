@@ -475,7 +475,16 @@ as before. An element with no place still ends either walk with no starts, as th
 the OS misplaced something, and the other elements' places can be misplaced with it, so a start kept
 then could fall inside a line, and inside a secret on it (ADR-DESK-046). Handing over to the
 selection's walk there too was tried and rejected in review: a misplaced start at the caret split a
-key that main redacts whole. Each
+key that main redacts whole. Past the budget, though, the window's walk can run out before it
+reaches an element with no place, and the selection's walk, narrow by design, never looks that far:
+a start the OS misplaced inside a key at the caret was kept, and the break put back there cut the
+key into two halves too short to look secret, both shown (found in review, with the test layout
+above behind 400 dense elements). So the core puts no paragraph break back strictly inside what the
+redaction takes out of the text as read, before any break goes in (`context::splits_a_find`), for
+every start, whichever walk found it: the key stays whole and is redacted whole. A true block start
+whose two lines run together into something secret-looking loses its break with it, and is hidden;
+hiding too much is what the redaction accepts (ADR-DESK-046). The caret's own start, measured where
+the caret is drawn (`caretStarts`), keeps its break wherever it is, as before. Each
 place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
 selection's own), and the walk's end names whose starts the helper keeps. The two walks together
 place at most the budget and the selection's own. Walking the selection first, on the one budget,

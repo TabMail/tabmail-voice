@@ -391,11 +391,13 @@ fn line_break(character: char) -> bool {
 /// start goes before the caret, unless `caret_ends_line`: the caret is then at the end of the line
 /// above that paragraph (the text gives both places one offset), and the break follows it. One at
 /// the selection's end goes after the selection. One in a selection that would not fit its budget
-/// is left out.
+/// is left out. One strictly inside a run of `taken` (what the redaction takes out of the parts
+/// joined, before any break goes back) is left out too: see `splits_a_find`.
 fn left_out_breaks(
     parts: &[String],
     starts: &[usize],
     caret_ends_line: bool,
+    taken: &[std::ops::Range<usize>],
 ) -> Result<[Vec<usize>; 3], u32> {
     let text = parts.concat();
     if starts.windows(2).any(|pair| pair[0] >= pair[1])
@@ -408,7 +410,8 @@ fn left_out_breaks(
     let (before, selected) = (parts[0].len(), parts[1].len());
     let mut breaks: [Vec<usize>; 3] = Default::default();
     for &start in starts {
-        if text[..start].chars().next_back().is_some_and(line_break) {
+        if text[..start].chars().next_back().is_some_and(line_break) || splits_a_find(taken, start)
+        {
             continue;
         }
         let (part, at) = if start < before || (start == before && !caret_ends_line) {
@@ -422,6 +425,17 @@ fn left_out_breaks(
     }
     breaks[1].truncate((SELECTION_SOURCE_BYTES - selected) / LINE_BREAK.len_utf8());
     Ok(breaks)
+}
+
+/// Whether a paragraph break put back at `at` would fall strictly inside a run the redaction takes
+/// out of the text as read. A break there would cut it into pieces too short to look secret, and
+/// show both (ADR-DESK-046): an element the OS misplaces can start a block inside a key, and past
+/// the walk's budget nothing may have seen that misplacement. So the text keeps that run whole and
+/// it is redacted whole; a true block start whose two lines run together into a secret-looking
+/// token is hidden with it, which the redaction accepts. The caret's own start is measured where
+/// the caret is drawn (`caretStarts`) and keeps its break wherever it is.
+fn splits_a_find(taken: &[std::ops::Range<usize>], at: usize) -> bool {
+    taken.iter().any(|run| run.start < at && at < run.end)
 }
 
 fn caret_text(parts: &[String]) -> String {
@@ -877,12 +891,15 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         }
         let mut breaks: [Vec<usize>; 3] = Default::default();
         if let Some(starts) = window.get("paragraphStarts") {
+            // What the redaction takes out of the text as read, before any break goes back: no
+            // paragraph break goes back inside it (`splits_a_find`).
+            let taken = privacy::taken(&parts.concat()).map_err(|_| 3u32)?;
             let starts: Vec<usize> = serde_json::from_value(starts.clone()).map_err(|_| 1u32)?;
             let caret_ends_line = match window.get("caretEndsLine") {
                 None => false,
                 Some(value) => value.as_bool().ok_or(1u32)?,
             };
-            breaks = left_out_breaks(&parts, &starts, caret_ends_line)?;
+            breaks = left_out_breaks(&parts, &starts, caret_ends_line, &taken)?;
         }
         // A caret that starts a paragraph or an empty line, whose break the text before it doesn't
         // show, gets the break: Chromium gives an empty line no character and leaves out some
@@ -1661,6 +1678,29 @@ mod budget_tests {
         assert!(reply["caret"][0].as_str().unwrap().ends_with("bbb\n"));
         assert!(!reply.to_string().contains("G7h8I9j0"));
     }
+    /// A block start the OS misplaced inside a key puts no break back there: the key reaches the
+    /// redaction whole and none of it is shown. A start at the key's edge, or in words, still gets
+    /// its break.
+    #[test]
+    fn a_start_inside_a_key_puts_no_break_back() {
+        let (head, tail) = (concat!("sk", "-", "a1B2c3D4e"), "5F6g7H8i9J0k1L2");
+        let before = format!("word Key {head}");
+        let after = format!("{tail} end more");
+        let inside = before.len();
+        let edge = "word Key ".len();
+        for starts in [vec![inside], vec![inside - 4], vec![inside + 4]] {
+            let read = call(
+                json!({"caretWindow":{"parts":[before,"",after],"startKnown":true,"endKnown":true,"paragraphStarts":starts}}),
+            );
+            assert_eq!(read["parts"], json!([before, "", after]), "{starts:?}");
+            let text = call(json!({"blocks":[],"caret":read["parts"]})).to_string();
+            assert!(!text.contains(head) && !text.contains(tail), "{text}");
+        }
+        let read = call(
+            json!({"caretWindow":{"parts":[before,"",after],"startKnown":true,"endKnown":true,"paragraphStarts":[5, edge]}}),
+        );
+        assert_eq!(read["parts"][0], json!(format!("word \nKey \n{head}")));
+    }
     /// Two keys on lines of their own, the caret at the second's start, whether the break between
     /// them is the text's own or one the caret window put back: each is redacted on its own line,
     /// and neither reaches the reply, whole or in part.
@@ -1761,7 +1801,8 @@ mod budget_tests {
                         String::new()
                     ],
                     bad,
-                    false
+                    false,
+                    &[]
                 ),
                 Err(1)
             );
@@ -1770,7 +1811,8 @@ mod budget_tests {
             left_out_breaks(
                 &[String::from("é"), String::new(), String::new()],
                 &[1],
-                false
+                false,
+                &[]
             ),
             Err(1)
         );

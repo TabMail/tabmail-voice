@@ -768,6 +768,37 @@ static int run() {
             expect(!result.selectionUnavailable && result.parts[1] == "xxx" && result.parts[2].rfind(blockBreak + "x", 0) == 0,
                 "a selection ending at a line start of a dense editor keeps the break after it");
         }
+        // A key at the caret, past the budget: UI Automation misplaces a block start inside it, and
+        // a node further on has no place (or none does). The window's walk runs out before that
+        // node, and the caret's own walk never looks that far, but the core puts no break inside
+        // what the redaction takes, so the key is redacted whole. The control: the caret's nodes
+        // inline, so no line starts at the caret.
+        for (const auto& [noPlaceAfter, control] : std::vector<std::pair<bool, bool>>{{true, false}, {false, false}, {false, true}}) {
+            const std::wstring head = L"sk-a1B2c3D4e", tail = L"5F6g7H8i9J0k1L2";
+            std::vector<Node> keyTree{{0, 0, false, {}}};
+            std::wstring keyText;
+            const auto add = [&](std::wstring text, bool block) {
+                keyTree[0].children.push_back(static_cast<int>(keyTree.size()));
+                keyTree.push_back({static_cast<int>(keyText.size()), static_cast<int>(keyText.size() + text.size()), block, {}});
+                keyText += text;
+            };
+            for (int pair = 0; pair < 200; ++pair) { add(L"word ", true); add(L"word ", false); }
+            add(L"Key " + head, !control);
+            const int keyCaret = static_cast<int>(keyText.size());
+            const int misplaced = static_cast<int>(keyTree.size());
+            add(tail, !control);
+            add(L" end", true);
+            add(L" more", true);
+            keyTree[0].end = static_cast<int>(keyText.size());
+            Provider keyed(keyText, keyCaret, keyCaret);
+            result = keyed.read(layout(keyed, keyTree, misplaced, 300, noPlaceAfter ? std::optional<int>(misplaced + 2) : std::nullopt));
+            const auto redacted = core::request({{"blocks", nlohmann::json::array()}, {"caret", result.parts}}, voice_core_context_json).dump();
+            expect(!result.selectionUnavailable && (result.parts[0].empty() || result.parts[0].back() != '\n') &&
+                redacted.find(utf8(head)) == std::string::npos && redacted.find(utf8(tail)) == std::string::npos,
+                control ? "a key at the caret of a dense editor whose nodes are inline is redacted whole"
+                        : noPlaceAfter ? "a key a misplaced start splits at the caret of a dense editor, a node after it with no place, is redacted whole"
+                                       : "a key a misplaced start splits at the caret of a dense editor is redacted whole");
+        }
         viewportContracts();
         editContracts();
         accessibleTextContracts();

@@ -417,13 +417,15 @@ struct MarkerCaretSourceTests {
     /// An element placed outside the field, by indices in reverse, or by an index whose marker does
     /// not round-trip has no place, and the read then puts back no break at all, never one inside a
     /// line.
-    @Test(arguments: ["past the end", "before the start", "reversed", "unrounded"])
+    @Test(arguments: ["past the end", "before the start", "reversed", "unrounded", "no range", "no index"])
     func aGeckoElementWithNoPlaceGivesNoBreak(fault: String) throws {
         let provider = Provider(text: "First line.Second line.", selection: NSRange(location: 11, length: 0))
         let first = fault == "before the start" ? LineNode(-1, 7) : LineNode(0, 6)
         let middle = LineNode(6, 5), second = LineNode(11, fault == "past the end" ? 13 : 12)
         if fault == "reversed" { middle.reversed = true }
         if fault == "unrounded" { provider.unrounded = 6 }
+        if fault == "no range" { middle.noRange = true }
+        if fault == "no index" { provider.noIndex = 6 }
         provider.lines = [first, middle, second]
         provider.caretLine = second
         #expect(provider.read()?.parts == ["First line.", "", "Second line."])
@@ -538,8 +540,11 @@ struct MarkerCaretSourceTests {
             return CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
         }
         let caretDrawn = try rect("caretDrawn"), beforeDrawn = try rect("beforeDrawn")
-        // Synthetic text of the field's length, with its line breaks where the field has them.
-        let text = String((0..<length).map { breaks.contains($0) ? "\n" : "x" })
+        // Synthetic words of the field's length, with its line breaks where the field has them: a
+        // space after every five letters, never next to a break or the caret. One unbroken run of
+        // letters would look like a secret, and the redaction would hide it whole.
+        let space = { (offset: Int) in offset % 6 == 5 && offset != caret - 1 && offset != caret && !breaks.contains(offset + 1) }
+        let text = String((0..<length).map { breaks.contains($0) ? "\n" : space($0) ? " " : "x" })
         let provider = Provider(text: text, selection: NSRange(location: caret, length: 0))
         provider.lines = lines
         provider.caretLine = lines[path[0]].children[path[1]]
@@ -628,6 +633,116 @@ struct MarkerCaretSourceTests {
             let value = try #require(reply[name]?.string)
             #expect(!value.contains(head) && !value.contains(tail), "\(name)")
         }
+    }
+
+    /// The same key in a field of more elements than the walk's budget, so the window's walk runs
+    /// out before it reaches the element with no place, and the caret's own walk never looks that
+    /// far: the start Accessibility misplaced inside the key still puts no break there, so the key
+    /// is redacted whole. Laid out with and without an element with no place after it; and, as a
+    /// control, with the caret's elements inline pieces, so no line starts at the caret.
+    @Test(arguments: [(true, false), (false, false), (false, true)])
+    func aGeckoSecretAtTheCaretInADenseEditorIsRedactedWhole(unplaced: Bool, control: Bool) throws {
+        let head = "sk" + "-" + "a1B2c3D4e", tail = "5F6g7H8i9J0k1L2"
+        let width = 5
+        var lines: [LineNode] = []
+        for _ in 0..<200 {
+            lines.append(LineNode(lines.count * width, width))
+            lines.append(LineNode(lines.count * width, width, role: "AXStaticText"))
+        }
+        let lead = lines.count * width
+        let text = String(repeating: "word ", count: lines.count) + "Key " + head + tail + " end more"
+        let caret = lead + 4 + head.utf16.count, length = text.utf16.count
+        let provider = Provider(text: text, selection: NSRange(location: caret, length: 0))
+        let role = control ? "AXStaticText" : "AXGroup"
+        let misplaced = LineNode(caret, tail.utf16.count, role: role)
+        lines += [LineNode(lead, caret - lead, role: role), misplaced, LineNode(caret + tail.utf16.count, 4)]
+        if unplaced { lines.append(LineNode(length - 2, 10)) }
+        provider.lines = lines
+        provider.caretLine = misplaced
+        let window = try #require(provider.read())
+        #expect(!window.parts[0].hasSuffix("\n"), "a break put back inside the key")
+        var context = ScreenContext(appName: "Example Browser", bundleID: "org.example.browser")
+        context.textBeforeCaret = window.parts[0]
+        context.selectedText = window.parts[1]
+        context.textAfterCaret = window.parts[2]
+        context.appendCaret()
+        let reply = context.json
+        for name in ["textBeforeCaret", "textAfterCaret", "renderedText", "logDescription"] {
+            let value = try #require(reply[name]?.string)
+            #expect(!value.contains(head) && !value.contains(tail), "\(name)")
+        }
+    }
+
+    /// The faults that leave an element with no place, one for each reason the debug log gives.
+    private static let noPlaceFaults = ["no range", "no index", "past the end", "unrounded"]
+
+    /// A field "First line." `token` "Second line.", the caret before "Second", the element over
+    /// `token` (inside it, so its ends are its own) with no place by `fault`, or placed (`nil`).
+    private static func readWithNoPlace(_ fault: String?, token: String) -> Provider {
+        let length = token.utf16.count
+        let provider = Provider(text: "First line." + token + "Second line.", selection: NSRange(location: 11 + length, length: 0))
+        let middle = LineNode(12, fault == "past the end" ? 10 * length : length - 2)
+        if fault == "no range" { middle.noRange = true }
+        if fault == "no index" { provider.noIndex = 12 }
+        if fault == "unrounded" { provider.unrounded = 12 }
+        provider.lines = [LineNode(0, 11), middle, LineNode(11 + length, 12)]
+        provider.caretLine = provider.lines[2]
+        _ = provider.read()
+        return provider
+    }
+
+    /// Saying why an element has no place asks Accessibility nothing of its own: once the walk
+    /// asks for that element's marker range, no element is asked anything more, and the text asked
+    /// for is the same as when the element is placed.
+    @Test(arguments: noPlaceFaults)
+    func anElementsNoPlaceDiagnosticAsksNothingOfItsOwn(fault: String) throws {
+        let token = "Token" + String(repeating: "x", count: 20)
+        let read = Self.readWithNoPlace(fault, token: token), placed = Self.readWithNoPlace(nil, token: token)
+        let middle = read.lines[1].span
+        let ranged = try #require(read.asked.firstIndex(of: "range \(middle)"))
+        #expect(read.asked[(ranged + 1)...].allSatisfy { $0.hasPrefix("range ") && !$0.hasSuffix("\(middle)") }, "\(read.asked[(ranged + 1)...])")
+        #expect(read.requests == placed.requests)
+    }
+
+    /// Saying why an element has no place, or that the window's walk ran out and the caret's own
+    /// walk went on, carries none of the field's text: the reason is in the debug log (stderr)
+    /// and the text is in no line of it. Each read runs in a process of its own, as in
+    /// `theCaretsDiagnosticCarriesNoText`.
+    @Test(arguments: noPlaceFaults + ["dense"])
+    func theWalksDiagnosticsCarryNoText(read: String) async throws {
+        let token = "Token\(UUID().uuidString)"
+        let result = try await #require(processExitsWith: .success, observing: [\.standardErrorContent]) { [token = token as String, read = read as String] in
+            if read == "dense" {
+                if !Self.readsDense(token: token) { exit(1) }
+            } else {
+                _ = Self.readWithNoPlace(read, token: token)
+            }
+        }
+        let lines = String(decoding: result.standardErrorContent, as: UTF8.self).split(separator: "\n").map(String.init)
+        let reason = ["no range": "no marker range", "no index": "an end of its marker range has no index",
+                      "past the end": "outside the field's", "unrounded": "an end's index does not round-trip",
+                      "dense": "walking the caret's own blocks"][read]!
+        #expect(lines.contains { $0.contains(reason) })
+        // A piece from the token's middle: the element with no place starts inside the token.
+        let piece = String(token.dropFirst(5).prefix(12))
+        #expect(!lines.contains { $0.contains(piece) || $0.contains("First line") || $0.contains("word") })
+    }
+
+    /// A read of a field of more elements than the walk's budget, `token` on the caret's line;
+    /// whether it was read.
+    private static func readsDense(token: String) -> Bool {
+        let width = 5
+        var lines: [LineNode] = []
+        for _ in 0..<200 {
+            lines.append(LineNode(lines.count * width, width))
+            lines.append(LineNode(lines.count * width, width, role: "AXStaticText"))
+        }
+        let caret = lines.count * width
+        lines.append(LineNode(caret, token.utf16.count))
+        let provider = Provider(text: String(repeating: "word ", count: lines.count - 1) + token, selection: NSRange(location: caret, length: 0))
+        provider.lines = lines
+        provider.caretLine = lines.last
+        return provider.read() != nil
     }
 
     /// The caret's diagnostic asks Accessibility nothing of its own (it is built in every build,
@@ -772,6 +887,8 @@ struct MarkerCaretSourceTests {
         let span: NSRange
         let role: String
         var reversed = false
+        /// Accessibility gives the element no marker range.
+        var noRange = false
         var children: [LineNode] = []
         init(_ start: Int, _ length: Int, role: String = "AXGroup") {
             span = NSRange(location: start, length: length)
@@ -792,6 +909,11 @@ struct MarkerCaretSourceTests {
         var lines: [LineNode] = []
         var caretLine: LineNode?
         var unrounded: Int?
+        /// An offset whose marker Accessibility gives no index.
+        var noIndex: Int?
+        /// Everything asked of the field's elements, in order: each attribute, and each element's
+        /// marker range, with the element's span.
+        var asked: [String] = []
         /// Where Accessibility draws a range (field offsets), none when it gives no bounds; the
         /// ranges asked about.
         var drawn: ((NSRange) -> CGRect?)?
@@ -806,6 +928,7 @@ struct MarkerCaretSourceTests {
             // Read through the helper's own Accessibility wiring, over these elements.
             let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks.accessibility(field: field, attribute: { node, name in
                 self.attributesAsked.append("\(name) \((node as! LineNode).span)")
+                self.asked.append("\(name) \((node as! LineNode).span)")
                 if name == kAXChildrenAttribute as String { return node === field ? self.lines as NSArray : (node as! LineNode).children as NSArray }
                 if name == kAXRoleAttribute as String { return (node as! LineNode).role as NSString }
                 return nil
@@ -818,13 +941,16 @@ struct MarkerCaretSourceTests {
             switch name {
             case "AXStartTextMarkerForTextMarkerRange": return (argument as! NSArray)[0] as AnyObject
             case "AXEndTextMarkerForTextMarkerRange": return (argument as! NSArray)[1] as AnyObject
-            case "AXIndexForTextMarker": return argument
+            case "AXIndexForTextMarker":
+                return (argument as? NSNumber)?.intValue == noIndex.map({ origin + $0 }) ? nil : argument
             case "AXTextMarkerForIndex":
                 let offset = (argument as! NSNumber).intValue
                 return NSNumber(value: offset + (wrongMarker || offset == unrounded.map { origin + $0 } ? 1 : 0))
             case "AXTextMarkerRangeForUnorderedTextMarkers": return argument
             case "AXTextMarkerRangeForUIElement":
                 guard let node = argument as? LineNode else { return nil }
+                asked.append("range \(node.span)")
+                guard !node.noRange else { return nil }
                 let ends = [origin + node.span.location, origin + NSMaxRange(node.span)]
                 return NSArray(array: node.reversed ? ends.reversed() : ends)
             case "AXUIElementForTextMarker": return caretLine ?? field
