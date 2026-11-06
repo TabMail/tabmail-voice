@@ -567,10 +567,12 @@ other third-party work Voice ships be credited too.
   list, a word with kana gets no answer (null) and, having no capital, is no term; a word in Han alone
   is judged by Chinese's list ("会議" as "会议"). Japanese screens send no terms but the Han words
   Chinese doesn't see often.
-- **A word in parts.** FrequencyWords split words at the zero-width non-joiner, so Persian's "می‌شود"
-  is listed only as "می" and "شود". The joiners a word missing whole is split at (`JOINERS`, the
-  least seen part) now include the zero-width non-joiner and joiner beside the hyphen and the
-  apostrophes.
+- **A word in parts.** FrequencyWords split words at the zero-width non-joiner and at Catalan's middle
+  dot, so Persian's "می‌شود" is listed only as "می" and "شود", and "col·legi" only as "col" and
+  "legi". The joiners a word missing whole is split at (`JOINERS`, the least seen part) now include
+  the middle dot and the zero-width non-joiner and joiner beside the hyphen and the apostrophes
+  (`cases.json` has both). Without the middle dot, everyday Catalan words such as "col·legi" read as
+  never seen and became terms (found in review, 2026-11-06).
 - **The cutoff** is Zipf 3.5 (`screenTermCommonZipf` 35; `cases.json`'s `cutoff`), re-measured on the
   shipped list with the speech check above (392 words that need help):
 

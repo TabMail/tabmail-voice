@@ -24,11 +24,11 @@ use std::{
 use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 use unicode_script::{Script, UnicodeScript};
 
-/// The characters that join the parts of a word ("что-то", "don't", Persian's "می‌شود" with its
-/// zero-width non-joiner); a word none of the lists has is as often seen as its least seen part when
-/// every part is in one list. The lists split words at all of them, the zero-width non-joiner and
-/// joiner included.
-const JOINERS: [char; 6] = ['-', '\'', '’', 'ʼ', '\u{200C}', '\u{200D}'];
+/// The characters that join the parts of a word ("что-то", "don't", Catalan's "col·legi" with its
+/// middle dot, Persian's "می‌شود" with its zero-width non-joiner); a word none of the lists has is as
+/// often seen as its least seen part when every part is in one list. The lists split words at all of
+/// them, the middle dot and the zero-width non-joiner and joiner included.
+const JOINERS: [char; 7] = ['-', '\'', '’', 'ʼ', '\u{00B7}', '\u{200C}', '\u{200D}'];
 
 /// How a word is put in the form a list has its words in: wordfreq's `preprocess_text` for the list's
 /// language (and `simplify_chinese` for Chinese), as `languages.json` describes it.
@@ -53,8 +53,8 @@ enum Under {
     Cedillas,
 }
 
-/// A language's list: its writings (each the scripts one word may mix: Japanese's Han and kana;
-/// Serbian's Latin, or its Cyrillic) and its words' form, one the lists described alike share.
+/// A language's list: its writings (each the scripts one word may mix: Serbian's Latin, or its
+/// Cyrillic) and its words' form, one the lists described alike share.
 struct List {
     writings: Vec<HashSet<Script>>,
     form: Arc<Form>,
@@ -238,8 +238,8 @@ fn listed_form(word: &str, form: &Form) -> String {
 }
 
 /// How often a word in a listed form is seen, in Zipf tenths: its own entry, else its least seen
-/// part when every part joined by a hyphen, an apostrophe or a zero-width (non-)joiner has one; 0 when
-/// neither.
+/// part when every part joined by a hyphen, an apostrophe, a middle dot or a zero-width (non-)joiner
+/// has one; 0 when neither.
 fn seen(map: &Map<Vec<u8>>, form: &str) -> u64 {
     if let Some(tenths) = map.get(form) {
         return tenths;

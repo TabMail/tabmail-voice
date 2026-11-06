@@ -16,7 +16,7 @@ licences named here follow the list.
 
 - **Source:** https://www.chromium.org
 - **Licence:** BSD 3-Clause License and its components' licences
-- **Used for:** Electron's browser engine. Its components and their licences, FFmpeg (LGPL 2.1) among them, are listed in `LICENSES.chromium.html`, which ships with the app.
+- **Used for:** Electron's browser engine. Its components and their licences, FFmpeg (LGPL 2.1) among them, are listed in `LICENSES.chromium.html`, which ships with the app on Windows and Linux.
 
 ## React
 
@@ -671,4 +671,4 @@ fst is also offered under the Unlicense (https://unlicense.org); the MIT License
 
 ## Academic Free License 2.1
 
-libdbus's licence: https://opensource.org/license/afl-2-1 (the text ships in libdbus's `COPYING`).
+libdbus's licence, which its source's `COPYING` names: https://opensource.org/license/afl-2-1.

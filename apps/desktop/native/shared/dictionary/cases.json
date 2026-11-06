@@ -661,6 +661,19 @@
       ]
     },
     {
+      "name": "Catalan words spelled with the middle dot, which the list has only in parts, are seen as their least seen part",
+      "words": [
+        "col·legi",
+        "Pel·lícula",
+        "il·lusió"
+      ],
+      "zipf": [
+        42,
+        48,
+        41
+      ]
+    },
+    {
       "name": "Romanian s and t with a cedilla are its letters with a comma below",
       "words": [
         "şi",

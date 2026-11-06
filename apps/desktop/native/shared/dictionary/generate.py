@@ -55,9 +55,11 @@ CLDR = f"https://raw.githubusercontent.com/unicode-org/cldr-json/{CLDR_VERSION}/
 FREQUENCY_WORDS = "525f9b560de45753a5ea01069454e72e9aa541c6"
 FREQUENCY_LIST = f"https://raw.githubusercontent.com/hermitdave/FrequencyWords/{FREQUENCY_WORDS}/content/2018/{{code}}/{{code}}_full.txt"
 MIN_ZIPF = 2.5
-# Inside a word: apostrophes ("don't"), Catalan's middle dot ("col·lecció"), and the zero-width
-# non-joiner and joiner Persian, Hindi and Bengali spell words with ("می‌شود").
-INNER = "'’·\u200c\u200d"
+# Inside a word: apostrophes ("don't"). FrequencyWords splits words at a hyphen, Catalan's middle
+# dot ("col·legi") and the zero-width non-joiner and joiner Persian, Hindi and Bengali spell words
+# with ("می‌شود"), so its lists hold only their parts; the lookup sees such a word as its least seen
+# part.
+INNER = "'’"
 HERE = Path(__file__).resolve().parent
 
 # The lists, each with the CLDR locales whose letters name its scripts ("sh" is wordfreq's
@@ -188,8 +190,8 @@ def build(language: str, scripts: list[str]) -> dict[str, int]:
         written = [script(char) for char in word if unicodedata.category(char)[0] in "LM"]
         if not written or any(name not in scripts for name in written if name is not None) or all(name is None for name in written):
             continue
-        # Letters and marks only, besides the apostrophes inside a word ("don't") and Catalan's
-        # middle dot ("col·lecció"); no digit, no punctuation.
+        # Letters and marks only, besides the apostrophes inside a word ("don't"); no digit, no
+        # punctuation.
         if any(unicodedata.category(char)[0] not in "LM" and char not in INNER for char in word) or word[0] in INNER or word[-1] in INNER:
             continue
         kept[word] = max(kept.get(word, 0), tenths)
