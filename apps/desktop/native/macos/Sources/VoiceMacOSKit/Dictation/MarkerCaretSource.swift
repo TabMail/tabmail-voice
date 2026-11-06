@@ -89,11 +89,26 @@ enum MarkerCaretSource {
             func roundTrips(_ offset: Int) -> Bool {
                 parameterized("AXTextMarkerForIndex", NSNumber(value: offset)).flatMap(index) == offset
             }
+            // Why an element has no place, for the debug log: places relative to the caret only.
             func span(_ node: AnyObject) -> NSRange? {
-                guard let whole = blocks.range(node),
-                      let first = parameterized("AXStartTextMarkerForTextMarkerRange", whole).flatMap(index),
-                      let last = parameterized("AXEndTextMarkerForTextMarkerRange", whole).flatMap(index),
-                      origin <= first, first <= last, last <= positions[1], roundTrips(first), roundTrips(last) else { return nil }
+                guard let whole = blocks.range(node) else {
+                    HelperLog.debug("ScreenContext: an element has no place: no marker range")
+                    return nil
+                }
+                guard let first = parameterized("AXStartTextMarkerForTextMarkerRange", whole).flatMap(index),
+                      let last = parameterized("AXEndTextMarkerForTextMarkerRange", whole).flatMap(index) else {
+                    HelperLog.debug("ScreenContext: an element has no place: an end of its marker range has no index")
+                    return nil
+                }
+                let place = "\(first - origin - selection.location)+\(last - first) from the caret"
+                guard origin <= first, first <= last, last <= positions[1] else {
+                    HelperLog.debug("ScreenContext: an element has no place: at \(place), outside the field's \(positions[1] - origin) characters or reversed")
+                    return nil
+                }
+                guard roundTrips(first), roundTrips(last) else {
+                    HelperLog.debug("ScreenContext: an element has no place: at \(place), an end's index does not round-trip")
+                    return nil
+                }
                 return NSRange(location: first - origin, length: last - first)
             }
             let starts = blockStarts(in: blocks.field, around: selection, within: limits.paragraphStartUnits,
@@ -208,10 +223,20 @@ enum MarkerCaretSource {
             return path[depth][child]
         }
         var reply = blocks(["start": ["elements": elements]])
+        // How far the walk got, for the debug log when it stops incomplete.
+        var looked = 0, unplaced = false, opened = 0
         while let current = reply {
             if current["start"] as? Bool == true, let placed { starts.insert(placed) }
-            if let done = current["done"] as? Bool { return done ? starts.sorted() : nil }
-            guard let state = current["state"], let asked = current["ask"] as? [String: Any] else { return nil }
+            if let done = current["done"] as? Bool {
+                if !done {
+                    HelperLog.debug("ScreenContext: the block walk stopped incomplete after \(looked) elements placed and \(opened) opened, \(starts.count) starts found: \(unplaced ? "the last element has no place" : "the budget of \(elements) ran out")")
+                }
+                return done ? starts.sorted() : nil
+            }
+            guard let state = current["state"], let asked = current["ask"] as? [String: Any] else {
+                HelperLog.debug("ScreenContext: the block walk got a reply it cannot follow after \(looked) elements placed")
+                return nil
+            }
             if let wanted = asked["children"] as? [String: Any] {
                 let parent: Node
                 if wanted["depth"] is NSNull {
@@ -222,10 +247,13 @@ enum MarkerCaretSource {
                     parent = found
                 }
                 let nodes = children(parent)
+                opened += 1
                 path.append(nodes)
                 reply = blocks(["state": state, "children": nodes.count])
             } else if let wanted = asked["place"] as? [String: Any], let element = node(wanted) {
+                looked += 1
                 guard let place = span(element) else {
+                    unplaced = true
                     reply = blocks(["state": state, "placed": NSNull()])
                     continue
                 }
