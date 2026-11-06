@@ -484,7 +484,11 @@ redaction takes out of the text as read, before any break goes in (`context::spl
 every start, whichever walk found it: the key stays whole and is redacted whole. A true block start
 whose two lines run together into something secret-looking loses its break with it, and is hidden;
 hiding too much is what the redaction accepts (ADR-DESK-046). The caret's own start, measured where
-the caret is drawn (`caretStarts`), keeps its break wherever it is, as before. Each
+the caret is drawn (`caretStarts`), keeps its break wherever it is, as before. Accepted limitation
+(owner, 2026-11-06): the check sees only the field's text and only what the redaction takes, so a
+misplaced start inside a label (`pass|word = …`), or in a value whose label is in another block,
+can still keep the secret from being recognized. Main has the same exposure for fields walked within
+the budget and for the caret's own start; the fix is #365. Each
 place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
 selection's own), and the walk's end names whose starts the helper keeps. The two walks together
 place at most the budget and the selection's own. Walking the selection first, on the one budget,
