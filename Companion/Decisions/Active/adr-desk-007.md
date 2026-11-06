@@ -457,3 +457,48 @@ OS gives the same ambiguity sends the same two rectangles. Windows (UI Automatio
 with Firefox 159 and 157 on a CodeMirror-shaped page, the caret on an empty line, at the end of the
 line above and at the start of the line below all read right on main (2026-11-05), once the browser's accessibility was running when the field took the focus (#357 is the Windows read before then). The Chromium
 read is unchanged: its caret marker on an empty line is in that line's element (2026-10-06).
+
+**Amendment 2026-11-05 (later) — a walk of the caret's own blocks when the window's runs out (#355).**
+On the owner's real document the rule above decided right ("the caret starts its text") and the
+dictation was still spaced: the block walk gave no starts at all. Overleaf's code editor gives each
+highlighted piece of a line its own element, so the 30 lines in the window held 481 elements,
+past the walk's budget of 300 (`caretSourceElements`), and a walk that runs out gave no starts
+(logged: `the block walk stopped incomplete after 300 elements placed and 16 opened, 15 starts
+found`). The test page above had three short lines and never reached the budget. The core's walk of
+the window is unchanged, on the whole budget, and a window it walks within the budget keeps all its
+starts. When it runs out of budget, the core walks the selection alone, from the field, on a budget
+of its own (`SELECTION_ELEMENTS`, 64, or the window's
+when smaller): halving down to the selection costs a few looks per level, and finds the start the
+dictation's spacing depends on. Those starts are kept, and the text shown elsewhere reads as it did
+before #339, its lines run together; when the selection's walk runs out too, there are no starts,
+as before. An element with no place still ends either walk with no starts, as the #339 rule says:
+the OS misplaced something, and the other elements' places can be misplaced with it, so a start kept
+then could fall inside a line, and inside a secret on it (ADR-DESK-046). Handing over to the
+selection's walk there too was tried and rejected in review: a misplaced start at the caret split a
+key that main redacts whole. Past the budget, though, the window's walk can run out before it
+reaches an element with no place, and the selection's walk, narrow by design, never looks that far:
+a start the OS misplaced inside a key at the caret was kept, and the break put back there cut the
+key into two halves too short to look secret, both shown (found in review, with the test layout
+above behind 400 dense elements). So the core puts no paragraph break back strictly inside what the
+redaction takes out of the text as read, before any break goes in (`context::splits_a_find`), for
+every start, whichever walk found it: the key stays whole and is redacted whole. A true block start
+whose two lines run together into something secret-looking loses its break with it, and is hidden;
+hiding too much is what the redaction accepts (ADR-DESK-046). A start the provider itself reports
+at the caret (`caretStarts`, sent only when no walk gave starts) keeps its break wherever it is, as
+before; a caret start a walk finds is checked like any other. Accepted limitation
+(owner, 2026-11-06): the check sees only the field's text and only what the redaction takes, so a
+misplaced start inside a label (`pass|word = …`), or in a value whose label is in another block,
+can still keep the secret from being recognized. Main has the same exposure for fields walked within
+the budget and for the caret's own start; the fix is #365. Each
+place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
+selection's own), and the walk's end names whose starts the helper keeps. The two walks together
+place at most the budget and the selection's own. Walking the selection first, on the one budget,
+was tried and rejected in review: it spent looks a window needed, so a field of 290 short lines read
+whole before kept only the caret's start. The same walk serves the Chromium value read on the Mac
+(`ScreenContextReader.valueCaretWindow`) and Windows' rich editors, where the selection's starts now
+stand in for the provider's own paragraph answer when the window's walk runs out. The Mac and
+Windows walks follow the asks; Linux reads a
+rich editor through its own elements and has no such walk. The owner's field, as Accessibility gave
+it (roles and places, no text), is the test fixture `native/shared/context/gecko-code-editor-tree.json`,
+replayed through the Mac read: red before the change, with the same log line as the owner's
+dictation.

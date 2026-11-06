@@ -10,6 +10,13 @@
 //! the first that ends at or after the window's start is found by halving (a long field costs a
 //! few looks), then each in turn until one starts past the window's end, going into each block.
 //! A block starts a line, and so does what follows one; only starts within the window count.
+//! When that walk runs out of budget, a second walks the selection alone (the window `caret`: its own ends, a few looks per level) on a small budget of
+//! its own, so the starts at the caret, which decide where a dictation goes, are still found: a
+//! code editor gives each highlighted piece of a line its own element, more than the budget holds
+//! in the window (Overleaf in Firefox, 481 elements in 30 lines, 2026-11-05, #355). A window the
+//! budget holds is walked as before, and its starts are all kept. An element with no place ends
+//! either walk with no starts, as before: the OS misplaced something, and a start kept then could
+//! fall inside a line, and inside a secret on it (ADR-DESK-046).
 //!
 //! - `{"start": {"elements": n}}`: a walk placing at most `n` elements.
 //! - `{"state": S, "children": count}`: the children of the element last asked for.
@@ -19,10 +26,14 @@
 //!   `scan`, `startsPast` (it starts after the window's end) and `startsWithin` (it starts at or
 //!   after the window's start).
 //!
-//! Each reply is `{"state", "ask", "start"}`, or `{"done": complete, "start"}` at the end:
-//! `start` says the element just placed starts a line, and `ask` is `{"children": {"depth",
+//! Each reply is `{"state", "ask", "start"}`, or `{"done": complete, "starts"?, "start"}` at the
+//! end: `start` says the element just placed starts a line, and `ask` is `{"children": {"depth",
 //! "child"}}` (the children of that child of the element at that depth of the walk; depth null for
-//! the field itself) or `{"place": {"depth", "child", "phase"}}`. A walk that is not complete gives no starts.
+//! the field itself, which also begins the selection's walk) or `{"place": {"depth", "child",
+//! "phase", "window"}}`, the facts compared with that window's ends (`shown`: the window's;
+//! `caret`: the selection's). A complete walk names whose starts to keep (`starts`: `shown` or
+//! `caret`; the helper keeps each start with the window of the ask that placed it); one that is not
+//! complete gives no starts.
 //!
 //! `{"endsLine": {"startsBefore", "reachesSelection", "caret"?, "before"?}}` → `{"endsLine": bool}`:
 //! a selection whose start is in an element starting before it and reaching it is at the end of
@@ -87,7 +98,14 @@ struct Walk {
     stack: Vec<Frame>,
     /// The child last asked about, and whether for its children (else its place).
     asked: (usize, bool),
+    /// Whether this is the selection's walk, after the window's did not end.
+    caret: bool,
 }
+
+/// The most elements the selection's walk places: a few looks for each level of the field the
+/// selection is in (halving each element's children down to it), more than a collapsed caret
+/// needs in the deepest editor measured. A selection over more ends with no starts, as before.
+const SELECTION_ELEMENTS: usize = 64;
 
 impl Walk {
     fn read(state: &Value) -> Result<Self, u32> {
@@ -120,6 +138,11 @@ impl Walk {
                 number(&state["asked"]["child"])?,
                 flag(&state["asked"]["children"])?,
             ),
+            caret: match state["window"].as_str() {
+                Some("shown") => false,
+                Some("caret") => true,
+                _ => return Err(1),
+            },
         };
         if walk.looks > walk.elements || walk.stack.len() > walk.elements + 1 {
             return Err(1);
@@ -137,14 +160,38 @@ impl Walk {
             })
             .collect();
         json!({"elements": self.elements, "looks": self.looks, "stack": stack,
-            "asked": {"child": self.asked.0, "children": self.asked.1}})
+            "asked": {"child": self.asked.0, "children": self.asked.1}, "window": self.window()})
+    }
+
+    fn window(&self) -> &'static str {
+        if self.caret { "caret" } else { "shown" }
+    }
+
+    /// The end of a walk. The window's: complete, its starts; out of budget, the selection's walk
+    /// begins from the field, on its own budget. The selection's: complete, its starts; out of
+    /// budget, none.
+    fn end(&mut self, complete: bool, start: bool) -> Value {
+        match (self.caret, complete) {
+            (false, true) => json!({"done": true, "starts": "shown", "start": start}),
+            (false, false) => {
+                self.caret = true;
+                self.elements = self.elements.min(SELECTION_ELEMENTS);
+                self.looks = 0;
+                self.stack.clear();
+                self.asked = (0, true);
+                json!({"state": self.state(), "ask": {"children": {"depth": null, "child": 0}},
+                    "start": start})
+            }
+            (true, true) => json!({"done": true, "starts": "caret", "start": start}),
+            (true, false) => json!({"done": false, "start": start}),
+        }
     }
 
     /// The next element to ask about, or the end.
     fn advance(&mut self, start: bool) -> Value {
         loop {
             let Some(frame) = self.stack.last_mut() else {
-                return json!({"done": true, "start": start});
+                return self.end(true, start);
             };
             let child = match frame.scan {
                 None if frame.lower < frame.upper => (frame.lower + frame.upper) / 2,
@@ -166,16 +213,17 @@ impl Walk {
             };
             self.looks += 1;
             if self.looks > self.elements {
-                return json!({"done": false, "start": start});
+                return self.end(false, start);
             }
             let depth = self.stack.len() - 1;
             self.asked = (child, false);
             return json!({"state": self.state(), "ask": {"place": {"depth": depth, "child": child,
-                "phase": phase}}, "start": start});
+                "phase": phase, "window": self.window()}}, "start": start});
         }
     }
 
     fn placed(&mut self, facts: &Value) -> Result<Value, u32> {
+        // An element with no place: no starts from either walk.
         if facts.is_null() {
             return Ok(json!({"done": false, "start": false}));
         }
@@ -249,6 +297,7 @@ pub(crate) fn process(input: &Value) -> Result<Value, u32> {
             looks: 0,
             stack: Vec::new(),
             asked: (0, true),
+            caret: false,
         };
         return Ok(
             json!({"state": walk.state(), "ask": {"children": {"depth": null, "child": 0}},

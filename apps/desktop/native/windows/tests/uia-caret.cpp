@@ -629,17 +629,20 @@ static int run() {
         result = noLines.read();
         expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?", "a provider without lines gets no break");
         // A rich editor's blocks, as Chromium lays them out, give back the breaks its text leaves
-        // out: the field's tree (node 0), where each node's text is, and the element the caret is in.
+        // out: the field's tree (node 0), where each node's text is, and the element the caret is in;
+        // `noPlace`, a node UI Automation gives no range for.
         struct Node { int start, end; bool block; std::vector<int> children; };
-        const auto layout = [](Provider& provider, const std::vector<Node>& nodes, std::optional<int> caretNode, size_t elements = 300) {
-            return UiaCaretSource::LayoutRead([&provider, nodes, caretNode, elements](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)
+        const auto layout = [](Provider& provider, const std::vector<Node>& nodes, std::optional<int> caretNode, size_t elements = 300,
+                               std::optional<int> noPlace = std::nullopt) {
+            return UiaCaretSource::LayoutRead([&provider, nodes, caretNode, elements, noPlace](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)
                 -> std::optional<UiaCaretSource::Layout> {
                 const auto place = [&](int node) {
+                    if (noPlace && node == *noPlace) return ComPtr<IUIAutomationTextRange>();
                     auto* range = provider.range(provider.docStart + nodes[node].start, provider.docStart + nodes[node].end);
                     range->block = true;
                     return ComPtr<IUIAutomationTextRange>(range);
                 };
-                auto starts = UiaCaretSource::blockStarts(0, low, high, elements, [&](int node) { return nodes[node].children; },
+                auto starts = UiaCaretSource::blockStarts(0, selected, low, high, elements, [&](int node) { return nodes[node].children; },
                     [&](int node) { return nodes[node].block; }, place);
                 if (!starts) return std::nullopt;
                 return UiaCaretSource::Layout{std::move(*starts), UiaCaretSource::endsLine(caretNode ? place(*caretNode).Get() : nullptr, selected)};
@@ -667,6 +670,13 @@ static int run() {
         result = misread.read(layout(misread, gmailTree, 4));
         expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
             "a provider whose text between a block and the caret disagrees gives no starts");
+        // A node with no place, off the caret's own path (the first line), ends the walk with no
+        // starts: UI Automation misplaced something, and a start kept then could fall inside a line,
+        // and inside a secret on it.
+        Provider unplaced(gmail, 55, 55);
+        result = unplaced.read(layout(unplaced, gmailTree, 4, 300, 1));
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
+            "a node with no place off the caret's path gives no starts, and no break");
         // A block start in a selection gets its break there; one after it, in the text after it.
         Provider inSelection(L"First paragraphSecondThird", 10, 18);
         result = inSelection.read(layout(inSelection, {{0, 26, false, {1, 2, 3}}, {0, 15, true, {}}, {15, 21, true, {}}, {21, 26, true, {}}}, 1));
@@ -694,6 +704,101 @@ static int run() {
         expect(!result.selectionUnavailable && result.parts[0] == std::string(400, 'a') + std::string(static_cast<size_t>(units) + 1000, 'b') + blockBreak + "cc" &&
             result.parts[2] == "ccc" + blockBreak + std::string(static_cast<size_t>(units) + 100, 'd') + std::string(400, 'e'),
             "only the block starts near the caret are looked at");
+        // A code editor gives each highlighted piece of a line its own element (Overleaf in Firefox,
+        // #355): more than the walk's budget in the window. When the window's walk runs out, the
+        // caret's own blocks are walked, so the line it starts keeps its break before the caret,
+        // and no other line gets one.
+        std::vector<Node> denseTree{{0, 0, false, {}}};
+        std::wstring denseText;
+        for (int line = 0; line < 40; ++line) {
+            const int id = static_cast<int>(denseTree.size());
+            denseTree[0].children.push_back(id);
+            denseTree.push_back({static_cast<int>(denseText.size()), static_cast<int>(denseText.size()) + 16 * 5, true, {}});
+            for (int piece = 0; piece < 16; ++piece) {
+                denseTree[static_cast<size_t>(id)].children.push_back(static_cast<int>(denseTree.size()));
+                denseTree.push_back({static_cast<int>(denseText.size()), static_cast<int>(denseText.size()) + 5, false, {}});
+                denseText += L"piece";
+            }
+        }
+        denseTree[0].end = static_cast<int>(denseText.size());
+        const int lineStart = 25 * 16 * 5;
+        Provider dense(denseText, lineStart, lineStart);
+        result = dense.read(layout(dense, denseTree, 1 + 25 * 17));
+        expect(!result.selectionUnavailable && result.parts[0].size() > blockBreak.size() &&
+            result.parts[0].compare(result.parts[0].size() - blockBreak.size(), blockBreak.size(), blockBreak) == 0 &&
+            std::count(result.parts[0].begin(), result.parts[0].end(), '\n') == 1 && result.parts[2].rfind("piece", 0) == 0,
+            "a caret starting a line of a dense editor keeps its break past the element budget");
+        // Lines and inline pieces in turn, each a line's start (a piece follows a line), more than
+        // the budget: the caret's start is kept alone, even when the last node the window's walk
+        // placed starts a line in the very reply that begins the caret's (laid out both ways, so
+        // the walk runs out on a line and on a piece).
+        for (const bool pieceFirst : {false, true}) {
+            std::vector<Node> turns{{0, 0, false, {}}};
+            std::wstring turnsText;
+            const auto add = [&](bool block) {
+                turns[0].children.push_back(static_cast<int>(turns.size()));
+                turns.push_back({static_cast<int>(turnsText.size()), static_cast<int>(turnsText.size()) + 5, block, {}});
+                turnsText += L"xxxxx";
+            };
+            if (pieceFirst) add(false);
+            int caretLine = 0;
+            for (int pair = 0; pair < 200; ++pair) {
+                if (pair == 180) caretLine = static_cast<int>(turns.size());
+                add(true);
+                add(false);
+            }
+            turns[0].end = static_cast<int>(turnsText.size());
+            const int caretAt = turns[static_cast<size_t>(caretLine)].start;
+            Provider alternating(turnsText, caretAt, caretAt);
+            result = alternating.read(layout(alternating, turns, caretLine));
+            expect(!result.selectionUnavailable && result.parts[0].size() > blockBreak.size() &&
+                result.parts[0].compare(result.parts[0].size() - blockBreak.size(), blockBreak.size(), blockBreak) == 0 &&
+                std::count(result.parts[0].begin(), result.parts[0].end(), '\n') == 1 && result.parts[2].rfind("xxxxx", 0) == 0,
+                pieceFirst ? "a start the window's walk found as it ran out on a piece is not the caret's"
+                           : "a start the window's walk found as it ran out on a line is not the caret's");
+            if (pieceFirst) continue;
+            // A selection over a line start: the selection's own walk keeps that start, so the
+            // selected text keeps its break.
+            Provider selectedOver(turnsText, caretAt - 3, caretAt + 2);
+            result = selectedOver.read(layout(selectedOver, turns, caretLine - 1));
+            expect(!result.selectionUnavailable && result.parts[1] == "xxx" + blockBreak + "xx",
+                "a selection over a line start of a dense editor keeps its break");
+            Provider selectedTo(turnsText, caretAt - 3, caretAt);
+            result = selectedTo.read(layout(selectedTo, turns, caretLine - 1));
+            expect(!result.selectionUnavailable && result.parts[1] == "xxx" && result.parts[2].rfind(blockBreak + "x", 0) == 0,
+                "a selection ending at a line start of a dense editor keeps the break after it");
+        }
+        // A key at the caret, past the budget: UI Automation misplaces a block start inside it, and
+        // a node further on has no place (or none does). The window's walk runs out before that
+        // node, and the caret's own walk never looks that far, but the core puts no break inside
+        // what the redaction takes, so the key is redacted whole. The control: the caret's nodes
+        // inline, so no line starts at the caret.
+        for (const auto& [noPlaceAfter, control] : std::vector<std::pair<bool, bool>>{{true, false}, {false, false}, {false, true}}) {
+            const std::wstring head = L"sk-a1B2c3D4e", tail = L"5F6g7H8i9J0k1L2";
+            std::vector<Node> keyTree{{0, 0, false, {}}};
+            std::wstring keyText;
+            const auto add = [&](std::wstring text, bool block) {
+                keyTree[0].children.push_back(static_cast<int>(keyTree.size()));
+                keyTree.push_back({static_cast<int>(keyText.size()), static_cast<int>(keyText.size() + text.size()), block, {}});
+                keyText += text;
+            };
+            for (int pair = 0; pair < 200; ++pair) { add(L"word ", true); add(L"word ", false); }
+            add(L"Key " + head, !control);
+            const int keyCaret = static_cast<int>(keyText.size());
+            const int misplaced = static_cast<int>(keyTree.size());
+            add(tail, !control);
+            add(L" end", true);
+            add(L" more", true);
+            keyTree[0].end = static_cast<int>(keyText.size());
+            Provider keyed(keyText, keyCaret, keyCaret);
+            result = keyed.read(layout(keyed, keyTree, misplaced, 300, noPlaceAfter ? std::optional<int>(misplaced + 2) : std::nullopt));
+            const auto redacted = core::request({{"blocks", nlohmann::json::array()}, {"caret", result.parts}}, voice_core_context_json).dump();
+            expect(!result.selectionUnavailable && (result.parts[0].empty() || result.parts[0].back() != '\n') &&
+                redacted.find(utf8(head)) == std::string::npos && redacted.find(utf8(tail)) == std::string::npos,
+                control ? "a key at the caret of a dense editor whose nodes are inline is redacted whole"
+                        : noPlaceAfter ? "a key a misplaced start splits at the caret of a dense editor, a node after it with no place, is redacted whole"
+                                       : "a key a misplaced start splits at the caret of a dense editor is redacted whole");
+        }
         viewportContracts();
         editContracts();
         accessibleTextContracts();

@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <map>
+#include <string>
 #include <vector>
 #include "helper_config.h"
 #include "com.h"
@@ -116,7 +118,7 @@ public:
                 return range;
             };
             const auto elements = core::request({{"limits", true}}, voice_core_context_json).at("caretSourceElements").get<size_t>();
-            auto starts = blockStarts(Node(field), low, high, elements, children, isBlock, place);
+            auto starts = blockStarts(Node(field), selected, low, high, elements, children, isBlock, place);
             if (!starts) return std::nullopt;
             // The element the selection's start is in tells the end of a line from the start of
             // the block after it.
@@ -136,15 +138,22 @@ public:
     // finds them: the shared core walks the field (`blockStarts`, ADR-DESK-054) and decides which
     // node to place, which start a line and when the walk ends; this says how each placed node's
     // range compares with the window (`low`'s start to `high`'s end) and whether it is a block.
-    // None when more than `elements` nodes would be placed, or one can't be.
+    // The window's when its walk ends within `elements` nodes; when the budget runs out (a code
+    // editor gives each highlighted piece of a line its own element), the selection's own, from
+    // the core's walk of it alone on a smaller budget. None when a node can't be placed in either
+    // walk, or the selection's runs out too.
     template <class Node, class Children, class IsBlock, class Place>
-    static std::optional<std::vector<ComPtr<IUIAutomationTextRange>>> blockStarts(const Node& field, IUIAutomationTextRange* low, IUIAutomationTextRange* high,
+    static std::optional<std::vector<ComPtr<IUIAutomationTextRange>>> blockStarts(const Node& field, IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high,
         size_t elements, const Children& children, const IsBlock& isBlock, const Place& place) {
         const UiaCaretSource reader;
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
         const auto ask = [](const nlohmann::json& request) { return core::request({{"blockStarts", request}}, voice_core_context_json); };
-        std::vector<ComPtr<IUIAutomationTextRange>> starts;
+        // The core walks the whole window (`shown`), and when that walk runs out of budget, the
+        // selection alone (`caret`): each start is kept with the window of the ask that placed it, and the
+        // core says whose starts to keep.
+        std::map<std::string, std::vector<ComPtr<IUIAutomationTextRange>>> starts;
         ComPtr<IUIAutomationTextRange> placed;
+        std::string placedIn;
         // The children of each node the walk is in, the field's first.
         std::vector<std::vector<Node>> path;
         const auto node = [&](const nlohmann::json& asked) -> Node {
@@ -155,10 +164,12 @@ public:
         };
         auto reply = ask({{"start", {{"elements", elements}}}});
         while (true) {
-            if (reply.value("start", false) && placed) starts.push_back(placed);
+            if (reply.value("start", false) && placed) starts[placedIn].push_back(placed);
             if (reply.contains("done")) {
                 if (!reply.at("done").get<bool>()) return std::nullopt;
-                return starts;
+                const auto kept = reply.at("starts").get<std::string>();
+                if (kept != "caret" && kept != "shown") throw std::runtime_error("block walk kept no pass");
+                return starts[kept];
             }
             const auto& asked = reply.at("ask");
             if (asked.contains("children")) {
@@ -172,17 +183,23 @@ public:
             }
             const auto& wanted = asked.at("place");
             const auto element = node(wanted);
+            const auto window = wanted.at("window").get<std::string>();
+            if (window != "caret" && window != "shown") throw std::runtime_error("block walk asked for no window");
+            // The window's ends bound its walk; the selection's own, the selection's.
+            IUIAutomationTextRange* const from = window == "caret" ? selected : low;
+            IUIAutomationTextRange* const to = window == "caret" ? selected : high;
             placed = place(element);
+            placedIn = window;
             if (!placed) {
                 reply = ask({{"state", reply.at("state")}, {"placed", nullptr}});
                 continue;
             }
             // Each comparison is a call across processes: only those the walk's phase needs.
             nlohmann::json facts{{"block", isBlock(element)}};
-            if (wanted.at("phase") == "halve") facts["endsBefore"] = reader.compare(placed.Get(), end, low, start) < 0;
+            if (wanted.at("phase") == "halve") facts["endsBefore"] = reader.compare(placed.Get(), end, from, start) < 0;
             else {
-                facts["startsPast"] = reader.compare(placed.Get(), start, high, end) > 0;
-                facts["startsWithin"] = reader.compare(placed.Get(), start, low, start) >= 0;
+                facts["startsPast"] = reader.compare(placed.Get(), start, to, end) > 0;
+                facts["startsWithin"] = reader.compare(placed.Get(), start, from, start) >= 0;
             }
             reply = ask({{"state", reply.at("state")}, {"placed", facts}});
         }

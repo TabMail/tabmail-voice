@@ -89,11 +89,26 @@ enum MarkerCaretSource {
             func roundTrips(_ offset: Int) -> Bool {
                 parameterized("AXTextMarkerForIndex", NSNumber(value: offset)).flatMap(index) == offset
             }
+            // Why an element has no place, for the debug log: places relative to the caret only.
             func span(_ node: AnyObject) -> NSRange? {
-                guard let whole = blocks.range(node),
-                      let first = parameterized("AXStartTextMarkerForTextMarkerRange", whole).flatMap(index),
-                      let last = parameterized("AXEndTextMarkerForTextMarkerRange", whole).flatMap(index),
-                      origin <= first, first <= last, last <= positions[1], roundTrips(first), roundTrips(last) else { return nil }
+                guard let whole = blocks.range(node) else {
+                    HelperLog.debug("ScreenContext: an element has no place: no marker range")
+                    return nil
+                }
+                guard let first = parameterized("AXStartTextMarkerForTextMarkerRange", whole).flatMap(index),
+                      let last = parameterized("AXEndTextMarkerForTextMarkerRange", whole).flatMap(index) else {
+                    HelperLog.debug("ScreenContext: an element has no place: an end of its marker range has no index")
+                    return nil
+                }
+                let place = "\(first - origin - selection.location)+\(last - first) from the caret"
+                guard origin <= first, first <= last, last <= positions[1] else {
+                    HelperLog.debug("ScreenContext: an element has no place: at \(place), outside the field's \(positions[1] - origin) characters or reversed")
+                    return nil
+                }
+                guard roundTrips(first), roundTrips(last) else {
+                    HelperLog.debug("ScreenContext: an element has no place: at \(place), an end's index does not round-trip")
+                    return nil
+                }
                 return NSRange(location: first - origin, length: last - first)
             }
             let starts = blockStarts(in: blocks.field, around: selection, within: limits.paragraphStartUnits,
@@ -194,13 +209,20 @@ enum MarkerCaretSource {
     /// A block is an element `isBlock` says is one (a <div> is a group; inline formatting and links
     /// are not). `span` is an element's place in the field's text. Chromium's own paragraph answers
     /// can't be used: walked from a break they give each run of text (a word edited apart) as a
-    /// paragraph. Nil when an element has no place, or past `elements` looks.
+    /// paragraph. The window's starts when its walk ends within `elements` looks; when the budget
+    /// runs out (a code editor gives each highlighted piece of a line its own element), the
+    /// selection's own, from a walk of it alone on the core's smaller budget. Nil when an element
+    /// has no place in either walk, or the selection's runs out too.
     static func blockStarts<Node>(in field: Node, around range: NSRange, within units: Int, elements: Int,
                                   children: (Node) -> [Node], isBlock: (Node) -> Bool, span: (Node) -> NSRange?) -> [Int]? {
-        let low = range.location - units, high = NSMaxRange(range) + units
+        // The core walks the whole window (`shown`), and when that walk runs out of budget, the
+        // selection alone (`caret`): each start is kept with the window of the ask that placed it, and the
+        // core says whose starts to keep.
+        let windows = ["caret": (low: range.location, high: NSMaxRange(range)),
+                       "shown": (low: range.location - units, high: NSMaxRange(range) + units)]
         // The children of each element the walk is in, the field's first.
         var path: [[Node]] = []
-        var starts = Set<Int>(), placed: Int?
+        var starts: [String: Set<Int>] = [:], placed: (window: String, at: Int)?
         func node(_ asked: [String: Any]) -> Node? {
             guard let depth = asked["depth"] as? Int, let child = asked["child"] as? Int,
                   depth >= 0, depth < path.count, child >= 0, child < path[depth].count else { return nil }
@@ -208,13 +230,34 @@ enum MarkerCaretSource {
             return path[depth][child]
         }
         var reply = blocks(["start": ["elements": elements]])
+        // How far each walk got, for the debug log when the window's does not end.
+        var looked = 0, unplaced = false, opened = 0, walk = "window's"
+        func stopped(_ walk: String) -> String {
+            "the \(walk) block walk stopped after \(looked) elements placed and \(opened) opened: \(unplaced ? "the last element has no place" : "its budget ran out")"
+        }
         while let current = reply {
-            if current["start"] as? Bool == true, let placed { starts.insert(placed) }
-            if let done = current["done"] as? Bool { return done ? starts.sorted() : nil }
-            guard let state = current["state"], let asked = current["ask"] as? [String: Any] else { return nil }
+            if current["start"] as? Bool == true, let placed { starts[placed.window, default: []].insert(placed.at) }
+            if let done = current["done"] as? Bool {
+                let kept = current["starts"] as? String
+                if !done {
+                    HelperLog.debug("ScreenContext: \(stopped(walk)); no starts")
+                } else if kept == "caret" {
+                    HelperLog.debug("ScreenContext: the caret's block walk kept its \(starts["caret"]?.count ?? 0) starts after \(looked) elements placed")
+                }
+                guard done, let kept, windows[kept] != nil else { return nil }
+                return (starts[kept] ?? []).sorted()
+            }
+            guard let state = current["state"], let asked = current["ask"] as? [String: Any] else {
+                HelperLog.debug("ScreenContext: the block walk got a reply it cannot follow after \(looked) elements placed")
+                return nil
+            }
             if let wanted = asked["children"] as? [String: Any] {
                 let parent: Node
                 if wanted["depth"] is NSNull {
+                    if opened > 0 {
+                        HelperLog.debug("ScreenContext: \(stopped("window's")) (a budget of \(elements)); walking the caret's own blocks")
+                        (looked, unplaced, opened, walk) = (0, false, 0, "caret's")
+                    }
                     path = []
                     parent = field
                 } else {
@@ -222,17 +265,21 @@ enum MarkerCaretSource {
                     parent = found
                 }
                 let nodes = children(parent)
+                opened += 1
                 path.append(nodes)
                 reply = blocks(["state": state, "children": nodes.count])
             } else if let wanted = asked["place"] as? [String: Any], let element = node(wanted) {
+                looked += 1
                 guard let place = span(element) else {
+                    unplaced = true
                     reply = blocks(["state": state, "placed": NSNull()])
                     continue
                 }
-                placed = place.location
+                guard let window = wanted["window"] as? String, let bounds = windows[window] else { return nil }
+                placed = (window, place.location)
                 let facts: [String: Any] = wanted["phase"] as? String == "halve"
-                    ? ["block": isBlock(element), "endsBefore": NSMaxRange(place) < low]
-                    : ["block": isBlock(element), "startsPast": place.location > high, "startsWithin": place.location >= low]
+                    ? ["block": isBlock(element), "endsBefore": NSMaxRange(place) < bounds.low]
+                    : ["block": isBlock(element), "startsPast": place.location > bounds.high, "startsWithin": place.location >= bounds.low]
                 reply = blocks(["state": state, "placed": facts])
             } else {
                 return nil
