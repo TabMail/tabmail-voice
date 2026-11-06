@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { Menu, type MenuItemConstructorOptions, nativeImage, type NativeImage, nativeTheme, Tray } from "electron";
 import { linuxTrayIcon, linuxTrayUsesLightText } from "./native/linux/trayIcon.js";
 import { fixFileLabel, aiOffLine, type StoredFile } from "../core/ui/fileProblems.js";
-import { canInstallDictionary, type MissingDictionary, missingDictionaryLabel, missingDictionaryToolTip } from "../core/ui/missingDictionaries.js";
 import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/ui/menuModel.js";
 
 /** What the menu's items do. */
@@ -17,8 +16,6 @@ export interface TrayActions {
   requestAccessibility(): void;
   /** Tells why `file` couldn't be read, and how to fix it. */
   showFileProblem(file: StoredFile): void;
-  /** Tells how to install `missing`'s spelling dictionary (Windows and Linux). */
-  showMissingDictionary(missing: MissingDictionary): void;
   toggleDictation(): void;
   quit(): void;
   checkForUpdates(): void;
@@ -39,8 +36,8 @@ export interface TrayActions {
 export class TrayMenu {
   private readonly tray: Tray;
   private readonly icon: (marked: boolean) => NativeImage;
-  /** Whether the icon shows the mark: a dot beside the glyph while a permission is missing, a file
-   * couldn't be read or a spelling dictionary can be installed. */
+  /** Whether the icon shows the mark: a dot beside the glyph while a permission is missing or a file
+   * couldn't be read. */
   private marked = false;
   private toolTip = "TabMail Voice";
 
@@ -71,13 +68,13 @@ export class TrayMenu {
   update(): void {
     const state = this.state();
     const permissionMissing = !state.microphoneGranted || !state.accessibilityTrusted;
-    const dictionaryMissing = state.missingDictionaries.length > 0 && canInstallDictionary(process.platform);
-    const marked = permissionMissing || state.fileProblems.length > 0 || dictionaryMissing;
+    const marked = permissionMissing || state.fileProblems.length > 0;
     if (marked !== this.marked) {
       this.marked = marked;
       this.tray.setImage(this.icon(marked));
     }
-    const toolTip = state.fileProblems.length > 0 ? "TabMail Voice can't read one of its files" : permissionMissing ? "TabMail Voice needs a permission" : dictionaryMissing ? missingDictionaryToolTip : "TabMail Voice";
+    // The tooltip names the first thing to fix, and follows it while the icon stays marked.
+    const toolTip = state.fileProblems.length > 0 ? "TabMail Voice can't read one of its files" : permissionMissing ? "TabMail Voice needs a permission" : "TabMail Voice";
     if (toolTip !== this.toolTip) {
       this.toolTip = toolTip;
       this.tray.setToolTip(toolTip);
@@ -94,10 +91,6 @@ export class TrayMenu {
     if (!state.accessibilityTrusted) items.push({ label: "Allow Accessibility Access…", click: () => actions.requestAccessibility() });
     if (state.fileProblems.includes("settings")) items.push({ label: aiOffLine, enabled: false });
     for (const file of state.fileProblems) items.push({ label: fixFileLabel(file), click: () => actions.showFileProblem(file) });
-    for (const missing of state.missingDictionaries) {
-      const label = missingDictionaryLabel(missing, process.platform);
-      items.push(canInstallDictionary(process.platform) ? { label, click: () => actions.showMissingDictionary(missing) } : { label, enabled: false });
-    }
 
     if (showsDictationButton(state.debugMode, state.phase)) {
       const listening = state.phase.kind === "listening";

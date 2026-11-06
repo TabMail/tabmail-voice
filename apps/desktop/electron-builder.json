@@ -26,6 +26,15 @@
       "filter": [
         "trayTemplate*.png"
       ]
+    },
+    {
+      "from": "native/shared/dictionary",
+      "to": "dictionary",
+      "filter": [
+        "languages.json",
+        "words.txt",
+        "README.md"
+      ]
     }
   ],
   "asar": true,

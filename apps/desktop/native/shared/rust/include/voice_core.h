@@ -35,18 +35,13 @@ uint32_t voice_core_request_json(const uint8_t *data, size_t length, VoiceCoreBu
  * look ({step}), {"stop":{nodes,elapsed,textFull}} why a walk stops ({stopped}), {"limits":true} its
  * budgets. */
 uint32_t voice_core_walk_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
-/* The screen terms' test (ADR-DESK-038, amended 2026-11-04): which words are everyday words of the
- * user's languages, by the system's spelling dictionaries.
- * voice_core_dictionaries_json: {"languages":[tag…],"available":[name…]} gives
- * {"dictionaries":[name…],"unavailable":[tag…],"madeUp":word}, which of the system spell checker's
- * languages (macOS, Windows) serves each of the user's; a dictionary that knows `madeUp`, a word in
- * no language, serves none, and the helper asks again without it (amended 2026-11-05).
- * voice_core_known_words_json (Linux): {"folders":[absolute folder…],"languages":[tag…],"words":[…]}
- * gives {"known":[the words a Hunspell dictionary there serving a language has…],"unavailable":[tag…],
- * "dictionaries":count}, a dictionary that can't be read or knows the word in no language left out;
- * files in another encoding than UTF-8 are read in theirs, each loaded once for the process. */
-uint32_t voice_core_dictionaries_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
-uint32_t voice_core_known_words_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
+/* The screen terms' test (ADR-DESK-038, amended 2026-11-05): how often words are seen, by the word
+ * list the app ships (42 languages' lists merged).
+ * voice_core_word_frequencies_json: {"folder":absolute folder,"words":[word…]} gives
+ * {"zipf":[tenths|null…]}, one a word: the most often any form a list written in its script gives
+ * it is seen, in Zipf tenths (0: none is listed), or null when no list is written in its script.
+ * The word list is read once for the process; the first ask starts reading it in the background. */
+uint32_t voice_core_word_frequencies_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 void voice_core_buffer_free(VoiceCoreBuffer buffer);
 /* Semantic text ABI. One policy for all platforms; no platform-selected limits.
  * Kinds: 1 row, 2 heading, 3 link. Decisions: 1 read approved root, 2 read

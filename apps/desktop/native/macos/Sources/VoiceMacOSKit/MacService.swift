@@ -78,12 +78,12 @@ public enum MacService {
             let result = try Redactor.request(JSONEncoder().encode(params), operation: .text)
             return try JSONDecoder().decode(JSON.self, from: result)
         }
-        // Which words are everyday words of the user's languages, by the system's spell checker: the screen terms' test (ADR-DESK-038).
-        channel.on("knownWords") { params in
-            guard let words = params["words"]?.array?.compactMap(\.string), words.count == params["words"]?.array?.count else {
-                throw HelperError("knownWords needs words")
-            }
-            return try await SpellCheck.shared.known(languages: params["languages"] ?? .null, words: words)
+        // How often the lists the app ships see the words on screen: the screen terms' test (ADR-DESK-038,
+        // amended 2026-11-05), answered by the shared core off the channel's task (the first ask reads a list).
+        channel.on("wordFrequencies") { params in
+            let request = try JSONEncoder().encode(params)
+            let result = try await Task.detached { try Redactor.request(request, operation: .frequencies) }.value
+            return try JSONDecoder().decode(JSON.self, from: result)
         }
         channel.on("caretAnchor") { params in
             guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else { throw HelperError("caretAnchor needs pid") }

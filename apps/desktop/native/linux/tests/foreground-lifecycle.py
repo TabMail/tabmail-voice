@@ -113,13 +113,13 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             # A reader that has read nothing numbered yet (a restarted one) reads no window bound to a read.
             assert request('readScreen', {**policy, 'read': 1, 'wholeWindow': True, 'sameWindowAs': 1}) is None, \
                 'a read bound to one this reader never read is not read'
-            for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText', 'knownWords'):
+            for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText', 'wordFrequencies'):
                 request(method, refused=True)
         elif fields:
             # Asked the moment the field reader starts, as the app does after restarting it when a new
             # watch's read supersedes one still going: the answer waits for the reader to find what has focus.
             assert field() == {'value': 'Synthetic field content'}, 'a read sent as the field reader starts finds the app in front'
-            for method in ('frontmostApp', 'readScreen', 'caretAnchor', 'insert', 'redactText', 'knownWords', 'requestInsertion'):
+            for method in ('frontmostApp', 'readScreen', 'caretAnchor', 'insert', 'redactText', 'wordFrequencies', 'requestInsertion'):
                 request(method, refused=True)
         else:
             assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
@@ -133,13 +133,13 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             request('redactText', {'text': 'Public.', 'before': None}, refused=True)
             request('redactText', {'text': None}, refused=True)
             request('redactText', {'text': '😀' * 32769}, refused=True)
-            # The screen terms' test (ADR-DESK-038, amended 2026-11-04): the system's Hunspell dictionaries
-            # (Ubuntu installs English's); a word a dictionary keeps capitalized is not known in lowercase.
-            assert request('knownWords', {'languages': ['en-US', 'xx-YY'], 'words': ['today', 'xyvora', 'paris', 'the']}) == \
-                {'known': ['today', 'the'], 'unavailable': ['xx-YY'], 'dictionaries': 1}
-            assert request('knownWords', {'languages': [], 'words': ['today']}) == {'known': [], 'unavailable': [], 'dictionaries': 0}
-            request('knownWords', {'languages': ['en-US'], 'words': [1]}, refused=True)
-            request('knownWords', {'languages': 'en-US', 'words': []}, refused=True)
+            # The screen terms' test (ADR-DESK-038, amended 2026-11-05): the shared core's answer from the
+            # app's word list; the rule's own cases run in the core.
+            lists = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../shared/dictionary'))
+            assert request('wordFrequencies', {'folder': lists, 'words': ['Today', 'Xyvora', 'สวัสดี']}) == {'zipf': [56, 0, None]}
+            request('wordFrequencies', {'folder': lists, 'words': [1]}, refused=True)
+            request('wordFrequencies', {'folder': 'dictionary', 'words': ['Today']}, refused=True)
+            request('wordFrequencies', {'folder': os.path.join(lists, 'missing'), 'words': ['Today']}, refused=True)
             request('readScreen', refused=True)
             request('focusedFieldValue', {**policy, 'window': 1, 'maxLength': 20000}, refused=True)
         wait_calls((1, 0))

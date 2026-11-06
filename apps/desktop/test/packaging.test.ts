@@ -3,9 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, type Stats } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 import { x11Argument } from "../src/main/native/linux/appImage.js";
@@ -22,6 +23,37 @@ function gpg(...args: string[]): string {
     rmSync(home, { recursive: true, force: true });
   }
 }
+
+/** The files electron-builder copies for one `extraResources` entry, by its own matcher (what a build
+ * copies), relative to the entry's folder. */
+function copiedResources(resource: { from: string; filter?: string[] }): string[] {
+  const { FileMatcher } = createRequire(__filename)("app-builder-lib/out/fileMatcher.js") as {
+    FileMatcher: new (from: string, to: string, expand: (text: string) => string, patterns?: string[]) => { createFilter(): (file: string, stat: Stats) => boolean };
+  };
+  const from = join(root, resource.from);
+  const copies = new FileMatcher(from, "out", (text) => text, resource.filter).createFilter();
+  const walk = (folder: string): string[] =>
+    readdirSync(folder).flatMap((name) => {
+      const path = join(folder, name);
+      const stat = statSync(path);
+      if (!copies(path, stat)) return [];
+      return stat.isDirectory() ? walk(path) : [relative(from, path)];
+    });
+  return walk(from).sort();
+}
+
+/** Screen terms are judged by the word list (ADR-DESK-038, amended 2026-11-05): a package without it,
+ * or without the lists' catalog, judges no word on any system. */
+test("every system's package ships the word list and the lists' catalog", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { extraResources: { from: string; to: string; filter?: string[] }[] };
+  const dictionary = builder.extraResources.find(({ to }) => to === "dictionary");
+  expect(dictionary).toBeDefined();
+  const folder = join(root, dictionary!.from);
+  const catalog = JSON.parse(readFileSync(join(folder, "languages.json"), "utf8")) as { lists: Record<string, unknown> };
+  expect(Object.keys(catalog.lists).length).toBeGreaterThan(40);
+  expect(copiedResources(dictionary!)).toEqual(["README.md", "languages.json", "words.txt"]);
+  expect(statSync(join(folder, "words.txt")).size).toBeGreaterThan(0);
+});
 
 test("Windows packages every helper the main process can launch", () => {
   const source = readFileSync(join(root, "src/main/index.ts"), "utf8");

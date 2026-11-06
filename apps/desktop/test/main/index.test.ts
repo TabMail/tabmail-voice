@@ -109,12 +109,10 @@ const app = vi.hoisted(() => ({
   memory: null as (import("../support/fakeMemory.js").FakeMemory & { options: { directory: string }; stops: number }) | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
-  /** `app.getPreferredSystemLanguages()`, read at each call. */
-  preferredLanguages: ["en-US"],
-  /** The main helper's `knownWords` answer: by default English knows "today" and Korean "회의". */
-  knownWords: null as ((params: { languages: string[]; words: string[] }) => unknown) | null,
+  /** The main helper's `wordFrequencies` answer: by default "Today" is an everyday word, every other unseen. */
+  wordFrequencies: null as ((params: { folder: string; words: string[] }) => unknown) | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; showMissingDictionary: (missing: import("../../src/core/ui/missingDictionaries.js").MissingDictionary) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; playLastRecording: () => void; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
+  trayActions: null as { showWelcome: () => void; showSettings: () => void; showFileProblem: (file: import("../../src/core/ui/fileProblems.js").StoredFile) => void; checkForUpdates: () => void; installUpdate: () => void; debug: { showLastScreenContext: () => void; hasLastRecording: () => boolean; playLastRecording: () => void; showLogFile: () => void; showsSmokeTip: () => boolean; toggleSmokeTip: () => void } } | null,
   /** The windows the app asked to bring forward, in order. */
   presented: [] as string[],
   /** Every request that reached the network (`liveTransport`), by URL. */
@@ -124,9 +122,9 @@ const app = vi.hoisted(() => ({
     warmUp: (baseURL: string, accessToken: string) => Promise<void>;
     makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient;
     makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient;
-    knownWords: (words: readonly string[]) => Promise<ReadonlySet<string> | null>;
+    wordFrequencies: (words: readonly string[]) => Promise<import("../../src/core/dictionary/contextTerms.js").WordFrequencies>;
   } | null,
-  trayState: null as (() => { update: unknown; fileProblems?: unknown; missingDictionaries?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
+  trayState: null as (() => { update: unknown; fileProblems?: unknown; hasConsented?: unknown; optsOutOfAI?: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
@@ -137,8 +135,6 @@ const app = vi.hoisted(() => ({
   squirrel: null as import("node:events").EventEmitter | null,
   /** How often the app refreshed its tray menu. */
   trayUpdates: 0,
-  /** The missing dictionaries the tray menu last showed: read at its last update, as the real one. */
-  publishedDictionaries: undefined as unknown,
   /** The application menu the app set, as its template; null for none set. */
   applicationMenu: null as unknown[] | null,
   /** The message boxes shown, and the button each is answered with. */
@@ -181,7 +177,6 @@ vi.mock("electron", async () => {
       getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : name === "userData" ? app.userData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
-      getPreferredSystemLanguages: () => app.preferredLanguages,
       getApplicationNameForProtocol: () => app.emailHandler,
       dock: { hide() {} },
       on: (event: string, handler: (...args: unknown[]) => void) => {
@@ -446,10 +441,8 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       app.helpers.set(options.name, this);
       this.replies.set("captureTarget", { window: options.name === "voice-screen-reader" ? "00000000-0000-0000-0000-000000000001" : 42, pid: 42 });
       this.replies.set("preparePaste", { transaction: 7 });
-      this.replies.set("knownWords", (params: { languages: string[]; words: string[] }) => app.knownWords?.(params) ?? {
-        known: params.words.filter((word) => (word === "today" && params.languages.includes("en-US")) || (word === "회의" && params.languages.includes("ko-KR"))),
-        unavailable: [],
-        dictionaries: params.languages.length,
+      this.replies.set("wordFrequencies", (params: { folder: string; words: string[] }) => app.wordFrequencies?.(params) ?? {
+        zipf: params.words.map((word) => (word.toLowerCase() === "today" ? 56 : 0)),
       });
     }
     /** "start", "stop" and "restart", as the app called them. */
@@ -474,9 +467,11 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     /** The helper's answer to a method, where the test gives one. */
     readonly replies = new Map<string, unknown>();
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
+      // As the real client: a helper not started yet refuses at once, and what it refused never reached
+      // it, so it isn't recorded (a request recorded before the refusal would let a test count an ask
+      // that was never answered).
+      if (method === "wordFrequencies" && !this.lifecycle.includes("start")) throw new Error("wordFrequencies: exited");
       this.requests.push({ method, params, ...(signal && { signal }) });
-      // As the real client: a helper not started yet answers nothing.
-      if (method === "knownWords" && !this.lifecycle.includes("start")) throw new Error("knownWords: exited");
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
       if (typeof this.replies.get(method) === "function") return (this.replies.get(method) as (params: unknown) => unknown)(params);
@@ -503,7 +498,7 @@ vi.mock("../../src/main/native/memoryHelper.js", async (importOriginal) => {
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient; makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient; knownWords: (words: readonly string[]) => Promise<ReadonlySet<string>>; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
+    constructor(dependencies: { warmUp: (baseURL: string, accessToken: string) => Promise<void>; makeTranscriptionClient: (baseURL: string) => import("../../src/core/backend/transcription.js").TranscriptionClient; makeCompletionsClient: (baseURL: string) => import("../../src/core/backend/completions.js").CompletionsClient; wordFrequencies: (words: readonly string[]) => Promise<import("../../src/core/dictionary/contextTerms.js").WordFrequencies>; capture: AudioCapture; copy: (text: string) => Promise<boolean>; saveClipboard: () => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; frontmostApp: NonNullable<typeof app.frontmostApp>; useWords: NonNullable<typeof app.useWords>; settings: NonNullable<typeof app.dictationSettings>; prompts: NonNullable<typeof app.prompts>; keepRecording?: typeof app.keepRecording }) {
       app.dictationSettings = dependencies.settings;
       app.backend = dependencies;
       app.keepRecording = dependencies.keepRecording;
@@ -610,7 +605,6 @@ vi.mock("../../src/main/tray.js", () => ({
     }
     update() {
       app.trayUpdates += 1;
-      app.publishedDictionaries = (app.trayState?.() as { missingDictionaries?: unknown } | undefined)?.missingDictionaries;
     }
   },
 }));
@@ -721,8 +715,7 @@ afterEach(() => {
   app.memory = null;
   app.prompts = null;
   app.fullName = null;
-  app.preferredLanguages = ["en-US"];
-  app.knownWords = null;
+  app.wordFrequencies = null;
   app.trayActions = null;
   app.dictationSettings = null;
   app.keepRecording = undefined;
@@ -734,7 +727,6 @@ afterEach(() => {
   app.autoUpdater = null;
   app.squirrel = null;
   app.trayUpdates = 0;
-  app.publishedDictionaries = undefined;
   app.dialogs = [];
   app.dialogsAfterLaunch = [];
   app.dialogResponse = 1;
@@ -761,29 +753,35 @@ function signInStored(id = "user", email = "tester@example.com"): void {
 }
 
 describe("main process wiring", () => {
-  /** Screen terms are the words the system's spelling dictionaries of the user's preferred languages
-   * don't know (ADR-DESK-038): the controller's `knownWords` asks the main helper with the languages
-   * preferred at each ask, and launch readies the dictionaries with an empty ask. */
-  test.each(["darwin", "win32", "linux"] as const)("on %s the controller's everyday words are the main helper's answer for the preferred languages", async (platform) => {
+  /** Screen terms are the words the word list the app ships doesn't see often (ADR-DESK-038, amended
+   * 2026-11-05): the controller's `wordFrequencies` asks the main helper with the list's folder (in the
+   * app's resources when packaged, the source tree's otherwise), and launch has the list read with an
+   * empty ask. */
+  test.each(["darwin", "win32", "linux"] as const)("on %s the controller's word frequencies are the main helper's answer", async (platform) => {
     await launch(platform);
     const helper = app.helpers.get(platform === "darwin" ? "voice-macos" : platform === "win32" ? "voice-windows" : "voice-linux")!;
-    const asks = () => helper.requests.filter((request) => request.method === "knownWords").map((request) => request.params);
+    const asks = () => helper.requests.filter((request) => request.method === "wordFrequencies").map((request) => request.params);
+    const folder = join("/nonexistent", "native", "shared", "dictionary");
     expect(await eventually(() => asks().length === 1)).toBe(true);
-    expect(asks()).toEqual([{ languages: ["en-US"], words: [] }]);
-    const knownWords = app.backend!.knownWords;
-    expect(await knownWords(["Today", "Xyvora", "회의"])).toEqual(new Set(["Today"]));
-    app.preferredLanguages = ["en-US", "ko-KR"];
-    expect(await knownWords(["Today", "Xyvora", "회의"])).toEqual(new Set(["Today", "회의"]));
+    expect(asks()).toEqual([{ folder, words: [] }]);
+    const { wordFrequencies: frequencies } = app.backend!;
+    expect(await frequencies(["Today", "Xyvora"])).toEqual(new Map([["Today", 56], ["Xyvora", 0]]));
     expect(asks()).toEqual([
-      { languages: ["en-US"], words: [] },
-      { languages: ["en-US"], words: ["today", "xyvora", "회의"] },
-      { languages: ["en-US", "ko-KR"], words: ["today", "xyvora", "회의"] },
+      { folder, words: [] },
+      { folder, words: ["Today", "Xyvora"] },
     ]);
-    // No dictionary that works (#348): the controller is told so, to pick terms by capitals, and the
-    // menu still names the language.
-    app.knownWords = () => ({ known: [], unavailable: ["ko-KR"], dictionaries: 0 });
-    expect(await knownWords([])).toBeNull();
-    expect(app.publishedDictionaries).toEqual([{ language: "ko", name: "Korean" }]);
+    app.wordFrequencies = () => ({ zipf: ["56"] });
+    await expect(frequencies(["Today"])).rejects.toThrow("Invalid wordFrequencies reply.");
+  });
+
+  test("a packaged app asks with the list in its resources", async () => {
+    app.packaged = true;
+    Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
+    await launch("darwin");
+    const helper = app.helpers.get("voice-macos")!;
+    const asks = () => helper.requests.filter((request) => request.method === "wordFrequencies").map((request) => request.params);
+    expect(await eventually(() => asks().length === 1)).toBe(true);
+    expect(asks()).toEqual([{ folder: join("/nonexistent", "dictionary"), words: [] }]);
   });
 
 test("the real capture pipeline reads the delayed captured identity in both scopes after focus changes", async () => {
@@ -3044,41 +3042,6 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.savesFail = false;
     expect(await send({ type: "setMemorySizeLimit", value: choice })).toEqual({ error: null });
     expect([app.stored.get("memorySizeLimit"), sizeLimit(), trim.mock.calls]).toEqual([choice, choice, [[choice]]]);
-  });
-
-  /** A preferred language the system has no spelling dictionary for is named in the menu from the
-   * started main helper's answer at launch (ADR-DESK-038), kept through an answer out of shape or a
-   * failed ask, and gone at the answer that no longer names it; its item tells how to install one. */
-  test.each(["win32", "linux"] as const)("on %s a language without a spelling dictionary is named in the menu until it is there", async (platform) => {
-    app.preferredLanguages = ["en-US", "ko-KR", "ja-JP"];
-    app.knownWords = () => ({ known: [], unavailable: ["ko-KR", "ja-JP"], dictionaries: 1 });
-    await launch(platform);
-    const korean = { language: "ko", name: "Korean" };
-    const published = () => JSON.stringify(app.publishedDictionaries);
-    expect(await eventually(() => published() === JSON.stringify([korean]))).toBe(true);
-    const main = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-linux")!;
-    expect(main.requests.filter((request) => request.method === "knownWords").map((request) => request.params)).toEqual([{ languages: ["en-US", "ko-KR", "ja-JP"], words: [] }]);
-
-    app.trayActions?.showMissingDictionary(korean);
-    expect(await eventually(() => app.dialogs.length === 1)).toBe(true);
-    expect(app.dialogs[0]).toMatchObject({ type: "warning", message: "Your system has no spelling dictionary for Korean.", buttons: ["Close"], defaultId: 0, cancelId: 0 });
-    expect(app.dialogs[0]?.detail).toContain(platform === "win32" ? "Settings > Time & language" : "Manage Installed Languages");
-
-    const knownWords = app.backend!.knownWords;
-    app.knownWords = () => ({ known: [], unavailable: [1], dictionaries: 1 });
-    await expect(knownWords(["Today"])).rejects.toThrow("Invalid knownWords reply.");
-    app.knownWords = () => { throw new Error("exited"); };
-    await expect(knownWords(["Today"])).rejects.toThrow("exited");
-    expect(published()).toBe(JSON.stringify([korean]));
-
-    // Another language missing in its place (the preferred languages changed) replaces it.
-    app.knownWords = () => ({ known: [], unavailable: ["el-GR"], dictionaries: 1 });
-    await knownWords(["Today"]);
-    expect(published()).toBe(JSON.stringify([{ language: "el", name: "Greek" }]));
-
-    app.knownWords = () => ({ known: ["today"], unavailable: [], dictionaries: 1 });
-    expect(await knownWords(["Today"])).toEqual(new Set(["Today"]));
-    expect(published()).toBe("[]");
   });
 
   test("a knowledge base file that can't be read leaves Settings › Memory reaching memory", async () => {

@@ -418,3 +418,114 @@ install one, though one is installed: its steps name the system's dictionaries, 
 add another language's. The made-up word is in Latin letters: a dictionary taking every word of
 another script is not caught. A name starting a line is missed again where no dictionary works.
 
+
+
+### Amendment 2026-11-05 (owner): screen terms by word frequency, from one word list the app ships
+
+**Context:** the system spell checkers judged screen words three different ways and badly: on macOS
+27.2 the "en" checker took every non-Latin word, made-up ones too, and "de" took "schule"; Ubuntu's
+Ukrainian took every Latin word; Linux needed a package per language, hence the menu (#334) and the
+made-up-word probe (#348). A spell checker also says only whether a word exists, not how rare it is,
+which is what decides whether the speech model needs help: the speech-recognition literature calls a
+word rare when it is outside the ~5,000 most frequent, and in our own bench (20 terms, two paid speech
+models, no word list) every term the models misspelled had its rarest word absent from a frequency
+list or seen at Zipf 3.1 or less. The owner chose word lists: "44 languages, frequent words is probably
+okay", shipped whole ("costs nothing"), and then a simple rule: "keep things simple and stupid. Don't
+try to be perfect [...] this is just word biasing", "just have it check against all 44 languages we
+have and then just send what is not there". A first design (each word judged by the lists of the
+user's preferred languages, runs of names kept together and trimmed, rarity tiers) was dropped for
+this one before it merged.
+
+**Decision:**
+- **The word list.** `native/shared/dictionary/words.txt`: 42 language lists merged into one, each
+  word with the most often any of them sees it, as Zipf in tenths. The lists are wordfreq 3.1.1's data
+  (CC BY-SA 4.0), serving 44 language tags (Bosnian, Croatian and Serbian share Serbo-Croatian's), and
+  FrequencyWords' OpenSubtitles 2018 counts for Korean (wordfreq splits Korean into morphemes; Korean
+  is written with its particles attached). Each list keeps the words it sees at Zipf 2.5 or more (20 of
+  wordfreq's lists, its "small" ones, start at 3.0), in the form wordfreq stores them in (below), only
+  words in the language's scripts (CLDR 48's main exemplar letters), letters and marks only besides an
+  apostrophe or Catalan's middle dot inside; words spelled with the zero-width non-joiner or joiner
+  (Persian's "می‌شود", Hindi's, Bengali's) kept. `generate.py` (pinned `requirements.txt`) rebuilds it
+  byte for byte; the folder's README carries the sources, the licence and what changed. It ships in the
+  app's resources as `dictionary/` (2.24 million words, 35 MB on disk, about 9 MB compressed), so there
+  is no download, no network and no missing-language state.
+- **The lookup** is the shared core's, one for every system (`words::frequencies`,
+  `voice_core_word_frequencies_json`, the helpers' `wordFrequencies`; ADR-DESK-054): `{folder, words}`
+  gives each word's Zipf tenths, 0 when it isn't listed, null when no list is written in its script (or
+  the word mixes scripts no language mixes in one word: a list names its writings, each the scripts
+  one word may mix, Japanese's Han and kana, Serbian's Latin or its Cyrillic). No preferred languages,
+  no language detection. A word is looked up in each form a list written in its script gives it, the
+  form wordfreq stores that list's words in (its `preprocess_text` for the list's language, and
+  `simplify_chinese` for Chinese, as `languages.json` describes each list; 7 forms among the 42 lists),
+  and gets the most any of those forms is seen: NFC or NFKC (Japanese's half-width "ﾃｽﾄ" is "テスト");
+  Serbian's Cyrillic letters to Latin ("Већ" is "već") and Chinese's Traditional ones to Simplified
+  ("電腦" is "电脑"), through wordfreq's own tables, shipped in `languages.json`; the marks of Arabic,
+  Persian, Urdu and Hebrew left out with the Arabic tatweel ("شكراً" is "شكرا"); case-folded, as
+  wordfreq does, not just lowercased ("Straße" is "strasse", the ligature "ﬁ" of PDF text "fi";
+  Turkish's dotted and dotless i in Turkish's form); s and t with a comma below in Romanian's, a cedilla
+  in Turkish's ("şi" is "și"); a final sigma as σ, a curly apostrophe straight. Without these steps a
+  word in those spellings was absent and so a term (found in review: every everyday Serbian Cyrillic
+  and Traditional Chinese word was one). A word joined by a hyphen or an apostrophe that isn't listed
+  is seen as its least seen part ("что-то"). The list becomes an `fst` map once per process; the first
+  ask (the app's warm-up at launch, with no word) starts reading it on a background thread (about
+  0.7 s; the map holds about 16 MB); a screen's ask then takes about half a millisecond for 150 words.
+- **The rule** (`contextTerms`, written afresh; TabMail on iOS applies the same):
+  1. Every word on screen is checked, split on spaces with the punctuation around it trimmed, as
+     before; a word with a digit (`\p{N}`) or in an address (`@`, `://`) is skipped, as is one with no
+     letter (`termCandidates`).
+  2. A word is ordinary when the word list sees it at least `screenTermCommonZipf` (Zipf 4.0) often.
+  3. In a script no list is written in (null), a word with a capital letter is a term; others are not.
+  4. A term is a word that is not ordinary. Each word stands alone: no runs of names, no trimming.
+  5. Order: the rarer first (a word the list lacks, or in a script without a list, counts as 0), then
+     the most often on screen, then the earliest. Every term goes (`dictationVocabulary` sends what
+     fits); each once, the case aside, spelled as first seen; each a valid dictionary word of at least
+     `correctionMinWordLength` letters. A word the answer has nothing for is no term.
+- **Removed:** the macOS `SpellCheck`, Windows `spelling.h` and `dictionary_choice.h`, the Linux
+  Hunspell folders, the core's `dictionaries`/`known_words` operations with `spellbook` and
+  `encoding_rs`, the made-up-word probe, the capital-letter fallback for a missing dictionary, and the
+  menu's missing-dictionary items and dialog (#334): every language is shipped.
+- **Shared cases** in `native/shared/dictionary/cases.json`: `frequencies` (asked words and answers,
+  one case per list with a word no other list sees as often) and `terms` (a screen, the answers the
+  rule asks for, the terms in order, and `cutoff`), run by the Rust suite against the real list and by
+  `contextTerms.test.ts`, which also checks `cases.json`'s cutoff is the app's: "kubectl" and "Xyvora"
+  are terms; "today", "Today", "Paris" and "Schule" are not; a word in a script with no list is a term
+  only with a capital letter; rarer words come first. TabMail on iOS copies the list and the cases.
+
+**Validation (the cutoff):** one re-run of the 618 words of the earlier step B (spoken by the system
+voice, Apple's on-device SpeechTranscriber, en_US, given no word list; two voices, each in a carrier
+sentence: 159 common words and well-known names, 100 names with spelling variants, 160 made-up names,
+150 names from many languages, 49 lowercase developer terms), every word judged by this rule. A word
+needs help when either reading of it was misspelled: 392 of them.
+
+| cutoff (Zipf) | needs-help words sent | words sent | sent but spelled right anyway | common words sent |
+|---|---|---|---|---|
+| 2.5 | 272/392 (69%) | 278 | 6 | 0 |
+| 3.0 | 303/392 (77%) | 317 | 14 | 0 |
+| 3.5 | 329/392 (84%) | 362 | 33 | 2 |
+| 3.8 | 345/392 (88%) | 395 | 50 | 6 |
+| **4.0** | **352/392 (90%)** | **414** | **62** | **12** |
+| 4.2 | 358/392 (91%) | 443 | 85 | 30 |
+| 4.5 | 373/392 (95%) | 493 | 120 | 63 |
+
+The cutoff stays at **Zipf 4.0** (`screenTermCommonZipf` 40): past it each step gains a few names
+and sends far more common words (4.5 gains 21 and sends 51 more). The 40 needs-help words it misses
+are names that some language's list sees often ("Seoul" and "Kathryn" 4.2, "Intel" 4.3, "Steven" 4.4,
+"Delhi" 4.5, "Ryan" and "Jon" 4.6, "Samsung" 4.7, "Marc" 5.0, "May" 6.8; first and family names of
+many languages); judged by the user's languages alone the same cutoff caught 98%, the cost of one
+list the owner accepted. The common words it sends are city, company and first names, which cost a
+slot and nothing else, since the rarest go first.
+
+**Consequences:**
+- A name that is a common word in any of the 44 languages ("Paris", "Grace", "Drake") is not sent, nor
+  is a common word of a language the user doesn't speak; a capitalized typo is. Accepted (owner).
+- A rarely seen lowercase word ("pods", Zipf 3.6) is a term too, and lowercase jargon (`kubectl`) is.
+- A Korean word with a particle the list lacks still looks rare (#356, P4). Chinese and Japanese are
+  judged by space-split tokens, so an unspaced sentence is one token: a term unless the list has it,
+  dropped only when longer than a dictionary word (`dictionaryWordMaxChars`).
+- Simplifying Traditional Chinese letter by letter is wordfreq's own approximation; a word used only in
+  Traditional-script regions may be judged by its Simplified look-alike.
+- The app grows by the list's size. The list is CC BY-SA 4.0 (attributed in the folder's README and
+  the repository README); the rest of the repository stays MPL 2.0.
+- The launch warm-up reads the list even while screen reading is off.
+- Awaiting the owner's blessing: the list's size, the menu's removal, the cutoff, and the list read at
+  launch with screen reading off.

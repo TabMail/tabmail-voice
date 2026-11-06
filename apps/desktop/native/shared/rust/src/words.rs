@@ -2,230 +2,298 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Which words are everyday words of the user's languages: the screen terms' test (ADR-DESK-038,
-//! amended 2026-11-04). The app asks the main helper (`knownWords`) with the user's languages and
-//! the words, and each helper answers with the system's own spelling dictionaries: the macOS and
-//! Windows spell checkers, and on Linux the Hunspell dictionaries the system has installed. What
-//! does not depend on the OS is here: which of a system's dictionaries serves a language
-//! (`dictionaries`, for the spell checkers' lists), and on Linux the whole answer (`known`), the
-//! system's Hunspell files read with `spellbook`, each loaded once for the life of the process.
-//! A dictionary that knows `MADE_UP` is not used (amended 2026-11-05, #348): every helper asks the
-//! dictionaries chosen whether they know it, and has the choice made again without those that do.
+//! How often the words on screen are seen: the screen terms' test (ADR-DESK-038, amended
+//! 2026-11-05). The app ships one word list (`dictionary/words.txt`, 42 languages' lists from
+//! wordfreq's data merged, each word with the most often any of them sees it) and asks the main
+//! helper (`wordFrequencies`) about the words; every helper answers here, the same on every system.
+//! A word is looked up in each form a list written in its script gives it (`listed_form`, as
+//! `languages.json` describes), and gets the most any of those forms is seen; a word in a script no
+//! list is written in, or mixing scripts no language mixes in one word, gets no answer. The list is
+//! read into an `fst` map once for the life of the process; the first ask starts reading it in the
+//! background.
 
+use fst::Map;
+use icu_casemap::CaseMapper;
 use serde_json::{Value, json};
-use spellbook::Dictionary;
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock, PoisonError},
 };
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+use unicode_script::{Script, UnicodeScript};
 
-/// A word in no language. A dictionary that knows it tells no name from an everyday word (Ubuntu's
-/// Ukrainian takes every word in Latin letters), so it serves no language: the choice is made again
-/// without it, its language's next dictionary serving if there is one (#348).
-pub const MADE_UP: &str = "qxzvjwkq";
+/// The characters that join the parts of a word ("что-то", "don't"); a word none of the lists has is
+/// as often seen as its least seen part when every part is in one list.
+const JOINERS: [char; 4] = ['-', '\'', '’', 'ʼ'];
 
-/// A language tag ("en-US", "zh-Hant-TW", a POSIX locale "pt_BR.UTF-8") or a dictionary's name
-/// ("en_GB", "fr", "pt_BR") as its language and region, both lowercase; `None` when it names no
-/// language (two or three letters first), as "C" does.
-fn language_and_region(tag: &str) -> Option<(String, Option<String>)> {
-    let tag = tag.split(['.', '@']).next().unwrap_or_default();
-    let mut subtags = tag.split(['-', '_']);
-    let language = subtags.next().unwrap_or_default().to_ascii_lowercase();
-    if !(2..=3).contains(&language.len()) || !language.bytes().all(|byte| byte.is_ascii_lowercase())
-    {
-        return None;
-    }
-    let region = subtags.find(|subtag| {
-        (subtag.len() == 2 && subtag.bytes().all(|byte| byte.is_ascii_alphabetic()))
-            || (subtag.len() == 3 && subtag.bytes().all(|byte| byte.is_ascii_digit()))
-    });
-    Some((language, region.map(str::to_ascii_lowercase)))
+/// How a word is put in the form a list has its words in: wordfreq's `preprocess_text` for the list's
+/// language (and `simplify_chinese` for Chinese), as `languages.json` describes it.
+struct Form {
+    /// NFKC rather than NFC.
+    nfkc: bool,
+    /// The table each letter is replaced through (Serbian's Cyrillic to Latin, Chinese's Traditional
+    /// to Simplified), if any.
+    letters: Option<Arc<HashMap<char, String>>>,
+    /// Marks (abjad vowel points) and the Arabic tatweel removed.
+    marks: bool,
+    /// Turkish's dotted and dotless i.
+    dotless_i: bool,
+    /// The s and t below which a cedilla becomes a comma ("commas", Romanian) or a comma a cedilla
+    /// ("cedillas", Turkish), if either.
+    under: Option<Under>,
 }
 
-/// The dictionary of `available` that serves each of `languages`: the one of its language and region,
-/// else the one of its language alone, else the first (by name) of its language; `None` when there is
-/// none.
-fn choose<'a>(languages: &[&str], available: &[&'a str]) -> Vec<Option<&'a str>> {
-    let mut names: Vec<(&'a str, (String, Option<String>))> = available
-        .iter()
-        .filter_map(|name| Some((*name, language_and_region(name)?)))
-        .collect();
-    names.sort_by(|a, b| a.0.cmp(b.0));
-    languages
-        .iter()
-        .map(|tag| {
-            let (language, region) = language_and_region(tag)?;
-            let same = || names.iter().filter(|(_, parts)| parts.0 == language);
-            same()
-                .find(|(_, parts)| region.is_some() && parts.1 == region)
-                .or_else(|| same().find(|(_, parts)| parts.1.is_none()))
-                .or_else(|| same().next())
-                .map(|(name, _)| *name)
+#[derive(Clone, Copy, PartialEq)]
+enum Under {
+    Commas,
+    Cedillas,
+}
+
+/// A language's list: its writings (each the scripts one word may mix: Japanese's Han and kana;
+/// Serbian's Latin, or its Cyrillic) and its words' form, one the lists described alike share.
+struct List {
+    writings: Vec<HashSet<Script>>,
+    form: Arc<Form>,
+}
+
+/// The lists in a folder, by name, and the word list they were merged into, read on first use (None
+/// when its file can't be read).
+struct Catalog {
+    lists: HashMap<String, List>,
+    words: OnceLock<Option<Map<Vec<u8>>>>,
+    folder: PathBuf,
+}
+
+impl Catalog {
+    fn read(folder: &Path) -> Option<Catalog> {
+        let text = std::fs::read_to_string(folder.join("languages.json")).ok()?;
+        let described: Value = serde_json::from_str(&text).ok()?;
+        let mut tables = HashMap::new();
+        for (table, letters) in described.get("letters")?.as_object()? {
+            let mut replaced = HashMap::new();
+            for (letter, by) in letters.as_object()? {
+                let mut chars = letter.chars();
+                let (Some(letter), None) = (chars.next(), chars.next()) else {
+                    return None;
+                };
+                replaced.insert(letter, by.as_str()?.to_owned());
+            }
+            tables.insert(table.clone(), Arc::new(replaced));
+        }
+        let mut lists = HashMap::new();
+        let mut forms: HashMap<String, Arc<Form>> = HashMap::new();
+        for (name, list) in described.get("lists")?.as_object()? {
+            let writings = list
+                .get("writings")?
+                .as_array()?
+                .iter()
+                .map(|writing| {
+                    writing
+                        .as_array()?
+                        .iter()
+                        .map(|code| Script::from_short_name(code.as_str()?))
+                        .collect::<Option<HashSet<_>>>()
+                        .filter(|scripts| !scripts.is_empty())
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if writings.is_empty() {
+                return None;
+            }
+            let form = Form {
+                nfkc: match list.get("normal")?.as_str()? {
+                    "NFC" => false,
+                    "NFKC" => true,
+                    _ => return None,
+                },
+                letters: match list.get("letters")? {
+                    Value::Null => None,
+                    table => Some(tables.get(table.as_str()?)?.clone()),
+                },
+                marks: list.get("marks")?.as_bool()?,
+                dotless_i: list.get("dotless_i")?.as_bool()?,
+                under: match list.get("under")? {
+                    Value::Null => None,
+                    under => match under.as_str()? {
+                        "commas" => Some(Under::Commas),
+                        "cedillas" => Some(Under::Cedillas),
+                        _ => return None,
+                    },
+                },
+            };
+            let mut described = list.as_object()?.clone();
+            described.remove("writings");
+            let form = forms
+                .entry(Value::Object(described).to_string())
+                .or_insert_with(|| Arc::new(form))
+                .clone();
+            lists.insert(name.clone(), List { writings, form });
+        }
+        Some(Catalog {
+            lists,
+            words: OnceLock::new(),
+            folder: folder.to_owned(),
+        })
+    }
+
+    /// The word list's map, read on first use; None when its file can't be read.
+    fn words(&self) -> Option<&Map<Vec<u8>>> {
+        self.words
+            .get_or_init(|| read_list(&self.folder.join("words.txt")))
+            .as_ref()
+    }
+}
+
+/// The word list's file as a map from word to Zipf in tenths: one `word<TAB>tenths` a line, sorted by bytes.
+fn read_list(path: &Path) -> Option<Map<Vec<u8>>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut builder = fst::MapBuilder::memory();
+    for line in text.lines() {
+        let (word, tenths) = line.split_once('\t')?;
+        builder.insert(word, tenths.parse::<u64>().ok()?).ok()?;
+    }
+    Some(builder.into_map())
+}
+
+/// The catalog of each folder asked about, read once; its word list starts loading in the background.
+fn catalog(folder: &Path) -> Option<Arc<Catalog>> {
+    static CATALOGS: OnceLock<Mutex<HashMap<PathBuf, Arc<Catalog>>>> = OnceLock::new();
+    let mut catalogs = CATALOGS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(catalog) = catalogs.get(folder) {
+        return Some(catalog.clone());
+    }
+    let catalog = Arc::new(Catalog::read(folder)?);
+    catalogs.insert(folder.to_owned(), catalog.clone());
+    let loading = catalog.clone();
+    std::thread::spawn(move || {
+        loading.words();
+    });
+    Some(catalog)
+}
+
+/// The scripts of a word's letters, Common and Inherited ones aside ("ー", a combining mark).
+fn scripts(word: &str) -> HashSet<Script> {
+    word.chars()
+        .map(|char| char.script())
+        .filter(|script| !matches!(script, Script::Common | Script::Inherited | Script::Unknown))
+        .collect()
+}
+
+/// The form a word is listed under in a list, in wordfreq's order: the list's normal form; its letters
+/// replaced through its table ("Већ" is "Već", "電腦" is "电脑"); its marks removed where the list's
+/// language drops them (wordfreq removes nonspacing marks; the abjads it does so for have no other
+/// kind); case-folded as wordfreq does, not just lowercased ("Straße" is "strasse", a final sigma σ,
+/// the ligature "ﬁ" of PDF text "fi"; Turkish's dotted and dotless i in its own); s and t with the mark
+/// below the language writes ("şi" is "și" in Romanian); then NFC, the apostrophe straight.
+fn listed_form(word: &str, form: &Form) -> String {
+    let normal: String = if form.nfkc {
+        word.nfkc().collect()
+    } else {
+        word.nfc().collect()
+    };
+    let replaced: String = match &form.letters {
+        Some(table) => normal
+            .chars()
+            .map(|char| {
+                table
+                    .get(&char)
+                    .cloned()
+                    .unwrap_or_else(|| char.to_string())
+            })
+            .collect(),
+        None => normal,
+    };
+    let unmarked: String = if form.marks {
+        replaced
+            .chars()
+            .filter(|&char| char != '\u{640}' && !is_combining_mark(char))
+            .collect()
+    } else {
+        replaced
+    };
+    let unmarked = if form.dotless_i {
+        unmarked.replace('I', "ı").replace('İ', "i")
+    } else {
+        unmarked
+    };
+    CaseMapper::new()
+        .fold_string(&unmarked)
+        .replace("i\u{307}", "i")
+        .nfc()
+        .map(|char| match (char, form.under) {
+            ('’' | 'ʼ', _) => '\'',
+            ('ş', Some(Under::Commas)) => 'ș',
+            ('ţ', Some(Under::Commas)) => 'ț',
+            ('ș', Some(Under::Cedillas)) => 'ş',
+            ('ț', Some(Under::Cedillas)) => 'ţ',
+            (other, _) => other,
         })
         .collect()
 }
 
-/// The request's list `name`, of strings.
-fn strings<'a>(request: &'a Value, name: &str) -> Result<Vec<&'a str>, u32> {
-    request
-        .get(name)
+/// How often a word in a listed form is seen, in Zipf tenths: its own entry, else its least seen
+/// part when every part joined by a hyphen or an apostrophe has one; 0 when neither.
+fn seen(map: &Map<Vec<u8>>, form: &str) -> u64 {
+    if let Some(tenths) = map.get(form) {
+        return tenths;
+    }
+    let parts: Vec<&str> = form.split(JOINERS).collect();
+    if parts.len() < 2 || parts.iter().any(|part| part.is_empty()) {
+        return 0;
+    }
+    parts
+        .iter()
+        .map(|part| map.get(part).unwrap_or(0))
+        .min()
+        .unwrap_or(0)
+}
+
+/// `{"folder":absolute folder,"words":[word…]}` gives `{"zipf":[tenths|null…]}`, one a word in the
+/// order asked: the most any form a list written in its script gives it is seen (0 when none is
+/// listed), or null when no list is written in its script. Refused (1) when the request is out of
+/// shape or the folder not absolute, (2) when the folder's word list can't be read.
+pub fn frequencies(request: &Value) -> Result<Value, u32> {
+    let folder = request.get("folder").and_then(Value::as_str).ok_or(1u32)?;
+    let words = request
+        .get("words")
         .and_then(Value::as_array)
         .ok_or(1u32)?
         .iter()
         .map(|value| value.as_str().ok_or(1u32))
-        .collect()
-}
-
-/// The request's languages that name one: a tag such as the POSIX locale "C" is no language the user
-/// lacks a dictionary for.
-fn languages(request: &Value) -> Result<Vec<&str>, u32> {
-    Ok(strings(request, "languages")?
-        .into_iter()
-        .filter(|tag| language_and_region(tag).is_some())
-        .collect())
-}
-
-/// `{"languages":[tag…],"available":[name…]}` gives
-/// `{"dictionaries":[name…],"unavailable":[tag…],"madeUp":word}`: the system's dictionaries that serve
-/// the user's languages, each once, in the languages' order, the languages none serves (a tag naming no
-/// language is neither), and the word in no language (`MADE_UP`): the helper asks again without each
-/// chosen dictionary that knows it.
-pub fn dictionaries(request: &Value) -> Result<Value, u32> {
-    let languages = languages(request)?;
-    let available = strings(request, "available")?;
-    let mut dictionaries = Vec::new();
-    let mut unavailable = Vec::new();
-    for (language, chosen) in languages.iter().zip(choose(&languages, &available)) {
-        match chosen {
-            Some(name) if !dictionaries.contains(&name) => dictionaries.push(name),
-            Some(_) => {}
-            None => unavailable.push(*language),
-        }
-    }
-    Ok(json!({"dictionaries": dictionaries, "unavailable": unavailable, "madeUp": MADE_UP}))
-}
-
-/// The Hunspell dictionaries in `folders`: each `<name>.dic` beside a `<name>.aff`, by name, the first
-/// folder's where two have one.
-fn installed(folders: &[&str]) -> HashMap<String, PathBuf> {
-    let mut found = HashMap::new();
-    for folder in folders {
-        let Ok(entries) = std::fs::read_dir(folder) else {
-            continue;
-        };
-        for path in entries.filter_map(|entry| Some(entry.ok()?.path())) {
-            if path.extension().is_none_or(|extension| extension != "dic")
-                || !path.with_extension("aff").is_file()
-            {
-                continue;
-            }
-            if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
-                found
-                    .entry(name.to_owned())
-                    .or_insert_with(|| path.with_extension(""));
-            }
-        }
-    }
-    found
-}
-
-/// The dictionaries loaded, by their `.dic` file's real path (a regional name is often a link to the
-/// language's file); `None` for one that could not be read or parsed, so a file is tried once.
-fn loaded() -> &'static Mutex<HashMap<PathBuf, Option<Arc<Dictionary>>>> {
-    static LOADED: OnceLock<Mutex<HashMap<PathBuf, Option<Arc<Dictionary>>>>> = OnceLock::new();
-    LOADED.get_or_init(Mutex::default)
-}
-
-/// The text of a dictionary's file in the encoding its `.aff` names (`SET`), ISO 8859-1 when it names
-/// none, as Hunspell reads it: `spellbook` reads UTF-8 only, and some systems' files are not
-/// (Greek's in ISO 8859-7, Polish's in ISO 8859-2). `None` for an encoding not known.
-fn decoded(bytes: &[u8], set: Option<&str>) -> Option<String> {
-    let label = match set.map(str::to_ascii_lowercase) {
-        None => "iso-8859-1".to_owned(),
-        Some(label) => match label.as_str() {
-            "microsoft-cp1251" => "windows-1251".to_owned(),
-            "tis620-2533" => "tis-620".to_owned(),
-            _ => label,
-        },
-    };
-    let encoding = encoding_rs::Encoding::for_label(label.as_bytes())?;
-    Some(encoding.decode_with_bom_removal(bytes).0.into_owned())
-}
-
-fn load(base: &Path) -> Option<Arc<Dictionary>> {
-    let aff = std::fs::read(base.with_extension("aff")).ok()?;
-    let dic = std::fs::read(base.with_extension("dic")).ok()?;
-    // `SET` and its encoding's name are ASCII in every encoding a dictionary may be in.
-    let set = String::from_utf8_lossy(&aff).lines().find_map(|line| {
-        line.trim_start_matches('\u{feff}')
-            .strip_prefix("SET")
-            .filter(|rest| rest.starts_with(char::is_whitespace))
-            .map(|rest| rest.trim().to_owned())
-    });
-    let aff = decoded(&aff, set.as_deref())?;
-    let dic = decoded(&dic, set.as_deref())?;
-    Dictionary::new(&aff, &dic).ok().map(Arc::new)
-}
-
-fn dictionary(base: &Path) -> Option<Arc<Dictionary>> {
-    let key = base
-        .with_extension("dic")
-        .canonicalize()
-        .unwrap_or_else(|_| base.to_owned());
-    let mut loaded = loaded().lock().unwrap_or_else(PoisonError::into_inner);
-    loaded.entry(key).or_insert_with(|| load(base)).clone()
-}
-
-/// `{"folders":[folder…],"languages":[tag…],"words":[word…]}` gives
-/// `{"known":[word…],"unavailable":[tag…],"dictionaries":count}`: the words, as given and in the order
-/// asked, that a Hunspell dictionary in `folders` (absolute paths, the system's) serving one of the
-/// languages has, the languages none serves, and how many dictionaries answered. A dictionary that
-/// could not be read, or that knows `MADE_UP`, is left out and the choice made again without it.
-pub fn known(request: &Value) -> Result<Value, u32> {
-    let folders = strings(request, "folders")?;
-    let languages = languages(request)?;
-    let words = strings(request, "words")?;
-    if folders
-        .iter()
-        .any(|folder| !Path::new(folder).is_absolute())
-    {
+        .collect::<Result<Vec<_>, _>>()?;
+    if !Path::new(folder).is_absolute() {
         return Err(1);
     }
-    let installed = installed(&folders);
-    let mut names: Vec<&str> = installed.keys().map(String::as_str).collect();
-    // Each pass leaves out one more dictionary, so the choice is made at most once per dictionary.
-    let (dictionaries, unavailable) = 'choice: loop {
-        let mut dictionaries: Vec<(&PathBuf, Arc<Dictionary>)> = Vec::new();
-        let mut unavailable = Vec::new();
-        for (language, chosen) in languages.iter().zip(choose(&languages, &names)) {
-            let Some(name) = chosen else {
-                unavailable.push(*language);
-                continue;
-            };
-            let base = &installed[name];
-            if dictionaries.iter().any(|(loaded, _)| *loaded == base) {
-                continue;
-            }
-            match dictionary(base).filter(|dictionary| !dictionary.check(MADE_UP)) {
-                Some(dictionary) => dictionaries.push((base, dictionary)),
-                None => {
-                    names.retain(|other| *other != name);
-                    continue 'choice;
-                }
+    let catalog = catalog(Path::new(folder)).ok_or(2u32)?;
+    let mut zipf = Vec::with_capacity(words.len());
+    for word in words {
+        let scripts = scripts(word);
+        let mut written: Vec<&Arc<Form>> = Vec::new();
+        for list in catalog.lists.values() {
+            if !scripts.is_empty()
+                && list
+                    .writings
+                    .iter()
+                    .any(|writing| scripts.is_subset(writing))
+                && !written.iter().any(|form| Arc::ptr_eq(form, &list.form))
+            {
+                written.push(&list.form);
             }
         }
-        break (dictionaries, unavailable);
-    };
-    let known: Vec<&str> = words
-        .into_iter()
-        .filter(|word| {
-            dictionaries
-                .iter()
-                .any(|(_, dictionary)| dictionary.check(word))
-        })
-        .collect();
-    Ok(json!({"known": known, "unavailable": unavailable, "dictionaries": dictionaries.len()}))
+        let forms: BTreeSet<String> = written.iter().map(|form| listed_form(word, form)).collect();
+        if forms.is_empty() {
+            zipf.push(Value::Null);
+            continue;
+        }
+        let map = catalog.words().ok_or(2u32)?;
+        zipf.push(json!(
+            forms.iter().map(|form| seen(map, form)).max().unwrap_or(0)
+        ));
+    }
+    Ok(json!({ "zipf": zipf }))
 }
 
 #[cfg(test)]
