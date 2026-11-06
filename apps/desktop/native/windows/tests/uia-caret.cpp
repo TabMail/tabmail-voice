@@ -658,10 +658,13 @@ static int run() {
         result = signatureStart.read(layout(signatureStart, gmailTree, 4));
         expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + blockBreak + "\nSynthetic line to dictate under." + blockBreak &&
             result.parts[2] == "\n\n--\nSynthetic signature", "each block start after text gets its break back, the caret's before it");
+        using Breaks = std::array<std::vector<size_t>, 3>;
+        expect(result.addedBreaks == Breaks{{{22, 56}, {}, {}}}, "the core says where it put each break back");
         Provider lineEnd(gmail, 55, 55); lineEnd.breakAtCaret = true;
         result = lineEnd.read(layout(lineEnd, gmailTree, 3));
         expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + blockBreak + "\nSynthetic line to dictate under." &&
             result.parts[2] == blockBreak + "\n\n--\nSynthetic signature", "a caret ending the line above a block gets that block's break after it");
+        expect(result.addedBreaks == Breaks{{{22}, {}, {0}}}, "the core says where it put the break after the caret back");
         Provider tooMany(gmail, 55, 55);
         result = tooMany.read(layout(tooMany, gmailTree, 4, 3));
         expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",

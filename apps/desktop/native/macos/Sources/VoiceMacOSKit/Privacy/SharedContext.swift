@@ -40,6 +40,9 @@ enum SharedContext {
     struct CaretWindow: Decodable {
         var parts: [String]
         var selectionUnavailable: Bool
+        /// Where the core put a line break back in each part (byte offsets): the screen read sends
+        /// them with the parts, and its redaction also reads the text without them (issue #365).
+        var addedBreaks: [[Int]] = [[], [], []]
 
         /// What stands for the text around a caret that could not be read, as the shared core gives
         /// it (`caretUnread`): the selection withheld when text is selected, else an empty window.

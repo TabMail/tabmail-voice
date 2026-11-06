@@ -489,7 +489,15 @@ before; a caret start a walk finds is checked like any other. Accepted limitatio
 (owner, 2026-11-06): the check sees only the field's text and only what the redaction takes, so a
 misplaced start inside a label (`pass|word = …`), or in a value whose label is in another block,
 can still keep the secret from being recognized. Main has the same exposure for fields walked within
-the budget and for the caret's own start; the fix is #365. Each
+the budget and for the caret's own start; the fix is #365. *(Fixed 2026-11-06, #365: the caret
+window reports where it put each break back (`addedBreaks`, byte offsets in each part, the caret's
+own break included); every helper sends them with the parts (`caretBreaks`), and the final redaction
+also reads the read with those breaks removed (`privacy::taken_across_breaks`), adding what that
+reading takes and the text as laid out did not, mapped back, without a removed break at either end:
+two secrets on lines of their own stay two runs, a marker each. Only the breaks the core put back
+are joined; the text's own are the screen's and are read as they are, as the 2026-10-07 amendment
+rules. Breaks that are not the parts' line breaks, or out of order, refuse the read. A secret over
+two lines whose break the core put back is now hidden whole, where it was shown in pieces.)* Each
 place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
 selection's own), and the walk's end names whose starts the helper keeps. The two walks together
 place at most the budget and the selection's own. Walking the selection first, on the one budget,

@@ -159,11 +159,13 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
             .and_then(Value::as_array)
             .filter(|parts| parts.len() == 3)
             .ok_or(1u32)?;
-        let finished = call(
-            crate::context::process,
-            &json!({"blocks": input["blocks"], "caret": sent,
-                "caretSelectionOnly":input.get("caretSelectionOnly").cloned().unwrap_or(json!(false))}),
-        )?;
+        let mut finish = json!({"blocks": input["blocks"], "caret": sent,
+            "caretSelectionOnly":input.get("caretSelectionOnly").cloned().unwrap_or(json!(false))});
+        // Where the caret window put breaks back in those parts (`addedBreaks`), when it did.
+        if let Some(breaks) = input.get("caretBreaks") {
+            finish["caretBreaks"] = breaks.clone();
+        }
+        let finished = call(crate::context::process, &finish)?;
         let caret = finished["caret"]
             .as_array()
             .filter(|parts| parts.len() == 3)

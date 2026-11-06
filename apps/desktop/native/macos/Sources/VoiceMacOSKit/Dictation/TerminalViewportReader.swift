@@ -228,6 +228,7 @@ extension TerminalViewportReader {
         context.textBeforeCaret = ""
         context.selectedText = ""
         context.textAfterCaret = ""
+        context.caretBreaks = [[], [], []]
         context.blocks = []
     }
 

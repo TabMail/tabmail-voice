@@ -103,11 +103,14 @@ public:
     std::string render() const {
         return core::request({{"blocks", blocksJSON()}}, voice_core_context_json).at("rendered").get<std::string>();
     }
-    // This read's reply (`screenReply`), its blocks with the text around the caret.
+    // This read's reply (`screenReply`), its blocks with the text around the caret, and where the
+    // core put line breaks back in it (`CaretSource::addedBreaks`).
     nlohmann::json reply(nlohmann::json fields, const std::array<std::string, 3>& caret, bool selectionUnavailable,
-                         const nlohmann::json& exclusions, uint64_t milliseconds) const {
+                         const nlohmann::json& exclusions, uint64_t milliseconds,
+                         const std::array<std::vector<size_t>, 3>& caretBreaks = {}) const {
         fields["blocks"] = blocksJSON();
         fields["caret"] = caret;
+        fields["caretBreaks"] = caretBreaks;
         fields["caretSelectionOnly"] = caretSelectionOnly;
         fields["selectionUnavailable"] = selectionUnavailable;
         return screenReply(std::move(fields), exclusions, nodes, milliseconds, stopped);

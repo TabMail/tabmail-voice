@@ -108,12 +108,14 @@ enum ScreenContextReader {
                     readCaret(of: focused, in: tree, into: &context)
                 } else {
                     context.textBeforeCaret = ""; context.selectedText = ""; context.textAfterCaret = ""
+                    context.caretBreaks = [[], [], []]
                     context.selectionUnavailable = true
                 }
             } else {
                 context.textBeforeCaret = ""
                 context.textAfterCaret = ""
                 context.selectedText = ""
+                context.caretBreaks = [[], [], []]
                 context.selectionUnavailable = false
             }
         }
@@ -207,6 +209,7 @@ enum ScreenContextReader {
         context.textBeforeCaret = window.parts[0]
         context.selectedText = window.parts[1]
         context.textAfterCaret = window.parts[2]
+        context.caretBreaks = window.addedBreaks
         context.selectionUnavailable = window.selectionUnavailable
     }
 

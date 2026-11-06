@@ -332,11 +332,11 @@ struct MarkerCaretSourceTests {
     /// A secret the caret sits inside, at the start of a line it wrapped onto, is read as one text
     /// and redacted whole (ADR-DESK-007, ADR-DESK-046): nothing is put between the texts around
     /// the caret.
-    /// When the provider says a paragraph starts at the caret, the screen shows two lines and the
-    /// read keeps them: the text is redacted as it is, a key split over lines in its pieces
-    /// (ADR-DESK-007, 2026-10-07: the core joins and withholds nothing).
+    /// When the provider says a paragraph starts at the caret, the read shows two lines, the break
+    /// the core put back between them; the core says where it put it, and the redaction also reads
+    /// the text without it, so the key is redacted whole there too (issue #365).
     @Test(arguments: [false, true])
-    func aSecretWrappedAtTheCaretIsRedactedWholeAndOneOverTwoParagraphsAsItIs(paragraphAtTheCaret: Bool) throws {
+    func aSecretWrappedAtTheCaretIsRedactedWhole(paragraphAtTheCaret: Bool) throws {
         let head = "sk" + "-" + "a1B2c3D4e", tail = "5F6g7H8i9J0k1L2"
         let text = ("Key " + head + tail + " end") as NSString
         let caret = 4 + head.utf16.count
@@ -349,17 +349,14 @@ struct MarkerCaretSourceTests {
         }, string: { text.substring(with: $0) as NSString }, focused: { true })
         let window = try #require(read)
         #expect(window.parts == ["Key " + head + (paragraphAtTheCaret ? "\n" : ""), "", tail + " end"])
+        #expect(window.addedBreaks == [paragraphAtTheCaret ? [window.parts[0].utf8.count - 1] : [], [], []])
         var context = ScreenContext(appName: "Example Browser", bundleID: "org.example.browser")
         context.textBeforeCaret = window.parts[0]
         context.selectedText = window.parts[1]
         context.textAfterCaret = window.parts[2]
+        context.caretBreaks = window.addedBreaks
         context.appendCaret()
         let reply = context.json
-        if paragraphAtTheCaret {
-            #expect(reply["textBeforeCaret"]?.string == window.parts[0])
-            #expect(reply["textAfterCaret"]?.string == window.parts[2])
-            return
-        }
         for name in ["textBeforeCaret", "textAfterCaret", "renderedText", "logDescription"] {
             let value = try #require(reply[name]?.string)
             #expect(!value.contains(head) && !value.contains(tail), "\(name)")

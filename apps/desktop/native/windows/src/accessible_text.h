@@ -78,11 +78,7 @@ public:
         return result;
     }
 
-    std::optional<std::array<std::string, 3>> parts(bool& selectionUnavailable) const {
-        const auto result = read(text.Get(), [this] { return valid(); });
-        selectionUnavailable = result.selectionUnavailable;
-        return result.parts;
-    }
+    CaretSource caret() const { return read(text.Get(), [this] { return valid(); }); }
 
     // The caret window of any IA2 text; stillValid says whether it is still the focused field read.
     template<class StillValid> static CaretSource read(IAccessibleText* text, StillValid&& stillValid) {
