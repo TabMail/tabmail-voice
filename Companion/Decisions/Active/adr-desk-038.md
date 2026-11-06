@@ -495,7 +495,7 @@ this one before it merged.
   are terms; "today", "Today", "Paris" and "Schule" are not; a word in a script with no list is a term
   only with a capital letter; rarer words come first. TabMail on iOS copies the list and the cases.
 
-**Validation (the cutoff):** one re-run of the 618 words of the earlier step B (spoken by the system
+**Validation (the cutoff):** one re-run of an earlier speech check of 618 words (spoken by the system
 voice, Apple's on-device SpeechTranscriber, en_US, given no word list; two voices, each in a carrier
 sentence: 159 common words and well-known names, 100 names with spelling variants, 160 made-up names,
 150 names from many languages, 49 lowercase developer terms), every word judged by this rule. A word
@@ -531,5 +531,5 @@ slot and nothing else, since the rarest go first.
 - The app grows by the list's size. The list is CC BY-SA 4.0 (attributed in the folder's README and
   the repository README); the rest of the repository stays MPL 2.0.
 - The launch warm-up reads the list even while screen reading is off.
-- Awaiting the owner's blessing: the list's size, the menu's removal, the cutoff, and the list read at
-  launch with screen reading off.
+- Awaiting the owner's blessing: the list's size, the menu's removal, the cutoff, the list read at
+  launch with screen reading off, and a word longer than a dictionary word not asked about.

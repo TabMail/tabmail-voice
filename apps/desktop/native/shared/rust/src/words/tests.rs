@@ -105,18 +105,28 @@ fn a_folder_without_lists_is_refused() {
 /// unseen; a word no list is written in still gets its answer.
 #[test]
 fn a_word_list_that_cant_be_read_refuses_the_ask() {
-    let folder = std::env::temp_dir().join(format!(
-        "voice-core-broken-word-list-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&folder).unwrap();
-    std::fs::write(folder.join("languages.json"), TWO_LISTS).unwrap();
-    std::fs::write(folder.join("words.txt"), "today\tfifty\n").unwrap();
-    let ask =
-        |words: &[&str]| frequencies(&json!({"folder": folder.to_string_lossy(), "words": words}));
-    assert_eq!(ask(&["Today"]), Err(2));
-    assert_eq!(ask(&["Ελλάδα"]), Ok(json!({"zipf": [null]})));
-    std::fs::remove_dir_all(&folder).unwrap();
+    // Out of shape, missing beside its catalog, and out of byte order (the map can't be built).
+    for (name, list) in [
+        ("malformed", Some("today\tfifty\n")),
+        ("missing", None),
+        ("unsorted", Some("zebra\t30\ntoday\t56\n")),
+    ] {
+        let folder = std::env::temp_dir().join(format!(
+            "voice-core-broken-word-list-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("languages.json"), TWO_LISTS).unwrap();
+        if let Some(list) = list {
+            std::fs::write(folder.join("words.txt"), list).unwrap();
+        }
+        let ask = |words: &[&str]| {
+            frequencies(&json!({"folder": folder.to_string_lossy(), "words": words}))
+        };
+        assert_eq!(ask(&["Today"]), Err(2), "{name}");
+        assert_eq!(ask(&["Ελλάδα"]), Ok(json!({"zipf": [null]})), "{name}");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
 }
 
 /// A word gets the most any list's form of it is seen, and no answer in a script no list is written
