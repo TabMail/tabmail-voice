@@ -1940,6 +1940,16 @@ mod budget_tests {
                 assert_eq!(reply["caret"][0], json!("😀éé\npass\nword = [redacted]"));
             }
         }
+        // After the caret, the text is cut at an unknown end: the break kept is still named.
+        let read = call(
+            json!({"caretWindow":{"parts":["","",format!("{labelled}. discarded tail")],"startKnown":true,"endKnown":false,"paragraphStarts":["pass".len()]}}),
+        );
+        assert_eq!(read["parts"][2], json!(format!("pass\nword = {value}. ")));
+        assert_eq!(read["addedBreaks"], json!([[], [], ["pass".len()]]));
+        let reply =
+            call(json!({"blocks":[],"caret":read["parts"],"caretBreaks":read["addedBreaks"]}));
+        let text = reply.to_string();
+        assert!(!text.contains("a1b2") && !text.contains("c3d4"), "{text}");
     }
     /// Two keys on lines of their own, the caret at the second's start, whether the break between
     /// them is the text's own or one the caret window put back: each is redacted on its own line,
