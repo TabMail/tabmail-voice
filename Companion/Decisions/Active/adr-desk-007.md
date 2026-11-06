@@ -499,7 +499,7 @@ where each removed break was, so a key the text glues to the word before stays f
 misplaced start splits it after its own block's start. Only the breaks the core put back
 are joined; the text's own are the screen's and are read as they are, as the 2026-10-07 amendment
 rules. Breaks that are not the parts' line breaks, or out of order, refuse the read. A secret over
-two lines whose break the core put back is now hidden whole, where it was shown in pieces.)* Each
+two lines whose break the caret window put back is now hidden whole, where it was shown in pieces.)* Each
 place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
 selection's own), and the walk's end names whose starts the helper keeps. The two walks together
 place at most the budget and the selection's own. Walking the selection first, on the one budget,

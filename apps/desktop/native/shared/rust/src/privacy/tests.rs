@@ -915,12 +915,27 @@ fn a_joined_break_among_many_secrets_costs_about_one_more_reading() {
     let joined = [line.len() - 1];
     // Compile before timing.
     taken("").unwrap();
-    let start = Instant::now();
+    // The quickest of a few readings of each: one slow reading under a busy machine is not the
+    // cost being measured.
+    const READINGS: usize = 3;
+    let quickest = |read: &dyn Fn()| {
+        (0..READINGS)
+            .map(|_| {
+                let start = Instant::now();
+                read();
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    };
     let laid_out = taken_with_edges(&text, &[]).unwrap();
-    let once = start.elapsed();
-    let start = Instant::now();
     let across = taken_across_breaks(&text, &[], &joined).unwrap();
-    let twice = start.elapsed();
+    let once = quickest(&|| {
+        taken_with_edges(&text, &[]).unwrap();
+    });
+    let twice = quickest(&|| {
+        taken_across_breaks(&text, &[], &joined).unwrap();
+    });
     assert!(
         twice < once * 4,
         "across one break {twice:?}, as laid out {once:?}"

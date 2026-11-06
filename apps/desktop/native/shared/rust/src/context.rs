@@ -2014,29 +2014,38 @@ mod budget_tests {
     /// Two block starts the OS gave in a rich editor whose text runs paragraphs together, one where
     /// a key's paragraph starts and one misplaced inside the key: the text read without the breaks
     /// put back keeps a word edge where each was, so a key that needs one is still found, whole,
-    /// and none of it is shown (issue #365).
+    /// and none of it is shown (issue #365). The caret is laid out on its own and among other
+    /// blocks: a block after it gives the screen an edge past the joined ones, and the joined
+    /// reading still sees every edge in order.
     #[test]
     fn a_second_start_inside_a_key_glued_to_the_paragraph_before_never_shows_it() {
         let token = "9fK2xQ7mZ1pL8vR3wTaB4c";
         let bearer = format!("Bearer {token}");
         let key = format!("{}{token}", concat!("sk", "-"));
-        for (text, inside) in [
-            (&bearer, 3),
-            (&bearer, "Bearer ".len() + 10),
-            (&key, 3 + 17),
-            (&key, 3 + 16),
-        ] {
-            let field = format!("Notes{text}");
-            let starts = json!([5, 5 + inside]);
-            let read = call(
-                json!({"caretWindow":{"parts":[field,"",""],"startKnown":true,"endKnown":true,"paragraphStarts":starts}}),
-            );
-            let reply =
-                call(json!({"blocks":[],"caret":read["parts"],"caretBreaks":read["addedBreaks"]}));
-            let shown = reply["caret"][0].as_str().unwrap();
-            assert!(shown.starts_with("Notes\n"), "{starts}: {shown}");
-            for piece in [&token[..4], &token[token.len() - 4..]] {
-                assert!(!shown.contains(piece), "{starts}: {shown}");
+        let layouts = [
+            json!([]),
+            json!([{"kind":"caret","text":""},{"kind":"text","text":"Footer"}]),
+        ];
+        for blocks in &layouts {
+            for (text, inside) in [
+                (&bearer, 3),
+                (&bearer, "Bearer ".len() + 10),
+                (&key, 3 + 17),
+                (&key, 3 + 16),
+            ] {
+                let field = format!("Notes{text}");
+                let starts = json!([5, 5 + inside]);
+                let read = call(
+                    json!({"caretWindow":{"parts":[field,"",""],"startKnown":true,"endKnown":true,"paragraphStarts":starts}}),
+                );
+                let reply = call(
+                    json!({"blocks":blocks,"caret":read["parts"],"caretBreaks":read["addedBreaks"]}),
+                );
+                let shown = reply["caret"][0].as_str().unwrap();
+                assert!(shown.starts_with("Notes\n"), "{blocks} {starts}: {shown}");
+                for piece in [&token[..4], &token[token.len() - 4..]] {
+                    assert!(!shown.contains(piece), "{blocks} {starts}: {shown}");
+                }
             }
         }
     }
