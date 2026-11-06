@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
+import { memoryHelperNotices } from "../scripts/memory-helper.mts";
 import { x11Argument } from "../src/main/native/linux/appImage.js";
 
 const root = join(__dirname, "..");
@@ -59,9 +60,26 @@ test("every system's package ships the word list and the lists' catalog", () => 
  * Acknowledgements at length) travel with every package. */
 test("every system's package ships the third-party notices", () => {
   const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { extraResources: { from: string; to: string }[] };
-  const notices = builder.extraResources.find(({ to }) => to === "THIRD_PARTY_LICENSES.md");
-  expect(notices?.from).toBe("../../THIRD_PARTY_LICENSES.md");
-  expect(readFileSync(join(root, notices!.from), "utf8")).toContain("# Third-party licences");
+  const licences = builder.extraResources.find(({ to }) => to === "THIRD_PARTY_LICENSES.md");
+  expect(licences?.from).toBe("../../THIRD_PARTY_LICENSES.md");
+  expect(readFileSync(join(root, licences!.from), "utf8")).toContain("# Third-party licences");
+  const notices = builder.extraResources.find(({ to }) => to === "THIRD_PARTY_NOTICES.md");
+  expect(notices?.from).toBe("../../THIRD_PARTY_NOTICES.md");
+  expect(readFileSync(join(root, notices!.from), "utf8")).toContain("# Third-party notices");
+  // The memory helper's own notices, from its checkout (the build refuses a commit without them).
+  expect(builder.extraResources.find(({ to }) => to === "voice-memory-THIRD_PARTY_NOTICES.txt")?.from).toBe(memoryHelperNotices);
+});
+
+/** electron-builder deletes Electron's and Chromium's licence files from a macOS app (they stay beside
+ * the app on Windows and Linux), and Chromium's lists FFmpeg's LGPL, which must ship with it: the
+ * macOS package puts them back in its resources. */
+test("the macOS package ships Electron's and Chromium's licences", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { mac: { extraResources: { from: string; to: string }[] } };
+  const shipped = Object.fromEntries(builder.mac.extraResources.map(({ from, to }) => [to, from]));
+  expect(shipped["LICENSE.electron.txt"]).toBe("node_modules/electron/dist/LICENSE");
+  expect(shipped["LICENSES.chromium.html"]).toBe("node_modules/electron/dist/LICENSES.chromium.html");
+  expect(readFileSync(join(root, shipped["LICENSE.electron.txt"]!), "utf8")).toContain("Electron contributors");
+  expect(readFileSync(join(root, shipped["LICENSES.chromium.html"]!), "utf8")).toContain("FFmpeg");
 });
 
 test("Windows packages every helper the main process can launch", () => {

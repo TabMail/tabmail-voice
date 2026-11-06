@@ -1399,6 +1399,15 @@ describe("Settings page", () => {
     }
   });
 
+  /** The native code's licence texts are in the repository's generated notices file, which the grouped
+   * entry opens: its address is stated here, not read from the list it checks. */
+  test("the other open-source components open Voice's own third-party notices", async () => {
+    const { commands } = await settingsPage({ error: null }, signedIn);
+    await act(async () => button("Acknowledgements").click());
+    await act(async () => button("Other open-source components").click());
+    expect(commands.at(-1)).toEqual({ type: "openURL", url: "https://github.com/TabMail/tabmail-voice/blob/main/THIRD_PARTY_NOTICES.md" });
+  });
+
   /** A section with something to do (signed out, a permission missing, VS Code's settings hiding the
    * caret) is marked in the sidebar,
    * with a mark a screen reader announces (an image with a label, not a bare dot). */

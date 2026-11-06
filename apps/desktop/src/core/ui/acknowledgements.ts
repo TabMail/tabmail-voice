@@ -76,8 +76,8 @@ export const acknowledgements: readonly Acknowledgement[] = [
   // The rest.
   {
     name: "Other open-source components",
-    license: "MIT, Apache 2.0, ISC, BSD, Zlib, Unlicense, Unicode v3, Blue Oak 1.0.0 and Python 2.0 licences",
-    url: "https://github.com/TabMail/tabmail-voice/blob/main/THIRD_PARTY_LICENSES.md",
+    license: "MIT, Apache 2.0, ISC, BSD, Zlib, Unlicense, Unicode v3, CDLA Permissive 2.0, Blue Oak 1.0.0 and Python 2.0 licences",
+    url: "https://github.com/TabMail/tabmail-voice/blob/main/THIRD_PARTY_NOTICES.md",
     note: "The npm packages and Rust crates the projects above build on",
   },
 ];

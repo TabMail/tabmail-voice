@@ -2,8 +2,9 @@
 
 TabMail Voice is licensed under the MPL 2.0 (`LICENSE`). It ships, or is built from, the open-source
 projects and data below; Settings > Acknowledgements lists the same. Each project's own licence file
-ships with it where the package carries one (the app's packages, inside the app); the texts of the
-licences named here follow the list.
+ships with it where the package carries one (the app's packages, inside the app; Electron's and
+Chromium's beside it as `LICENSE.electron.txt` and `LICENSES.chromium.html`); the native code's are in
+`THIRD_PARTY_NOTICES.md`. The texts of the licences named here follow the list.
 
 ## Electron
 
@@ -274,9 +275,9 @@ licences named here follow the list.
 
 ## Other open-source components
 
-- **Source:** https://github.com/TabMail/tabmail-voice/blob/main/THIRD_PARTY_LICENSES.md
-- **Licence:** MIT, Apache 2.0, ISC, BSD, Zlib, Unlicense, Unicode v3, Blue Oak 1.0.0 and Python 2.0 licences
-- **Used for:** The npm packages and Rust crates the projects above build on. Each npm package's licence ships with it inside the app.
+- **Source:** https://github.com/TabMail/tabmail-voice/blob/main/THIRD_PARTY_NOTICES.md
+- **Licence:** MIT, Apache 2.0, ISC, BSD, Zlib, Unlicense, Unicode v3, CDLA Permissive 2.0, Blue Oak 1.0.0 and Python 2.0 licences
+- **Used for:** The npm packages and Rust crates the projects above build on. Each npm package's licence ships with it inside the app; `THIRD_PARTY_NOTICES.md`, generated from the lockfiles and shipped in every package, holds the licence texts of the native code compiled in (the Rust crates, the C libraries they bundle, nlohmann/json and the Rust standard library), and `voice-memory-THIRD_PARTY_NOTICES.txt` the memory helper's.
 
 # Licence texts
 

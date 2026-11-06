@@ -10,6 +10,7 @@ removed at cutover; its last source is in git history.
 tabmail-voice/
 ├── Scripts/stt-compare/      Speech-to-text model comparison (platform-free; see README)
 ├── THIRD_PARTY_LICENSES.md   What the app ships from others, each with its licence (Settings › Acknowledgements lists the same); shipped in every package
+├── THIRD_PARTY_NOTICES.md    GENERATED (`apps/desktop/scripts/third-party-notices.mts`): the licence texts of the native code compiled in (the core's and keyring's Rust crates, libdbus, nlohmann/json, Rust std; the memory helper's ship from its own repository); shipped in every package
 └── apps/                     The app's folder (ADR-DESK-013, amended by ADR-DESK-032)
     └── desktop/              The Electron app, below
 ```
@@ -23,7 +24,7 @@ Every file, folder and what it holds: [the file tree](Companion/Memory/Current/0
 ```
 apps/desktop/
 ├── resources/           Icons, tray images, DMG background, entitlements; Linux apt source and keys (ADR-DESK-058); Windows installer.nsh, the VC++ runtime (ADR-DESK-057)
-├── scripts/             build-native (macOS SwiftPM, Windows CMake), memory-helper (ADR-DESK-061), home-folder, gen-registries, swift-errors.sh, preview/
+├── scripts/             build-native (macOS SwiftPM, Windows CMake), memory-helper (ADR-DESK-061), third-party-notices, home-folder, gen-registries, swift-errors.sh, preview/
 ├── native/shared/       rust/ (the ONE home of logic the helpers share, ADR-DESK-054), context/, dictionary/ (the word list screen terms are judged by, its generator and cases, ADR-DESK-038), microphone/, privacy/ (redactors.json, ADR-DESK-046/047): cases every helper runs
 ├── native/memory/       native-fts.json, the tabmail-native-fts commit `voice-memory` is built from (ADR-DESK-061)
 ├── native/macos/        SwiftPM helpers voice-hotkey, voice-macos, voice-microphone, voice-screen-reader, voice-field-reader (ADR-DESK-044)

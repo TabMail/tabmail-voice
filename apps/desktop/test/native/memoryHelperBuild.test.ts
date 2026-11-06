@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { buildMemoryHelper, memoryHelperPin } from "../../scripts/memory-helper.mts";
+import { buildMemoryHelper, memoryHelperNotices, memoryHelperPin } from "../../scripts/memory-helper.mts";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -32,9 +32,9 @@ describe("the memory helper build", () => {
   }
 
   /** An app checkout pinning `pin`, with fake git, rustup and cargo: git reports `head` as the
-   *  checkout's commit, and cargo writes a helper holding `built`. Returns each command run, with
-   *  its folder and environment. */
-  function checkoutPinning(pin: object, head = revision, built = "fts_helper built from ~/.cargo/registry"): { root: string; runs: { command: string[]; cwd?: string; env?: NodeJS.ProcessEnv }[] } {
+   *  checkout's commit (its checkout holding the helper's notices unless `notices` is false), and
+   *  cargo writes a helper holding `built`. Returns each command run, with its folder and environment. */
+  function checkoutPinning(pin: object, head = revision, built = "fts_helper built from ~/.cargo/registry", notices = true): { root: string; runs: { command: string[]; cwd?: string; env?: NodeJS.ProcessEnv }[] } {
     const root = mkdtempSync(join(tmpdir(), "voice-memory-build-"));
     roots.push(root);
     file(join(root, "native/memory/native-fts.json"), JSON.stringify(pin));
@@ -43,6 +43,7 @@ describe("the memory helper build", () => {
     vi.mocked(execFileSync).mockImplementation(((command: string, args: readonly string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
       runs.push({ command: [command, ...args], cwd: options?.cwd, env: options?.env });
       if (command === "git" && args.includes("init")) mkdirSync(join(args[1] ?? "", ".git"), { recursive: true });
+      if (command === "git" && args.includes("checkout") && notices) file(join(args[1] ?? "", "THIRD_PARTY_NOTICES.txt"), "notices");
       if (command === "git" && args.includes("rev-parse")) return `${head}\n`;
       if (command === "cargo") {
         const target = args[args.indexOf("--target") + 1] ?? "";
@@ -129,6 +130,15 @@ describe("the memory helper build", () => {
     const { root, runs } = checkoutPinning({ repository, revision }, "fedcba9876543210fedcba9876543210fedcba98");
     expect(() => buildMemoryHelper(root, "x86_64-unknown-linux-gnu")).toThrow(`The memory helper's checkout is not at ${revision}`);
     expect(runs.filter(({ command }) => command[0] === "cargo")).toEqual([]);
+  });
+
+  /** Its notices ship beside the app's (`electron-builder.json`): a commit without them is never built,
+   * so no package can ship the helper without its crates' licences. */
+  test("a commit with no third-party notices is never built", () => {
+    const { root, runs } = checkoutPinning({ repository, revision }, revision, undefined, false);
+    expect(() => buildMemoryHelper(root, "x86_64-unknown-linux-gnu")).toThrow(`The memory helper at ${revision} has no THIRD_PARTY_NOTICES.txt to ship`);
+    expect(runs.filter(({ command }) => command[0] === "cargo")).toEqual([]);
+    expect(memoryHelperNotices).toBe("native/memory/.build/source/THIRD_PARTY_NOTICES.txt");
   });
 
   test.each<[string, object, string]>([
