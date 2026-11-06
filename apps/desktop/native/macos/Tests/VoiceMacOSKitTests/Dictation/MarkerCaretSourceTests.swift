@@ -583,6 +583,48 @@ struct MarkerCaretSourceTests {
         #expect(parts[2] == String(repeating: "x", count: parts[2].count))
     }
 
+    /// A selection over a line start in a field of more elements than the walk's budget: the
+    /// selection's own walk keeps that start, so the selected text keeps its break.
+    @Test func aSelectionOverALineStartInADenseEditorKeepsItsBreak() throws {
+        let width = 5
+        var lines: [LineNode] = []
+        for _ in 0..<200 {
+            lines.append(LineNode(lines.count * width, width))
+            lines.append(LineNode(lines.count * width, width, role: "AXStaticText"))
+        }
+        let line = 360, start = lines[line].span.location
+        let provider = Provider(text: String(repeating: "x", count: lines.count * width), selection: NSRange(location: start - 3, length: 5))
+        provider.lines = lines
+        provider.caretLine = lines[line - 1]
+        let parts = try #require(provider.read()?.parts)
+        #expect(parts[1] == "xxx\nxx")
+    }
+
+    /// Elements Accessibility misplaces, but inside the field and round-tripping, put a line's start
+    /// inside a key; one further on has no place, off the caret's own path. The read puts back no
+    /// break at all, so the key is redacted whole, never split into two halves left as they are.
+    @Test func aGeckoSecretOnTheCaretsLineIsRedactedWholeThoughAnElementPastItHasNoPlace() throws {
+        let head = "sk" + "-" + "a1B2c3D4e", tail = "5F6g7H8i9J0k1L2"
+        let text = "Key " + head + tail + " end more"
+        let caret = 4 + head.utf16.count, length = text.utf16.count
+        let provider = Provider(text: text, selection: NSRange(location: caret, length: 0))
+        // "Key sk-…e" | "5F6…2" starting a line at the caret | " end" | past the field's end.
+        let misplaced = LineNode(caret, tail.utf16.count)
+        provider.lines = [LineNode(0, caret), misplaced, LineNode(caret + tail.utf16.count, 4), LineNode(length - 2, 10)]
+        provider.caretLine = misplaced
+        let window = try #require(provider.read())
+        var context = ScreenContext(appName: "Example Browser", bundleID: "org.example.browser")
+        context.textBeforeCaret = window.parts[0]
+        context.selectedText = window.parts[1]
+        context.textAfterCaret = window.parts[2]
+        context.appendCaret()
+        let reply = context.json
+        for name in ["textBeforeCaret", "textAfterCaret", "renderedText", "logDescription"] {
+            let value = try #require(reply[name]?.string)
+            #expect(!value.contains(head) && !value.contains(tail), "\(name)")
+        }
+    }
+
     /// The caret's diagnostic asks Accessibility nothing of its own (it is built in every build,
     /// whether or not the app keeps the line): a read whose caret marker is in an element asks the
     /// same of the field's elements as one whose marker is in none, and measures only the caret

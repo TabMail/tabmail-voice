@@ -10,12 +10,13 @@
 //! the first that ends at or after the window's start is found by halving (a long field costs a
 //! few looks), then each in turn until one starts past the window's end, going into each block.
 //! A block starts a line, and so does what follows one; only starts within the window count.
-//! When that walk runs out of budget, or meets an element with no place, a second walks the
-//! selection alone (the window `caret`: its own ends, a few looks per level) on a small budget of
+//! When that walk runs out of budget, a second walks the selection alone (the window `caret`: its own ends, a few looks per level) on a small budget of
 //! its own, so the starts at the caret, which decide where a dictation goes, are still found: a
 //! code editor gives each highlighted piece of a line its own element, more than the budget holds
 //! in the window (Overleaf in Firefox, 481 elements in 30 lines, 2026-11-05, #355). A window the
-//! budget holds is walked as before, and its starts are all kept.
+//! budget holds is walked as before, and its starts are all kept. An element with no place ends
+//! either walk with no starts, as before: the OS misplaced something, and a start kept then could
+//! fall inside a line, and inside a secret on it (ADR-DESK-046).
 //!
 //! - `{"start": {"elements": n}}`: a walk placing at most `n` elements.
 //! - `{"state": S, "children": count}`: the children of the element last asked for.
@@ -166,8 +167,9 @@ impl Walk {
         if self.caret { "caret" } else { "shown" }
     }
 
-    /// The end of a walk. The window's: complete, its starts; not, the selection's walk begins
-    /// from the field, on its own budget. The selection's: complete, its starts; not, none.
+    /// The end of a walk. The window's: complete, its starts; out of budget, the selection's walk
+    /// begins from the field, on its own budget. The selection's: complete, its starts; out of
+    /// budget, none.
     fn end(&mut self, complete: bool, start: bool) -> Value {
         match (self.caret, complete) {
             (false, true) => json!({"done": true, "starts": "shown", "start": start}),
@@ -221,8 +223,9 @@ impl Walk {
     }
 
     fn placed(&mut self, facts: &Value) -> Result<Value, u32> {
+        // An element with no place: no starts from either walk.
         if facts.is_null() {
-            return Ok(self.end(false, false));
+            return Ok(json!({"done": false, "start": false}));
         }
         let block = flag(&facts["block"])?;
         let (child, children) = self.asked;

@@ -398,25 +398,32 @@ fn a_window_the_budget_holds_keeps_all_its_starts() {
     );
 }
 
-/// The walk places by the window first, then, when that walk does not end, by the selection on a
-/// budget of its own; each ask names its window, and the end names whose starts to keep.
+/// The walk places by the window first, then, when that walk runs out of budget, by the selection
+/// on a budget of its own; each ask names its window, and the end names whose starts to keep. An
+/// element with no place ends either walk with no starts.
 #[test]
 fn the_walk_places_by_the_window_then_by_the_selection() {
     let start = process(&json!({"start": {"elements": 1000}})).unwrap();
     assert_eq!(start["state"]["window"], "shown");
     let one = process(&json!({"state": start["state"], "children": 1})).unwrap();
     assert_eq!(one["ask"]["place"]["window"], "shown");
-    // An element with no place ends the window's walk: the selection's starts from the field, on
-    // a budget of its own.
-    let again = process(&json!({"state": one["state"], "placed": null})).unwrap();
+    // An element with no place ends the window's walk with no starts: the OS misplaced something.
+    assert_eq!(
+        process(&json!({"state": one["state"], "placed": null})).unwrap(),
+        json!({"done": false, "start": false})
+    );
+    // Running out of budget begins the selection's walk from the field, on a budget of its own.
+    let mut spent = one["state"].clone();
+    spent["looks"] = spent["elements"].clone();
+    let again =
+        process(&json!({"state": spent, "placed": {"block": false, "endsBefore": false}})).unwrap();
     assert_eq!(again["ask"]["children"], json!({"depth": null, "child": 0}));
-    assert_eq!(again["start"], false);
     assert_eq!(again["state"]["window"], "caret");
     assert_eq!(again["state"]["looks"], 0);
     assert_eq!(again["state"]["elements"], SELECTION_ELEMENTS);
     let two = process(&json!({"state": again["state"], "children": 1})).unwrap();
     assert_eq!(two["ask"]["place"]["window"], "caret");
-    // And with none in the selection's, no starts.
+    // And an element with no place in the selection's: no starts either.
     assert_eq!(
         process(&json!({"state": two["state"], "placed": null})).unwrap(),
         json!({"done": false, "start": false})
@@ -697,10 +704,10 @@ fn answers_out_of_turn_are_refused() {
         ),
         Err(1)
     );
-    // An element with no place ends the window's walk, and the selection's begins.
+    // An element with no place ends the walk with no starts.
     assert_eq!(
-        process(&json!({"state": children["state"], "placed": null})).unwrap()["state"]["window"],
-        "caret"
+        process(&json!({"state": children["state"], "placed": null})).unwrap(),
+        json!({"done": false, "start": false})
     );
     assert_eq!(
         process(&json!({"state": children["state"], "placed": {}})),

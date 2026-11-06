@@ -629,12 +629,15 @@ static int run() {
         result = noLines.read();
         expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?", "a provider without lines gets no break");
         // A rich editor's blocks, as Chromium lays them out, give back the breaks its text leaves
-        // out: the field's tree (node 0), where each node's text is, and the element the caret is in.
+        // out: the field's tree (node 0), where each node's text is, and the element the caret is in;
+        // `noPlace`, a node UI Automation gives no range for.
         struct Node { int start, end; bool block; std::vector<int> children; };
-        const auto layout = [](Provider& provider, const std::vector<Node>& nodes, std::optional<int> caretNode, size_t elements = 300) {
-            return UiaCaretSource::LayoutRead([&provider, nodes, caretNode, elements](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)
+        const auto layout = [](Provider& provider, const std::vector<Node>& nodes, std::optional<int> caretNode, size_t elements = 300,
+                               std::optional<int> noPlace = std::nullopt) {
+            return UiaCaretSource::LayoutRead([&provider, nodes, caretNode, elements, noPlace](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)
                 -> std::optional<UiaCaretSource::Layout> {
                 const auto place = [&](int node) {
+                    if (noPlace && node == *noPlace) return ComPtr<IUIAutomationTextRange>();
                     auto* range = provider.range(provider.docStart + nodes[node].start, provider.docStart + nodes[node].end);
                     range->block = true;
                     return ComPtr<IUIAutomationTextRange>(range);
@@ -667,6 +670,13 @@ static int run() {
         result = misread.read(layout(misread, gmailTree, 4));
         expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
             "a provider whose text between a block and the caret disagrees gives no starts");
+        // A node with no place, off the caret's own path (the first line), ends the walk with no
+        // starts: UI Automation misplaced something, and a start kept then could fall inside a line,
+        // and inside a secret on it.
+        Provider unplaced(gmail, 55, 55);
+        result = unplaced.read(layout(unplaced, gmailTree, 4, 300, 1));
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
+            "a node with no place off the caret's path gives no starts, and no break");
         // A block start in a selection gets its break there; one after it, in the text after it.
         Provider inSelection(L"First paragraphSecondThird", 10, 18);
         result = inSelection.read(layout(inSelection, {{0, 26, false, {1, 2, 3}}, {0, 15, true, {}}, {15, 21, true, {}}, {21, 26, true, {}}}, 1));
@@ -746,6 +756,13 @@ static int run() {
                 std::count(result.parts[0].begin(), result.parts[0].end(), '\n') == 1 && result.parts[2].rfind("xxxxx", 0) == 0,
                 pieceFirst ? "a start the window's walk found as it ran out on a piece is not the caret's"
                            : "a start the window's walk found as it ran out on a line is not the caret's");
+            if (pieceFirst) continue;
+            // A selection over a line start: the selection's own walk keeps that start, so the
+            // selected text keeps its break.
+            Provider selectedOver(turnsText, caretAt - 3, caretAt + 2);
+            result = selectedOver.read(layout(selectedOver, turns, caretLine - 1));
+            expect(!result.selectionUnavailable && result.parts[1] == "xxx" + blockBreak + "xx",
+                "a selection over a line start of a dense editor keeps its break");
         }
         viewportContracts();
         editContracts();

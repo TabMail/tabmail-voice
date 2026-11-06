@@ -138,18 +138,18 @@ public:
     // finds them: the shared core walks the field (`blockStarts`, ADR-DESK-054) and decides which
     // node to place, which start a line and when the walk ends; this says how each placed node's
     // range compares with the window (`low`'s start to `high`'s end) and whether it is a block.
-    // The window's when its walk ends within `elements` nodes; when it does not (a node can't be
-    // placed, or the budget runs out: a code editor gives each highlighted piece of a line its own
-    // element), the selection's own, from the core's walk of it alone on a smaller budget; none
-    // when that walk does not end either.
+    // The window's when its walk ends within `elements` nodes; when the budget runs out (a code
+    // editor gives each highlighted piece of a line its own element), the selection's own, from
+    // the core's walk of it alone on a smaller budget. None when a node can't be placed in either
+    // walk, or the selection's runs out too.
     template <class Node, class Children, class IsBlock, class Place>
     static std::optional<std::vector<ComPtr<IUIAutomationTextRange>>> blockStarts(const Node& field, IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high,
         size_t elements, const Children& children, const IsBlock& isBlock, const Place& place) {
         const UiaCaretSource reader;
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
         const auto ask = [](const nlohmann::json& request) { return core::request({{"blockStarts", request}}, voice_core_context_json); };
-        // The core walks the whole window (`shown`), and when that walk does not end, the selection
-        // alone (`caret`): each start is kept with the window of the ask that placed it, and the
+        // The core walks the whole window (`shown`), and when that walk runs out of budget, the
+        // selection alone (`caret`): each start is kept with the window of the ask that placed it, and the
         // core says whose starts to keep.
         std::map<std::string, std::vector<ComPtr<IUIAutomationTextRange>>> starts;
         ComPtr<IUIAutomationTextRange> placed;

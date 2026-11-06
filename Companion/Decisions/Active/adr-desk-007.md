@@ -466,17 +466,24 @@ past the walk's budget of 300 (`caretSourceElements`), and a walk that runs out 
 (logged: `the block walk stopped incomplete after 300 elements placed and 16 opened, 15 starts
 found`). The test page above had three short lines and never reached the budget. The core's walk of
 the window is unchanged, on the whole budget, and a window it walks within the budget keeps all its
-starts. When it does not end (the budget runs out, or an element has no place), the core walks the
-selection alone, from the field, on a budget of its own (`SELECTION_ELEMENTS`, 64, or the window's
+starts. When it runs out of budget, the core walks the selection alone, from the field, on a budget
+of its own (`SELECTION_ELEMENTS`, 64, or the window's
 when smaller): halving down to the selection costs a few looks per level, and finds the start the
 dictation's spacing depends on. Those starts are kept, and the text shown elsewhere reads as it did
-before #339, its lines run together; when the selection's walk does not end either, there are no
-starts, as before. Every start kept was placed, so none can fall inside a line (ADR-DESK-046). Each
+before #339, its lines run together; when the selection's walk runs out too, there are no starts,
+as before. An element with no place still ends either walk with no starts, as the #339 rule says:
+the OS misplaced something, and the other elements' places can be misplaced with it, so a start kept
+then could fall inside a line, and inside a secret on it (ADR-DESK-046). Handing over to the
+selection's walk there too was tried and rejected in review: a misplaced start at the caret split a
+key that main redacts whole. Each
 place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
 selection's own), and the walk's end names whose starts the helper keeps. The two walks together
 place at most the budget and the selection's own. Walking the selection first, on the one budget,
 was tried and rejected in review: it spent looks a window needed, so a field of 290 short lines read
-whole before kept only the caret's start. The Mac and Windows walks follow the asks; Linux reads a
+whole before kept only the caret's start. The same walk serves the Chromium value read on the Mac
+(`ScreenContextReader.valueCaretWindow`) and Windows' rich editors, where the selection's starts now
+stand in for the provider's own paragraph answer when the window's walk runs out. The Mac and
+Windows walks follow the asks; Linux reads a
 rich editor through its own elements and has no such walk. The owner's field, as Accessibility gave
 it (roles and places, no text), is the test fixture `native/shared/context/gecko-code-editor-tree.json`,
 replayed through the Mac read: red before the change, with the same log line as the owner's
