@@ -1359,6 +1359,8 @@ describe("Settings page", () => {
         for (const setting of theirs) expect(visible, `${section} hides ${other}'s ${setting}`).not.toContain(setting);
       }
     }
+    // Acknowledgements is the sidebar's last section, as on iOS (owner, 2026-11-06).
+    expect([...document.querySelectorAll("button.nav")].map((nav) => nav.textContent).at(-1)).toBe("Acknowledgements");
   });
 
   /** Settings › Acknowledgements lists every project and data Voice is built with, each its name over
@@ -1375,6 +1377,26 @@ describe("Settings page", () => {
     expect(document.querySelector(".acknowledgements-source")?.textContent).toBe(`${sourceLine.text} ${sourceLine.link}`);
     await act(async () => button(sourceLine.link).click());
     expect(commands).toEqual([...acknowledgements, sourceLine].map(({ url }) => ({ type: "openURL", url })));
+  });
+
+  /** The word list's sources are credited as their licences require (CC BY-SA 4.0's attribution, the
+   * Unicode licence's notice), each with its own licence and page, whatever else the list holds. */
+  test("the acknowledgements credit the word list's sources", async () => {
+    const sources: [name: string, license: string, url: string][] = [
+      ["FrequencyWords", "CC BY-SA 4.0", "https://github.com/hermitdave/FrequencyWords"],
+      ["OpenSubtitles 2018", "OPUS: P. Lison and J. Tiedemann, LREC 2016", "https://www.opensubtitles.org"],
+      ["wordfreq", "CC BY-SA 4.0 (data)", "https://github.com/rspeer/wordfreq"],
+      ["OpenCC", "Apache License 2.0", "https://github.com/BYVoid/OpenCC"],
+      ["Unicode CLDR", "Unicode License v3", "https://cldr.unicode.org"],
+    ];
+    const { commands } = await settingsPage({ error: null }, signedIn);
+    await act(async () => button("Acknowledgements").click());
+    for (const [name, license, url] of sources) {
+      const row = [...document.querySelectorAll(".acknowledgement")].find((candidate) => candidate.querySelector("button.link")?.textContent === name);
+      expect(row?.querySelector(".caption")?.textContent, name).toContain(license);
+      await act(async () => button(name).click());
+      expect(commands.at(-1), name).toEqual({ type: "openURL", url });
+    }
   });
 
   /** A section with something to do (signed out, a permission missing, VS Code's settings hiding the

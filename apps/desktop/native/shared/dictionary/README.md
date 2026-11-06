@@ -23,6 +23,11 @@ sees it often enough. This is the list.
 - `cases.json`: the cases every implementation of the rule runs against the list.
 - `generate.py` (with `requirements.txt`): builds `words.txt` and `languages.json`. The output is the
   same on every run.
+- `test_generate.py`: the generator's tests, offline (every download answered from fixtures): each
+  list's sources counted together, counts added up after each word is put in its list's form, the
+  Zipf floor and scripts, Japanese's missing list, and the files written. Run with the pinned packages
+  from this folder: `python3 -m venv /tmp/word-lists && /tmp/word-lists/bin/pip install -r
+  requirements.txt`, then `/tmp/word-lists/bin/python -m unittest test_generate`.
 
 ## Sources and licence
 
