@@ -53,11 +53,12 @@ describe("contextTerms", () => {
     expect(contextTerms("Nairobi Nairobi Priya Brevalle Xyvora Xyvora Quillon", zipf)).toEqual(["Xyvora", "Brevalle", "Quillon", "Priya", "Nairobi"]);
   });
 
-  /** Each term is a word the user's dictionary could hold: long enough, and no more than one. */
+  /** Each term is a word the user's dictionary could hold: long enough, no longer than it allows,
+   * and without a character it refuses (an angle bracket a code editor shows inside a word). */
   test("every term is a valid dictionary word", () => {
     const long = "X".repeat(config.dictionaryWordMaxChars + 1);
-    const zipf: WordFrequencies = new Map([["Xy", 0], [long, 0], ["Xyv", 0]]);
-    expect(contextTerms(`Xy ${long} Xyv`, zipf)).toEqual(["Xyv"]);
+    const zipf: WordFrequencies = new Map([["Xy", 0], [long, 0], ["Xy<vora", 0], ["Bre>valle", 0], ["Xyv", 0]]);
+    expect(contextTerms(`Xy ${long} Xy<vora Bre>valle Xyv`, zipf)).toEqual(["Xyv"]);
   });
 
   test("the candidates are every word with a letter, each once, without digits or addresses", () => {
