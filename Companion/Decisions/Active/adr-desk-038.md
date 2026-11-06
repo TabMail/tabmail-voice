@@ -531,5 +531,88 @@ slot and nothing else, since the rarest go first.
 - The app grows by the list's size. The list is CC BY-SA 4.0 (attributed in the folder's README and
   the repository README); the rest of the repository stays MPL 2.0.
 - The launch warm-up reads the list even while screen reading is off.
-- Awaiting the owner's blessing: the list's size, the menu's removal, the cutoff, the list read at
-  launch with screen reading off, and a word longer than a dictionary word not asked about.
+- Blessed by the owner (2026-11-06): the list's size ("fine"), the menu's removal ("missing
+  dictionary is no longer a thing"), the cutoff ("fine, we'll revisit if we need later"; the cutoff is
+  re-chosen for the new data in the next amendment), the list read at launch with screen reading off
+  ("fine"), and a word longer than a dictionary word not asked about ("50char+ is nonsense"). The
+  owner's words, as typed: "list size is fiun neson main app only. yes, missing dictionary is no
+  longer a thing. cutoff is fine, we'll reivsit if we need later. Yes, list being read is fine.
+  nothing is a problem. yes, 50char+ is nonsense." The size again, asked with iOS's copy of the list
+  (2026-11-06): "bundle yes. 35 MB old, probably larger is still fine as long as it is reasonable
+  size to fit in main app. i mean, we bundle large network weights already. this is tiny".
+
+### Amendment 2026-11-06 (owner): the word list is FrequencyWords' counts, the cutoff Zipf 3.5, and an Acknowledgements page
+
+**Context:** the list above was wordfreq's data, which merges many corpora, some under terms of their
+own (it asks that SUBTLEX's authors be credited), and TabMail on iOS ships the same list. The owner
+wanted a source whose licence is plain for both apps and asked for a measurement first. FrequencyWords
+(Hermit Dave's counts of OpenSubtitles 2018, one corpus, CC BY-SA 4.0) was measured on the same speech
+check: at Zipf 3.5 it catches about what wordfreq caught at 4.0 (catching more foreign names and fewer
+English spelling variants). The owner chose it ("let's do CC-BY and have ack page that shows we use
+it. ios already has one, and voice should also have a similar page in settings") and asked that every
+other third-party work Voice ships be credited too.
+
+**Decision:**
+- **The data.** `generate.py` now counts FrequencyWords' lists (pinned commit `525f9b5`) for every
+  language: Filipino from its Tagalog list, Norwegian Bokmål from its Norwegian, Portuguese from its
+  Portuguese and Brazilian Portuguese, Serbo-Croatian from its Croatian, Serbian and Bosnian, Chinese
+  from its Simplified and Traditional lists. Each word is put in its list's form by wordfreq's code
+  (`preprocess_text`, and its Traditional-to-Simplified table for Chinese; its word frequencies are
+  not used), the counts of words sharing a form added up, and the Zipf taken against the list's total.
+  The rest is unchanged: Zipf 2.5 or more, the language's scripts, letters and marks, merged with
+  each word's highest Zipf. 41 lists, 2.55 million words, 38 MB on disk (about 10 MB compressed).
+  `languages.json` is the same apart from Japanese.
+- **No Japanese list.** FrequencyWords' Japanese list holds word stems without their kana (no "その",
+  "東京" seen 378 times), so every Japanese word would have looked rare and become a term. With no
+  list, a word with kana gets no answer (null) and, having no capital, is no term; a word in Han alone
+  is judged by Chinese's list ("会議" as "会议"). Japanese screens send no terms but the Han words
+  Chinese doesn't see often.
+- **A word in parts.** FrequencyWords split words at the zero-width non-joiner, so Persian's "می‌شود"
+  is listed only as "می" and "شود". The joiners a word missing whole is split at (`JOINERS`, the
+  least seen part) now include the zero-width non-joiner and joiner beside the hyphen and the
+  apostrophes.
+- **The cutoff** is Zipf 3.5 (`screenTermCommonZipf` 35; `cases.json`'s `cutoff`), re-measured on the
+  shipped list with the speech check above (392 words that need help):
+
+| cutoff (Zipf) | needs-help words sent | words sent | sent but spelled right anyway | common words sent |
+|---|---|---|---|---|
+| 2.5 | 266/392 (68%) | 274 | 8 | 2 |
+| 3.0 | 308/392 (79%) | 329 | 21 | 5 |
+| **3.5** | **348/392 (89%)** | **390** | **42** | **11** |
+| 3.8 | 356/392 (91%) | 429 | 73 | 26 |
+| 4.0 | 365/392 (93%) | 458 | 93 | 38 |
+| 4.5 | 374/392 (95%) | 522 | 148 | 80 |
+
+  Subtitles count names and spoken words more often than wordfreq's mix of text, so the same rarity
+  sits lower: 3.5 sends about what wordfreq's 4.0 sent (414 words, 12 common). The needs-help words it
+  misses are names subtitles say often ("Kathryn" 3.6, "Steven" 4.5, "Seoul" 4.6, "Ryan" 4.8, "Intel"
+  5.1, "May" 6.7).
+- **Cases** (`cases.json`): every answer re-measured; the Japanese cases removed (kana now answers
+  null), Bulgarian's everyday word "защото", the Ukrainian everyday word "дякую" in place of "Київ", which the Ukrainian list barely sees,
+  Persian's joined words seen through their parts, and the ordering case given a second unseen word so
+  the earliest still wins a tie.
+- **Acknowledgements.** Settings has an Acknowledgements section (`src/core/ui/acknowledgements.ts`,
+  as TabMail on iOS's): an intro line, then each project and data set Voice ships or is built from,
+  its name a link to its page, over its licence and what of it is used. The main process opens only
+  those pages (beside the terms and the privacy policy). `THIRD_PARTY_LICENSES.md` at the repository's
+  root says the same at length, with copyrights and the licence texts, and ships in every package;
+  the word list's README (the sources, the licence, what changed) ships beside the list. A test fails
+  when a package the app ships or a crate the shared core links has no credit. The page ends with the
+  line that Voice is open source under the MPL 2.0, linking its source.
+- **Licences of the list.** `words.txt` adapts FrequencyWords (CC BY-SA 4.0, Hermit Dave, from
+  OpenSubtitles 2018 through OPUS, cited as OPUS asks). `languages.json` keeps wordfreq's letter
+  tables, so it stays CC BY-SA 4.0 too and the wordfreq and SUBTLEX credits stay; its scripts come from
+  CLDR, whose Unicode License v3 notice the README carries. Both files are licensed CC BY-SA 4.0 with
+  the licence's disclaimer; the code stays MPL 2.0.
+
+**Consequences:**
+- TabMail on iOS copies the new list, the cases and the cutoff, and credits FrequencyWords the same way.
+- English spelling variants are caught a little less often, foreign names a little more.
+- The credits name direct dependencies and the memory helper's main components, as iOS's do; the
+  packages and crates those pull in are one grouped entry, and their notices are generated at build
+  time in a follow-up (issue #366, with Electron's and Chromium's licence files on macOS).
+- Blessed by the owner (2026-11-06): no Japanese list ("Drop Japanese. And file a mission tracker if
+  it doesn't exist already. No priority because it's an announcement."; issue #367, no priority), the
+  cutoff 3.5 for the new data ("Frequency cutoff 3.5 is fine."), the page's place as the last section
+  of Settings' sidebar ("Yes, last item like ios, yes."), and the hand-written notices file until #366
+  generates it ("bless the license thing").

@@ -55,6 +55,15 @@ test("every system's package ships the word list and the lists' catalog", () => 
   expect(statSync(join(folder, "words.txt")).size).toBeGreaterThan(0);
 });
 
+/** The third-party notices (the licences and credits of what the app ships, Settings >
+ * Acknowledgements at length) travel with every package. */
+test("every system's package ships the third-party notices", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { extraResources: { from: string; to: string }[] };
+  const notices = builder.extraResources.find(({ to }) => to === "THIRD_PARTY_LICENSES.md");
+  expect(notices?.from).toBe("../../THIRD_PARTY_LICENSES.md");
+  expect(readFileSync(join(root, notices!.from), "utf8")).toContain("# Third-party licences");
+});
+
 test("Windows packages every helper the main process can launch", () => {
   const source = readFileSync(join(root, "src/main/index.ts"), "utf8");
   const launched = [...new Set([...source.matchAll(/"(voice-[a-z-]+\.exe)"/g)].map(match => match[1]))].sort();

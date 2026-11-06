@@ -114,7 +114,7 @@ struct MacServiceRequestTests {
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == 4)
         guard replies.count == 4 else { return }
-        #expect(replies[0]["result"] as? NSDictionary == ["zipf": [56, 0, NSNull()]])
+        #expect(replies[0]["result"] as? NSDictionary == ["zipf": [57, 0, NSNull()]])
         for reply in replies[1...] { #expect(reply["error"] != nil && reply["result"] == nil) }
         withExtendedLifetime(service) {}
     }

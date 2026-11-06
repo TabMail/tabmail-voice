@@ -3,8 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! How often the words on screen are seen: the screen terms' test (ADR-DESK-038, amended
-//! 2026-11-05). The app ships one word list (`dictionary/words.txt`, 42 languages' lists from
-//! wordfreq's data merged, each word with the most often any of them sees it) and asks the main
+//! 2026-11-05 and 2026-11-06). The app ships one word list (`dictionary/words.txt`, 41 languages'
+//! lists from FrequencyWords' counts merged, each word with the most often any of them sees it) and
+//! asks the main
 //! helper (`wordFrequencies`) about the words; every helper answers here, the same on every system.
 //! A word is looked up in each form a list written in its script gives it (`listed_form`, as
 //! `languages.json` describes), and gets the most any of those forms is seen; a word in a script no
@@ -23,9 +24,11 @@ use std::{
 use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 use unicode_script::{Script, UnicodeScript};
 
-/// The characters that join the parts of a word ("что-то", "don't"); a word none of the lists has is
-/// as often seen as its least seen part when every part is in one list.
-const JOINERS: [char; 4] = ['-', '\'', '’', 'ʼ'];
+/// The characters that join the parts of a word ("что-то", "don't", Persian's "می‌شود" with its
+/// zero-width non-joiner); a word none of the lists has is as often seen as its least seen part when
+/// every part is in one list. The lists split words at all of them, the zero-width non-joiner and
+/// joiner included.
+const JOINERS: [char; 6] = ['-', '\'', '’', 'ʼ', '\u{200C}', '\u{200D}'];
 
 /// How a word is put in the form a list has its words in: wordfreq's `preprocess_text` for the list's
 /// language (and `simplify_chinese` for Chinese), as `languages.json` describes it.
@@ -235,7 +238,8 @@ fn listed_form(word: &str, form: &Form) -> String {
 }
 
 /// How often a word in a listed form is seen, in Zipf tenths: its own entry, else its least seen
-/// part when every part joined by a hyphen or an apostrophe has one; 0 when neither.
+/// part when every part joined by a hyphen, an apostrophe or a zero-width (non-)joiner has one; 0 when
+/// neither.
 fn seen(map: &Map<Vec<u8>>, form: &str) -> u64 {
     if let Some(tenths) = map.get(form) {
         return tenths;

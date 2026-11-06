@@ -500,3 +500,18 @@ textarea.bullet-text {
   color: var(--secondary);
   text-decoration: line-through;
 }
+
+/* An acknowledged project: its name, a link, over its licence, both at the start of the row. */
+.row.stack.acknowledgement {
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.acknowledgements-intro {
+  margin: 0 14px 10px;
+}
+
+/* Where the app's source is, under the list. */
+.acknowledgements-source {
+  margin: -10px 14px 0;
+}

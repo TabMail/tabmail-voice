@@ -143,12 +143,14 @@ It is our own app and code, not a fork of OpenWhispr.
 
 The names and terms Voice picks from the screen are judged by how often words are seen, by word
 lists Voice ships (`apps/desktop/native/shared/dictionary/`) adapted from
-[wordfreq](https://github.com/rspeer/wordfreq) by Robyn Speer and, for Korean,
-[FrequencyWords](https://github.com/hermitdave/FrequencyWords) by Hermit Dave (from OpenSubtitles
-2018), both CC BY-SA 4.0, with each language's letters from [Unicode CLDR](https://cldr.unicode.org).
-The lists are licensed CC BY-SA 4.0; that folder's README says what was changed. They are read with
-[fst](https://github.com/BurntSushi/fst) (MIT or Unlicense) and
-[unicode-script](https://github.com/unicode-rs/unicode-script) (MIT or Apache-2.0).
+[FrequencyWords](https://github.com/hermitdave/FrequencyWords) by Hermit Dave (word counts of
+OpenSubtitles 2018 via OPUS, CC BY-SA 4.0), each word put in the form [wordfreq](https://github.com/rspeer/wordfreq)'s
+code gives it (Apache-2.0), with wordfreq's letter tables (CC BY-SA 4.0) and each language's letters from
+[Unicode CLDR](https://cldr.unicode.org). The lists are licensed CC BY-SA 4.0; that folder's README
+credits every source and says what was changed.
+
+Every third-party project and data set Voice ships is credited in Settings > Acknowledgements and,
+with its licence, in `THIRD_PARTY_LICENSES.md`.
 
 ## License
 

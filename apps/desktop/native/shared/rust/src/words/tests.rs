@@ -154,6 +154,39 @@ fn a_word_gets_the_most_its_forms_are_seen() {
     std::fs::remove_dir_all(&folder).unwrap();
 }
 
+/// A word the lists have only in parts is seen as its least seen part, whichever joiner joins them:
+/// a hyphen, an apostrophe (straight, curly or the modifier letter), or a zero-width non-joiner or
+/// joiner, which the word counts split words at (Persian's "می‌شود"). Another character, an empty part
+/// or an unknown one leaves it unseen.
+#[test]
+fn a_word_in_parts_is_seen_as_its_least_seen_part() {
+    let folder = std::env::temp_dir().join(format!("voice-core-word-parts-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("languages.json"),
+        r#"{"lists":{"de":{"writings":[["Latn"]],"normal":"NFC","letters":null,"marks":false,"dotless_i":false,"under":null}},"letters":{}}"#,
+    )
+    .unwrap();
+    std::fs::write(folder.join("words.txt"), "co\t40\nop\t30\n").unwrap();
+    let ask =
+        |words: &[&str]| frequencies(&json!({"folder": folder.to_string_lossy(), "words": words}));
+    assert_eq!(
+        ask(&[
+            "co-op",
+            "co'op",
+            "co’op",
+            "coʼop",
+            "co\u{200C}op",
+            "co\u{200D}op",
+            "co\u{200B}op",
+            "co--op",
+            "co-xyvora"
+        ]),
+        Ok(json!({"zipf": [30, 30, 30, 30, 30, 30, 0, 0, 0]}))
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
+}
+
 /// The first ask, with no word (the app's warm-up at launch), has the word list read in the
 /// background, so a dictation's ask doesn't wait for it; an ask then reuses what was read.
 #[test]
@@ -199,7 +232,8 @@ fn listed_forms() {
     assert_eq!(form("Љубав", "sh"), "ljubav");
     assert_eq!(form("Ljubav", "sh"), "ljubav");
     assert_eq!(form("電腦", "zh"), "电脑");
-    assert_eq!(form("ﾃｽﾄ", "ja"), "テスト");
+    // NFKC: full-width Latin letters are plain ones.
+    assert_eq!(form("ＡＢＣ電腦", "zh"), "abc电脑");
     assert_eq!(form("شكراً", "ar"), "شكرا");
     assert_eq!(form("ـشكرا", "ar"), "شكرا");
     assert_eq!(form("שָׁלוֹם", "he"), "שלום");

@@ -14,6 +14,7 @@ import { brandBlue, brandTextGradient } from "../../../src/renderer/shared/brand
 import { type PersonalizationState, personalizationState } from "../../../src/core/personalization/page.js";
 import { type ShownBullet, UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { formatBytes } from "../../../src/core/memory/page.js";
+import { acknowledgements, acknowledgementsIntro, sourceLine } from "../../../src/core/ui/acknowledgements.js";
 import { fileProblemLine } from "../../../src/core/ui/fileProblems.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
@@ -1337,6 +1338,7 @@ describe("Settings page", () => {
       Memory: ["Memory used: 0 KB of 1 GB", "Size limit", "No requests kept yet.", "0 requests kept", "Clear All…"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
+      Acknowledgements: [acknowledgementsIntro, "Electron", "FrequencyWords", "CC BY-SA 4.0"],
     };
     const shown = { ...signedIn, debugAllowed: true };
     await settingsPage({ error: null }, shown, shown);
@@ -1357,6 +1359,22 @@ describe("Settings page", () => {
         for (const setting of theirs) expect(visible, `${section} hides ${other}'s ${setting}`).not.toContain(setting);
       }
     }
+  });
+
+  /** Settings › Acknowledgements lists every project and data Voice is built with, each its name over
+   * its licence (and what of it is used), the name a link that asks the main process to open its page
+   * (as TabMail on iOS lists them), and then where the app's source is, a link too. */
+  test("the acknowledgements list every project, each a link to its page", async () => {
+    const { commands } = await settingsPage({ error: null }, signedIn);
+    await act(async () => button("Acknowledgements").click());
+    const rows = [...document.querySelectorAll(".acknowledgement")];
+    expect(rows.map((row) => [row.querySelector("button.link")?.textContent, row.querySelector(".caption")?.textContent])).toEqual(
+      acknowledgements.map(({ name, license, note }) => [name, note === undefined ? license : `${license}. ${note}.`]),
+    );
+    for (const { name } of acknowledgements) await act(async () => button(name).click());
+    expect(document.querySelector(".acknowledgements-source")?.textContent).toBe(`${sourceLine.text} ${sourceLine.link}`);
+    await act(async () => button(sourceLine.link).click());
+    expect(commands).toEqual([...acknowledgements, sourceLine].map(({ url }) => ({ type: "openURL", url })));
   });
 
   /** A section with something to do (signed out, a permission missing, VS Code's settings hiding the
@@ -1815,6 +1833,10 @@ describe("Settings page", () => {
       "What agent mode knows and remembers about you. Sent with each request; TabMail doesn’t keep it.",
       `Your last ${config.promptHistoryMax} changes, kept on this computer so you can put one back.`,
       "No changes yet.",
+      // Acknowledgements', as TabMail on iOS lists them (owner, 2026-11-06).
+      acknowledgementsIntro,
+      `${sourceLine.text} ${sourceLine.link}`,
+      ...acknowledgements.map(({ license, note }) => (note === undefined ? license : `${license}. ${note}.`)),
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

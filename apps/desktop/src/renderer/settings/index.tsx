@@ -17,17 +17,18 @@ import { formatBytes, memoryHighlights } from "../../core/memory/page.js";
 import { memoryDate, memoryExchange } from "../../core/memory/store.js";
 import type { PromptHistoryItem } from "../../core/personalization/page.js";
 import type { ShownBullet } from "../../core/personalization/prompts.js";
+import { acknowledgements, acknowledgementsIntro, sourceLine } from "../../core/ui/acknowledgements.js";
 import { fileProblemLine } from "../../core/ui/fileProblems.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, PenIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
+import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, HeartIcon, HistoryIcon, LockShieldIcon, MicrophoneIcon, PenIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
 import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
-type SectionName = "account" | "dictation" | "dictionary" | "agent" | "personalization" | "memory" | "privacy" | "permissions" | "general";
+type SectionName = "account" | "dictation" | "dictionary" | "agent" | "personalization" | "memory" | "privacy" | "permissions" | "general" | "acknowledgements";
 
 /** The sidebar's sections, in order, each with its title and icon. */
 const sections: { name: SectionName; title: string; icon: (size: number) => ReactNode }[] = [
@@ -40,6 +41,7 @@ const sections: { name: SectionName; title: string; icon: (size: number) => Reac
   { name: "privacy", title: "Privacy", icon: (size) => <EyeOffIcon size={size} /> },
   { name: "permissions", title: "Permissions", icon: (size) => <LockShieldIcon size={size} /> },
   { name: "general", title: "General", icon: (size) => <GearIcon size={size} /> },
+  { name: "acknowledgements", title: "Acknowledgements", icon: (size) => <HeartIcon size={size} /> },
 ];
 
 /** macOS draws its traffic lights over the sidebar and the frosted material behind it. */
@@ -127,6 +129,9 @@ function Settings() {
         </div>
         <div hidden={shown !== "general"}>
           <GeneralPane state={state} />
+        </div>
+        <div hidden={shown !== "acknowledgements"}>
+          <AcknowledgementsPane />
         </div>
       </main>
     </div>
@@ -1112,6 +1117,32 @@ function GeneralPane({ state }: { state: SettingsState }) {
       </div>
       {state.update && <UpdateRow update={state.update} />}
     </Group>
+  );
+}
+
+/** The open-source projects and data Voice is built with, each a link to its page, with its licence
+ * (as TabMail on iOS lists them), then where the app's own source is. */
+function AcknowledgementsPane() {
+  return (
+    <>
+      <p className="caption acknowledgements-intro">{acknowledgementsIntro}</p>
+      <Group>
+        {acknowledgements.map(({ name, license, url, note }) => (
+          <div key={name} className="row stack acknowledgement">
+            <button className="link" onClick={() => void send({ type: "openURL", url })}>
+              {name}
+            </button>
+            <span className="caption">{note === undefined ? license : `${license}. ${note}.`}</span>
+          </div>
+        ))}
+      </Group>
+      <p className="caption acknowledgements-source">
+        {sourceLine.text}{" "}
+        <button className="link" onClick={() => void send({ type: "openURL", url: sourceLine.url })}>
+          {sourceLine.link}
+        </button>
+      </p>
+    </>
   );
 }
 
