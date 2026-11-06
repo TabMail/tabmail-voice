@@ -32,9 +32,11 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
   years late. The helper sets an event's `isAllDay` before its dates (`EventKitStore.fill`): set
   after, EventKit moves an all-day event's end back to its first day, losing the rest.
 - A reminder due at a time is saved with an alarm at that time (`EventKitStore.fill`), as Reminders
-  saves one added with a time: a due date alone raises no notification. One due on a day gets no
-  alarm, as in Reminders, where its own setting for the day's reminders notifies (amended 2026-11-06,
-  issue #358).
+  saves one added with a time: a due date alone raises no notification. The alarm is at the saved
+  due, which keeps the minute only, not at the instant asked. One due on a day gets no alarm, as in
+  Reminders, where its own setting for the day's reminders notifies. On Linux the task gets one
+  display alarm at its saved due the same way (`reminderAdd`), and none when due on a day (amended
+  2026-11-06, issue #358).
 - `calendar_read` refuses a range longer than `config.calendarReadMaxDays` (four years of 365
   days): EventKit reads at most four years of events for one request and silently drops the rest,
   so a longer read would report events missing. The model is told to read it in parts.

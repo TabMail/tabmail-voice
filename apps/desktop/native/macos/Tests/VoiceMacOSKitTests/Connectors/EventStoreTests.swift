@@ -845,22 +845,30 @@ extension EventKitTests {
         func aTimedReminderNotifiesAtItsDueTime() async throws {
             let fake = FakeEventStore()
             let events = store(fake)
-            let due = Date(timeIntervalSince1970: (start.timeIntervalSince1970 / 60).rounded(.down) * 60)
+            // Seconds the saved minute-precision due drops, and a time at midnight.
+            let withSeconds = start.addingTimeInterval(37)
+            let midnight = Calendar.current.startOfDay(for: start)
 
-            _ = try await events.add(ReminderItem(title: "Call back", list: "", due: due, dueHasTime: true, notes: nil))
-            _ = try await events.add(ReminderItem(title: "Call back", list: "", due: Calendar.current.startOfDay(for: due), dueHasTime: false, notes: nil))
+            _ = try await events.add(ReminderItem(title: "Call back", list: "", due: withSeconds, dueHasTime: true, notes: nil))
+            _ = try await events.add(ReminderItem(title: "Call back", list: "", due: midnight, dueHasTime: true, notes: nil))
+            _ = try await events.add(ReminderItem(title: "Call back", list: "", due: midnight, dueHasTime: false, notes: nil))
             _ = try await events.add(ReminderItem(title: "Call back", list: "", due: nil, dueHasTime: false, notes: nil))
 
             let saved = fake.saved.compactMap { $0 as? EKReminder }
-            guard saved.count == 3 else {
-                Issue.record("expected three reminders saved, got \(saved.count)")
+            guard saved.count == 4 else {
+                Issue.record("expected four reminders saved, got \(saved.count)")
                 return
             }
-            let alarms = saved[0].alarms ?? []
-            #expect(alarms.count == 1)
-            #expect(alarms.first?.absoluteDate == due)
-            #expect((saved[1].alarms ?? []).isEmpty)
+            for timed in saved.prefix(2) {
+                let alarms = timed.alarms ?? []
+                let savedDue = EventKitStore.reminderItem(timed).due
+                #expect(savedDue != nil)
+                #expect(alarms.count == 1)
+                #expect(alarms.first?.absoluteDate == savedDue)
+            }
+            #expect(EventKitStore.reminderItem(saved[1]).due == midnight)
             #expect((saved[2].alarms ?? []).isEmpty)
+            #expect((saved[3].alarms ?? []).isEmpty)
         }
 
         /// With no default calendar or list, nothing is saved and the app is told which.

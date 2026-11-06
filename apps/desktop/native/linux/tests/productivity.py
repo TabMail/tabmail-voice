@@ -134,6 +134,28 @@ assert precise['due'] == base
 assert next(row for row in call('reminders', {'dueBefore':None}) if row['title'] == 'Minute precision')['due'] == base
 print('EDS reminder creation matches EventKit minute precision')
 
+# A timed reminder notifies: one display alarm at its saved due, also at midnight and when the
+# request carried seconds. A day-only or undated reminder has none.
+local_midnight = int(datetime.datetime.fromtimestamp(base/1000).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()*1000)
+assert call('reminderAdd', {'title':'Timed midnight', 'due':local_midnight, 'dueHasTime':True, 'notes':None})['due'] == local_midnight
+ok, stored = client.get_object_list_sync('#t', None)
+assert ok
+saved_due = {row['title']: row['due'] for row in call('reminders', {'dueBefore':None})}
+def alarm_times(summary):
+    task = ECal.Component.new_from_icalcomponent(next(t for t in stored if t.get_summary() == summary).clone())
+    times = []
+    for alarm in task.get_all_alarms():
+        assert alarm.get_action() == ECal.ComponentAlarmAction.DISPLAY
+        trigger = alarm.get_trigger()
+        assert trigger.get_kind() == ECal.ComponentAlarmTriggerKind.ABSOLUTE
+        times.append(trigger.get_absolute_time().as_timet()*1000)
+    return times
+for summary in ['Timed task', 'Minute precision', 'Timed midnight']:
+    assert saved_due[summary] is not None and alarm_times(summary) == [saved_due[summary]], summary
+for summary in ['Day task', 'Undated task']:
+    assert alarm_times(summary) == [], summary
+print('EDS timed reminders alarm at their saved due; day-only and undated ones do not')
+
 # Recurrences are expanded by EDS, not an application recurrence implementation.
 series = ICalGLib.Component.new_from_string('BEGIN:VEVENT\r\nUID:recurring-test\r\nSUMMARY:Daily series\r\nDTSTART:20261003T143000Z\r\nDTEND:20261003T153000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEXDATE:20261005T143000Z\r\nEND:VEVENT\r\n')
 assert calendar_client.create_object_sync(series, ECal.OperationFlags.NONE, None)[0]
