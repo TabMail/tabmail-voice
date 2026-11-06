@@ -700,7 +700,14 @@ struct MarkerCaretSourceTests {
         let read = Self.readWithNoPlace(fault, token: token), placed = Self.readWithNoPlace(nil, token: token)
         let middle = read.lines[1].span
         let ranged = try #require(read.asked.firstIndex(of: "range \(middle)"))
-        #expect(read.asked[(ranged + 1)...].allSatisfy { $0.hasPrefix("range ") && !$0.hasSuffix("\(middle)") }, "\(read.asked[(ranged + 1)...])")
+        let after = read.asked[(ranged + 1)...].filter { !$0.hasPrefix("marker for ") }
+        #expect(after.allSatisfy { $0.hasPrefix("range ") && !$0.hasSuffix("\(middle)") }, "\(after)")
+        // Only the round-trip check asks for a marker of an element's index; an element that fails
+        // before it gets none asked of its start, which is inside the token, so nothing else asks
+        // about it. (Its end is the character before the caret, whose bounds the read measures.)
+        if fault != "unrounded" {
+            #expect(!read.asked.contains("marker for \(middle.location)"), "\(read.asked)")
+        }
         #expect(read.requests == placed.requests)
     }
 
@@ -912,7 +919,7 @@ struct MarkerCaretSourceTests {
         /// An offset whose marker Accessibility gives no index.
         var noIndex: Int?
         /// Everything asked of the field's elements, in order: each attribute, and each element's
-        /// marker range, with the element's span.
+        /// marker range, with the element's span; and each marker asked for an index (field offset).
         var asked: [String] = []
         /// Where Accessibility draws a range (field offsets), none when it gives no bounds; the
         /// ranges asked about.
@@ -945,6 +952,7 @@ struct MarkerCaretSourceTests {
                 return (argument as? NSNumber)?.intValue == noIndex.map({ origin + $0 }) ? nil : argument
             case "AXTextMarkerForIndex":
                 let offset = (argument as! NSNumber).intValue
+                asked.append("marker for \(offset - origin)")
                 return NSNumber(value: offset + (wrongMarker || offset == unrounded.map { origin + $0 } ? 1 : 0))
             case "AXTextMarkerRangeForUnorderedTextMarkers": return argument
             case "AXTextMarkerRangeForUIElement":

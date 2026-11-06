@@ -483,8 +483,9 @@ above behind 400 dense elements). So the core puts no paragraph break back stric
 redaction takes out of the text as read, before any break goes in (`context::splits_a_find`), for
 every start, whichever walk found it: the key stays whole and is redacted whole. A true block start
 whose two lines run together into something secret-looking loses its break with it, and is hidden;
-hiding too much is what the redaction accepts (ADR-DESK-046). The caret's own start, measured where
-the caret is drawn (`caretStarts`), keeps its break wherever it is, as before. Accepted limitation
+hiding too much is what the redaction accepts (ADR-DESK-046). A start the provider itself reports
+at the caret (`caretStarts`, sent only when no walk gave starts) keeps its break wherever it is, as
+before; a caret start a walk finds is checked like any other. Accepted limitation
 (owner, 2026-11-06): the check sees only the field's text and only what the redaction takes, so a
 misplaced start inside a label (`pass|word = …`), or in a value whose label is in another block,
 can still keep the secret from being recognized. Main has the same exposure for fields walked within

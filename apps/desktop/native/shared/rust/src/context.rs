@@ -432,8 +432,17 @@ fn left_out_breaks(
 /// show both (ADR-DESK-046): an element the OS misplaces can start a block inside a key, and past
 /// the walk's budget nothing may have seen that misplacement. So the text keeps that run whole and
 /// it is redacted whole; a true block start whose two lines run together into a secret-looking
-/// token is hidden with it, which the redaction accepts. The caret's own start is measured where
-/// the caret is drawn (`caretStarts`) and keeps its break wherever it is.
+/// token is hidden with it, which the redaction accepts. Every start a walk finds is checked, the
+/// one at the caret too; a start the provider itself reports at the caret (`caretStarts`, sent
+/// only when no walk gave starts) keeps its break wherever it is, as before.
+///
+/// Accepted limitation (ADR-DESK-007, issue #365): this sees only the field's text and only what
+/// the redaction takes out, not the label it recognized it by. A misplaced start inside a label
+/// (`pass|word = …`), or in a value whose label is in another screen block, can still keep a secret
+/// from being recognized, as main already allows for every start within the walk's budget. Do not
+/// widen this check toward labels or neighbouring blocks: the fix is to have the final redaction
+/// also read the text without the breaks put back (#365). Keep this check meanwhile: it is what
+/// keeps a self-identifying key (`sk-…`) whole.
 fn splits_a_find(taken: &[std::ops::Range<usize>], at: usize) -> bool {
     taken.iter().any(|run| run.start < at && at < run.end)
 }
@@ -1697,9 +1706,23 @@ mod budget_tests {
             assert!(!text.contains(head) && !text.contains(tail), "{text}");
         }
         let read = call(
-            json!({"caretWindow":{"parts":[before,"",after],"startKnown":true,"endKnown":true,"paragraphStarts":[5, edge]}}),
+            json!({"caretWindow":{"parts":[before,"",after],"startKnown":true,"endKnown":true,"paragraphStarts":[5, edge, inside + tail.len()]}}),
         );
         assert_eq!(read["parts"][0], json!(format!("word \nKey \n{head}")));
+        assert_eq!(read["parts"][2], json!(format!("{tail}\n end more")));
+        // A second key further on: a start inside it gets no break either, and neither key shows.
+        let second = concat!("gh", "p_0123456789abcdefXYZW");
+        let after = format!("{tail} end {second} more");
+        let inside_second = before.len() + format!("{tail} end ").len() + 6;
+        let read = call(
+            json!({"caretWindow":{"parts":[before,"",after],"startKnown":true,"endKnown":true,"paragraphStarts":[inside_second]}}),
+        );
+        assert_eq!(read["parts"], json!([before, "", after]));
+        let text = call(json!({"blocks":[],"caret":read["parts"]})).to_string();
+        assert!(
+            !text.contains(tail) && !text.contains("0123456789abcdef"),
+            "{text}"
+        );
     }
     /// Two keys on lines of their own, the caret at the second's start, whether the break between
     /// them is the text's own or one the caret window put back: each is redacted on its own line,
