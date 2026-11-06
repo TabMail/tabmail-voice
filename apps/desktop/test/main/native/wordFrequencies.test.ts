@@ -31,15 +31,24 @@ describe("NativeWordFrequencies", () => {
   });
 
   /** A whole window's read can hold more words than the Windows and Linux main helpers take in one
-   * request line (1 MiB): they go in several requests, each line under it, every word answered. */
+   * request line (1 MiB): they go in several requests, each line under it, every word answered by
+   * its own request's reply, whichever reply comes first (the helpers answer requests concurrently). */
   test("a screen's words too many for one request line are asked in several", async () => {
     const helperLineMaxBytes = 1024 * 1024;
     const syllable = (index: number) => String.fromCodePoint(0xac00 + (index % 11_172));
     const words = Array.from({ length: 120_000 }, (_, index) => `${syllable(Math.floor(index / 11_172))}${syllable(index)}${syllable(index * 7)}${syllable(index * 13)}`);
     const zipf = (word: string) => word.codePointAt(1)! % 100;
-    const request = vi.fn(async (_method: string, params: { words: string[] }) => ({ zipf: params.words.map(zipf) }));
-    const answers = await lists(request).frequencies(words);
-    expect(request.mock.calls.length).toBeGreaterThan(1);
+    const replies: { reply: () => void }[] = [];
+    const request = vi.fn((_method: string, params: { words: string[] }) => new Promise((resolve) => {
+      replies.push({ reply: () => resolve({ zipf: params.words.map(zipf) }) });
+    }));
+    const asked = lists(request).frequencies(words);
+    expect(replies.length).toBeGreaterThan(1);
+    for (const { reply } of replies.toReversed()) {
+      reply();
+      await Promise.resolve();
+    }
+    const answers = await asked;
     for (const [method, params] of request.mock.calls) {
       expect(Buffer.byteLength(`${JSON.stringify({ id: Number.MAX_SAFE_INTEGER, method, params })}\n`)).toBeLessThan(helperLineMaxBytes);
     }
