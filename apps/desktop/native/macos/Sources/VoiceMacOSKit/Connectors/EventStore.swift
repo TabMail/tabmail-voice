@@ -530,6 +530,10 @@ final class EventKitStore {
         saved.title = reminder.title
         saved.notes = reminder.notes
         saved.dueDateComponents = reminder.dueDateComponents
+        // A due date alone raises no notification: one due at a time gets an alarm then, as Reminders
+        // gives one added with a time. One due on a day gets none, as there (Reminders' own setting
+        // for the day's reminders covers it).
+        saved.alarms = reminder.dueHasTime ? reminder.due.map { [EKAlarm(absoluteDate: $0)] } : nil
     }
 
     static func calendarEvent(_ event: EKEvent) -> CalendarEvent {
