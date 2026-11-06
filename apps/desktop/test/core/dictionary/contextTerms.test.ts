@@ -49,7 +49,7 @@ describe("contextTerms", () => {
   });
 
   test("rarer first, then the most often on screen, then the earliest", () => {
-    const zipf: WordFrequencies = new Map([["Nairobi", 35], ["Priya", 29], ["Xyvora", 0], ["Brevalle", 0], ["Quillon", null]]);
+    const zipf: WordFrequencies = new Map([["Nairobi", 34], ["Priya", 29], ["Xyvora", 0], ["Brevalle", 0], ["Quillon", null]]);
     expect(contextTerms("Nairobi Nairobi Priya Brevalle Xyvora Xyvora Quillon", zipf)).toEqual(["Xyvora", "Brevalle", "Quillon", "Priya", "Nairobi"]);
   });
 
