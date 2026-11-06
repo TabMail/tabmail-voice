@@ -904,3 +904,48 @@ fn a_private_key_cut_by_a_window_loses_all_of_its_body_in_the_window() {
         }
     }
 }
+
+/// Many secrets, one line break joined (a break the core put back in the caret's text, #365): the
+/// added reading maps each of its finds against only the runs it overlaps, so it costs about what
+/// the reading as laid out costs, not that times the number of runs. Every value stays redacted.
+#[test]
+fn a_joined_break_among_many_secrets_costs_about_one_more_reading() {
+    let line = "password = a1b2c3d4\n";
+    let text = line.repeat(20_000);
+    let joined = [line.len() - 1];
+    // Compile before timing.
+    taken("").unwrap();
+    // The quickest of a few readings of each: one slow reading under a busy machine is not the
+    // cost being measured.
+    const READINGS: usize = 3;
+    let quickest = |read: &dyn Fn()| {
+        (0..READINGS)
+            .map(|_| {
+                let start = Instant::now();
+                read();
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    };
+    let laid_out = taken_with_edges(&text, &[]).unwrap();
+    let across = taken_across_breaks(&text, &[], &joined).unwrap();
+    let once = quickest(&|| {
+        taken_with_edges(&text, &[]).unwrap();
+    });
+    let twice = quickest(&|| {
+        taken_across_breaks(&text, &[], &joined).unwrap();
+    });
+    assert!(
+        twice < once * 4,
+        "across one break {twice:?}, as laid out {once:?}"
+    );
+    for run in &laid_out {
+        assert!(
+            across
+                .iter()
+                .any(|kept| kept.start <= run.start && run.end <= kept.end),
+            "{run:?}"
+        );
+    }
+}

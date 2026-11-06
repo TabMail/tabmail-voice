@@ -869,6 +869,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     // browsers before even the focused field can be collected.
     if (!safeSubtree(tree, focus, exclusions, false)) return nullptr;
     std::array<std::string, 3> around{};
+    std::array<std::vector<size_t>, 3> caretBreaks{};
     bool selectionUnavailable = false;
     const auto focusRole = tree.role(focus);
     // A terminal's cursor belongs to its running program, not an editable form.
@@ -880,13 +881,14 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     if (readableFocus) {
         if (auto caret = tree.caret(focus)) {
             around = caret->parts;
+            caretBreaks = caret->addedBreaks;
             selectionUnavailable = caret->selectionUnavailable;
         }
     }
     // Non-field sides remain private recognition source until shared redaction projects only
     // the selection. The whole-window read carries no independent caret source.
     const auto keep = walk::around(fieldInFocus);
-    if (!keep.selection) { around = {}; selectionUnavailable = false; }
+    if (!keep.selection) { around = {}; caretBreaks = {}; selectionUnavailable = false; }
     // The focused page checks precede the title, as on macOS.
     const auto title = tree.label(window);
     const auto windowFrame = tree.frame(window);
@@ -964,7 +966,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     }
     return context.reply({{"appName", app.name}, {"bundleID", app.id}, {"windowTitle", title},
         {"host", host ? JSON(*host) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", std::to_string(focusRole)}},
-        around, selectionUnavailable, exclusions.lists(), elapsedMilliseconds(started));
+        around, selectionUnavailable, exclusions.lists(), elapsedMilliseconds(started), caretBreaks);
 }
 template<class Tree>
 nlohmann::json gatherScreen(Tree& tree, typename Tree::Node window, typename Tree::Node focus,

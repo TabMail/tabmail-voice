@@ -12,6 +12,9 @@ namespace voice {
 struct CaretSource {
     std::array<std::string, 3> parts;
     bool selectionUnavailable = false;
+    // Where the core put a line break back in each part (byte offsets): the screen read sends them
+    // with the parts, and its redaction also reads the text without them (issue #365).
+    std::array<std::vector<size_t>, 3> addedBreaks = {};
     // What stands for the text around a caret that could not be read, as the shared core gives it
     // (`caretUnread`): the selection withheld when text is selected, else an empty window.
     // `selectsText` true when it isn't known.
@@ -19,7 +22,8 @@ struct CaretSource {
         return fromJSON(core::request({{"caretUnread", {{"selectsText", selectsText}}}}, voice_core_context_json));
     }
     static CaretSource fromJSON(const nlohmann::json& result) {
-        return {result.at("parts").get<std::array<std::string, 3>>(), result.at("selectionUnavailable").get<bool>()};
+        return {result.at("parts").get<std::array<std::string, 3>>(), result.at("selectionUnavailable").get<bool>(),
+                result.at("addedBreaks").get<std::array<std::vector<size_t>, 3>>()};
     }
     // What starts at the caret, as the provider lays the text out: from it the core tells whether the
     // caret starts a paragraph or an empty line, whose break the text before it may not show.

@@ -32,11 +32,12 @@ fn redactors() -> Result<&'static [Redactor], Error> {
 /// What the finds take out of the text, in order: each run is finds that overlap or meet, and
 /// one marker stands for it.
 fn runs(found: &[Found]) -> Vec<Range<usize>> {
-    let mut taken: Vec<Range<usize>> = found
-        .iter()
-        .map(|f| f.taken.clone())
-        .filter(|range| !range.is_empty())
-        .collect();
+    merged(found.iter().map(|f| f.taken.clone()).collect())
+}
+
+/// Ranges taken out, merged into runs: those that overlap or meet are one.
+fn merged(mut taken: Vec<Range<usize>>) -> Vec<Range<usize>> {
+    taken.retain(|range| !range.is_empty());
     taken.sort_by_key(|range| range.start);
     let mut runs: Vec<Range<usize>> = Vec::new();
     for range in taken {
@@ -59,6 +60,68 @@ pub fn taken(text: &str) -> Result<Vec<Range<usize>>, Error> {
 /// its word edge; an edge never ends a find.
 pub fn taken_with_edges(text: &str, edges: &[usize]) -> Result<Vec<Range<usize>>, Error> {
     Ok(runs(&scan::scan(text, edges, redactors()?)))
+}
+
+/// As `taken_with_edges`, adding what the redaction takes out of the text read with the line
+/// breaks at `joined` removed (byte offsets, ascending, each at a `\n`): a break put back where
+/// the OS says a block starts may be misplaced inside a secret's label or value and split it into
+/// pieces that no longer look secret (ADR-DESK-007, issue #365). Only what the text as laid out did not take already is
+/// added, mapped back, without a removed break at either end: two secrets on lines of their own
+/// stay two runs, each on its line, and a break inside an added run goes with it.
+pub fn taken_across_breaks(
+    text: &str,
+    edges: &[usize],
+    joined: &[usize],
+) -> Result<Vec<Range<usize>>, Error> {
+    let redactors = redactors()?;
+    let laid_out = runs(&scan::scan(text, edges, redactors));
+    let removed = |at: usize| joined.binary_search(&at).is_ok();
+    // Each byte of the text read without those breaks, by its offset in `text`.
+    let kept: Vec<usize> = (0..text.len()).filter(|at| !removed(*at)).collect();
+    if kept.len() == text.len() {
+        return Ok(laid_out);
+    }
+    let without = String::from_utf8(kept.iter().map(|at| text.as_bytes()[*at]).collect())
+        .map_err(|_| Error::InvalidBoundary)?;
+    // A removed break still marks where a block starts: the joined reading keeps a word edge
+    // there, or a key glued to the text before a second, misplaced start would lose it.
+    let mut moved: Vec<usize> = edges
+        .iter()
+        .chain(joined)
+        .map(|edge| kept.partition_point(|at| at < edge))
+        .collect();
+    moved.sort_unstable();
+    moved.dedup();
+    let mut taken = laid_out.clone();
+    for found in scan::scan(&without, &moved, redactors) {
+        if found.taken.is_empty() {
+            continue;
+        }
+        let range = kept[found.taken.start]..kept[found.taken.end - 1] + 1;
+        let mut pieces = Vec::new();
+        let mut from = range.start;
+        // The runs are in order and apart: only those this find overlaps are visited, so the
+        // reading stays proportional to the text however many runs it holds (ADR-DESK-046).
+        let first = laid_out.partition_point(|run| run.end <= range.start);
+        for run in laid_out[first..]
+            .iter()
+            .take_while(|run| run.start < range.end)
+        {
+            pieces.push(from..run.start.max(from));
+            from = from.max(run.end);
+        }
+        pieces.push(from..range.end);
+        for mut piece in pieces {
+            while piece.start < piece.end && removed(piece.start) {
+                piece.start += 1;
+            }
+            while piece.start < piece.end && removed(piece.end - 1) {
+                piece.end -= 1;
+            }
+            taken.push(piece);
+        }
+    }
+    Ok(merged(taken))
 }
 
 /// Redact the combined text before redistributing it across line/caret boundaries.

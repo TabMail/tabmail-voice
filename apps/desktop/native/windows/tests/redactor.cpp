@@ -68,6 +68,16 @@ int main(int argc, char** argv) {
         readable.append(voice::ContextKind::text, "plain words");
         reply = readable.reply({{"appName", "Synthetic"}}, {"before ", "chosen", " after"}, false, none, 0);
         expect(reply.at("selectionRedacted") == false && reply.at("selectedText") == "chosen", "a selection read whole is not flagged");
+        // A break the core put back is sent with the parts; the redaction also reads the text
+        // without it, so a label it split still hides its value (issue #365). One the text holds
+        // itself is read as it is.
+        for (const bool putBack : {true, false}) {
+            voice::VisibleContext split;
+            split.append(voice::ContextKind::caret, "");
+            const std::array<std::vector<size_t>, 3> breaks = putBack ? std::array<std::vector<size_t>, 3>{{{4}, {}, {}}} : std::array<std::vector<size_t>, 3>{};
+            reply = split.reply({{"appName", "Synthetic"}}, {"pass\nword = a1b2c3d4", "", ""}, false, none, 0, breaks);
+            expect(reply.at("textBeforeCaret") == (putBack ? "pass\nword = [redacted]" : "pass\nword = a1b2c3d4"), "a break put back is read without too");
+        }
         // Every generated definition is load-bearing on the shared conformance corpus.
         // Definition mutations are tested once by the Rust crate.
         for (const auto start : {u"sk-", u"data token=7", u"Bearer ", u"eyJ", u"eyJa.eyJ", u"eyJa.eyJa.", u"://u:",

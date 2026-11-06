@@ -448,6 +448,22 @@ struct ScreenContextTests {
         #expect(!text.contains("placeholder-secret"))
     }
 
+    /// A line break the core put back where the OS says a block starts may be misplaced inside a
+    /// secret's label: the read sends where the core put each back with the text around the caret,
+    /// and the redaction also reads the text without them, so the value is not shown (issue #365).
+    /// A break the field's own text holds is read as the screen shows it.
+    @Test(arguments: [true, false])
+    func aBreakTheCorePutBackInsideALabelStillRedactsTheValue(putBack: Bool) throws {
+        let value = "a1b2" + "c3d4"
+        var attributes = ["caretBefore": "pass\nword = " + value, "caretSelected": "", "caretAfter": ""]
+        if putBack { attributes["caretAddedBreaks"] = "4" }
+        var context = ScreenContext(appName: "Example")
+        ScreenContextReader.readCaret(of: FakeElement("AXTextArea", attributes), in: FakeScreenTree(), into: &context)
+        context.appendCaret()
+        let reply = context.json(ScreenExclusions())
+        #expect(reply["textBeforeCaret"]?.string == (putBack ? "pass\nword = [redacted]" : "pass\nword = " + value))
+    }
+
     /// The focused field's text is read around the caret, unless it is a password field; the caret
     /// still marks its place.
     @Test func theFocusedPasswordFieldIsNeverRead() throws {
@@ -989,7 +1005,9 @@ struct FakeScreenTree: ScreenTree {
         element.caretReads += 1
         guard let before = element.attributes["caretBefore"], let selected = element.attributes["caretSelected"],
               let after = element.attributes["caretAfter"] else { return nil }
-        return SharedContext.CaretWindow(parts: [before, selected, after], selectionUnavailable: element.attributes["selectionUnavailable"] != nil)
+        let added = element.attributes["caretAddedBreaks"].map { [$0.split(separator: ",").compactMap { Int($0) }, [], []] } ?? [[], [], []]
+        return SharedContext.CaretWindow(parts: [before, selected, after], selectionUnavailable: element.attributes["selectionUnavailable"] != nil,
+                                         addedBreaks: added)
     }
     func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
     /// "editable" stands for an element whose text the app lets be changed.

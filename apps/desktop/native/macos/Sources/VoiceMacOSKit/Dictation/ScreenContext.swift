@@ -47,6 +47,9 @@ struct ScreenContext: Sendable, Equatable {
     /// Acquisition could not prove that the entire selection was retained. Disables Edit.
     var selectionUnavailable = false
     var textAfterCaret = ""
+    /// Where the core put a line break back in each of the three texts around the caret
+    /// (`CaretWindow.addedBreaks`); set and cleared with them.
+    var caretBreaks: [[Int]] = [[], [], []]
     /// The sides stay private recognition source when only the selection is presented.
     var caretSelectionOnly = false
     var blocks: [Block] = []
