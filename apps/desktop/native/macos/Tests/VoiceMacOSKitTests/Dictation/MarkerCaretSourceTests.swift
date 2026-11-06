@@ -553,6 +553,10 @@ struct MarkerCaretSourceTests {
         // Only the caret's own start is put back: the window's walk ran out of budget, and the
         // starts it found before that cover only part of the text shown.
         #expect(parts[0].filter { $0 == "\n" }.count == 1)
+        // The field's children are asked for once by each walk, and by nothing else: the debug
+        // lines saying why the window's walk stopped make no Accessibility request of their own.
+        let fieldChildren = "\(kAXChildrenAttribute) \(NSRange(location: 0, length: length))"
+        #expect(provider.attributesAsked.filter { $0 == fieldChildren }.count == 2)
     }
 
     /// A field of more elements than the walk's budget, lines and inline pieces in turn, each a
