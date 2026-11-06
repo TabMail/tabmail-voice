@@ -12,6 +12,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
+import { acknowledgements, sourceLine } from "../../src/core/ui/acknowledgements.js";
 import { aiOffLine, resetCopyPath, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
 import { optedOutOfAIMemoryLine } from "../../src/core/settings.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
@@ -1412,6 +1413,16 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     // macOS forwards the pointer's moves through a click-through window; Linux can't (`ChatHitTest`).
     expect(app.overlay?.hitTest).toBe("pointer");
     expect(app.opened).toEqual(["https://example.com/docs"]);
+  });
+
+  /** A window opens in the browser only the pages it has a link to: the terms, the privacy policy,
+   * each project Settings' Acknowledgements credits and the app's source; any other address opens
+   * nothing. */
+  test("a window opens only the pages it links to", async () => {
+    await launch("darwin");
+    const pages = [config.termsURL, config.privacyURL, ...acknowledgements.map(({ url }) => url), sourceLine.url];
+    for (const url of [...pages, "https://example.com/page", "file:///Applications/Calculator.app"]) await send({ type: "openURL", url });
+    expect(app.opened).toEqual(pages);
   });
 
   /** The note for a text not pasted: a click reaches the controller, which copies the text, and its

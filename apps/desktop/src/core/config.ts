@@ -261,9 +261,9 @@ export const wordFrequenciesTimeout = 500;
 export const wordFrequenciesRequestMaxBytes = 512 * 1024;
 /** Where a screen word stops being rare, in Zipf tenths (log10 of how often it is seen per billion
  * words, times ten): a word the word list sees at least this often is ordinary, no term
- * (ADR-DESK-038, amended 2026-11-05; chosen by the validation recorded there). TabMail on iOS uses
- * the same number. */
-export const screenTermCommonZipf = 40;
+ * (ADR-DESK-038, amended 2026-11-05 and 2026-11-06; chosen for FrequencyWords' subtitle counts by the
+ * validation recorded there). TabMail on iOS uses the same number. */
+export const screenTermCommonZipf = 35;
 /** The dictionary keeps at most this many words, at most `dictionaryMaxTypedWords` of them typed, and
  * learned words in the rest, far more than a dictation sends (#310): a learned word kept is sent when
  * it is among the most recently used. Each word is at most `dictionaryWordMaxChars` characters and

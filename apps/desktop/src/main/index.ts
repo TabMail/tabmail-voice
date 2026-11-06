@@ -32,6 +32,7 @@ import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAct
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
+import { acknowledgements, sourceLine } from "../core/ui/acknowledgements.js";
 import { aiOffLine, fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
@@ -104,8 +105,9 @@ const platformConnectors = connectorsForPlatform(process.platform);
 const availableConnectors = platformConnectors.map((connector) => connector.id);
 /** Shown for a failure without a message of its own. */
 const genericError = "Something went wrong. Try again.";
-/** The pages a window may open in the browser. */
-const openableURLs: readonly string[] = [config.termsURL, config.privacyURL];
+/** The pages a window may open in the browser: the terms, the privacy policy, each acknowledged
+ * project's page and the app's source. */
+const openableURLs: readonly string[] = [config.termsURL, config.privacyURL, ...acknowledgements.map(({ url }) => url), sourceLine.url];
 
 // Linux launchers pass --ozone-platform=x11 before Electron initializes its display
 // backend. Appending it here is too late to select XWayland on a Wayland session.

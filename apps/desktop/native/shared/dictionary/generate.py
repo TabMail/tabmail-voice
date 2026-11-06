@@ -2,26 +2,30 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Builds the word list the screen terms are judged by (ADR-DESK-038, amended 2026-11-05).
+"""Builds the word list the screen terms are judged by (ADR-DESK-038, amended 2026-11-05 and
+2026-11-06).
 
-`words.txt` holds the words of 42 language lists merged into one, each word with the most often any
+`words.txt` holds the words of 41 language lists merged into one, each word with the most often any
 of them sees it. Each list is one language's words seen at least `MIN_ZIPF` often, with how often:
-Zipf (log10 of the frequency per billion words) in tenths. The words come from wordfreq's data, lowercase as wordfreq
-has them, NFC; Korean's from FrequencyWords (OpenSubtitles 2018), whose words keep their particles
-as Korean is written, since wordfreq splits Korean into morphemes. A list keeps only words written
-in its language's scripts (those of CLDR's main exemplar letters), so no list holds a word of another
-script ("the" in Russian's, homoglyph junk).
+Zipf (log10 of the frequency per billion words) in tenths. The words and their counts come from
+FrequencyWords (Hermit Dave's word counts of OpenSubtitles 2018, CC BY-SA 4.0), one or more of its
+lists a language (`SOURCES`); Korean's words keep their particles, as Korean is written. A list keeps
+only words written in its language's scripts (those of CLDR's main exemplar letters), so no list
+holds a word of another script ("the" in Russian's, homoglyph junk). Japanese has no list:
+FrequencyWords' Japanese list holds word stems without their kana (no "その"), so it would make
+every Japanese word a term; with none, a word in kana is no term, and one in Han alone is judged by
+Chinese's list.
 
-wordfreq stores a word in the form its `preprocess_text` (and, for Chinese, `simplify_chinese`) gives
-it, so a word asked about is put in that form before it is looked up: "Већ" is listed as "već",
-"電腦" as "电脑", "شكراً" as "شكرا". `languages.json` names, for each list, its writings (each the
-ISO 15924 scripts one word may mix: Japanese mixes Han and kana; Serbian is written in Latin or in
-Cyrillic, never both in a word) and those steps, taken from wordfreq's own language info: the normal form (NFC or NFKC), the table each
-letter is replaced through (`letters`: Serbian's Cyrillic to Latin, Chinese's Traditional to
-Simplified, both wordfreq's own tables), whether marks are removed (abjad vowel points and the Arabic
-tatweel), Turkish's dotted and dotless i, and whether s and t take a comma or a cedilla below. Korean's
-list is FrequencyWords', in NFC with no other step. A word is looked up in each form the lists
-written in its script give it.
+A word is stored in the form wordfreq's `preprocess_text` (and, for Chinese, `simplify_chinese`)
+gives it (its code; of its data only the letter tables, not its word frequencies), so a word asked about is put in that form
+before it is looked up: "Већ" is listed as "već", "電腦" as "电脑", "شكراً" as "شكرا". Counts of words
+that share a form are added up. `languages.json` names, for each list, its writings (each the ISO
+15924 scripts one word may mix; Serbian is written in Latin or in Cyrillic, never both in a word) and those steps, taken from wordfreq's language info: the normal
+form (NFC or NFKC), the table each letter is replaced through (`letters`: Serbian's Cyrillic to
+Latin, from wordfreq's code, and Chinese's Traditional to Simplified, wordfreq's table made with
+OpenCC), whether marks are removed (abjad vowel points and the Arabic tatweel), Turkish's dotted and
+dotless i, and whether s and t take a comma or a cedilla below. Korean's list is in NFC lowercase with
+no other step. A word is looked up in each form the lists written in its script give it.
 
 Run with Python 3.12+ and the pinned packages in `requirements.txt`, from this folder:
 
@@ -33,7 +37,6 @@ and writes `words.txt` and `languages.json`; the output is the same on every run
 """
 
 import gzip
-import io
 import json
 import math
 import unicodedata
@@ -44,16 +47,19 @@ import msgpack
 import regex
 import wordfreq
 from wordfreq.language_info import get_language_info
+from wordfreq.preprocess import preprocess_text
 from wordfreq.transliterate import SR_LATN_TABLE
 
 CLDR_VERSION = "48.0.0"
 CLDR = f"https://raw.githubusercontent.com/unicode-org/cldr-json/{CLDR_VERSION}/cldr-json"
 FREQUENCY_WORDS = "525f9b560de45753a5ea01069454e72e9aa541c6"
-KOREAN = f"https://raw.githubusercontent.com/hermitdave/FrequencyWords/{FREQUENCY_WORDS}/content/2018/ko/ko_full.txt"
+FREQUENCY_LIST = f"https://raw.githubusercontent.com/hermitdave/FrequencyWords/{FREQUENCY_WORDS}/content/2018/{{code}}/{{code}}_full.txt"
 MIN_ZIPF = 2.5
-# Inside a word: apostrophes ("don't"), Catalan's middle dot ("col·lecció"), and the zero-width
-# non-joiner and joiner Persian, Hindi and Bengali spell words with ("می‌شود").
-INNER = "'’·\u200c\u200d"
+# Inside a word: apostrophes ("don't"). FrequencyWords splits words at Catalan's middle dot
+# ("col·legi") and the zero-width non-joiner and joiner Persian, Hindi and Bengali spell words with
+# ("می‌شود"), so its lists hold only their parts; a hyphenated word it lists is dropped here, a hyphen
+# being no letter. The lookup sees any of these words as its least seen part.
+INNER = "'’"
 HERE = Path(__file__).resolve().parent
 
 # The lists, each with the CLDR locales whose letters name its scripts ("sh" is wordfreq's
@@ -61,11 +67,15 @@ HERE = Path(__file__).resolve().parent
 LISTS = {
     "ar": ["ar"], "bg": ["bg"], "bn": ["bn"], "ca": ["ca"], "cs": ["cs"], "da": ["da"], "de": ["de"],
     "el": ["el"], "en": ["en"], "es": ["es"], "fa": ["fa"], "fi": ["fi"], "fil": ["fil"], "fr": ["fr"],
-    "he": ["he"], "hi": ["hi"], "hu": ["hu"], "id": ["id"], "is": ["is"], "it": ["it"], "ja": ["ja"],
+    "he": ["he"], "hi": ["hi"], "hu": ["hu"], "id": ["id"], "is": ["is"], "it": ["it"],
     "ko": ["ko"], "lt": ["lt"], "lv": ["lv"], "mk": ["mk"], "ms": ["ms"], "nb": ["nb"], "nl": ["nl"],
     "pl": ["pl"], "pt": ["pt"], "ro": ["ro"], "ru": ["ru"], "sh": ["hr", "sr"], "sk": ["sk"], "sl": ["sl"],
     "sv": ["sv"], "ta": ["ta"], "tr": ["tr"], "uk": ["uk"], "ur": ["ur"], "vi": ["vi"], "zh": ["zh"],
 }
+# FrequencyWords' lists each list counts, where its code differs from the list's or several make one:
+# Filipino is its Tagalog, Norwegian Bokmål its Norwegian, Portuguese and Chinese both their
+# spellings, Serbo-Croatian its Croatian, Serbian and Bosnian.
+SOURCES = {"fil": ["tl"], "nb": ["no"], "pt": ["pt", "pt_br"], "sh": ["hr", "sr", "bs"], "zh": ["zh_cn", "zh_tw"]}
 # The scripts a list may be written in (ISO 15924), tried in this order for each letter.
 SCRIPTS = ["Latn", "Cyrl", "Grek", "Arab", "Hebr", "Deva", "Beng", "Taml", "Hang", "Hira", "Kana", "Hani"]
 
@@ -109,7 +119,7 @@ def unicode_set(text: str) -> set[str]:
 
 
 def writings_of(locales: list[str]) -> list[list[str]]:
-    """Each locale's scripts: the scripts one word may mix (Japanese's Han and kana), one locale a way
+    """Each locale's scripts: the scripts one word may mix, one locale a way
     the language is written (Serbo-Croatian's Latin, Serbian's Cyrillic)."""
     writings: list[list[str]] = []
     for locale in locales:
@@ -143,32 +153,36 @@ def letter_tables() -> dict[str, dict[str, str]]:
     }
 
 
-def wordfreq_frequencies(language: str) -> dict[str, float]:
-    """wordfreq's own words and frequencies, as its data file has them (not tokenized again)."""
-    with gzip.open(wordfreq.available_languages("best")[language], "rb") as file:
-        packed = msgpack.load(io.BytesIO(file.read()), raw=False)
-    # A cBpack list: a header, then buckets, bucket n holding the words at 10**(-n/100).
-    found: dict[str, float] = {}
-    for bucket, words in enumerate(packed[1:]):
-        for word in words:
-            found.setdefault(word, 10 ** (-bucket / 100))
-    return found
+def listed(word: str, language: str) -> str:
+    """`word` in the form its list holds it, the one a word asked about is put in (`languages.json`):
+    wordfreq's own normalisation for the language, Chinese simplified; Korean's, NFC lowercase."""
+    if language == "ko":
+        return unicodedata.normalize("NFC", word).lower()
+    form = preprocess_text(word, language)
+    # wordfreq's `simplify_chinese` (its module needs jieba, which nothing here uses).
+    return form.translate(SIMPLIFIED).casefold() if language == "zh" else form
 
 
-def korean_frequencies() -> dict[str, float]:
+SIMPLIFIED = str.maketrans(letter_tables()["zh-Hans"])
+
+
+def frequencies(language: str) -> dict[str, float]:
+    """How often each word of `language` is seen in FrequencyWords' counts (its sources together), each
+    word in its list's form."""
     counts: dict[str, int] = {}
-    for line in fetch(KOREAN).decode("utf-8").splitlines():
-        word, _, count = line.rpartition(" ")
-        if word:
-            counts[word.lower()] = counts.get(word.lower(), 0) + int(count)
+    for code in SOURCES.get(language, [language]):
+        for line in fetch(FREQUENCY_LIST.format(code=code)).decode("utf-8").splitlines():
+            word, _, count = line.rpartition(" ")
+            if word and count.isdigit():
+                form = listed(word, language)
+                counts[form] = counts.get(form, 0) + int(count)
     total = sum(counts.values())
     return {word: count / total for word, count in counts.items()}
 
 
 def build(language: str, scripts: list[str]) -> dict[str, int]:
-    frequencies = korean_frequencies() if language == "ko" else wordfreq_frequencies(language)
     kept: dict[str, int] = {}
-    for word, frequency in frequencies.items():
+    for word, frequency in frequencies(language).items():
         tenths = round((math.log10(frequency) + 9) * 10)
         if tenths < MIN_ZIPF * 10:
             continue
@@ -176,8 +190,8 @@ def build(language: str, scripts: list[str]) -> dict[str, int]:
         written = [script(char) for char in word if unicodedata.category(char)[0] in "LM"]
         if not written or any(name not in scripts for name in written if name is not None) or all(name is None for name in written):
             continue
-        # Letters and marks only, besides the apostrophes inside a word ("don't") and Catalan's
-        # middle dot ("col·lecció"); no digit, no punctuation.
+        # Letters and marks only, besides the apostrophes inside a word ("don't"); no digit, no
+        # punctuation.
         if any(unicodedata.category(char)[0] not in "LM" and char not in INNER for char in word) or word[0] in INNER or word[-1] in INNER:
             continue
         kept[word] = max(kept.get(word, 0), tenths)

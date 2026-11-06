@@ -36,7 +36,7 @@ uint32_t voice_core_request_json(const uint8_t *data, size_t length, VoiceCoreBu
  * budgets. */
 uint32_t voice_core_walk_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 /* The screen terms' test (ADR-DESK-038, amended 2026-11-05): how often words are seen, by the word
- * list the app ships (42 languages' lists merged).
+ * list the app ships (41 languages' lists merged).
  * voice_core_word_frequencies_json: {"folder":absolute folder,"words":[word…]} gives
  * {"zipf":[tenths|null…]}, one a word: the most often any form a list written in its script gives
  * it is seen, in Zipf tenths (0: none is listed), or null when no list is written in its script.

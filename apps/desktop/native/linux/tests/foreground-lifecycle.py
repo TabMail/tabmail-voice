@@ -136,7 +136,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             # The screen terms' test (ADR-DESK-038, amended 2026-11-05): the shared core's answer from the
             # app's word list; the rule's own cases run in the core.
             lists = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../shared/dictionary'))
-            assert request('wordFrequencies', {'folder': lists, 'words': ['Today', 'Xyvora', 'สวัสดี']}) == {'zipf': [56, 0, None]}
+            assert request('wordFrequencies', {'folder': lists, 'words': ['Today', 'Xyvora', 'สวัสดี']}) == {'zipf': [57, 0, None]}
             request('wordFrequencies', {'folder': lists, 'words': [1]}, refused=True)
             request('wordFrequencies', {'folder': 'dictionary', 'words': ['Today']}, refused=True)
             request('wordFrequencies', {'folder': os.path.join(lists, 'missing'), 'words': ['Today']}, refused=True)

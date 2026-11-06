@@ -74,7 +74,7 @@ try {
   // The screen terms' test (ADR-DESK-038, amended 2026-11-05): the shared core's answer from the app's
   // word list; the rule's own cases run in the core.
   const lists = fileURLToPath(new URL("../../shared/dictionary", import.meta.url));
-  assert.deepEqual((await request("wordFrequencies", { folder: lists, words: ["Today", "Xyvora", "สวัสดี"] })).result, { zipf: [56, 0, null] });
+  assert.deepEqual((await request("wordFrequencies", { folder: lists, words: ["Today", "Xyvora", "สวัสดี"] })).result, { zipf: [57, 0, null] });
   assert.ok((await request("wordFrequencies", { folder: lists, words: [1] })).error);
   assert.ok((await request("wordFrequencies", { folder: "dictionary", words: ["Today"] })).error);
   assert.ok((await request("wordFrequencies", { folder: join(lists, "missing"), words: ["Today"] })).error);

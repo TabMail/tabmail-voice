@@ -9,6 +9,7 @@ removed at cutover; its last source is in git history.
 ```
 tabmail-voice/
 ├── Scripts/stt-compare/      Speech-to-text model comparison (platform-free; see README)
+├── THIRD_PARTY_LICENSES.md   What the app ships from others, each with its licence (Settings › Acknowledgements lists the same); shipped in every package
 └── apps/                     The app's folder (ADR-DESK-013, amended by ADR-DESK-032)
     └── desktop/              The Electron app, below
 ```

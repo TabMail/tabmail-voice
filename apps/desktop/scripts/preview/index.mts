@@ -313,6 +313,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // Agent mode's tool and app switches, every app on.
   { name: "settings-agent-mode", page: "settings/index.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  { name: "settings-acknowledgements", page: "settings/index.html", size: settingsWindowSize, section: "Acknowledgements", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  { name: "settings-acknowledgements-dark", page: "settings/index.html", size: settingsWindowSize, dark: true, section: "Acknowledgements", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // No name for agent mode: the field is empty with the account's name as placeholder, and the section is marked.
   { name: "settings-agent-mode-no-name", page: "settings/index.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, userName: null } },
   // VS Code's settings hide the caret: Permissions offers to fix them.
