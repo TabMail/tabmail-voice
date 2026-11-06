@@ -37,4 +37,13 @@ during which the helper reports GNOME integration not ready and Settings asks fo
 (the existing `restart` state). Two paths now name the target, the Shell's and AT-SPI's, until the
 extension can answer everything the helpers ask.
 
+**Amended 2026-11-06 (owner, standing rule for every Linux problem): extension first.** When a Linux problem
+comes from the desktop being less uniform than macOS or Windows (an app that can't be named, a missing or
+misleading accessibility attribute, an environment variable a launcher drops, a focus or caret the
+accessibility tree reports wrongly), first check whether the GNOME extension can answer it directly from the
+Shell (for example `Shell.WindowTracker` for which app owns a window) and fix it there. A helper-side
+workaround (AT-SPI heuristics, launcher or desktop-file guessing, per-app special cases) is the path only for
+what the extension can't see, or for desktops and GNOME versions without it, and the issue or PR says why
+the extension could not do it. Example: #370, snap Chromium can't be named from its process, so its window's
+app comes from the extension.
 
