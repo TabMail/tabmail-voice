@@ -639,7 +639,7 @@ static int run() {
                     range->block = true;
                     return ComPtr<IUIAutomationTextRange>(range);
                 };
-                auto starts = UiaCaretSource::blockStarts(0, low, high, elements, [&](int node) { return nodes[node].children; },
+                auto starts = UiaCaretSource::blockStarts(0, selected, low, high, elements, [&](int node) { return nodes[node].children; },
                     [&](int node) { return nodes[node].block; }, place);
                 if (!starts) return std::nullopt;
                 return UiaCaretSource::Layout{std::move(*starts), UiaCaretSource::endsLine(caretNode ? place(*caretNode).Get() : nullptr, selected)};
@@ -694,6 +694,59 @@ static int run() {
         expect(!result.selectionUnavailable && result.parts[0] == std::string(400, 'a') + std::string(static_cast<size_t>(units) + 1000, 'b') + blockBreak + "cc" &&
             result.parts[2] == "ccc" + blockBreak + std::string(static_cast<size_t>(units) + 100, 'd') + std::string(400, 'e'),
             "only the block starts near the caret are looked at");
+        // A code editor gives each highlighted piece of a line its own element (Overleaf in Firefox,
+        // #355): more than the walk's budget in the window. When the window's walk runs out, the
+        // caret's own blocks are walked, so the line it starts keeps its break before the caret,
+        // and no other line gets one.
+        std::vector<Node> denseTree{{0, 0, false, {}}};
+        std::wstring denseText;
+        for (int line = 0; line < 40; ++line) {
+            const int id = static_cast<int>(denseTree.size());
+            denseTree[0].children.push_back(id);
+            denseTree.push_back({static_cast<int>(denseText.size()), static_cast<int>(denseText.size()) + 16 * 5, true, {}});
+            for (int piece = 0; piece < 16; ++piece) {
+                denseTree[static_cast<size_t>(id)].children.push_back(static_cast<int>(denseTree.size()));
+                denseTree.push_back({static_cast<int>(denseText.size()), static_cast<int>(denseText.size()) + 5, false, {}});
+                denseText += L"piece";
+            }
+        }
+        denseTree[0].end = static_cast<int>(denseText.size());
+        const int lineStart = 25 * 16 * 5;
+        Provider dense(denseText, lineStart, lineStart);
+        result = dense.read(layout(dense, denseTree, 1 + 25 * 17));
+        expect(!result.selectionUnavailable && result.parts[0].size() > blockBreak.size() &&
+            result.parts[0].compare(result.parts[0].size() - blockBreak.size(), blockBreak.size(), blockBreak) == 0 &&
+            std::count(result.parts[0].begin(), result.parts[0].end(), '\n') == 1 && result.parts[2].rfind("piece", 0) == 0,
+            "a caret starting a line of a dense editor keeps its break past the element budget");
+        // Lines and inline pieces in turn, each a line's start (a piece follows a line), more than
+        // the budget: the caret's start is kept alone, even when the last node the window's walk
+        // placed starts a line in the very reply that begins the caret's (laid out both ways, so
+        // the walk runs out on a line and on a piece).
+        for (const bool pieceFirst : {false, true}) {
+            std::vector<Node> turns{{0, 0, false, {}}};
+            std::wstring turnsText;
+            const auto add = [&](bool block) {
+                turns[0].children.push_back(static_cast<int>(turns.size()));
+                turns.push_back({static_cast<int>(turnsText.size()), static_cast<int>(turnsText.size()) + 5, block, {}});
+                turnsText += L"xxxxx";
+            };
+            if (pieceFirst) add(false);
+            int caretLine = 0;
+            for (int pair = 0; pair < 200; ++pair) {
+                if (pair == 180) caretLine = static_cast<int>(turns.size());
+                add(true);
+                add(false);
+            }
+            turns[0].end = static_cast<int>(turnsText.size());
+            const int caretAt = turns[static_cast<size_t>(caretLine)].start;
+            Provider alternating(turnsText, caretAt, caretAt);
+            result = alternating.read(layout(alternating, turns, caretLine));
+            expect(!result.selectionUnavailable && result.parts[0].size() > blockBreak.size() &&
+                result.parts[0].compare(result.parts[0].size() - blockBreak.size(), blockBreak.size(), blockBreak) == 0 &&
+                std::count(result.parts[0].begin(), result.parts[0].end(), '\n') == 1 && result.parts[2].rfind("xxxxx", 0) == 0,
+                pieceFirst ? "a start the window's walk found as it ran out on a piece is not the caret's"
+                           : "a start the window's walk found as it ran out on a line is not the caret's");
+        }
         viewportContracts();
         editContracts();
         accessibleTextContracts();

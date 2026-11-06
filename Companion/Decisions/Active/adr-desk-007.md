@@ -457,3 +457,27 @@ OS gives the same ambiguity sends the same two rectangles. Windows (UI Automatio
 with Firefox 159 and 157 on a CodeMirror-shaped page, the caret on an empty line, at the end of the
 line above and at the start of the line below all read right on main (2026-11-05), once the browser's accessibility was running when the field took the focus (#357 is the Windows read before then). The Chromium
 read is unchanged: its caret marker on an empty line is in that line's element (2026-10-06).
+
+**Amendment 2026-11-05 (later) — a walk of the caret's own blocks when the window's runs out (#355).**
+On the owner's real document the rule above decided right ("the caret starts its text") and the
+dictation was still spaced: the block walk gave no starts at all. Overleaf's code editor gives each
+highlighted piece of a line its own element, so the 30 lines in the window held 481 elements,
+past the walk's budget of 300 (`caretSourceElements`), and a walk that runs out gave no starts
+(logged: `the block walk stopped incomplete after 300 elements placed and 16 opened, 15 starts
+found`). The test page above had three short lines and never reached the budget. The core's walk of
+the window is unchanged, on the whole budget, and a window it walks within the budget keeps all its
+starts. When it does not end (the budget runs out, or an element has no place), the core walks the
+selection alone, from the field, on a budget of its own (`SELECTION_ELEMENTS`, 64, or the window's
+when smaller): halving down to the selection costs a few looks per level, and finds the start the
+dictation's spacing depends on. Those starts are kept, and the text shown elsewhere reads as it did
+before #339, its lines run together; when the selection's walk does not end either, there are no
+starts, as before. Every start kept was placed, so none can fall inside a line (ADR-DESK-046). Each
+place ask names the window its facts compare with (`shown`: the window's ends; `caret`: the
+selection's own), and the walk's end names whose starts the helper keeps. The two walks together
+place at most the budget and the selection's own. Walking the selection first, on the one budget,
+was tried and rejected in review: it spent looks a window needed, so a field of 290 short lines read
+whole before kept only the caret's start. The Mac and Windows walks follow the asks; Linux reads a
+rich editor through its own elements and has no such walk. The owner's field, as Accessibility gave
+it (roles and places, no text), is the test fixture `native/shared/context/gecko-code-editor-tree.json`,
+replayed through the Mac read: red before the change, with the same log line as the owner's
+dictation.

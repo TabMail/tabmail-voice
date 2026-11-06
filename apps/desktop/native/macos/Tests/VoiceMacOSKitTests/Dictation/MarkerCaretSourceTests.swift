@@ -512,6 +512,73 @@ struct MarkerCaretSourceTests {
         #expect(provider.boundsAsked.isEmpty)
     }
 
+    /// A caret on an empty line of Overleaf's code editor in Firefox, read through the elements
+    /// Accessibility gave there (`gecko-code-editor-tree.json`: roles and places, no text): each
+    /// line is a block of many highlighted pieces, 481 elements in all, more than the walk's
+    /// budget. The caret starts the line after the one above, so the text before it ends in that
+    /// line's break and a dictation there is not spaced from the line above (issue #355).
+    @Test func aCaretInARealGeckoCodeEditorGetsTheBreakBeforeIt() throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shared/context/gecko-code-editor-tree.json")
+        let fixture = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        let length = try #require(fixture["length"] as? Int), caret = try #require(fixture["caret"] as? Int)
+        let breaks = try #require(fixture["breaks"] as? [Int])
+        func node(_ value: [String: Any]) throws -> LineNode {
+            let range = try #require(value["range"] as? [Int])
+            let made = LineNode(range[0], range[1] - range[0], role: try #require(value["role"] as? String))
+            made.children = try ((value["children"] as? [[String: Any]]) ?? []).map(node)
+            return made
+        }
+        let field = try #require(fixture["field"] as? [String: Any])
+        let lines = try ((field["children"] as? [[String: Any]]) ?? []).map(node)
+        let path = try #require(fixture["caretElement"] as? [Int])
+        func rect(_ key: String) throws -> CGRect {
+            let numbers = try #require(fixture[key] as? [Double])
+            return CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
+        }
+        let caretDrawn = try rect("caretDrawn"), beforeDrawn = try rect("beforeDrawn")
+        // Synthetic text of the field's length, with its line breaks where the field has them.
+        let text = String((0..<length).map { breaks.contains($0) ? "\n" : "x" })
+        let provider = Provider(text: text, selection: NSRange(location: caret, length: 0))
+        provider.lines = lines
+        provider.caretLine = lines[path[0]].children[path[1]]
+        provider.drawn = { range in
+            range == NSRange(location: caret, length: 0) ? caretDrawn : range == NSRange(location: caret - 1, length: 1) ? beforeDrawn : nil
+        }
+        let parts = try #require(provider.read()?.parts)
+        #expect(parts[0].hasSuffix("x\n"))
+        #expect(parts[1].isEmpty)
+        #expect(parts[2].hasPrefix("x"))
+        // Only the caret's own start is put back: the window's walk ran out of budget, and the
+        // starts it found before that cover only part of the text shown.
+        #expect(parts[0].filter { $0 == "\n" }.count == 1)
+    }
+
+    /// A field of more elements than the walk's budget, lines and inline pieces in turn, each a
+    /// line's start (a piece follows a line): the window's walk runs out, and the caret's start is
+    /// kept alone, even when the last element that walk placed starts a line in the very reply that
+    /// begins the caret's (laid out both ways, so the walk runs out on a line and on a piece).
+    @Test(arguments: [false, true])
+    func aStartTheWindowsWalkFoundAsItRanOutIsNotTheCarets(pieceFirst: Bool) throws {
+        let width = 5, pairs = 200
+        var lines: [LineNode] = []
+        if pieceFirst { lines.append(LineNode(0, width, role: "AXStaticText")) }
+        for _ in 0..<pairs {
+            lines.append(LineNode(lines.count * width, width))
+            lines.append(LineNode(lines.count * width, width, role: "AXStaticText"))
+        }
+        let line = try #require(lines.lastIndex { $0.role == "AXGroup" && $0.span.location <= 180 * 2 * width })
+        let caret = lines[line].span.location
+        let provider = Provider(text: String(repeating: "x", count: lines.count * width), selection: NSRange(location: caret, length: 0))
+        provider.lines = lines
+        provider.caretLine = lines[line]
+        let parts = try #require(provider.read()?.parts)
+        #expect(parts[0].hasSuffix("x\n"))
+        #expect(parts[0].filter { $0 == "\n" }.count == 1)
+        #expect(parts[2] == String(repeating: "x", count: parts[2].count))
+    }
+
     /// The caret's diagnostic asks Accessibility nothing of its own (it is built in every build,
     /// whether or not the app keeps the line): a read whose caret marker is in an element asks the
     /// same of the field's elements as one whose marker is in none, and measures only the caret
@@ -654,6 +721,7 @@ struct MarkerCaretSourceTests {
         let span: NSRange
         let role: String
         var reversed = false
+        var children: [LineNode] = []
         init(_ start: Int, _ length: Int, role: String = "AXGroup") {
             span = NSRange(location: start, length: length)
             self.role = role
@@ -687,7 +755,7 @@ struct MarkerCaretSourceTests {
             // Read through the helper's own Accessibility wiring, over these elements.
             let blocks = lines.isEmpty ? nil : MarkerCaretSource.Blocks.accessibility(field: field, attribute: { node, name in
                 self.attributesAsked.append("\(name) \((node as! LineNode).span)")
-                if name == kAXChildrenAttribute as String { return node === field ? self.lines as NSArray : NSArray() }
+                if name == kAXChildrenAttribute as String { return node === field ? self.lines as NSArray : (node as! LineNode).children as NSArray }
                 if name == kAXRoleAttribute as String { return (node as! LineNode).role as NSString }
                 return nil
             }, parameterized: { name, value in
