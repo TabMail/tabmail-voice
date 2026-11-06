@@ -1891,6 +1891,54 @@ mod budget_tests {
             );
         }
     }
+    /// `addedBreaks` name the breaks in the bytes of the text returned, after the text before the
+    /// caret is cut at an unknown start or to its budget, and where it holds characters of several
+    /// bytes and a line break of its own: the value of a label a misplaced start split is not
+    /// shown, and the text's own break is left as it is (issue #365).
+    #[test]
+    fn the_breaks_put_back_are_named_in_the_bytes_returned_after_any_cut() {
+        let value = concat!("a1b2", "c3d4");
+        let labelled = format!("password = {value}");
+        let filler = "Words. ".repeat(SOURCE_WINDOW_BYTES);
+        let at_budget = format!(
+            "{}{labelled}",
+            &filler[..SOURCE_WINDOW_BYTES - labelled.len()]
+        );
+        for (case, before, start_known) in [
+            (
+                "unknown start",
+                format!("Discarded prefix. {labelled}"),
+                false,
+            ),
+            ("at the budget", at_budget, true),
+            ("wide characters", format!("😀éé\n{labelled}"), true),
+        ] {
+            let start = before.find("password").unwrap() + "pass".len();
+            let read = call(
+                json!({"caretWindow":{"parts":[before,"",""],"startKnown":start_known,"endKnown":true,"paragraphStarts":[start]}}),
+            );
+            let kept = read["parts"][0].as_str().unwrap();
+            assert!(
+                kept.ends_with(&format!("pass\nword = {value}")),
+                "{case}: {kept}"
+            );
+            // The text kept stays in its budget: at the budget, the break put back costs the text
+            // its first bytes, a cut.
+            assert!(kept.len() <= SOURCE_WINDOW_BYTES, "{case}");
+            let added = kept.rfind("pass\nword").unwrap() + "pass".len();
+            assert_eq!(read["addedBreaks"], json!([[added], [], []]), "{case}");
+            let reply =
+                call(json!({"blocks":[],"caret":read["parts"],"caretBreaks":read["addedBreaks"]}));
+            let text = reply.to_string();
+            assert!(
+                !text.contains("a1b2") && !text.contains("c3d4"),
+                "{case}: {text}"
+            );
+            if case == "wide characters" {
+                assert_eq!(reply["caret"][0], json!("😀éé\npass\nword = [redacted]"));
+            }
+        }
+    }
     /// Two keys on lines of their own, the caret at the second's start, whether the break between
     /// them is the text's own or one the caret window put back: each is redacted on its own line,
     /// and neither reaches the reply, whole or in part.
