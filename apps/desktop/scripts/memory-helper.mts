@@ -11,6 +11,11 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodedRustFlagsWithoutHome, refuseHomeFolder } from "./home-folder.mts";
 
+/** The helper's third-party notices (the licence texts of its crates and the C code they bundle),
+ * kept in its repository; every package ships them as they are, beside this app's own
+ * (`electron-builder.json`, from the checkout below). */
+export const memoryHelperNotices = "native/memory/.build/source/THIRD_PARTY_NOTICES.txt";
+
 /** Where the helper's source comes from, and at which commit. */
 export interface MemoryHelperPin { repository: string; revision: string }
 
@@ -40,6 +45,7 @@ function source(root: string, pin: MemoryHelperPin): string {
   git("checkout", "--quiet", "--force", "--detach", pin.revision);
   git("clean", "--quiet", "-fdx");
   if (git("rev-parse", "HEAD") !== pin.revision) throw new Error(`The memory helper's checkout is not at ${pin.revision}`);
+  if (!existsSync(join(root, memoryHelperNotices))) throw new Error(`The memory helper at ${pin.revision} has no THIRD_PARTY_NOTICES.txt to ship`);
   return checkout;
 }
 

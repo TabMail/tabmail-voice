@@ -39,6 +39,14 @@
     {
       "from": "../../THIRD_PARTY_LICENSES.md",
       "to": "THIRD_PARTY_LICENSES.md"
+    },
+    {
+      "from": "../../THIRD_PARTY_NOTICES.md",
+      "to": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "from": "native/memory/.build/source/THIRD_PARTY_NOTICES.txt",
+      "to": "voice-memory-THIRD_PARTY_NOTICES.txt"
     }
   ],
   "asar": true,
@@ -60,6 +68,14 @@
       {
         "from": "dist/helpers",
         "to": "helpers"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "LICENSE.electron.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "LICENSES.chromium.html"
       }
     ],
     "target": [

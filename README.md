@@ -150,7 +150,10 @@ code gives it (Apache-2.0), with wordfreq's letter tables (CC BY-SA 4.0) and eac
 credits every source and says what was changed.
 
 Every third-party project and data set Voice ships is credited in Settings > Acknowledgements and,
-with its licence, in `THIRD_PARTY_LICENSES.md`.
+with its licence, in `THIRD_PARTY_LICENSES.md`. `THIRD_PARTY_NOTICES.md` holds the licence texts of the
+native code compiled in; it is generated (`apps/desktop/scripts/third-party-notices.mts`, run after the
+core's Cargo.lock, @napi-rs/keyring, nlohmann/json or the Rust toolchain changes). The memory helper's
+ship as its own repository's notices file.
 
 ## License
 
