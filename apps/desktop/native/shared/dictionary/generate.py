@@ -55,10 +55,10 @@ CLDR = f"https://raw.githubusercontent.com/unicode-org/cldr-json/{CLDR_VERSION}/
 FREQUENCY_WORDS = "525f9b560de45753a5ea01069454e72e9aa541c6"
 FREQUENCY_LIST = f"https://raw.githubusercontent.com/hermitdave/FrequencyWords/{FREQUENCY_WORDS}/content/2018/{{code}}/{{code}}_full.txt"
 MIN_ZIPF = 2.5
-# Inside a word: apostrophes ("don't"). FrequencyWords splits words at a hyphen, Catalan's middle
-# dot ("col·legi") and the zero-width non-joiner and joiner Persian, Hindi and Bengali spell words
-# with ("می‌شود"), so its lists hold only their parts; the lookup sees such a word as its least seen
-# part.
+# Inside a word: apostrophes ("don't"). FrequencyWords splits words at Catalan's middle dot
+# ("col·legi") and the zero-width non-joiner and joiner Persian, Hindi and Bengali spell words with
+# ("می‌شود"), so its lists hold only their parts; a hyphenated word it lists is dropped here, a hyphen
+# being no letter. The lookup sees any of these words as its least seen part.
 INNER = "'’"
 HERE = Path(__file__).resolve().parent
 

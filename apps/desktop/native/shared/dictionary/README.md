@@ -10,8 +10,9 @@ sees it often enough. This is the list.
   seen, as Zipf in tenths (log10 of its frequency per billion words, times ten: `56` is once in about
   2,500 words). Each list keeps only the words it sees at Zipf 2.5 or more, written in its language's
   scripts. A word is letters and marks, with an apostrophe inside it (`don't`). FrequencyWords
-  splits words at a hyphen, Catalan's middle dot and the zero-width non-joiner and joiner, so its
-  lists hold only their parts, and the lookup sees such a word as its least seen part. Japanese has
+  splits words at Catalan's middle dot and the zero-width non-joiner and joiner, so its lists hold
+  only their parts; a hyphenated word it lists is dropped. The lookup sees any of these words as its
+  least seen part. Japanese has
   no list: FrequencyWords' Japanese list holds
   word stems without their kana, so every Japanese word would look rare.
 - `languages.json`: for each list, its writings (each the ISO 15924 scripts one word may mix; Serbo-Croatian is
