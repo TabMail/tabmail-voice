@@ -904,3 +904,33 @@ fn a_private_key_cut_by_a_window_loses_all_of_its_body_in_the_window() {
         }
     }
 }
+
+/// Many secrets, one line break joined (a break the core put back in the caret's text, #365): the
+/// added reading maps each of its finds against only the runs it overlaps, so it costs about what
+/// the reading as laid out costs, not that times the number of runs. Every value stays redacted.
+#[test]
+fn a_joined_break_among_many_secrets_costs_about_one_more_reading() {
+    let line = "password = a1b2c3d4\n";
+    let text = line.repeat(20_000);
+    let joined = [line.len() - 1];
+    // Compile before timing.
+    taken("").unwrap();
+    let start = Instant::now();
+    let laid_out = taken_with_edges(&text, &[]).unwrap();
+    let once = start.elapsed();
+    let start = Instant::now();
+    let across = taken_across_breaks(&text, &[], &joined).unwrap();
+    let twice = start.elapsed();
+    assert!(
+        twice < once * 4,
+        "across one break {twice:?}, as laid out {once:?}"
+    );
+    for run in &laid_out {
+        assert!(
+            across
+                .iter()
+                .any(|kept| kept.start <= run.start && run.end <= kept.end),
+            "{run:?}"
+        );
+    }
+}

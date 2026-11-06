@@ -96,9 +96,12 @@ pub fn taken_across_breaks(
         let range = kept[found.taken.start]..kept[found.taken.end - 1] + 1;
         let mut pieces = Vec::new();
         let mut from = range.start;
-        for run in laid_out
+        // The runs are in order and apart: only those this find overlaps are visited, so the
+        // reading stays proportional to the text however many runs it holds (ADR-DESK-046).
+        let first = laid_out.partition_point(|run| run.end <= range.start);
+        for run in laid_out[first..]
             .iter()
-            .filter(|run| run.start < range.end && range.start < run.end)
+            .take_while(|run| run.start < range.end)
         {
             pieces.push(from..run.start.max(from));
             from = from.max(run.end);

@@ -1780,39 +1780,56 @@ mod budget_tests {
     /// the block before, splits it into pieces that no longer look secret: the caret window says
     /// where it put each break back, and the final redaction also reads the caret's text with those
     /// breaks removed, so the value is not shown (issue #365). The break stays where the words
-    /// around it are shown, and a break the text holds itself is the screen's, read as it is.
+    /// around it are shown, and a break the text holds itself is the screen's, read as it is. This
+    /// holds wherever the break went: before the caret, in the selection, or after it.
     #[test]
     fn a_break_put_back_inside_a_label_or_value_still_redacts_the_value() {
         let value = concat!("a1b2", "c3d4");
         let labelled = format!("password = {value}");
-        for (label, field, start) in [(None, labelled.as_str(), 4), (Some("password ="), value, 4)]
-        {
-            let read = call(
-                json!({"caretWindow":{"parts":[field,"",""],"startKnown":true,"endKnown":true,"paragraphStarts":[start]}}),
-            );
-            assert_eq!(
-                read["parts"][0],
-                json!(format!("{}\n{}", &field[..start], &field[start..]))
-            );
-            assert_eq!(read["addedBreaks"], json!([[start], [], []]));
-            let blocks = match label {
-                None => json!([]),
-                Some(label) => json!([{"kind":"text","text":label},{"kind":"caret","text":""}]),
-            };
-            let reply = call(
-                json!({"blocks":blocks,"caret":read["parts"],"caretBreaks":read["addedBreaks"]}),
-            );
-            let text = reply.to_string();
-            assert!(
-                !text.contains("a1b2") && !text.contains("c3d4"),
-                "{label:?}: {text}"
-            );
-            if label.is_none() {
-                assert_eq!(reply["caret"][0], json!("pass\nword = [redacted]"));
+        for part in 0..3 {
+            for (label, field, start) in
+                [(None, labelled.as_str(), 4), (Some("password ="), value, 4)]
+            {
+                let case = format!("part {part}, label {label:?}");
+                let mut parts = [""; 3];
+                parts[part] = field;
+                let read = call(
+                    json!({"caretWindow":{"parts":parts,"startKnown":true,"endKnown":true,"paragraphStarts":[start]}}),
+                );
+                assert_eq!(
+                    read["parts"][part],
+                    json!(format!("{}\n{}", &field[..start], &field[start..])),
+                    "{case}"
+                );
+                let mut added = vec![json!([]); 3];
+                added[part] = json!([start]);
+                assert_eq!(read["addedBreaks"], json!(added), "{case}");
+                let blocks = match label {
+                    None => json!([]),
+                    Some(label) => {
+                        json!([{"kind":"text","text":label},{"kind":"caret","text":""}])
+                    }
+                };
+                let reply = call(
+                    json!({"blocks":blocks,"caret":read["parts"],"caretBreaks":read["addedBreaks"]}),
+                );
+                let text = reply.to_string();
+                assert!(
+                    !text.contains("a1b2") && !text.contains("c3d4"),
+                    "{case}: {text}"
+                );
+                if label.is_none() {
+                    assert_eq!(
+                        reply["caret"][part],
+                        json!("pass\nword = [redacted]"),
+                        "{case}"
+                    );
+                }
+                assert_eq!(reply["selectionRedacted"], part == 1, "{case}: {reply}");
+                // The same text with a break of its own: read as the screen shows it.
+                let own = call(json!({"blocks":blocks,"caret":read["parts"]})).to_string();
+                assert!(own.contains("c3d4"), "{case}: {own}");
             }
-            // The same text with a break of its own: read as the screen shows it.
-            let own = call(json!({"blocks":blocks,"caret":read["parts"]})).to_string();
-            assert!(own.contains("c3d4"), "{label:?}: {own}");
         }
         // Words split by a break put back are shown as they are.
         let read = call(
