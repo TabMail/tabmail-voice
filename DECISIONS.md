@@ -33,7 +33,7 @@ one line here carrying its number and title.
 - **[ADR-DESK-021](Companion/Decisions/Active/adr-desk-021.md)**: Tips that retire once learned, and hands-free dictation on a double tap
 - **[ADR-DESK-022](Companion/Decisions/Active/adr-desk-022.md)**: The Answer tool, the chat window, and agent tools switched on and off; a click elsewhere or an app switch closes the idle chat window (closesChatElsewhere, chatMouseDown, chatFocusChanged, dismissChat; amendment 2026-10-25; amendment 2026-10-27: Answer always on, no switch, switchableAgentToolIDs, noToolEnabled removed, #279)
 - **[ADR-DESK-023](Companion/Decisions/Active/adr-desk-023.md)**: The Answer tool's loop, with tools that run on this computer
-- **[ADR-DESK-024](Companion/Decisions/Active/adr-desk-024.md)**: Calendar and Reminders, the first apps the Answer tool reaches; a timed reminder gets an alarm (EKAlarm, VALARM) at its saved due, a day-only one none
+- **[ADR-DESK-024](Companion/Decisions/Active/adr-desk-024.md)**: Calendar and Reminders, the first apps the Answer tool reaches; a timed reminder gets an alarm (EKAlarm, VALARM) at its saved due, a day-only one none; a timed due carries the Mac's time zone (an instant, not floating), a day due none (#383)
 - **[ADR-DESK-025](Companion/Decisions/Active/adr-desk-025.md)**: Contacts, the third app the Answer tool reaches
 - **[ADR-DESK-026](Companion/Decisions/Active/adr-desk-026.md)**: Files, Spotlight search the Answer tool can open from
 - **[ADR-DESK-027](Companion/Decisions/Active/adr-desk-027.md)**: Email, a prefilled new message in the user's email app

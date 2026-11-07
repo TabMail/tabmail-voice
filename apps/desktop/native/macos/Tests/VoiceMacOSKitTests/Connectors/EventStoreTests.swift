@@ -827,6 +827,35 @@ extension EventKitTests {
             #expect(fake.reminderDueBefore == [start + 86_400, nil])
         }
 
+        /// Reminders made elsewhere read back at their time: one due at a time with no zone (as Reminders
+        /// may store it, and as Voice saved them before its dues carried a zone) is that clock time in
+        /// this Mac's zone, and one due at a time in another zone is that instant.
+        @Test
+        func remindersMadeElsewhereReadAtTheirTime() async throws {
+            let fake = FakeEventStore()
+            let tokyo = try #require(TimeZone(identifier: "Asia/Tokyo"))
+            var tokyoCalendar = Calendar(identifier: .gregorian)
+            tokyoCalendar.timeZone = tokyo
+            var zoned = tokyoCalendar.dateComponents([.year, .month, .day, .hour, .minute], from: start)
+            zoned.timeZone = tokyo
+            let floating = ReminderItem.dueCalendar.dateComponents([.year, .month, .day, .hour, .minute], from: start)
+            #expect(floating.timeZone == nil)
+            fake.reminders = [("Floating", floating), ("Zoned", zoned)].map { title, due in
+                let reminder = EKReminder(eventStore: fake)
+                reminder.calendar = fake.list
+                reminder.title = title
+                reminder.dueDateComponents = due
+                return reminder
+            }
+
+            let reminders = try await store(fake).openReminders(dueBefore: nil)
+
+            #expect(reminders == [
+                ReminderItem(title: "Floating", list: "Errands", due: start, dueHasTime: true, notes: nil),
+                ReminderItem(title: "Zoned", list: "Errands", due: start, dueHasTime: true, notes: nil),
+            ])
+        }
+
         /// A reminder is saved, committed, in the default list, and comes back as saved.
         @Test
         func aReminderIsSavedInTheDefaultList() async throws {
