@@ -14,4 +14,7 @@ inline constexpr unsigned calendarReadAttempts = 3;
 // How many elements deep a caret is followed from a rich editor into the line holding it (`caretInWindow`):
 // a browser's editor, its line, and the elements a line can hold, with room to spare.
 inline constexpr unsigned caretObjectDepth = 16;
+// How long the GNOME Shell gets to name a window's app (`GnomeCaret::app`): longer than it gets to say which
+// window is in front, since a read it misses gives nothing (the app may be one the user excluded).
+inline constexpr int shellAppTimeoutMs = 1000;
 }

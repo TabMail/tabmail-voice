@@ -53,3 +53,26 @@ line (`caretInWindow`, at most `caretObjectDepth` elements deep) before asking w
 followed into is a caret at the end read where the last character ends (browsers give no rectangle past a line's
 text); a field with no objects keeps its provider's rectangle, and a password field's text is never read for it.
 
+**Amended 2026-11-06 (#370): the extension names a window's app (version 5).** The helpers named an app by
+its process's launcher (`desktopIdentity`: the `GIO_LAUNCHED_DESKTOP_FILE` the launcher set, else a launcher
+whose `Exec` is the process's program). Snap Chromium, the only Chromium Ubuntu ships, fails both: it drops
+the variable, and its program (`/snap/chromium/<revision>/usr/lib/chromium-browser/chrome`) is no launcher's
+(`/snap/bin/chromium`). Unnamed, it was read even where the user excluded it. The Shell knows each window's
+app (`Shell.WindowTracker`, as the dock and the window switcher name it; measured on GNOME 50.1:
+`chromium_chromium.desktop` for snap Chromium, `firefox_firefox.desktop`, `org.gnome.TextEditor.desktop`).
+The extension's `App(window)` answers the live window's desktop file id and name, or empty strings where the
+Shell names the app by its window alone (no desktop file); an id no live window has (0, a closed window's, or
+a token of a helper's own) is the error `ai.tabmail.Voice.Caret.Error.NoWindow`, never an empty answer. The
+helpers (`Foreground::identity`) name the window in front, and the window captured at key-down, by the Shell's
+app where it names one, and ask also where they hold no Shell id for the window (a focus the Shell named no
+window for, a capture from the helper's own token); the launcher lookup stays for desktops without the
+extension and for a live window the Shell knows no desktop file for, which the Shell can't name, and for an
+extension older than `App` (until the next log-in). A window the Shell has no live window for is not one the
+launcher may name: an empty answer there let the launcher stand in, and an excluded snap Chromium captured
+under a helper token was read. The app is asked at each read, each answer bounded at 1 s (`HelperConfig::shellAppTimeoutMs`,
+owner 2026-11-07: longer than `Focus`'s 250 ms, since a read the Shell misses gives nothing). A Shell that
+was asked and gave no answer (no reply in time, any other failure) names no app, and the launcher does
+not stand in for it: that read gives nothing, since the window may be an app the user excluded, and the
+next read asks again; the miss is logged as an error (no content), so an extension that stays stuck until the next
+log-in shows in the app's log. Nothing is cached per focus, so a stall touches only the read it overlaps. Helpers require version 5, so a
+Shell still running version 4 until the next log-in is not ready, and Settings asks for one, as before.

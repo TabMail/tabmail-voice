@@ -22,8 +22,11 @@ const IFACE = `<node><interface name="ai.tabmail.Voice.Caret">
 <method name="Target"><arg type="u" direction="in"/><arg type="t" direction="out"/><arg type="u" direction="out"/></method>
 <method name="Activate"><arg type="t" direction="in"/><arg type="b" direction="out"/></method>
 <method name="Focus"><arg type="t" direction="out"/><arg type="u" direction="out"/></method>
+<method name="App"><arg type="t" direction="in"/><arg type="s" direction="out"/><arg type="s" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal>
 </interface></node>`;
+// `App`'s answer for an id no live window has.
+const NO_WINDOW = 'ai.tabmail.Voice.Caret.Error.NoWindow';
 
 /** Compositor geometry and temporary dictation shortcuts; no text or rendering.
  * Signal sources are the same as GNOME 50's on-screen keyboard FocusTracker.
@@ -200,7 +203,7 @@ export default class VoiceCaret extends Extension {
         return JSON.stringify({...rect, source: 'accessibility'});
     }
 
-    Version() { return 4; }
+    Version() { return 5; }
 
     /** The window with the keyboard focus, as the Shell knows it: its id, which stays the window's for
      * as long as it lives, and its process. Unchanged while the dictation key holds the keyboard (the
@@ -212,6 +215,24 @@ export default class VoiceCaret extends Extension {
         const window = global.display.focus_window;
         if (!window || Main.sessionMode.isLocked || Main.modalCount > (this._hold ? 1 : 0)) return [0, 0];
         return [window.get_id(), Math.max(0, window.get_pid())];
+    }
+
+    /** The app of the live window `id` as the Shell names it (`Shell.WindowTracker`, as the dock and the
+     * window switcher do): its desktop file's id and name, whatever the app's process or environment
+     * says (snap Chromium drops the launcher's `GIO_LAUNCHED_DESKTOP_FILE`, and its program is no
+     * launcher's). Empty where the Shell knows no desktop file for the window (an app it names by the
+     * window alone). No live window with the id (0, a closed window's, or an id that was never the
+     * Shell's) is the error `NO_WINDOW`, not an empty answer: the helper then reads nothing, where an
+     * empty answer lets the window's launcher name the app. */
+    AppAsync([id], invocation) {
+        const window = global.get_window_actors().map(actor => actor.meta_window).find(each => each.get_id() === id);
+        if (!window) {
+            invocation.return_dbus_error(NO_WINDOW, 'No live window has this id');
+            return;
+        }
+        const app = Shell.WindowTracker.get_default().get_window_app(window);
+        const named = app && !app.is_window_backed() && app.get_id();
+        invocation.return_value(new GLib.Variant('(ss)', named ? [app.get_id(), app.get_name() ?? ''] : ['', '']));
     }
 
     /** Voice in front targets the exact window of the previous application. Remembered by the

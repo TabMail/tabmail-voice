@@ -10,6 +10,11 @@
 
 namespace voice {
 struct AppIdentity { std::string id, name; };
+// Which app a window is, as the GNOME Shell (`GnomeCaret::app`) or else the window's process's launcher
+// (`Foreground::identity`) names it: `app` where one names it. `unknown` where the Shell, asked, gave no
+// answer (no reply in time, a failure): then nothing names the app, and nothing of the window is read, since
+// it may be an app the user excluded (ADR-DESK-045).
+struct WindowApp { std::optional<AppIdentity> app; bool unknown = false; };
 // Whether `pid` is a sandbox's bus proxy (Flatpak's xdg-dbus-proxy): a sandboxed app reaches the
 // accessibility bus through it, so the bus names the proxy's process, never the app's own.
 inline bool busProxy(unsigned pid) {

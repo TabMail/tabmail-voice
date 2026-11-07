@@ -47,7 +47,10 @@ async function fixture(failExport = false) {
         const id = ++nextGrab; grabs.set(id, key); return id;
     };
     display.ungrab_accelerator = id => assert.ok(grabs.delete(id));
-    const context = vm.createContext({global: {display, stage: {}}});
+    // The live windows (`global.get_window_actors`) and the app the Shell's window tracker names for each.
+    const actors = [{meta_window: window}];
+    const apps = new Map();
+    const context = vm.createContext({global: {display, stage: {}, get_window_actors: () => actors}});
     const dependencies = {
         'gi://GLib': {default: {Variant: class {constructor(type, value) {this.type = type; this.value = value;}}}},
         'gi://Clutter': {default: {Actor, EventFlags: {FLAG_REPEATED}, EVENT_STOP: true, EVENT_PROPAGATE: false,
@@ -57,7 +60,7 @@ async function fixture(failExport = false) {
             KEY_space: KEY.space, KEY_Escape: KEY.Escape, KEY_Alt_R: KEY.Alt_R, KEY_Meta_R: KEY.Meta_R,
             get_current_event: () => pressed}},
         'gi://Meta': {default: {KeyBindingFlags: {IGNORE_AUTOREPEAT: 1}, external_binding_name_for_action: id => String(id)}},
-        'gi://Shell': {default: {ActionMode: {NORMAL: 1, NONE: 0}}},
+        'gi://Shell': {default: {ActionMode: {NORMAL: 1, NONE: 0}, WindowTracker: {get_default: () => ({get_window_app: each => apps.get(each) ?? null})}}},
         'gi://St': {default: {ThemeContext: {get_for_stage: () => theme}}},
         'gi://Gio': {default: {BusNameWatcherFlags: {NONE: 0},
             bus_watch_name_on_connection(_bus, _name, _flags, _appeared, vanished) {lostOwner = vanished; return 1;},
@@ -118,7 +121,7 @@ async function fixture(failExport = false) {
         return result;
     };
     const shellModal = open => { shellModals += open ? 1 : -1; modalCount(); };
-    return {filters, theme, recording, chat, hotkey, key, pressing, modals, shellModal, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    return {filters, theme, recording, chat, hotkey, key, pressing, modals, shellModal, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, actors, apps, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -371,7 +374,8 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<method name="SetHotkey"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Holding"><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Focus"><arg type="t" direction="out"\/><arg type="u" direction="out"\/><\/method>/);
-    assert.equal(f.extension.Version(), 4);
+    assert.match(xml, /<method name="App"><arg type="t" direction="in"\/><arg type="s" direction="out"\/><arg type="s" direction="out"\/><\/method>/);
+    assert.equal(f.extension.Version(), 5);
     assert.equal(f.recording(true), true);
     f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
     assert.deepEqual(f.actions[0].slice(0, 4), [':1.42', path, 'ai.tabmail.Voice.Caret', 'Action']);
@@ -406,6 +410,47 @@ test('Focus names the Shell\'s focus window by id and process, through the dicta
     assert.deepEqual([...f.extension.Focus()], [7001, 0], 'a window with no known process names none');
     f.sessionMode.isLocked = true; assert.deepEqual([...f.extension.Focus()], [0, 0]); f.sessionMode.isLocked = false;
     f.display.focus_window = null; assert.deepEqual([...f.extension.Focus()], [0, 0]);
+    f.extension.disable();
+});
+
+test('App names a live window\'s app as the Shell\'s window tracker does, none for a window it can\'t name, and an error for no live window', async () => {
+    const f = await fixture();
+    // The answer the D-Bus invocation is given: the reply's values, or the error's name.
+    const App = id => {
+        let answer;
+        f.extension.AppAsync([id], {
+            return_value: variant => { assert.equal(variant.type, '(ss)'); answer = [...variant.value]; },
+            return_dbus_error: (name, message) => { assert.equal(typeof message, 'string'); answer = name; },
+        });
+        return answer;
+    };
+    const noWindow = 'ai.tabmail.Voice.Caret.Error.NoWindow';
+    const app = (id, name, windowBacked = false) => ({get_id: () => id, get_name: () => name, is_window_backed: () => windowBacked});
+    // Snap Chromium: its process names no launcher, the Shell names its desktop file.
+    f.apps.set(f.window, app('chromium_chromium.desktop', 'Chromium Web Browser'));
+    assert.deepEqual(App(7000), ['chromium_chromium.desktop', 'Chromium Web Browser']);
+    // Another live window, and only the window asked about: by its id, not the window in front.
+    const other = {get_id: () => 7001, get_pid: () => 4343};
+    f.actors.push({meta_window: other});
+    f.apps.set(other, app('org.gnome.TextEditor.desktop', 'Text Editor'));
+    assert.deepEqual(App(7001), ['org.gnome.TextEditor.desktop', 'Text Editor']);
+    assert.deepEqual(App(7000), ['chromium_chromium.desktop', 'Chromium Web Browser']);
+    // An app with no name still has its id.
+    f.apps.set(other, app('org.gnome.TextEditor.desktop', null));
+    assert.deepEqual(App(7001), ['org.gnome.TextEditor.desktop', '']);
+    // A live window whose app the Shell names by the window alone (no desktop file), one with no id, or none: no app.
+    f.apps.set(other, app('window:7001', 'Synthetic window', true));
+    assert.deepEqual(App(7001), ['', '']);
+    f.apps.set(other, app(null, 'Synthetic window'));
+    assert.deepEqual(App(7001), ['', '']);
+    f.apps.delete(other);
+    assert.deepEqual(App(7001), ['', '']);
+    // No live window has the id (0, a closed window's, or one that was never the Shell's): the error, not an
+    // empty answer, so the window's launcher can't stand in for the Shell.
+    assert.equal(App(7002), noWindow);
+    assert.equal(App(0), noWindow);
+    f.actors.length = 0;
+    assert.equal(App(7000), noWindow);
     f.extension.disable();
 });
 
