@@ -47,7 +47,8 @@ A browser is `firefox`, `chrome` or `edge`, with its program's path (Chromium ru
 Chrome has no Linux ARM64 build). On Linux, also name each browser's launcher with
 `--desktop-file firefox=<file>` (a snap's is `/var/lib/snapd/desktop/applications/firefox_firefox.desktop`):
 the desktop tells a program it starts which launcher it is, the helpers know the app by that, and a snap's
-program is not the one its launcher names, so without it the browser is an unknown app. It prints one line a read and exits 1 when a read fails. These run in
+program is not the one its launcher names, so without it, and without the GNOME extension (whose Shell
+names the app), the browser is an unknown app. It prints one line a read and exits 1 when a read fails. These run in
 the Ubuntu and Windows test machines, not in CI: the build machines have no desktop session or browser.
 
 `codemirror.js` is CodeMirror, bundled by `scripts/browser-pages.mts` (run it after a CodeMirror

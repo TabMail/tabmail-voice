@@ -22,9 +22,11 @@ inline nlohmann::json capturedRead(const nlohmann::json& params, const Foregroun
     const auto pid = atspi_accessible_get_process_id(window.get(), &error.value);
     error.check();
     if (target["pid"] != pid) return JSON(nullptr);
-    const auto app = desktopIdentity(pid);
+    // The window is the Shell's id for it where the Shell named it at capture (`captureTarget`).
+    const auto app = foreground.identity(target["window"].is_number_unsigned() ? target["window"].get<uint64_t>() : 0, pid);
+    if (app.unknown) { std::cerr << "error screen: the Shell did not name the captured window's app\n"; return JSON(nullptr); }
     return screenAccess(params, window,
-        [&](const auto&) { return app ? std::optional<std::string>(app->id) : std::nullopt; },
+        [&](const auto&) { return app.app ? std::optional<std::string>(app.app->id) : std::nullopt; },
         [&](const auto&, const ScreenExclusions& policy) -> JSON {
             auto focus = window;
             auto path = ancestors(window);
@@ -38,7 +40,7 @@ inline nlohmann::json capturedRead(const nlohmann::json& params, const Foregroun
                 const auto now = foreground.target();
                 return now && target["window"] == now->token && foreground.targets(now->token) && same(now->focus, node);
             };
-            auto result = gatherScreen(tree, window, focus, path, app.value_or(AppIdentity{"", "Unknown"}), policy);
+            auto result = gatherScreen(tree, window, focus, path, app.app.value_or(AppIdentity{"", "Unknown"}), policy);
             return state(window, ATSPI_STATE_DEFUNCT) ? JSON(nullptr) : result;
         });
 }
@@ -52,10 +54,14 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
     if (method == "focusedFieldValue")
         limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json).at("maxLength").get<int>();
     const auto target = foreground.target();
+    // Which app is in front is asked at each read: a Shell that gave no answer to one read is asked again by
+    // the next, and the read it gave none to gives nothing.
+    const auto app = target ? foreground.identity(target->shellWindow, target->pid) : WindowApp{};
+    if (app.unknown) { std::cerr << "error screen: the Shell did not name the app in front\n"; return JSON(nullptr); }
     const auto result = voice::screenAccess(params, target,
-        [](const auto& target) -> std::optional<std::string> {
-            if (!target->app) std::cerr << "debug screen: desktop identity unavailable\n";
-            return target->app ? std::optional<std::string>(target->app->id) : std::nullopt;
+        [&](const auto&) -> std::optional<std::string> {
+            if (!app.app) std::cerr << "debug screen: desktop identity unavailable\n";
+            return app.app ? std::optional<std::string>(app.app->id) : std::nullopt;
         },
         [&](const auto& target, const voice::ScreenExclusions& policy) -> JSON {
             if (!foreground.targets(target->token)) return nullptr;
@@ -72,7 +78,7 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
                     const auto now = foreground.target();
                     return now && foreground.targets(now->token) && voice::same(now->focus, node);
                 };
-                return voice::gatherScreen(tree, *window, target->focus, path, target->app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
+                return voice::gatherScreen(tree, *window, target->focus, path, app.app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
             }
             // A terminal's text is its scrollback: its field is the box around its cursor, which the
             // shared core cuts from the viewport the screen read takes (`terminal_box`), read as it is,

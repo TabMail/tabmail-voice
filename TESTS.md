@@ -25,10 +25,9 @@ longer than 300 lines, in Firefox and Chrome (Chromium on Ubuntu ARM64; Edge too
 the caret on an empty line, at a line's start, mid-line, at its end and around a selection, and
 judges each `readScreen`, `focusedFieldValue` and `caretAnchor`, and the app each browser is read
 as. A read failing where an open issue records it is "known"; one recorded that passes fails the run
-until its record goes (`checks.mjs` › `knownFailures`). Ubuntu 24.04 ARM64, Firefox 157 and
-Chromium 156 (2026-11-06 and 2026-11-07; the long compose page's reads measured with this change, the
-caret anchors with #371's): 85 to 88 pass, 4 known (#370 snap Chromium's identity), and up to 3 of the long
-compose page's 4 field reads known (#390: they run out the field read's time in some runs and not others). Windows 11 ARM64, Edge, Chrome and Firefox
+until its record goes (`checks.mjs` › `knownFailures`). Ubuntu 26.04 ARM64, Firefox 157 and
+Chromium 156 (2026-11-06 and 2026-11-07, with #361 and #371): 91 to 92 pass, and up to 1 of the long compose page's 4
+field reads known (#390: they run out the field read's 1.5 s limit in some runs and not others). Windows 11 ARM64, Edge, Chrome and Firefox
 (2026-11-07, all three in one run, with the host machine heavily loaded): 84 pass, 26 known (#379
 Firefox's rich editors losing their line breaks, in the screen read and the field read, #391 a field
 read in Edge and Chrome giving an empty line as one line break, #380 Firefox's CodeMirror anchor a
@@ -267,6 +266,7 @@ going off after each dictation (the engine's release has no automated test, by t
 | #262 GNOME integration asked at helper start | Verification |
 | --- | --- |
 | Linux `tests/gnome-caret.cpp`, `tests/gnome-protocol.py` | `gnomeIntegration` and `caretAnchor` asked the moment the helper starts reach the Shell and answer (no wait before the first request); an older extension, a failed call and an absent extension answer not ready. |
+| Linux `gnome/extension.test.mjs` › App, `tests/gnome-caret.cpp` › App, `tests/foreground-lifecycle.py` (over the screen reader and the field reader) | ADR-DESK-056 amendment 2026-11-06 (#370), ADR-DESK-045: a window's app is the one the Shell's window tracker names, asked at each read, in front and captured at key-down; an app excluded by that name is not read; the launcher names the app only where the Shell names none for a live window (no desktop file) or can't be asked (no extension, one older than `App`), and the Shell's name wins over the launcher's; a Shell that gives no answer (no reply in time, a failure) or has no live window for the id (`NoWindow`: a helper's own token, a closed window's, or 0 where the helper holds no Shell id) gives that read nothing, logged as an error, and the next read asks again; the Shell gets `HelperConfig::shellAppTimeoutMs` to name the app, an answer after `Focus`'s limit still taken and none at all holding the read no longer (`gnome-caret.cpp`, red against `Focus`'s limit and against five times the limit). |
 
 | #263 selection recognition context | Verification |
 | --- | --- |

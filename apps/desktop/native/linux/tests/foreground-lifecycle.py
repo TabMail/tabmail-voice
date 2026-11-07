@@ -21,20 +21,40 @@ portal = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.
 assert portal.stdout.readline() == b'ready\n', 'the synthetic portal starts'
 control_read, control_write = os.pipe()
 ack_read, ack_write = os.pipe()
+# Stand-in processes: a script, so the kernel names the process after it, that sleeps. A copy of
+# /bin/sleep can't stand in: a multicall coreutils (Ubuntu's Rust one) picks its program by its own file
+# name and exits at once under another, and an exited process keeps its name but not its environment.
+def stand_in(path):
+    with open(path, 'w') as script:
+        script.write(f'#!{sys.executable} -I\nimport time\ntime.sleep(600)\n')
+    os.chmod(path, 0o700)
+
+
 # A process named as Flatpak's bus proxy, which accessibility names for a sandboxed app ('P').
 proxy_dir = tempfile.TemporaryDirectory()
 proxy_path = os.path.join(proxy_dir.name, 'xdg-dbus-proxy')
-with open('/bin/sleep', 'rb') as source, open(proxy_path, 'wb') as copy:
-    copy.write(source.read())
-os.chmod(proxy_path, 0o700)
-proxy = subprocess.Popen([proxy_path, '600'])
+stand_in(proxy_path)
+proxy = subprocess.Popen([proxy_path])
+# A process its launcher names ('A'): started as a launcher starts an app, with GIO_LAUNCHED_DESKTOP_FILE
+# naming a desktop file in a data directory the fixture looks in.
+launched_id = 'ai.tabmail.SyntheticLaunched.desktop'
+os.mkdir(os.path.join(proxy_dir.name, 'applications'))
+launched_path = os.path.join(proxy_dir.name, 'synthetic-launched')
+stand_in(launched_path)
+desktop_file = os.path.join(proxy_dir.name, 'applications', launched_id)
+with open(desktop_file, 'w') as entry:
+    entry.write(f'[Desktop Entry]\nType=Application\nName=Launched synthetic app\nExec={launched_path}\n')
+launched = subprocess.Popen([launched_path], env={**os.environ, 'GIO_LAUNCHED_DESKTOP_FILE': desktop_file})
+time.sleep(0.2)
+assert proxy.poll() is None and launched.poll() is None, 'the synthetic proxy and launched processes are running'
 with tempfile.TemporaryFile(mode='w+t') as diagnostics:
     reader = sys.argv[2:] == ['reader']
     fields = sys.argv[2:] == ['field']
     assert sys.argv[2:] in ([], ['reader'], ['field'])
     child = subprocess.Popen([sys.argv[1]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=diagnostics, text=True, pass_fds=(control_read, ack_write), env={**os.environ,
-        'VOICE_FIXTURE_CONTROL': str(control_read), 'VOICE_FIXTURE_ACK': str(ack_write), 'VOICE_FIXTURE_PROXY': str(proxy.pid)})
+        'VOICE_FIXTURE_CONTROL': str(control_read), 'VOICE_FIXTURE_ACK': str(ack_write), 'VOICE_FIXTURE_PROXY': str(proxy.pid),
+        'VOICE_FIXTURE_LAUNCHED': str(launched.pid), 'XDG_DATA_DIRS': proxy_dir.name + ':' + os.environ.get('XDG_DATA_DIRS', '/usr/local/share:/usr/share')})
     os.close(control_read)
     os.close(ack_write)
     acknowledgments = os.fdopen(ack_read)
@@ -474,6 +494,15 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert field() == {'value': 'Synthetic field content'}, "the field of a window the Shell still names is read after it gives up its focus"
         else:
             assert request('frontmostApp') == {'window': 7000, 'pid': first}, 'a window the Shell still names stays the target after it gives up its focus'
+        # The dictation key pressed with Voice's own window in front: the capture is the last other app's
+        # window, by the Shell's id for it, the id a captured read asks the Shell to name its app by.
+        if not reader and not fields:
+            command('b')
+            command('a')
+            command('M')
+            assert request('captureTarget') == {'window': 7000, 'pid': first, 'bus': ':1.synthetic-0',
+                'path': '/org/a11y/atspi/accessible/window0'}, "a capture with Voice in front is the last app's window, by the Shell's id"
+            command('K')
         # A sandboxed app (Flatpak) reaches accessibility through its bus proxy, whose process the Shell
         # never names: its window is still the target, read and pasted into, by the window in front as its
         # focus came.
@@ -528,6 +557,141 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             command('K')
             assert 'First synthetic app' in bound(12, 10)['renderedText'], "the read's window named in front again is read"
             command('N')
+        # Which app a window is: where the Shell names the window, its window tracker names the app, whatever
+        # the app's process says (snap Chromium's names none), and an app excluded by that name is not read.
+        # Without the Shell, or for a window the Shell knows no desktop file for, the process's launcher names
+        # it: none for the synthetic processes, so nothing is excluded by that name.
+        shell_first = 'ai.tabmail.SyntheticFirst.desktop'
+
+        # Whether the helper logged this line (read through a handle of its own: its stderr shares the file's offset).
+        def logged(line):
+            with open(f'/proc/self/fd/{diagnostics.fileno()}') as log:
+                return line in log.read()
+
+        def identity():
+            if reader:
+                read = screen()
+                return read['bundleID'], read['appName']
+            return None
+
+        def refused(app_id=shell_first, pid=first):
+            excluded = {**policy, 'excludedAppIDs': [app_id]}
+            if reader:
+                return screen(excluded) == {'hidden': True}
+            if fields:
+                return request('focusedFieldValue', {**excluded, 'pid': pid, 'maxLength': 20000}) == {'value': None} \
+                    and field(pid) == {'value': 'Synthetic field content'}
+            return None
+
+        # Whether a read gave nothing at all, as one the Shell gave no answer for does.
+        def unanswered(pid=first):
+            if reader:
+                return screen() is None
+            if fields:
+                return request('focusedFieldValue', {**policy, 'pid': pid, 'maxLength': 20000}) is None
+            return None
+
+        command('b')
+        command('a')
+        assert identity() in (('', 'Unknown'), None), 'without the Shell, a process no launcher names is unnamed'
+        assert not refused(), 'without the Shell, the name only the Shell knows excludes nothing'
+        # The focus came before the Shell named its window: the window is named by the Shell once it does.
+        command('F')
+        assert identity() in ((shell_first, 'First synthetic app'), None), "the Shell names the window's app"
+        assert refused() in (True, None), "an app excluded by the Shell's name for it is not read"
+        command('b')
+        assert identity() in (('', 'Unknown'), None), 'a window the Shell knows no desktop file for is named by its process'
+        command('a')
+        assert identity() in ((shell_first, 'First synthetic app'), None), "a focus in the window the Shell names is the Shell's app"
+        assert refused() in (True, None), "an app excluded by the Shell's name for it is not read"
+        # The Shell is asked at each read: the name it now gives the window is the one read.
+        command('T')
+        command('w')
+        assert identity() in (('ai.tabmail.SyntheticRenamed.desktop', 'Renamed synthetic app'), None), "a focus in the window takes the Shell's name for it then"
+        command('W')
+        command('Y')
+        command('N')
+        # A Shell that gives no answer for the window in front gives no read, whatever is excluded; the next
+        # read asks it again. The focus is moved away and back so it is remembered anew (the window already in
+        # front, activated again, shows no focus until its focus is looked for again), and the read is shown to
+        # succeed in that state first, so the reads that give nothing give it for the Shell's silence alone.
+        command('F')
+        command('b')
+        command('a')
+        assert identity() in ((shell_first, 'First synthetic app'), None), "the Shell names the window's app"
+        command('X')
+        assert unanswered() in (True, None), 'a read the Shell gives no answer for gives nothing'
+        assert unanswered() in (True, None), 'nor does the next while it gives none'
+        command('Z')
+        assert identity() in ((shell_first, 'First synthetic app'), None), 'the next read asks the Shell again'
+        assert refused() in (True, None), "an app excluded by the Shell's name for it is not read"
+        # A focus that came before the Shell named its window, read while the Shell's Focus gives no answer: the
+        # Shell is asked for the app with no window id of its own, has no live window for it, and the read gives
+        # nothing; the launcher does not stand in.
+        command('N')
+        command('b')
+        command('a')
+        assert identity() in (('', 'Unknown'), None), 'without the Shell, the focus is read, named by its process'
+        command('F')
+        command('Q')
+        assert unanswered() in (True, None), 'a read with no Shell window id, while the Shell answers, gives nothing'
+        command('K')
+        command('b')
+        command('a')
+        assert identity() in ((shell_first, 'First synthetic app'), None), 'the Shell names the window again once its Focus answers'
+        # A focus remembered in the window the Shell named, read while its Focus gives no answer: the Shell's id
+        # for the window is asked, and the app it names is the one read, and excluded.
+        command('Q')
+        assert identity() in ((shell_first, 'First synthetic app'), None), "a focus remembered in the Shell's window is named by the Shell"
+        assert refused() in (True, None), "an app excluded by the Shell's name for it is not read"
+        command('K')
+        if reader:
+            # A window captured at key-down, read while another is in front: named by the Shell from its id for
+            # the window, not read where that app is excluded, and not read where the Shell gives no answer.
+            captured = {'window': 7000, 'pid': first, 'bus': ':1.synthetic-0', 'path': '/org/a11y/atspi/accessible/window0'}
+            command('b')
+            read = screen({**policy, 'target': captured})
+            assert (read['bundleID'], read['appName']) == (shell_first, 'First synthetic app'), 'a captured window is named by the Shell'
+            assert screen({**policy, 'excludedAppIDs': [shell_first], 'target': captured}) == {'hidden': True}, \
+                "a captured window of an app excluded by the Shell's name for it is not read"
+            command('X')
+            assert screen({**policy, 'target': captured}) is None, 'a captured window the Shell gives no answer for is not read'
+            assert logged("error screen: the Shell did not name the captured window's app"), \
+                'a captured read the Shell gave no answer for is logged as an error'
+            command('E')
+            read = screen({**policy, 'target': captured})
+            assert (read['bundleID'], read['appName']) == ('', 'Unknown'), 'a captured window the Shell names no app for is named by its process'
+            command('Z')
+            # An id that is none of the Shell's live windows (the helper's own token, captured while the Shell named
+            # no window, or a window closed since): the Shell says it has no such window, the launcher does not
+            # stand in, and nothing is read, excluded or not.
+            token = {**captured, 'window': 123456789}
+            assert screen({**policy, 'excludedAppIDs': [shell_first], 'target': token}) is None, \
+                'a captured id the Shell has no live window for is not read where its app is excluded'
+            assert screen({**policy, 'target': token}) is None, 'nor where nothing is excluded'
+            command('a')
+        # The Shell's name first, the launcher's only where the Shell names none: the first app is now a process
+        # its launcher names another app.
+        command('A')
+        command('b')
+        command('a')
+        assert identity() in ((shell_first, 'First synthetic app'), None), "the Shell's name wins over the launcher's"
+        assert not refused(launched_id, launched.pid), "the launcher's name for an app the Shell names excludes nothing"
+        assert refused(shell_first, launched.pid) in (True, None), "an app excluded by the Shell's name for it is not read"
+        for answer in ('E', 'O'):
+            # The Shell names no app for the window, or its extension is older than App (until the next log-in).
+            command(answer)
+            assert identity() in ((launched_id, 'Launched synthetic app'), None), 'where the Shell names no app, its launcher names it'
+            assert refused(launched_id, launched.pid) in (True, None), "an app excluded by its launcher's name is not read"
+        command('X')
+        assert unanswered(launched.pid) in (True, None), 'where the Shell gives no answer, the launcher does not name the app'
+        if reader or fields:
+            assert logged('error screen: the Shell did not name the app in front'), 'a read the Shell gave no answer for is logged as an error'
+        command('Z')
+        command('N')
+        assert identity() in ((launched_id, 'Launched synthetic app'), None), 'without the Shell, the launcher names the app'
+        command('I')
+        command('a')
         print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
         child.stdin.close()
@@ -542,6 +706,8 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         portal.wait(timeout=2)
         proxy.kill()
         proxy.wait()
+        launched.kill()
+        launched.wait()
         proxy_dir.cleanup()
         if child.returncode:
             diagnostics.seek(0)

@@ -9,6 +9,8 @@
 #include <cstring>
 #include "accessibility.h"
 #include "channel.h"
+#include "helper_config.h"
+#include "identity.h"
 
 namespace voice {
 /** Optional compositor geometry. No accessibility traversal, activation, or retry
@@ -40,10 +42,10 @@ public:
                 auto value = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error.value);
                 guint version = 0;
                 if (value) { g_variant_get(value, "(u)", &version); g_variant_unref(value); }
-                // 3: the extension says which window has the focus (Focus); 2 added holding Right Alt
-                // (SetHotkey, Holding). A Shell still running an older extension until the next login is
-                // not ready, so Settings asks for one.
-                (*reply)(version == 4, true);
+                // 5: the extension names a window's app (App); 3 added which window has the focus (Focus);
+                // 2 holding Right Alt (SetHotkey, Holding). A Shell still running an older extension until
+                // the next login is not ready, so Settings asks for one.
+                (*reply)(version == 5, true);
             }, new Channel::Reply(std::move(reply)));
     }
 
@@ -121,6 +123,29 @@ public:
         guint64 window = 0; guint32 pid = 0;
         g_variant_get(value, "(tu)", &window, &pid); g_variant_unref(value);
         return std::make_pair(static_cast<uint64_t>(window), static_cast<unsigned>(pid));
+    }
+    /** The app of the Shell's window `window` (`App`): its desktop file's id and name, as the Shell names
+     * it. Asked and answered before returning, at most `HelperConfig::shellAppTimeoutMs`, also for window 0 (no
+     * Shell id at hand). No app where the Shell knows no desktop file for the window, and where there is no
+     * extension to ask or one older than `App` (until the next log-in): the launcher then names the app
+     * (ADR-DESK-056). Unknown where the Shell has no live window with the id, or gives no answer: no reply
+     * in time, or any other failure. */
+    WindowApp app(uint64_t window) {
+        if (!bus) return {};
+        Error error;
+        auto value = g_dbus_connection_call_sync(bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
+            "ai.tabmail.Voice.Caret", "App", g_variant_new("(t)", static_cast<guint64>(window)), G_VARIANT_TYPE("(ss)"),
+            G_DBUS_CALL_FLAGS_NO_AUTO_START, HelperConfig::shellAppTimeoutMs, cancel.get(), &error.value);
+        if (!value) {
+            const auto unasked = [&](GDBusError code) { return g_error_matches(error.value, G_DBUS_ERROR, code); };
+            return {std::nullopt, !(unasked(G_DBUS_ERROR_SERVICE_UNKNOWN) || unasked(G_DBUS_ERROR_NAME_HAS_NO_OWNER) ||
+                unasked(G_DBUS_ERROR_UNKNOWN_OBJECT) || unasked(G_DBUS_ERROR_UNKNOWN_INTERFACE) || unasked(G_DBUS_ERROR_UNKNOWN_METHOD))};
+        }
+        const char *id = nullptr, *name = nullptr;
+        g_variant_get(value, "(&s&s)", &id, &name);
+        WindowApp result{*id ? std::optional<AppIdentity>{{id, name}} : std::nullopt};
+        g_variant_unref(value);
+        return result;
     }
     /** Ask the compositor to restore this exact living window. The caller confirms the focus
      * through Foreground after AT-SPI has delivered its activation events. */

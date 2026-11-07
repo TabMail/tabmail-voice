@@ -86,7 +86,8 @@ int main() {
     // While the Shell holds the keyboard for the dictation key, the window in front keeps no focus
     // yet stays the target: the reader asks the extension, as the helper does (ADR-DESK-052).
     voice::GnomeCaret gnomeCaret;
-    voice::Foreground foreground([&] { return gnomeCaret.holding(); }, [&] { return gnomeCaret.focus(); });
+    voice::Foreground foreground([&] { return gnomeCaret.holding(); }, [&] { return gnomeCaret.focus(); },
+        [&](uint64_t window) { return gnomeCaret.app(window); });
     // The window each read is bound to, by `Foreground`'s token for it (0 with none in front).
     voice::walk::LastReadWindow<uint64_t> lastRead;
     const auto serve = [&](const std::string& method, const nlohmann::json& params, voice::Channel::Reply reply, int64_t) {

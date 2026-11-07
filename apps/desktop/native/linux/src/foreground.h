@@ -26,11 +26,16 @@ public:
     /** The window with the keyboard focus and its process, by the Shell (`GnomeCaret::focus`); window 0 where
      * the Shell says none is (the screen locked); none where the Shell doesn't say. */
     using ShellFocus = std::function<std::optional<std::pair<uint64_t, unsigned>>()>;
+    /** The app of the Shell's window by that window's id (`GnomeCaret::app`). */
+    using ShellApp = std::function<WindowApp(uint64_t)>;
     /** `shellHolds`: whether the Shell holds the keyboard for the dictation key (`GnomeCaret::holding`).
      * `shellFocus`: which window is in front, where the Shell says (GNOME integration); accessibility
      * then says only what in it has the focus, and each app's own way of announcing its windows (two
-     * accessible apps in Firefox, a window announced before its focus) no longer decides a paste. */
-    Foreground(std::function<bool()> shellHolds, ShellFocus shellFocus) : shellHolds(std::move(shellHolds)), shellFocus(std::move(shellFocus)) {
+     * accessible apps in Firefox, a window announced before its focus) no longer decides a paste.
+     * `shellApp`: which app a window of the Shell's is, as the Shell names it (`identity`), for a helper
+     * that reads windows. */
+    Foreground(std::function<bool()> shellHolds, ShellFocus shellFocus, ShellApp shellApp = {})
+        : shellHolds(std::move(shellHolds)), shellFocus(std::move(shellFocus)), shellApp(std::move(shellApp)) {
         listener = own(atspi_event_listener_new([](AtspiEvent* event, void* data) {
             const auto freeEvent = [](AtspiEvent* value) { g_boxed_free(ATSPI_TYPE_EVENT, value); };
             std::unique_ptr<AtspiEvent, decltype(freeEvent)> owned(event, freeEvent);
@@ -59,8 +64,9 @@ public:
     /** `pid`: the window's process, the identity voice-field-reader shares with this process (window
      * tokens are each process's own); 0 where the bus gives none. `shellWindow`: the Shell's id for the
      * window the focus came in, where the Shell named one of its process (or of a sandboxed app, whose
-     * focus comes through its bus proxy) then; else 0. */
-    struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; unsigned pid = 0; uint64_t shellWindow = 0; };
+     * focus comes through its bus proxy) then; else 0. Which app the window is, a read asks then
+     * (`identity`). */
+    struct Target { uint64_t token; Node focus; bool terminal = false; unsigned pid = 0; uint64_t shellWindow = 0; };
     /** What has the focus, in the window in front: by the Shell's window id where it says which that is.
      * The focus is that window's only while it is focused, or, while the Shell holds the keyboard for the
      * dictation key (GTK 4 drops the focus meanwhile), if it came in that very window: a process is not a
@@ -99,6 +105,18 @@ public:
         if (const auto focus = shellFocus()) return focus->first && focus->first == token;
         return matches(token) || (current && current->token == token && shellHolds());
     }
+    /** The app of a window: `window`, the Shell's id for it (0 where the Shell named none), and `pid`, its
+     * process. As the Shell names it, where it does (ADR-DESK-056, extension first: snap Chromium can't be
+     * named from its process); else by its process's launcher (`desktopIdentity`): on a desktop without
+     * the extension or with an older one, or for a live window the Shell knows no desktop file for. The
+     * Shell is asked also without an id of its own: where it answers, a window it has no live window for
+     * (0, a closed window's, or a token of this helper's) is unknown, never its launcher's. Unknown where
+     * the Shell, asked, gives no answer: the read asking gives nothing, and the next read asks again. */
+    WindowApp identity(uint64_t window, unsigned pid) const {
+        if (shellApp)
+            if (auto shell = shellApp(window); shell.app || shell.unknown) return shell;
+        return {desktopIdentity(pid)};
+    }
     /** Captured at key-down; Voice itself selects the last external window, without activation. */
     std::optional<Target> capture() const {
         const auto front = shellFocus();
@@ -109,6 +127,7 @@ public:
 private:
     std::function<bool()> shellHolds;
     ShellFocus shellFocus;
+    ShellApp shellApp;
     /** `target` in the window the Shell says is in front (`focus`). */
     std::optional<Target> inWindow(const std::pair<uint64_t, unsigned>& focus) const {
         if (!focus.first || !current || (current->pid != focus.second && current->shellWindow != focus.first)) return std::nullopt;
@@ -116,6 +135,8 @@ private:
         if (!state(current->focus, ATSPI_STATE_FOCUSED) && !(current->shellWindow == focus.first && shellHolds())) return std::nullopt;
         auto target = *current;
         target.token = focus.first;
+        // The Shell's window, also for a focus that came before the Shell named its window.
+        target.shellWindow = focus.first;
         return target;
     }
     Object<AtspiEventListener> listener;
@@ -144,13 +165,13 @@ private:
         // The Shell has given the window the keyboard by the time its app says what in it has the focus.
         // A sandboxed app's focus comes through its bus proxy, whose process is never its window's: its
         // window is the one in front as the focus comes.
-        const auto shellWindow = shellFocus();
-        current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid,
-            shellWindow && shellWindow->first && (shellWindow->second == pid || busProxy(pid)) ? shellWindow->first : 0};
-        if (pid != static_cast<unsigned>(getppid())) {
-            previousExternal = current;
-            if (previousExternal->shellWindow) previousExternal->token = previousExternal->shellWindow;
-        }
+        const auto front = shellFocus();
+        const uint64_t shellWindow = front && front->first && (front->second == pid || busProxy(pid)) ? front->first : 0;
+        current = Target{windowToken, focus, terminal, pid, shellWindow};
+        // Voice's own window is never the previous app's; a window the Shell named keeps the Shell's id as
+        // its token, the id the Shell restores it by.
+        if (pid != static_cast<unsigned>(getppid()))
+            previousExternal = Target{shellWindow ? shellWindow : windowToken, focus, terminal, pid, shellWindow};
     }
     Node findFocus(const Node& root) {
         std::vector<Node> stack{root};

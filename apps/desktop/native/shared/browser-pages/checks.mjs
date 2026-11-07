@@ -16,14 +16,9 @@ export const anchorHeightRatio = { min: 0.5, max: 2 };
  * `"firefox codemirror long-empty-line readScreen"`), to the issue's number. The change fixing one removes
  * it here: a read listed here that passes fails the run until it is. */
 export const knownFailures = {
-  // Ubuntu 24.04 ARM64, Firefox 157 and Chromium 156 snaps (2026-11-06, 2026-11-07). #370: snap Chromium
-  // has no app identity. #390: the field read of the long compose page runs out its time limit in some
-  // runs and not others (`sometimesFailing`).
+  // Ubuntu 26.04 ARM64, Firefox 157 and Chromium 156 snaps (2026-11-06, 2026-11-07). #390: the field read
+  // of the long compose page runs out its time limit in some runs and not others (`sometimesFailing`).
   linux: {
-    "chrome codemirror short-document identity": 370,
-    "chrome codemirror long-document identity": 370,
-    "chrome compose short-document identity": 370,
-    "chrome compose long-document identity": 370,
     "firefox compose long-empty-line focusedFieldValue": 390,
     "firefox compose long-mid-line focusedFieldValue": 390,
     "chrome compose long-empty-line focusedFieldValue": 390,

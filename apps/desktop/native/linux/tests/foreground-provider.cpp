@@ -28,11 +28,25 @@ bool inDialog = false;
 bool shellFocus = false;
 // What the Shell names, with no accessibility event: the window in front, another window of the same
 // app ('k'), a window of a process accessibility doesn't know ('V', a terminal with no accessibility),
-// or none, as on a locked screen ('L'); 'K' goes back to the window in front.
-enum class ShellSays { front, otherWindow, unseen, none } shellSays = ShellSays::front;
+// or none, as on a locked screen ('L'), or no answer in time ('Q', a busy Shell); 'K' goes back to the window in front.
+enum class ShellSays { front, otherWindow, unseen, none, silent, voice } shellSays = ShellSays::front;
 // The first app sandboxed ('P'; 'R' undoes it): accessibility names its bus proxy's process
 // (VOICE_FIXTURE_PROXY, a process the test runs as xdg-dbus-proxy), the Shell the app's own.
 bool sandboxed = false;
+// The app the Shell's window tracker names for the first app's window (`App`, from version 5): its
+// desktop file, whatever its process says ('T' names another; 'Y' goes back). The second app's window
+// has none the Shell knows, so its process's launcher names it (none, for a synthetic process). An id that
+// is none of the Shell's windows (a helper's own token, or a closed window's) is the extension's NoWindow error.
+bool renamed = false;
+// How the Shell answers `App` otherwise ('Z' as above): with no app for any window ('E'), with the error of an
+// extension older than App ('O'), or with no answer in time ('X').
+enum class AppSays { names, none, older, silent } appSays = AppSays::names;
+// The first app a real process its launcher names ('A'; 'I' undoes it): VOICE_FIXTURE_LAUNCHED, a process the
+// test starts with GIO_LAUNCHED_DESKTOP_FILE. The Shell names its window's process the same.
+bool launched = false;
+// Each app's process: past the kernel's largest pid (2^22), so no real process's launcher identity is looked
+// up (the first app 4194305, the second 4194306), but for a launched first app.
+unsigned processOf(int index) { return index == 0 && launched ? std::stoul(g_getenv("VOICE_FIXTURE_LAUNCHED")) : 4194305u + index; }
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
 bool mutateSelectionOnText = false, containerFocused = false;
@@ -150,8 +164,19 @@ gboolean command(gint fd, GIOCondition, gpointer) {
     if (value == 'L') shellSays = ShellSays::none;
     if (value == 'V') shellSays = ShellSays::unseen;
     if (value == 'K') shellSays = ShellSays::front;
+    if (value == 'Q') shellSays = ShellSays::silent;
+    // Voice's own window is in front (its Settings, as the dictation key is pressed): the helper's parent.
+    if (value == 'M') shellSays = ShellSays::voice;
     if (value == 'P') sandboxed = true;
     if (value == 'R') sandboxed = false;
+    if (value == 'T') renamed = true;
+    if (value == 'Y') renamed = false;
+    if (value == 'Z') appSays = AppSays::names;
+    if (value == 'E') appSays = AppSays::none;
+    if (value == 'O') appSays = AppSays::older;
+    if (value == 'X') appSays = AppSays::silent;
+    if (value == 'A') launched = true;
+    if (value == 'I') launched = false;
     // The window in front gives up its focus with no hold yet (Firefox, as the dictation key's hold begins).
     if (value == 'D' && active >= 0) event("window:deactivate", windows[active]);
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
@@ -164,6 +189,12 @@ extern "C" int __wrap_atspi_init() {
     for (int i = 0; i < 2; ++i) {
         apps[i] = node(ATSPI_ROLE_APPLICATION, desktop);
         windows[i] = node(ATSPI_ROLE_FRAME, apps[i], "Synthetic window");
+        // The exact frame a captured read names (`captureTarget`): its app's bus name and its object path.
+        auto application = static_cast<AtspiApplication*>(g_object_new(ATSPI_TYPE_APPLICATION, nullptr));
+        application->bus_name = g_strdup(i ? ":1.synthetic-1" : ":1.synthetic-0");
+        ATSPI_OBJECT(apps[i])->app = application;
+        ATSPI_OBJECT(windows[i])->app = static_cast<AtspiApplication*>(g_object_ref(application));
+        ATSPI_OBJECT(windows[i])->path = g_strdup(i ? "/org/a11y/atspi/accessible/window1" : "/org/a11y/atspi/accessible/window0");
         node(ATSPI_ROLE_HEADING, windows[i], i ? "Second synthetic app" : "First synthetic app");
         documents[i] = node(ATSPI_ROLE_DOCUMENT_WEB, windows[i]);
         fields[i] = node(ATSPI_ROLE_ENTRY, documents[i], "Synthetic field content");
@@ -190,9 +221,27 @@ extern "C" GVariant* __wrap_g_dbus_connection_call_sync(GDBusConnection* bus, co
     if (std::string(method) == "Holding") return g_variant_ref_sink(g_variant_new("(b)", holding));
     if (std::string(method) == "Focus") {
         if (!shellFocus) { g_set_error_literal(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN, "no Shell"); return nullptr; }
+        if (shellSays == ShellSays::silent) { g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "Timeout was reached"); return nullptr; }
         if (active < 0 || shellSays == ShellSays::none) return g_variant_ref_sink(g_variant_new("(tu)", guint64{0}, 0u));
         if (shellSays == ShellSays::unseen) return g_variant_ref_sink(g_variant_new("(tu)", guint64{7200}, 4194399u));
-        return g_variant_ref_sink(g_variant_new("(tu)", static_cast<guint64>(shellSays == ShellSays::otherWindow ? 7100 + active : 7000 + active), 4194305u + active));
+        if (shellSays == ShellSays::voice) return g_variant_ref_sink(g_variant_new("(tu)", guint64{7300}, static_cast<guint32>(getppid())));
+        return g_variant_ref_sink(g_variant_new("(tu)", static_cast<guint64>(shellSays == ShellSays::otherWindow ? 7100 + active : 7000 + active), processOf(active)));
+    }
+    if (std::string(method) == "App") {
+        if (!shellFocus) { g_set_error_literal(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN, "no Shell"); return nullptr; }
+        guint64 window = 0;
+        g_variant_get(args, "(t)", &window);
+        g_variant_unref(g_variant_ref_sink(args));
+        if (appSays == AppSays::older) { g_set_error_literal(error, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "no App"); return nullptr; }
+        if (appSays == AppSays::silent) { g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "Timeout was reached"); return nullptr; }
+        // The Shell's live windows are the ones its Focus names (7000, 7001, 7100, 7101 and 7200).
+        if (window != 7000 && window != 7001 && window != 7100 && window != 7101 && window != 7200) {
+            g_dbus_error_set_dbus_error(error, "ai.tabmail.Voice.Caret.Error.NoWindow", "No live window has this id", nullptr);
+            return nullptr;
+        }
+        if (window != 7000 || appSays == AppSays::none) return g_variant_ref_sink(g_variant_new("(ss)", "", ""));
+        return g_variant_ref_sink(renamed ? g_variant_new("(ss)", "ai.tabmail.SyntheticRenamed.desktop", "Renamed synthetic app")
+                                          : g_variant_new("(ss)", "ai.tabmail.SyntheticFirst.desktop", "First synthetic app"));
     }
     return __real_g_dbus_connection_call_sync(bus, name, path, interface, method, args, type, flags, timeout, cancel, error);
 }
@@ -222,11 +271,10 @@ extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*
 extern "C" gint __wrap_atspi_accessible_get_child_count(AtspiAccessible* root, GError**) { return children(root).size(); }
 extern "C" AtspiAccessible* __wrap_atspi_accessible_get_child_at_index(AtspiAccessible* root, gint index, GError**) { return ref(children(root).at(index)); }
 extern "C" AtspiAccessible* __wrap_atspi_accessible_get_parent(AtspiAccessible* value, GError**) { return ref(items.at(value).parent); }
-// Each synthetic app is a process of its own, past the kernel's largest pid (2^22), so no real
-// process's launcher identity is looked up: the first app 4194305, the second 4194306.
+// Each synthetic app is a process of its own (`processOf`).
 extern "C" guint __wrap_atspi_accessible_get_process_id(AtspiAccessible* value, GError**) {
     for (auto node = value; node; node = items.at(node).parent)
-        for (int i = 0; i < 2; ++i) if (node == apps[i]) return i == 0 && sandboxed ? std::stoul(g_getenv("VOICE_FIXTURE_PROXY")) : 4194305 + i;
+        for (int i = 0; i < 2; ++i) if (node == apps[i]) return i == 0 && sandboxed ? std::stoul(g_getenv("VOICE_FIXTURE_PROXY")) : processOf(i);
     return 0;
 }
 extern "C" AtspiCollection* __wrap_atspi_accessible_get_collection_iface(AtspiAccessible*) { return nullptr; }

@@ -15,9 +15,9 @@
 // A browser is named `firefox`, `chrome` or `edge`, with the path of its program. It starts with a
 // new profile of its own, deleted after, and opens only this script's own server on 127.0.0.1.
 // On Linux, `--desktop-file <name>=<file>` names the browser's launcher, which the desktop names to
-// a program it starts (GIO_LAUNCHED_DESKTOP_FILE): the helpers know an app by it, and a browser
-// whose program is not its launcher's (a snap) is otherwise an app they cannot name, and its
-// identity read fails.
+// a program it starts (GIO_LAUNCHED_DESKTOP_FILE): without the GNOME extension, the helpers know an
+// app by it, and a browser whose program is not its launcher's (a snap) is otherwise an app they
+// cannot name, and its identity read fails. With the extension, the Shell names it.
 // Prints one line a read, and one for a page whose reads could not go on; exits 1 if any read fails
 // (or one recorded as failing passes). `driver.mjs` makes the reads; this starts the helpers, the
 // browsers and the pages' server for it.
