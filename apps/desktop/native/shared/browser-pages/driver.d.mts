@@ -10,6 +10,8 @@ export interface Timing { request: number; page: number; settle: number; retry: 
 export const timing: Timing;
 export const fieldMaxLength: number;
 export const pages: Page[];
+/** A request its helper did not answer in time. */
+export class RequestTimeoutError extends Error {}
 export interface Helper { child: { kill(): unknown }; request(method: string, params?: object): Promise<unknown> }
 export function rpc(name: string, child: { stdin: Writable; stdout: Readable; stderr: Readable; kill(): unknown }, options?: { log?: (line: string) => void; request?: number }): Helper;
 export interface Command { kind: "select" | "done"; line?: number; from?: number; to?: number }

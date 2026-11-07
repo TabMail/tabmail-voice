@@ -20,6 +20,9 @@ export const fieldMaxLength = 20_000;
 export const pages = ["codemirror", "compose"];
 const policy = { excludedAppIDs: [], excludedHosts: [] };
 
+/** A request its helper did not answer in time. */
+export class RequestTimeoutError extends Error {}
+
 /** A helper process, asked one request at a time: a JSON line each way, the reply by its request's
  * id. `log` gets the helper's stderr lines, which say why a read failed (the pages hold synthetic
  * text only). */
@@ -37,7 +40,7 @@ export function rpc(name, child, { log = (line) => process.stderr.write(line), r
     request(method, params = {}) {
       const next = ++id;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { pending.delete(next); reject(new Error(`${name} ${method} timed out`)); }, request);
+        const timer = setTimeout(() => { pending.delete(next); reject(new RequestTimeoutError(`${name} ${method} timed out`)); }, request);
         pending.set(next, (reply) => {
           clearTimeout(timer);
           if (reply.error) reject(new Error(`${name} ${method}: ${reply.error.message}`));
@@ -97,6 +100,20 @@ export function pageChannel({ page = timing.page } = {}) {
 export async function readPages({ platform, browsers, startHelpers, launch, channel, url, write, wait = delay, times = timing }) {
   const windows = platform === "win32";
   let helpers = startHelpers();
+  let reads = 0;
+
+  /** A screen read as the app asks one: numbered, and asked to stop (`readScreenStop`) when it does
+   * not answer in time, so the reads after it do not wait behind it, unless it is held in a call to
+   * the browser, which no stop interrupts. */
+  function readScreen() {
+    reads += 1;
+    const read = reads;
+    const { reader } = helpers;
+    return reader.request("readScreen", { ...policy, read }).catch(async (error) => {
+      if (error instanceof RequestTimeoutError) await reader.request("readScreenStop", { read }).catch(() => null);
+      throw error;
+    });
+  }
 
   /** A read, tried again while `check` finds it wrong and the browser may not have caught up with
    * the caret yet; a request that fails is no reply. */
@@ -112,7 +129,7 @@ export async function readPages({ platform, browsers, startHelpers, launch, chan
 
   /** The caret context, once the browser is in front and its reads have caught up with the page. */
   function readCaret(browser, documentLines, testCase) {
-    return settled(() => helpers.reader.request("readScreen", policy), (read) => {
+    return settled(readScreen, (read) => {
       if (read?.bundleID !== "" && typeof read?.appName === "string" && checkIdentity(browser.name, read).length) throw new Error(`${browser.name} is not in front (${read.appName})`);
       return checkScreen(documentLines, testCase, read);
     });
@@ -137,7 +154,7 @@ export async function readPages({ platform, browsers, startHelpers, launch, chan
       if (windows) window.activate();
       await channel.send({ kind: "select", line: testCase.line, from: testCase.from, to: testCase.to });
       await wait(times.retry);
-      const read = await helpers.reader.request("readScreen", policy).catch((error) => { last = error.message; return null; });
+      const read = await readScreen().catch((error) => { last = error.message; return null; });
       if (typeof read?.appName === "string" && (read.bundleID === "" || checkIdentity(browser.name, read).length === 0)) return read;
       if (read) last = `${JSON.stringify(read.appName)} (${JSON.stringify(read.bundleID)})`;
     }

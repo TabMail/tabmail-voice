@@ -32,8 +32,9 @@ export const knownFailures = {
   // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #379: Firefox's rich editors read
   // through UI Automation lose their line breaks, in the screen read and the field read. #391: a field read
   // in Edge and Chrome gives an empty line as one line break. #380: in Firefox's CodeMirror page the anchor is a line above
-  // the caret. #381: the screen read of the long compose page runs for minutes, so it fails as a read
-  // that times out in some runs and not others (`sometimesFailing`). A page that fails as a whole is
+  // the caret. #403: the screen read of the long compose page can take longer than the
+  // driver's request time (Edge, Chrome), or its field's census runs out and the read has no caret context
+  // (Firefox), so its reads fail in some runs and not others (`sometimesFailing`). A page that fails as a whole is
   // never recorded: whatever stopped it (a page not loaded, not in front, a wrong selection) fails the run.
   win32: {
     "edge codemirror empty-line focusedFieldValue": 391,
@@ -73,18 +74,18 @@ export const knownFailures = {
     "firefox codemirror selection caretAnchor": 380,
     "firefox codemirror long-empty-line caretAnchor": 380,
     "firefox codemirror long-mid-line caretAnchor": 380,
-    "edge compose long-empty-line readScreen": 381,
-    "edge compose long-mid-line readScreen": 381,
-    "chrome compose long-empty-line readScreen": 381,
-    "chrome compose long-mid-line readScreen": 381,
-    "firefox compose long-empty-line readScreen": 381,
+    "edge compose long-empty-line readScreen": 403,
+    "edge compose long-mid-line readScreen": 403,
+    "chrome compose long-empty-line readScreen": 403,
+    "chrome compose long-mid-line readScreen": 403,
+    "firefox compose long-empty-line readScreen": 403,
   },
 };
 
 /** Issues whose reads fail in some runs and not in others, as the machine's load makes a read take
  * longer than it may: a read recorded under one passes the run when it passes, and the change fixing
  * the issue removes its records. */
-export const sometimesFailing = new Set([381, 390]);
+export const sometimesFailing = new Set([390, 403]);
 
 /** The text around a case's caret: the lines before and after it, the line's text either side,
  * and what is selected. */
