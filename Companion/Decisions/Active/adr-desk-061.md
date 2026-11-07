@@ -300,8 +300,10 @@ Thunderbird's copy or its files.
 > long session. Now an error reply (`MemoryError`) to the latest trim asked counts as nothing pending:
 > the helper ends `memoryHelperIdleTimeout` after its last request as usual, and the next exchange
 > kept with a limit trims again, within its own budget. The helper never refuses the limits Voice
-> sends (only non-positive ones), so an error reply means the trim failed: a memory that can't be
-> opened, a storage error, or the database still locked by a helper that is exiting. An older trim's
+> sends (it refuses only a limit that isn't a positive whole number), so an error reply means the
+> trim failed: a storage error (a damaged memory among them), or the database still locked by a
+> helper that is exiting. A memory that can't be opened isn't one: the helper trims the empty
+> stand-in it keeps in its place, which answers within the limit. An older trim's
 > error reply, arriving while a newer trim is unanswered, changes nothing, as with its result. A
 > timeout or a reply of the wrong shape still keeps the helper (it may still be trimming). Tests: see
 > `TESTS.md` (`main/native/memoryHelper` › a trim cut short, with the fake helper's `--error-on` and

@@ -583,6 +583,16 @@ describe("MemoryHelper", () => {
       await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
     });
 
+    /** A reply of the wrong shape says nothing about what is left to trim, so the helper is kept. */
+    test("a reply of the wrong shape to a trim keeps the helper", async () => {
+      const memory = make(["--bad-on", "memoryTrim"], { idleTimeout: 50 });
+      await memory.stats();
+      await expect(memory.trim(1)).rejects.toMatchObject({ kind: "failed", method: "memoryTrim", helperMessage: "unexpected reply" });
+      // Several idle timeouts past the reply.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(ends()).toBe(0);
+    });
+
     test("an older trim's failure doesn't let the helper end while the newest is unanswered", async () => {
       const memory = make(["--trim-step", "1", "30", "--serial-trim", "500", "--error-once-on", "memoryTrim"], { idleTimeout: 50, requestTimeout: 800 });
       const rows = sixRows();

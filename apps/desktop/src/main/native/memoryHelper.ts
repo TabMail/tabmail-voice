@@ -64,7 +64,8 @@ export class MemoryHelper implements AgentMemory {
   /** Whether the running helper ends when idle: once its `init` said the model loaded. */
   private endsWhenIdle = false;
   /** Whether the running helper may still be trimming memory while idle: its latest `memoryTrim`
-   * answered `withinLimit: false`, or hasn't answered. It is kept until quit meanwhile. */
+   * answered `withinLimit: false`, or hasn't answered with its result (a reply of the wrong shape
+   * keeps it; an error reply doesn't). It is kept until quit meanwhile. */
   private trimUnfinished = false;
   /** How many trims were asked: only the latest one's answer says whether a trim is unfinished, as
    * the helper's latest `memoryTrim` replaces an older one's limit. */
