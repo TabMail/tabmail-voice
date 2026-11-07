@@ -29,8 +29,8 @@ until its record goes (`checks.mjs` › `knownFailures`). Ubuntu 24.04 ARM64, Fi
 Chromium 156 (2026-11-06): 62 pass, 30 known (#361 the long compose page, #370 snap Chromium's
 identity, #371 the anchor at the line's start, a selection's too). Windows 11 ARM64, Edge, Chrome and Firefox
 (2026-11-06, with the host machine heavily loaded; Firefox in a run of its own): 75 pass, 56 known
-(#378 a rich editor's field read refused by the text census, #379 Firefox's rich editors losing their
-line breaks, #380 Firefox's CodeMirror anchor a line above, #381 the long compose page's screen read
+(#379 Firefox's rich editors losing their line breaks, in the screen read and the field read, #391 a
+field read in Edge and Chrome giving an empty line as one line break, #380 Firefox's CodeMirror anchor a line above, #381 the long compose page's screen read
 running for minutes, which fails in some runs and not others), and 1 fail: Firefox's long compose page
 failed whole, its screen read timing out as the page came to the front (#381). A page that fails whole
 is never recorded as known, whatever stopped it, so it fails the run; under that load a page can also

@@ -34,12 +34,16 @@ size_t coreLimit(voice::core::Operation operation, const char* name) {
     return voice::core::request({{"limits", true}}, operation).at(name).get<size_t>();
 }
 bool frameworkFails = false;
+// How long a slow element takes to answer each step to or from it: enough that a look through
+// a field of them takes far longer than a field read's looks for an excluded page may.
+constexpr DWORD slowNavigationMs = 50;
+constexpr int slowFieldElements = 20;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false, outside = false, placeFails = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false, outside = false, placeFails = false, slow = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -98,6 +102,7 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     }
     HRESULT STDMETHODCALLTYPE Navigate(NavigateDirection direction, IRawElementProviderFragment** result) override {
         *result = nullptr;
+        if (slow) Sleep(slowNavigationMs);
         int target = -1;
         if (direction == NavigateDirection_Parent) target = parent;
         else if (direction == NavigateDirection_FirstChild || direction == NavigateDirection_LastChild) {
@@ -215,6 +220,11 @@ void configure(const std::string& mode) {
         // and the focus itself is not.
         nodes.at(1)->text = L"Synthetic large text";
         for (int i = 0; i < budget; ++i) add(1, UIA_GroupControlTypeId);
+    } else if (mode == "slow-field") {
+        // A field whose provider is slow to give what it holds, though it holds few elements: not
+        // refused for corrections, however long the look for a password inside it takes.
+        nodes.at(1)->type = UIA_EditControlTypeId;
+        for (int i = 0; i < slowFieldElements; ++i) nodes.at(add(1, UIA_GroupControlTypeId))->slow = true;
     } else if (mode == "large-window-field") {
         // A field in a window that holds more than the look takes in: not refused for corrections.
         nodes.at(1)->type = UIA_EditControlTypeId;

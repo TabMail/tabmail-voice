@@ -198,3 +198,23 @@ This adds two local pipe round trips to a macOS paste and lets a restarted reade
 pending paste. That identity loss produces the existing not-pasted note. The read remains isolated
 from the microphone and system clipboard work; a superseded busy reader is restarted **before** a
 new target is captured. No private AX window-id API, new service, or persistent user data is added.
+
+**Amendment 2026-11-06: on Windows, the look for a password inside a field is bounded by its elements alone.**
+The field read's look through the focused field for a password element (`safeTextSubtree`, the
+core's protected `census`) had 200 ms. A browser's rich editor never fits that: in the Windows 11
+ARM64 test VM the look through Chrome's and Edge's CodeMirror and contenteditable editors took
+about 300 ms to 1.4 s for 457 to 604 elements, and 0.9 to 3.4 s for 1,250, at about 1 to 2 ms an
+element, longer as the machine got busier. Every such read was refused (`{value: null}`), and a
+refused read ends the correction watch, so corrections in a browser editor were never learned.
+- **Decision:** that look has no time limit, as a screen read has none (above): it is bounded by
+  the core's element budget (`nodeBudget`) and, past that, by the app's `fieldReaderTimeout`,
+  which restarts a reader still busy. A time limit refuses the same field on a slow machine that
+  a fast one reads, and how many elements a field holds does not change with the machine.
+- **Unchanged:** the field read's looks for an excluded page (200 ms, from the focus up and
+  across the window) keep their limit. Running out there lets the read go on (ADR-DESK-047), so
+  that limit only bounds the work and never refuses a field; without it each read would look
+  through the whole browser window. `terminalFieldReadMs`, `contextSelectionScanMs`, Linux's
+  `fieldReadMilliseconds` and macOS's `focusedFieldPageScanBudget` are unchanged.
+- **Consequences:** after a dictation into a large editor, the correction watch's reads, one at a
+  time half a second apart, each take as long as the look needs. A slow provider is asked for its
+  elements for longer, never for more of them.
