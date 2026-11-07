@@ -225,6 +225,7 @@ void configure(const std::string& mode) {
         // refused for corrections, however long the look for a password inside it takes.
         nodes.at(1)->type = UIA_EditControlTypeId;
         for (int i = 0; i < slowFieldElements; ++i) nodes.at(add(1, UIA_GroupControlTypeId))->slow = true;
+        add(0, UIA_TextControlTypeId);  // A safe sibling the screen read keeps.
     } else if (mode == "large-window-field") {
         // A field in a window that holds more than the look takes in: not refused for corrections.
         nodes.at(1)->type = UIA_EditControlTypeId;
