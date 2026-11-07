@@ -1816,8 +1816,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
         });
         transcription.enqueue(200, cleanedReply);
         await holdAndRelease(controller);
-        expect(await eventually(() => reads >= duration / interval && settled(controller))).toBe(true);
-        await sleep(interval * 3);
+        expect(await eventually(() => reads >= 2 && settled(controller))).toBe(true);
+        // The watch ends by the clock, its duration after the paste.
+        await sleep(duration + interval * 3);
         return learned;
       }
 
