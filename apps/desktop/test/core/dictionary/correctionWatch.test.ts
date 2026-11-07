@@ -18,12 +18,14 @@ const corrected = "Please forward the Xyvora contract today.";
  * given), and the words learned. */
 function setup(initial: string | null = pasted) {
   // `delay`: how long each read takes, its text as the field was when the read began.
-  const field = { value: initial as string | null, reads: 0, pids: [] as number[], excluded: [] as ScreenExclusions[], fails: false, delay: 0 };
+  // `starts`: when each read began, by the clock the watch keeps.
+  const field = { value: initial as string | null, reads: 0, pids: [] as number[], excluded: [] as ScreenExclusions[], fails: false, delay: 0, starts: [] as number[] };
   const learned: string[][] = [];
   const watch = new CorrectionWatch(
     {
       value: async (readPid, exclusions) => {
         field.reads += 1;
+        field.starts.push(performance.now());
         field.pids.push(readPid);
         field.excluded.push(exclusions);
         if (field.fails) throw new Error("helper gone");
@@ -327,18 +329,47 @@ describe("CorrectionWatch", () => {
   });
 
   /** The watch lasts its duration, however long each read takes (a rich editor's can take seconds):
-   * no read starts after it, and an edit made after it is never learned. */
-  test("ends at its duration however long each read takes", async () => {
+   * no read starts after it, the last one starts when the next would not fit, and an edit made after
+   * it is never learned. */
+  test.each([2.1, 3.4])("no read starts after its duration with reads of %f intervals each", async (cost) => {
     const { field, learned, watch } = setup();
-    field.delay = 3.4 * interval;
+    field.delay = cost * interval;
+    const began = performance.now();
     watch.watch(pid, pasted, none);
     await vi.advanceTimersByTimeAsync(duration + interval + field.delay);
     const reads = field.reads;
-    expect(reads).toBe(Math.ceil(duration / (interval + field.delay)));
+    const starts = field.starts.map((start) => start - began);
+    expect(starts.length).toBeGreaterThan(1);
+    expect(Math.max(...starts)).toBeLessThanOrEqual(duration);
+    expect(starts.at(-1)! + field.delay + interval).toBeGreaterThan(duration);
     field.value = corrected;
     await vi.advanceTimersByTimeAsync(10 * duration);
     expect(field.reads).toBe(reads);
     expect(learned).toEqual([]);
+  });
+
+  /** A poll that wakes late, past the duration (a busy app), reads nothing more, though the last read
+   * ended in time for one more. */
+  test("a poll that wakes after its duration reads no more", async () => {
+    const { field, learned, watch } = setup();
+    // The clock the watch keeps jumps ahead while it sleeps after the read just before its end.
+    const clock = performance.now.bind(performance);
+    let late = 0;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock() + late);
+    try {
+      const began = performance.now();
+      watch.watch(pid, pasted, none);
+      await vi.advanceTimersByTimeAsync(duration - interval);
+      expect(field.reads).toBe(duration / interval - 1);
+      setTimeout(() => (late = interval), interval / 2);
+      field.value = corrected;
+      await vi.advanceTimersByTimeAsync(10 * duration);
+      expect(field.reads).toBe(duration / interval - 1);
+      expect(Math.max(...field.starts.map((start) => start - began))).toBeLessThanOrEqual(duration);
+      expect(learned).toEqual([]);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   /** No field to read (a password field, one too long, none focused), or a failed read: the watch
