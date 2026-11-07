@@ -32,11 +32,16 @@
 //   --slow-on <method> <ms> answers <method> after <ms>
 //   --bad-on <method>       answers <method> with `{ "ok": true }`, a shape it never has
 //   --linger <ms>           exits <ms> after its stdin closes, not at once
-//   --trim-step <rows> <ms> a `memoryTrim` removes at most <rows> rows; one that ends above its limit
-//                           answers `withinLimit: false` and goes on trimming while idle, <rows> rows
-//                           every <ms>, until within it, as the real helper's idle writer does (only
-//                           `memoryTrim` leaves a trim pending, a later one replaces it, `memoryClear`
-//                           ends it, and it ends with the process, which stdin closing ends)
+//   --trim-step <rows> <ms> a trim removes at most <rows> rows, as the real one stops at its time
+//                           budget; a `memoryTrim` that ends above its limit answers
+//                           `withinLimit: false` and goes on trimming while idle, <rows> rows every
+//                           <ms>, until within it, as the real helper's idle writer does (only
+//                           `memoryTrim` leaves a trim pending, a limited `memoryIndexBatch` trims
+//                           within its own step and leaves none, a later `memoryTrim` replaces it,
+//                           `memoryClear` ends it, and it ends with the process, which stdin closing
+//                           ends)
+//   --serial-trim <ms>      answers each `memoryTrim` <ms> after the one before it was answered (or
+//                           after it came), as the real writer answers its requests in turn
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -111,7 +116,7 @@ function answer(method, params) {
     }
     case "memoryIndexBatch": {
       rows.push(...params.rows);
-      const trim = params.maxBytes ? trimTo(params.maxBytes) : {};
+      const trim = params.maxBytes ? trimTo(params.maxBytes, trimStep?.rows) : {};
       save();
       return { ok: true, count: params.rows.length, skippedDuplicates: 0, ...trim };
     }
@@ -166,6 +171,9 @@ function send(message) {
   process.stdout.write(Buffer.concat([prefix, body]));
 }
 
+/** When the writer is next free to answer a `memoryTrim` (`--serial-trim`; ms since the epoch). */
+let writerFreeAt = 0;
+
 function handle({ id, method, params }) {
   if (flag("--exit-on") === method) process.exit(3);
   if (flag("--silent-on") === method) return;
@@ -180,7 +188,10 @@ function handle({ id, method, params }) {
     }
     send(result === undefined ? { id, error: `Unknown method: ${method}` } : { id, result });
   };
-  if (flag("--slow-on") === method) setTimeout(reply, Number(args[args.indexOf("--slow-on") + 2]));
+  if (flag("--serial-trim") !== null && method === "memoryTrim") {
+    writerFreeAt = Math.max(Date.now(), writerFreeAt) + Number(flag("--serial-trim"));
+    setTimeout(reply, writerFreeAt - Date.now());
+  } else if (flag("--slow-on") === method) setTimeout(reply, Number(args[args.indexOf("--slow-on") + 2]));
   else reply();
 }
 
