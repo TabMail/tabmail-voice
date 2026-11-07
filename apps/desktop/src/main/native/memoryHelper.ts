@@ -64,8 +64,7 @@ export class MemoryHelper implements AgentMemory {
   /** Whether the running helper ends when idle: once its `init` said the model loaded. */
   private endsWhenIdle = false;
   /** Whether the running helper may still be trimming memory while idle: its latest `memoryTrim`
-   * answered `withinLimit: false`, or hasn't answered with its result (an error reply keeps it too).
-   * It is kept until quit meanwhile. */
+   * answered `withinLimit: false`, or hasn't answered. It is kept until quit meanwhile. */
   private trimUnfinished = false;
   /** How many trims were asked: only the latest one's answer says whether a trim is unfinished, as
    * the helper's latest `memoryTrim` replaces an older one's limit. */
@@ -110,7 +109,16 @@ export class MemoryHelper implements AgentMemory {
     this.trims += 1;
     const trim = this.trims;
     this.trimUnfinished = true;
-    const result = await this.request("memoryTrim", { maxBytes });
+    let result: unknown;
+    try {
+      result = await this.request("memoryTrim", { maxBytes });
+    } catch (error) {
+      // An error reply: the helper leaves nothing pending after a failed trim (it never refuses the
+      // limits this app sends), so it ends when unused as usual, and the next exchange kept with a
+      // limit trims again.
+      if (error instanceof MemoryError && trim === this.trims) this.trimUnfinished = false;
+      throw error;
+    }
     if (!isJSONObject(result) || typeof result.trimmed !== "number" || typeof result.withinLimit !== "boolean") {
       throw new HelperError("failed", "memoryTrim", "unexpected reply");
     }

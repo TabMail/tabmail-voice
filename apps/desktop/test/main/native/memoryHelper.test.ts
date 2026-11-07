@@ -573,6 +573,31 @@ describe("MemoryHelper", () => {
       await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
     });
 
+    /** A trim that fails leaves nothing pending in the helper; keeping it loaded would hold its model
+     * until quit for nothing. The next limited exchange trims again. */
+    test("a failed trim lets the helper end when unused", async () => {
+      const memory = make(["--trim-step", "1", "30", "--error-on", "memoryTrim"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      await expect(memory.trim(sizeOf(rows) * 2)).rejects.toMatchObject({ name: "MemoryError", method: "memoryTrim" });
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    });
+
+    test("an older trim's failure doesn't let the helper end while the newest is unanswered", async () => {
+      const memory = make(["--trim-step", "1", "30", "--serial-trim", "500", "--error-once-on", "memoryTrim"], { idleTimeout: 50, requestTimeout: 800 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      const limit = sizeOf(rows) * 2;
+      const older = memory.trim(sizeOf(rows) * 4);
+      const newest = memory.trim(limit);
+      await expect(older).rejects.toMatchObject({ name: "MemoryError", method: "memoryTrim" });
+      await expect(newest).rejects.toMatchObject({ kind: "timeout", method: "memoryTrim" });
+      // Past the newest's answer (200 ms after its timeout), the idle timeout and the idle steps.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect(starts()).toBe(1);
+    });
+
     test("quitting still ends it", async () => {
       const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
       const rows = sixRows();

@@ -26,7 +26,9 @@
 //   --init-error            answers `init` with an error
 //   --no-model              answers `init` with `hasEmbeddings: false`, as when the model's download
 //                           failed
-//   --error-on <method>     answers <method> with an error
+//   --error-on <method>     answers <method> with an error; for `memoryTrim`, as the real helper's
+//                           failed trim does, leaving no trim pending
+//   --error-once-on <method> the same, the first time <method> comes only
 //   --exit-on <method>      exits on <method> without answering
 //   --silent-on <method>    never answers <method>
 //   --slow-on <method> <ms> answers <method> after <ms>
@@ -171,6 +173,14 @@ function send(message) {
   process.stdout.write(Buffer.concat([prefix, body]));
 }
 
+/** Whether to fail this request, under `--error-once-on`: the first of its method only. */
+let erredOnce = false;
+function errorOnce(method) {
+  if (erredOnce || flag("--error-once-on") !== method) return false;
+  erredOnce = true;
+  return true;
+}
+
 /** When the writer is next free to answer a `memoryTrim` (`--serial-trim`; ms since the epoch). */
 let writerFreeAt = 0;
 
@@ -178,7 +188,11 @@ function handle({ id, method, params }) {
   if (flag("--exit-on") === method) process.exit(3);
   if (flag("--silent-on") === method) return;
   const reply = () => {
-    if ((method === "init" && args.includes("--init-error")) || flag("--error-on") === method) return send({ id, error: `${method} failed` });
+    if ((method === "init" && args.includes("--init-error")) || flag("--error-on") === method || errorOnce(method)) {
+      // The real helper clears the pending trim before a `memoryTrim` that then fails.
+      if (method === "memoryTrim") trimWhileIdle(null);
+      return send({ id, error: `${method} failed` });
+    }
     if (flag("--bad-on") === method) return send({ id, result: { ok: true } });
     let result;
     try {
