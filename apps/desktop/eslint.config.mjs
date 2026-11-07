@@ -7,7 +7,8 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "release/**", "native/**/build/**", "node_modules/**"] },
+  // The browser test pages' CodeMirror bundle is generated (scripts/browser-pages.mts).
+  { ignores: ["dist/**", "release/**", "native/**/build/**", "node_modules/**", "native/shared/browser-pages/codemirror.js"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
