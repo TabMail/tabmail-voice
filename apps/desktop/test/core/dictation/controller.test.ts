@@ -1783,7 +1783,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     describe("with the real watch", () => {
       const interval = 10;
       // Real timers, which run late on a busy machine: the watch ends by the clock, so it lasts long
-      // enough for the edit to be read twice however late they run.
+      // enough for the edit to be read twice unless each poll runs about a third of the watch late.
       const duration = 1_000;
       const pasteTarget = 101;
       const otherWindow = 202;

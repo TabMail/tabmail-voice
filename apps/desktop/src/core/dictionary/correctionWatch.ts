@@ -86,7 +86,7 @@ export class CorrectionWatch {
     // How the field holds the pasted text, found with it, and every later read joined the same way.
     let join = joins[0]!;
     // Each read starts within `duration` of the paste, by the clock: a read that took long leaves
-    // fewer reads, never a longer watch. The clock is asked again on waking, as a busy app can wake
+    // fewer reads, never a read after it. The clock is asked again on waking, as a busy app can wake
     // a poll late.
     const started = performance.now();
     const over = () => performance.now() - started > this.duration;

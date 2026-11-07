@@ -349,8 +349,8 @@ describe("CorrectionWatch", () => {
   });
 
   /** A poll that wakes late, past the duration (a busy app), reads nothing more, though the last read
-   * ended in time for one more. */
-  test("a poll that wakes after its duration reads no more", async () => {
+   * ended in time for one more: however little late, from a millisecond to a whole poll. */
+  test.each([1, interval])("a poll that wakes %d ms after its duration reads no more", async (lateness) => {
     const { field, learned, watch } = setup();
     // The clock the watch keeps jumps ahead while it sleeps after the read just before its end.
     const clock = performance.now.bind(performance);
@@ -361,7 +361,7 @@ describe("CorrectionWatch", () => {
       watch.watch(pid, pasted, none);
       await vi.advanceTimersByTimeAsync(duration - interval);
       expect(field.reads).toBe(duration / interval - 1);
-      setTimeout(() => (late = interval), interval / 2);
+      setTimeout(() => (late = lateness), interval / 2);
       field.value = corrected;
       await vi.advanceTimersByTimeAsync(10 * duration);
       expect(field.reads).toBe(duration / interval - 1);
@@ -383,6 +383,8 @@ describe("CorrectionWatch", () => {
     field.value = corrected;
     await vi.advanceTimersByTimeAsync(duration - (interval + field.delay + interval / 10) + field.delay - interval);
     expect(learned).toEqual([]);
+    await vi.advanceTimersByTimeAsync(interval);
+    expect(learned).toEqual([["Xyvora"]]);
     await vi.advanceTimersByTimeAsync(10 * duration);
     expect(Math.max(...field.starts.map((start) => start - began))).toBeLessThanOrEqual(duration);
     expect(field.starts.length).toBe(3);
@@ -390,8 +392,8 @@ describe("CorrectionWatch", () => {
   });
 
   /** A poll that wakes late, past the duration, reads no more but learns the correction already
-   * settled, once. */
-  test("a poll that wakes after its duration learns what the field settled on", async () => {
+   * settled, once: from a millisecond late to a whole poll. */
+  test.each([1, interval])("a poll that wakes %d ms after its duration learns what the field settled on", async (lateness) => {
     const { field, learned, watch } = setup();
     const clock = performance.now.bind(performance);
     let late = 0;
@@ -402,10 +404,35 @@ describe("CorrectionWatch", () => {
       field.value = corrected;
       await vi.advanceTimersByTimeAsync(duration - 2 * interval);
       expect(learned).toEqual([]);
-      setTimeout(() => (late = interval), interval / 2);
+      setTimeout(() => (late = lateness), interval / 2);
       await vi.advanceTimersByTimeAsync(10 * duration);
       expect(field.reads).toBe(duration / interval - 1);
       expect(learned).toEqual([["Xyvora"]]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  /** A watch that wakes after its duration, though a new watch has begun, leaves the new one alone:
+   * it is ended, not over. */
+  test("an ended watch waking late leaves the new watch alone", async () => {
+    const { field, learned, watch } = setup();
+    const clock = performance.now.bind(performance);
+    let late = 0;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock() + late);
+    try {
+      watch.watch(pid, pasted, none);
+      await vi.advanceTimersByTimeAsync(duration - interval / 2);
+      late = 1;
+      field.value = "Meet Brevale.";
+      watch.watch(7, "Meet Brevale.", none);
+      await vi.advanceTimersByTimeAsync(interval);
+      field.value = "Meet Brevalle.";
+      await poll();
+      await poll();
+      watch.stop();
+      expect(field.pids.filter((read) => read === 7)).toHaveLength(3);
+      expect(learned).toEqual([["Brevalle"]]);
     } finally {
       now.mockRestore();
     }

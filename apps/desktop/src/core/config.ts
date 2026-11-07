@@ -595,7 +595,7 @@ export const linuxCaretRequestTimeout = 200;
  * has read so far. */
 export const screenReaderTimeout = maxRecordingDuration;
 /** Longest a request to voice-field-reader (`FieldReader`) may run before that process is ended
- * (ms): past a correction watch, nothing it reads is used. */
+ * (ms): a read longer than a whole correction watch is not waited for. */
 export const fieldReaderTimeout = correctionWatchDuration;
 /** Longest a Calendar or Reminders request to the helper may take: the first one waits while
  * macOS asks the user for access. */

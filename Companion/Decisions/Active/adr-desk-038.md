@@ -644,5 +644,5 @@ them, however long each took), so reads that take time stretched the watch. A Wi
 editor's read takes about 1 to 4 s (the look for a password element inside the field, ADR-DESK-053
 amendment 2026-11-06), which made a 30 s watch last minutes and learn edits made long after it should
 have ended. Now each read starts within the duration, a slow read leaving fewer reads; the read that
-began inside it still counts when it answers, and nothing after it does. With instant reads nothing
-changes: the same reads at the same times, and the watch ends with its last one.
+began inside it still counts when it answers, and nothing after it does. With instant reads and timers
+on time nothing changes: the same reads at the same times, and the watch ends with its last one.
