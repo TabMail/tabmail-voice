@@ -2047,7 +2047,8 @@
         "selectionSourceBytes": 1048570,
         "caretSourceBytes": 1572858,
         "caretLineBytes": 3,
-        "caretSourceElements": 300,
+        "blockWalkElements": 300,
+        "hypertextDepth": 512,
         "paragraphStartUnits": 4000
       }
     },

@@ -170,11 +170,20 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   ending at the next paragraph holds that break, and one at an image keeps its edge. The caret is read this way
   only in an editable focus; a page in focus (Chromium gives it document hypertext too) is read by its
   own text, as any element. A rich text holding
-  more than the caret source's bytes or its own element budget (`caretSourceElements`, 300, in the core:
-  measured in Chrome on Ubuntu, 300 paragraphs read in 0.6–0.7 s and 499 in up to 1.5 s, the whole
-  screen read's time) is
-  not read at all (an element is not asked for its text past the bytes left, nor for its links when it
-  has more than the elements left); nor is one the core refuses to join. Neither
+  more than the caret source's bytes is
+  not read at all (an element is not asked for its text past the bytes left, nor for more links than
+  its text has characters, a link sitting on one); nor is one the core refuses to join. (Until
+  2026-11-06 it also had an element budget, `caretSourceElements`, 300, in the core: measured in Chrome
+  on Ubuntu, 300 paragraphs read in 0.6–0.7 s and 499 in up to 1.5 s, then the whole screen read's
+  time. Removed by #361, owner's decision 2026-11-06: the screen read has had no time limit since
+  2026-10-06 and runs in a process of its own, a dictation using it only if it is done in time, and
+  the field read stops itself after 1.5 s, so the budget protected nothing and kept a long editor's
+  text, an Overleaf document's or a long mail's, out of the read. The Mac and Windows walk of a
+  Chromium editor's blocks keeps 300 as its own budget, renamed `blockWalkElements`. With no element
+  budget, the walk looks for the screen read's stop (ADR-DESK-053) at each element, so a stopped read
+  answers at once and leaves the editor unread; and elements nested deeper than `hypertextDepth` (512,
+  the depth Chromium's HTML parser nests markup to) are not read, in the walk and in the core's join,
+  both of which recurse once a level.) Neither
   fails the rest of the screen read. The breaks the core puts between blocks are its own, not the
   provider's (amended 2026-10-06, after the train's tier-2 review): the joined text marks them
   U+2029, as the caret window marks its put-back breaks, and wherever it goes (the caret's read, a

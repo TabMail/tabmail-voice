@@ -16,21 +16,18 @@ export const anchorHeightRatio = { min: 0.5, max: 2 };
  * `"firefox codemirror long-empty-line readScreen"`), to the issue's number. The change fixing one removes
  * it here: a read listed here that passes fails the run until it is. */
 export const knownFailures = {
-  // Ubuntu 24.04 ARM64, Firefox 157 and Chromium 156 snaps (2026-11-06). #361: the long compose
-  // page has more elements than the hypertext read takes. #370: snap Chromium has no app identity.
+  // Ubuntu 24.04 ARM64, Firefox 157 and Chromium 156 snaps (2026-11-06, 2026-11-07). #370: snap Chromium
+  // has no app identity. #390: the field read of the long compose page runs out its time limit in some
+  // runs and not others (`sometimesFailing`).
   linux: {
-    "firefox compose long-empty-line readScreen": 361,
-    "firefox compose long-empty-line focusedFieldValue": 361,
-    "firefox compose long-mid-line readScreen": 361,
-    "firefox compose long-mid-line focusedFieldValue": 361,
     "chrome codemirror short-document identity": 370,
     "chrome codemirror long-document identity": 370,
     "chrome compose short-document identity": 370,
     "chrome compose long-document identity": 370,
-    "chrome compose long-empty-line readScreen": 361,
-    "chrome compose long-empty-line focusedFieldValue": 361,
-    "chrome compose long-mid-line readScreen": 361,
-    "chrome compose long-mid-line focusedFieldValue": 361,
+    "firefox compose long-empty-line focusedFieldValue": 390,
+    "firefox compose long-mid-line focusedFieldValue": 390,
+    "chrome compose long-empty-line focusedFieldValue": 390,
+    "chrome compose long-mid-line focusedFieldValue": 390,
   },
   // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #379: Firefox's rich editors read
   // through UI Automation lose their line breaks, in the screen read and the field read. #391: a field read
@@ -87,7 +84,7 @@ export const knownFailures = {
 /** Issues whose reads fail in some runs and not in others, as the machine's load makes a read take
  * longer than it may: a read recorded under one passes the run when it passes, and the change fixing
  * the issue removes its records. */
-export const sometimesFailing = new Set([381]);
+export const sometimesFailing = new Set([381, 390]);
 
 /** The text around a case's caret: the lines before and after it, the line's text either side,
  * and what is selected. */
