@@ -248,3 +248,23 @@ Thunderbird's copy or its files.
 > list shown are read again. Thunderbird says "Delete" for its history; Voice's Memory says
 > "Remove" throughout. Tests: see `TESTS.md` (`memory/page.test.ts` › removing the old requests,
 > `renderer/settings` › `memory`, `shared/ipc`, `main/index`, `main/native/memoryHelper`).
+
+> **Amended (2026-11-07, #393): a helper whose trim is unfinished is kept until quit.** Since
+> tabmail-native-fts#12 (its ADR-NF-008, amendment of 2026-11-06 and follow-up of 2026-11-07), a
+> `memoryTrim` that runs out of time answers `withinLimit: false` and the helper goes on trimming
+> while idle, in its own process only: a helper started later does not resume it, and the helper
+> stops that trim once its stdin closes. Ending the helper `memoryHelperIdleTimeout` after its last
+> request dropped the rest, leaving memory above the limit the user chose until later exchanges were
+> kept (measured: a 2.7 GB memory lowered to 100 MiB was left at 1.34 GB). Now `MemoryHelper` keeps
+> the running helper on the path a helper without its model already takes, until the app quits,
+> while its latest `memoryTrim` answered `withinLimit: false` or hasn't answered (it may still be
+> trimming after its request timed out). A later `memoryTrim` answering within its limit lets it end
+> when unused again, as the helper ends its idle trim then. Quitting and Clear All still end it, and
+> a helper started afterwards, or after one that died or couldn't be spawned, has no trim left. As
+> the helper's own rule, only `memoryTrim` counts: a `memoryIndexBatch` trims within its own budget
+> and leaves nothing pending. The cost is the model kept loaded until quit after such a trim. A
+> narrower end (once `memoryStats` reads usage within the limit) would need polling, so it isn't
+> done. The helper Voice pins does not trim while idle yet; until the pin moves past #12, the
+> helper is only kept longer, and Settings' "more go as new requests are kept" stays true. Tests:
+> see `TESTS.md` (`main/native/memoryHelper` › a trim cut short, with the fake helper's
+> `--trim-step`).

@@ -52,7 +52,9 @@ const lengthPrefix = 4;
  * folders), and ends after `idleTimeout` with nothing asked, once its embedding model has loaded:
  * closing its stdin ends it. Its `init` downloads the model when it isn't there yet, so one that
  * started without it is kept until the app quits, trying once per run as Thunderbird's does, rather
- * than downloading again at every start. It is never asked to update itself:
+ * than downloading again at every start. One whose latest `memoryTrim` ended above its limit, or
+ * hasn't answered, is kept until the app quits too: it finishes that trim while idle, in its process
+ * only, so ending it would leave memory above the limit. It is never asked to update itself:
  * the app ships the build it runs. It writes no log file.
  */
 export class MemoryHelper implements AgentMemory {
@@ -61,6 +63,9 @@ export class MemoryHelper implements AgentMemory {
   private initialized: Promise<void> | null = null;
   /** Whether the running helper ends when idle: once its `init` said the model loaded. */
   private endsWhenIdle = false;
+  /** Whether the running helper may still be trimming memory while idle: its latest `memoryTrim`
+   * answered `withinLimit: false`, or hasn't answered. It is kept until quit meanwhile. */
+  private trimUnfinished = false;
   private readonly pending = new Map<string, Pending>();
   private nextID = 1;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -98,10 +103,12 @@ export class MemoryHelper implements AgentMemory {
   }
 
   async trim(maxBytes: number): Promise<MemoryTrim> {
+    this.trimUnfinished = true;
     const result = await this.request("memoryTrim", { maxBytes });
     if (!isJSONObject(result) || typeof result.trimmed !== "number" || typeof result.withinLimit !== "boolean") {
       throw new HelperError("failed", "memoryTrim", "unexpected reply");
     }
+    this.trimUnfinished = !result.withinLimit;
     return { removed: result.trimmed, withinLimit: result.withinLimit };
   }
 
@@ -177,6 +184,7 @@ export class MemoryHelper implements AgentMemory {
       // argument list; a missing executable or too many open files are `error` events, below):
       // memory is unavailable, and the request fails as any failed start does, naming no path.
       log.error(`MemoryHelper: couldn't run: ${errorName(error)}`);
+      this.trimUnfinished = false;
       return Promise.reject(new HelperError("failed", "init"));
     }
     this.endsWhenIdle = false;
@@ -285,7 +293,7 @@ export class MemoryHelper implements AgentMemory {
     if (this.child === null || this.stopped) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
-      if (!this.endsWhenIdle) return;
+      if (!this.endsWhenIdle || this.trimUnfinished) return;
       if (this.pending.size > 0) return this.idleSoon();
       log.debug("MemoryHelper: idle; ending it");
       this.end();
@@ -303,6 +311,7 @@ export class MemoryHelper implements AgentMemory {
     const child = this.child;
     this.child = null;
     this.initialized = null;
+    this.trimUnfinished = false;
     if (child === null) return;
     child.stdin.end();
     this.failPending(child);
@@ -313,6 +322,7 @@ export class MemoryHelper implements AgentMemory {
     if (this.child === child) {
       this.child = null;
       this.initialized = null;
+      this.trimUnfinished = false;
     }
     this.failPending(child);
   }
