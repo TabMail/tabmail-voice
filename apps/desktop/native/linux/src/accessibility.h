@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <vector>
 #include <chrono>
+#include <cstring>
+#include "helper_config.h"
 
 namespace voice {
 template<class T> struct Unref { void operator()(T* value) const { if (value) g_object_unref(value); } };
@@ -101,17 +103,57 @@ inline const Node* windowOf(const std::vector<Node>& path) {
     return window == path.rend() ? nullptr : &*window;
 }
 inline bool password(const Node& node) { return role(node) == ATSPI_ROLE_PASSWORD_TEXT; }
-// The focused element's caret in its window's coordinates: geometry only, one
-// element, no traversal. Wayland gives AT-SPI no screen coordinates.
-inline std::optional<std::array<int, 4>> caretInWindow(const Node& focus) {
-    auto text = own(atspi_accessible_get_text_iface(focus.get()));
-    if (!text) return {};
+// Where the character at `offset` of `node`'s text is an embedded object (U+FFFC), the element it
+// stands for (null where that can't be had); none where it is another character.
+inline std::optional<Node> objectAt(const Node& node, AtspiText* text, int offset) {
     Error error;
-    const auto caret = atspi_text_get_caret_offset(text.get(), &error.value);
-    if (error.value || caret < 0) return {};
-    auto rect = atspi_text_get_character_extents(text.get(), caret, ATSPI_COORD_TYPE_WINDOW, &error.value);
-    std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rect, &g_free);
-    if (error.value || !rect || rect->width < 0 || rect->height <= 0) return {};
-    return std::array<int, 4>{rect->x, rect->y, rect->width, rect->height};
+    std::unique_ptr<gchar, decltype(&g_free)> character(atspi_text_get_text(text, offset, offset + 1, &error.value), &g_free);
+    if (error.value || !character || std::strcmp(character.get(), "\xEF\xBF\xBC") != 0) return std::nullopt;
+    auto links = own(atspi_accessible_get_hypertext_iface(node.get()));
+    if (!links) return Node();
+    const auto index = atspi_hypertext_get_link_index(links.get(), offset, &error.value);
+    if (error.value || index < 0) return Node();
+    auto link = own(atspi_hypertext_get_link(links.get(), index, &error.value));
+    if (error.value || !link) return Node();
+    auto object = own(atspi_hyperlink_get_object(link.get(), 0, &error.value));
+    return error.value ? Node() : object;
+}
+// The focused element's caret in its window's coordinates: geometry only, no traversal of the
+// tree. Wayland gives AT-SPI no screen coordinates. In a browser's rich editor the focus is the
+// editor, and its caret offset is at the embedded object standing for the caret's line, drawn where
+// that line starts: the caret is followed into the line, and read there (#371). A caret still on an
+// object it can't follow, or deeper than `caretObjectDepth`, is none. A password field's text is
+// never read, not even the caret's one character: it is read where its caret is, as any field with
+// no objects is.
+inline std::optional<std::array<int, 4>> caretInWindow(const Node& focus) {
+    Node node = focus;
+    for (unsigned depth = 0;; ++depth) {
+        auto text = own(atspi_accessible_get_text_iface(node.get()));
+        if (!text) return {};
+        Error error;
+        const auto caret = atspi_text_get_caret_offset(text.get(), &error.value);
+        if (error.value || caret < 0) return {};
+        if (auto inner = password(node) ? std::nullopt : objectAt(node, text.get(), caret)) {
+            if (!*inner || depth + 1 >= HelperConfig::caretObjectDepth) return {};
+            node = std::move(*inner);
+            continue;
+        }
+        // In a line followed into, a caret after its last character (at the line's end) is drawn where
+        // that character ends: browsers give no rectangle for the offset past a line's text (Firefox
+        // none, or one at the line's start; Chromium the next line's). A field with no objects keeps
+        // its provider's rectangle there: GTK's is right, and after a final newline it is the empty
+        // last line, where that newline's own is the line above.
+        bool atEnd = false;
+        if (depth > 0) {
+            const auto count = atspi_text_get_character_count(text.get(), &error.value);
+            if (error.value || count < 0) return {};
+            atEnd = caret > 0 && caret == count;
+        }
+        auto rect = atspi_text_get_character_extents(text.get(), atEnd ? caret - 1 : caret, ATSPI_COORD_TYPE_WINDOW, &error.value);
+        std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rect, &g_free);
+        if (error.value || !rect || rect->width < 0 || rect->height <= 0) return {};
+        if (atEnd) return std::array<int, 4>{rect->x + rect->width, rect->y, 1, rect->height};
+        return std::array<int, 4>{rect->x, rect->y, rect->width, rect->height};
+    }
 }
 }

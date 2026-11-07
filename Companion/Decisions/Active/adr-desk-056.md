@@ -45,5 +45,11 @@ Shell (for example `Shell.WindowTracker` for which app owns a window) and fix it
 workaround (AT-SPI heuristics, launcher or desktop-file guessing, per-app special cases) is the path only for
 what the extension can't see, or for desktops and GNOME versions without it, and the issue or PR says why
 the extension could not do it. Example: #370, snap Chromium can't be named from its process, so its window's
-app comes from the extension.
+app comes from the extension. Counter-example: #371, the caret in a browser's rich editor. The Shell knows the
+caret only as the input method's cursor rectangle, which Chromium places right and Firefox does not (measured
+2026-11-06 in the test machine, Firefox 157 and Chromium 156), so the caret anchor stays the helper's: the editor's
+accessible caret sits on the object character of the line holding it, and the helper follows it into that
+line (`caretInWindow`, at most `caretObjectDepth` elements deep) before asking where it is drawn. Only in a line
+followed into is a caret at the end read where the last character ends (browsers give no rectangle past a line's
+text); a field with no objects keeps its provider's rectangle, and a password field's text is never read for it.
 
