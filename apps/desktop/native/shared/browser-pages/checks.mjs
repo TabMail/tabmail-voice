@@ -18,38 +18,19 @@ export const anchorHeightRatio = { min: 0.5, max: 2 };
 export const knownFailures = {
   // Ubuntu 24.04 ARM64, Firefox 157 and Chromium 156 snaps (2026-11-06). #361: the long compose
   // page has more elements than the hypertext read takes. #370: snap Chromium has no app identity.
-  // #371: the anchor is at the line's start (a selection's too), and Firefox's at a line start is the previous caret's.
   linux: {
-    "firefox codemirror line-start caretAnchor": 371,
-    "firefox codemirror mid-line caretAnchor": 371,
-    "firefox codemirror line-end caretAnchor": 371,
-    "firefox codemirror selection caretAnchor": 371,
-    "firefox codemirror long-mid-line caretAnchor": 371,
-    "firefox compose line-start caretAnchor": 371,
-    "firefox compose mid-line caretAnchor": 371,
-    "firefox compose line-end caretAnchor": 371,
-    "firefox compose selection caretAnchor": 371,
     "firefox compose long-empty-line readScreen": 361,
     "firefox compose long-empty-line focusedFieldValue": 361,
     "firefox compose long-mid-line readScreen": 361,
     "firefox compose long-mid-line focusedFieldValue": 361,
-    "firefox compose long-mid-line caretAnchor": 371,
     "chrome codemirror short-document identity": 370,
-    "chrome codemirror mid-line caretAnchor": 371,
-    "chrome codemirror line-end caretAnchor": 371,
-    "chrome codemirror selection caretAnchor": 371,
     "chrome codemirror long-document identity": 370,
-    "chrome codemirror long-mid-line caretAnchor": 371,
     "chrome compose short-document identity": 370,
-    "chrome compose mid-line caretAnchor": 371,
-    "chrome compose line-end caretAnchor": 371,
-    "chrome compose selection caretAnchor": 371,
     "chrome compose long-document identity": 370,
     "chrome compose long-empty-line readScreen": 361,
     "chrome compose long-empty-line focusedFieldValue": 361,
     "chrome compose long-mid-line readScreen": 361,
     "chrome compose long-mid-line focusedFieldValue": 361,
-    "chrome compose long-mid-line caretAnchor": 371,
   },
   // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #379: Firefox's rich editors read
   // through UI Automation lose their line breaks, in the screen read and the field read. #391: a field read

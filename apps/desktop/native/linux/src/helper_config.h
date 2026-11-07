@@ -11,4 +11,7 @@ inline constexpr long long eventOccurrenceToleranceMs = 2LL * 60 * 60 * 1000;
 inline constexpr long long eventOccurrenceSearchSpanMs = 31LL * 24 * 60 * 60 * 1000;
 // A read of calendars, memos or tasks that a change interrupts is made this many times in all.
 inline constexpr unsigned calendarReadAttempts = 3;
+// How many elements deep a caret is followed from a rich editor into the line holding it (`caretInWindow`):
+// a browser's editor, its line, and the elements a line can hold, with room to spare.
+inline constexpr unsigned caretObjectDepth = 16;
 }
