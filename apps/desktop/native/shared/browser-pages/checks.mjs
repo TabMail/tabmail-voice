@@ -51,7 +51,7 @@ export const knownFailures = {
     "chrome compose long-mid-line focusedFieldValue": 361,
     "chrome compose long-mid-line caretAnchor": 371,
   },
-  // Windows 11 ARM64, Edge, Chrome and Firefox (2026-11-06, three runs). #379: Firefox's rich editors read
+  // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #379: Firefox's rich editors read
   // through UI Automation lose their line breaks, in the screen read and the field read. #391: a field read
   // in Edge and Chrome gives an empty line as one line break. #380: in Firefox's CodeMirror page the anchor is a line above
   // the caret. #381: the screen read of the long compose page runs for minutes, so it fails as a read

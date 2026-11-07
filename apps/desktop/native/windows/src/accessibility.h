@@ -353,7 +353,8 @@ private:
         ComPtr<IUIAutomationTreeWalker> walker;
         ULONGLONG started;
         // None for a screen read and for the look for a password inside a field, which have no time
-        // limit; a field read's looks for an excluded page have one.
+        // limit; a field read's looks for an excluded page have one, as do a terminal field read's looks
+        // (`terminalFieldReadMs`).
         std::optional<ULONGLONG> budget;
         bool protectedNode = false;
         ComPtr<IUIAutomationCacheRequest> passwordCache;

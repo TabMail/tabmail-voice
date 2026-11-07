@@ -34,8 +34,9 @@ read in Edge and Chrome giving an empty line as one line break, #380 Firefox's C
 line above, #381 the long compose page's screen read running for minutes, which fails in some runs
 and not others), and 4 fail, each a page failed whole: Edge's and Chrome's long compose pages never came
 to the front, their screen read timing out (#381), and in Firefox the long CodeMirror page did not load
-and the long compose page did not answer. With the host quieter (2026-11-06), every long page loaded
-and Edge's and Chrome's field reads of them matched but for the empty line (#391). A page that fails whole
+and the long compose page did not answer. With the host quieter (2026-11-06), every long page loaded, but Firefox's long compose page never
+came to the front, its screen read timing out (#381); Edge's and Chrome's field reads of the long pages
+matched but for the empty line (#391). A page that fails whole
 is never recorded as known, whatever stopped it, so it fails the run; under that load a page can also
 fail to load, answer or come to the front in time. How to run
 it: the folder's README.
