@@ -393,7 +393,8 @@ export const screenReadUnavailable = "The window could not be read.";
 /** The memory helper starts when memory is first used and ends after this long unused (ms), once
  * its embedding model has loaded: it holds a large read cache and the model, so it is not kept
  * between uses. One that started without the model (its download failed) is kept until the app
- * quits, as each start downloads the model again. */
+ * quits, as each start downloads the model again; so is one whose latest size-limit trim is
+ * unfinished, as it finishes that trim while idle, in its process only (ADR-DESK-061). */
 export const memoryHelperIdleTimeout = 2 * 60 * 1_000;
 /** Longest the memory helper's `init` may take (ms): the first one downloads the embedding model
  * (about 87 MB) before it answers. */

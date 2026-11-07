@@ -32,6 +32,16 @@
 //   --slow-on <method> <ms> answers <method> after <ms>
 //   --bad-on <method>       answers <method> with `{ "ok": true }`, a shape it never has
 //   --linger <ms>           exits <ms> after its stdin closes, not at once
+//   --trim-step <rows> <ms> a trim removes at most <rows> rows, as the real one stops at its time
+//                           budget; a `memoryTrim` that ends above its limit answers
+//                           `withinLimit: false` and goes on trimming while idle, <rows> rows every
+//                           <ms>, until within it, as the real helper's idle writer does (only
+//                           `memoryTrim` leaves a trim pending, a limited `memoryIndexBatch` trims
+//                           within its own step and leaves none, a later `memoryTrim` replaces it,
+//                           `memoryClear` ends it, and it ends with the process, which stdin closing
+//                           ends)
+//   --serial-trim <ms>      answers each `memoryTrim` <ms> after the one before it was answered (or
+//                           after it came), as the real writer answers its requests in turn
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -63,15 +73,30 @@ const refused = (q) => /[%():]/.test(q) || /(^|\s)(AND|OR|NOT|NEAR)(\s|$)/.test(
 const emptyBytes = 4_096;
 const size = (row) => Buffer.byteLength(row.content, "utf8");
 const used = () => rows.reduce((total, row) => total + size(row), 0);
-function trimTo(maxBytes) {
+function trimTo(maxBytes, most = Infinity) {
   rows.sort((a, b) => a.dateMs - b.dateMs);
   let trimmed = 0;
-  while (rows.length > 0 && used() > maxBytes) {
+  while (rows.length > 0 && used() > maxBytes && trimmed < most) {
     rows.shift();
     trimmed += 1;
   }
   // Emptied, the database still takes its schema: a limit below that is never met.
   return { trimmed, usedBytes: used(), withinLimit: rows.length > 0 ? used() <= maxBytes : maxBytes >= emptyBytes };
+}
+
+const trimStep = flag("--trim-step") === null ? null : { rows: Number(flag("--trim-step")), ms: Number(args[args.indexOf("--trim-step") + 2]) };
+/** The trim left pending by the latest `memoryTrim` that ended above its limit. */
+let idleTrim = null;
+/** Goes on trimming to `maxBytes` while idle, a step at a time; null ends the pending trim. */
+function trimWhileIdle(maxBytes) {
+  clearTimeout(idleTrim);
+  idleTrim = null;
+  if (maxBytes === null || trimStep === null) return;
+  idleTrim = setTimeout(() => {
+    const step = trimTo(maxBytes, trimStep.rows);
+    save();
+    trimWhileIdle(step.withinLimit || rows.length === 0 ? null : maxBytes);
+  }, trimStep.ms);
 }
 
 function answer(method, params) {
@@ -91,7 +116,7 @@ function answer(method, params) {
     }
     case "memoryIndexBatch": {
       rows.push(...params.rows);
-      const trim = params.maxBytes ? trimTo(params.maxBytes) : {};
+      const trim = params.maxBytes ? trimTo(params.maxBytes, trimStep?.rows) : {};
       save();
       return { ok: true, count: params.rows.length, skippedDuplicates: 0, ...trim };
     }
@@ -117,8 +142,9 @@ function answer(method, params) {
     case "memoryStats":
       return { ok: true, docs: rows.length, vecDocs: 0, dbBytes: used(), usedBytes: used() };
     case "memoryTrim": {
-      const trim = trimTo(params.maxBytes);
+      const trim = trimTo(params.maxBytes, trimStep?.rows);
       save();
+      trimWhileIdle(trim.withinLimit ? null : params.maxBytes);
       return { ok: true, ...trim };
     }
     case "memoryRemoveBatch": {
@@ -129,6 +155,7 @@ function answer(method, params) {
       return { ok: true, count: before - rows.length };
     }
     case "memoryClear":
+      trimWhileIdle(null);
       if (!args.includes("--clear-keeps-rows")) rows.splice(0, rows.length);
       save();
       return { ok: true };
@@ -144,6 +171,9 @@ function send(message) {
   process.stdout.write(Buffer.concat([prefix, body]));
 }
 
+/** When the writer is next free to answer a `memoryTrim` (`--serial-trim`; ms since the epoch). */
+let writerFreeAt = 0;
+
 function handle({ id, method, params }) {
   if (flag("--exit-on") === method) process.exit(3);
   if (flag("--silent-on") === method) return;
@@ -158,7 +188,10 @@ function handle({ id, method, params }) {
     }
     send(result === undefined ? { id, error: `Unknown method: ${method}` } : { id, result });
   };
-  if (flag("--slow-on") === method) setTimeout(reply, Number(args[args.indexOf("--slow-on") + 2]));
+  if (flag("--serial-trim") !== null && method === "memoryTrim") {
+    writerFreeAt = Math.max(Date.now(), writerFreeAt) + Number(flag("--serial-trim"));
+    setTimeout(reply, writerFreeAt - Date.now());
+  } else if (flag("--slow-on") === method) setTimeout(reply, Number(args[args.indexOf("--slow-on") + 2]));
   else reply();
 }
 
@@ -175,6 +208,8 @@ process.stdin.on("data", (chunk) => {
 });
 process.stdin.on("end", () => {
   appendFileSync(join(recordDir, "ends.log"), `${process.pid}\n`);
+  // The real helper's idle trim stops once its client has gone.
+  trimWhileIdle(null);
   const linger = flag("--linger");
   if (linger === null) process.exit(0);
   setTimeout(() => process.exit(0), Number(linger));

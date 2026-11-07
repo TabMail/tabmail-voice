@@ -425,6 +425,164 @@ describe("MemoryHelper", () => {
     expect(starts()).toBe(1);
   });
 
+  /** A trim to a much lower limit runs out of time and answers `withinLimit: false`; the helper goes on
+   * trimming while idle, in its own process only. Ending it as unused would drop the rest: memory
+   * would stay above the limit the user chose, and a helper started later wouldn't resume it. */
+  describe("a trim cut short", () => {
+    const sixRows = () => {
+      const now = Date.now();
+      return [0, 1, 2, 3, 4, 5].map((i) => memoryRow(`question ${i}`, `answer ${i}`, now - (6 - i) * day, String(i)));
+    };
+    const sizeOf = (rows: readonly { content: string }[]) => Buffer.byteLength(rows[0]?.content ?? "", "utf8");
+    // Long past the idle timeout and the fake's remaining idle steps.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 600));
+
+    test("finishes with nothing more asked: memory ends within the limit, the newest kept", async () => {
+      const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      const limit = sizeOf(rows) * 2;
+      expect(await memory.trim(limit)).toEqual({ removed: 1, withinLimit: false });
+      await settle();
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect((await rowsOf(memory)).map((hit) => hit.memId)).toEqual(["turn:5", "turn:4"]);
+      expect(ends()).toBe(0);
+      expect(starts()).toBe(1);
+    });
+
+    test("finishes when its answer came after the request timed out", async () => {
+      const memory = make(["--trim-step", "1", "30", "--slow-on", "memoryTrim", "1600"], { idleTimeout: 50, requestTimeout: 800 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      const limit = sizeOf(rows) * 2;
+      await expect(memory.trim(limit)).rejects.toMatchObject({ kind: "timeout", method: "memoryTrim" });
+      // Past its answer (800 ms after the timeout), the idle timeout and the remaining idle steps.
+      await new Promise((resolve) => setTimeout(resolve, 1_400));
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect(starts()).toBe(1);
+    });
+
+    test("finishes when its trim started the helper and answered after the request timed out", async () => {
+      const memory = make(["--trim-step", "1", "30", "--slow-on", "memoryTrim", "1600"], { idleTimeout: 50, requestTimeout: 800 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+      const limit = sizeOf(rows) * 2;
+      await expect(memory.trim(limit)).rejects.toMatchObject({ kind: "timeout", method: "memoryTrim" });
+      await new Promise((resolve) => setTimeout(resolve, 1_400));
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect(starts()).toBe(2);
+    });
+
+    /** The user changes the limit twice in quick succession; the helper answers trims in turn, the
+     * newest after its request timed out. The older trim's answer is no longer the latest word. */
+    test("finishes when an older trim answers within its limit while the newest is unanswered", async () => {
+      const memory = make(["--trim-step", "1", "30", "--serial-trim", "500"], { idleTimeout: 50, requestTimeout: 800 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      const limit = sizeOf(rows) * 2;
+      const older = memory.trim(sizeOf(rows) * 6);
+      const newest = memory.trim(limit);
+      expect(await older).toEqual({ removed: 0, withinLimit: true });
+      await expect(newest).rejects.toMatchObject({ kind: "timeout", method: "memoryTrim" });
+      // Past the newest's answer (200 ms after its timeout), the idle timeout and the idle steps.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect(starts()).toBe(1);
+    });
+
+    test("finishes though an exchange is kept meanwhile, whose own trim leaves nothing pending", async () => {
+      const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      const limit = sizeOf(rows) * 2;
+      expect(await memory.trim(limit)).toEqual({ removed: 1, withinLimit: false });
+      await memory.index([memoryRow("question 6", "answer 6", Date.now(), "6")], limit);
+      await settle();
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect((await rowsOf(memory)).map((hit) => hit.memId)).toEqual(["turn:6", "turn:5"]);
+      expect(starts()).toBe(1);
+    });
+
+    test("finishes though the helper ended before it exits late", async () => {
+      const memory = make(["--trim-step", "1", "100", "--linger", "400"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+      const first = Number(lines("starts.log")[0]);
+      const limit = sizeOf(rows) * 2;
+      expect(await memory.trim(limit)).toEqual({ removed: 1, withinLimit: false });
+      const alive = () => {
+        try {
+          process.kill(first, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      await vi.waitFor(() => expect(alive()).toBe(false), { timeout: 3_000 });
+      // A request after that exit (Settings reading usage) waits for the idle end again.
+      await memory.stats();
+      await settle();
+      expect(await memory.stats()).toEqual({ docs: 2, usedBytes: limit });
+      expect(starts()).toBe(2);
+    });
+
+    test("ends when unused again once a later trim answers within its limit", async () => {
+      const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      const limit = sizeOf(rows) * 2;
+      expect(await memory.trim(limit)).toEqual({ removed: 1, withinLimit: false });
+      await settle();
+      expect(ends()).toBe(0);
+      expect(await memory.trim(limit)).toEqual({ removed: 0, withinLimit: true });
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    });
+
+    test("Clear All still ends it, and memory starts empty", async () => {
+      const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      expect(await memory.trim(sizeOf(rows) * 2)).toEqual({ removed: 1, withinLimit: false });
+      await memory.clear();
+      expect(ends()).toBe(1);
+      expect(await memory.stats()).toEqual({ docs: 0, usedBytes: 0 });
+      // The helper started after Clear All has no trim left: it ends when unused.
+      await vi.waitFor(() => expect(ends()).toBe(2), { timeout: 3_000 });
+    });
+
+    test("a trim no helper could be started for keeps no later helper from ending when unused", async () => {
+      const options: MemoryHelperOptions = { executable: "", args: [fake, "--record-dir", record], directory, idleTimeout: 50 };
+      helper = new MemoryHelper(options);
+      await expect(helper.trim(1)).rejects.toMatchObject({ kind: "failed", method: "init" });
+      options.executable = process.execPath;
+      await helper.stats();
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    });
+
+    test("a helper that died with its trim unfinished keeps none started after it from ending when unused", async () => {
+      const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      expect(await memory.trim(sizeOf(rows) * 2)).toEqual({ removed: 1, withinLimit: false });
+      process.kill(Number(lines("starts.log")[0]), "SIGKILL");
+      await vi.waitFor(() => expect((memory as unknown as { child: unknown }).child).toBeNull());
+      await memory.stats();
+      expect(starts()).toBe(2);
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    });
+
+    test("quitting still ends it", async () => {
+      const memory = make(["--trim-step", "1", "30"], { idleTimeout: 50 });
+      const rows = sixRows();
+      await memory.index(rows, 1 << 30);
+      expect(await memory.trim(sizeOf(rows) * 2)).toEqual({ removed: 1, withinLimit: false });
+      memory.stop();
+      await vi.waitFor(() => expect(ends()).toBe(1), { timeout: 3_000 });
+    });
+  });
+
   test("an idle end that came while the helper was starting waits from when it answered", async () => {
     const memory = make(["--slow-on", "init", "200"], { idleTimeout: 50 });
     memory.prepare();
