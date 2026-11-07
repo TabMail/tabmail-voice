@@ -3,10 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 // The live tree's rich text (hypertext.h) through AT-SPI's own calls, wrapped at link time: a rich
 // editor's caret, selection and length limit, links in the walk's text, GTK's self-linking labels,
-// and an element too large to read.
+// an element too large to read, and the caret anchor's rectangle in a rich editor (`caretInWindow`).
 #include "../src/screen.h"
 #include <iostream>
 #include <map>
+#include <set>
 namespace {
 void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 // The line break the core puts between blocks.
@@ -23,11 +24,27 @@ struct Element {
     // Whether its state says it has the focus (a GTK 4 window gives its up while the Shell holds
     // the keyboard).
     bool focused = true;
+    // Where its text is drawn in its window: a character is eight pixels wide, a line sixteen high. Past
+    // the text, the rectangle is the next line's start, as Chromium gives it.
+    int x = 0, y = 0;
+    // Whether it has a text interface (an image has none).
+    bool hasText = true;
 };
 std::map<const void*, Element> elements;
 std::map<const void*, std::pair<int, AtspiAccessible*>> hyperlinks;
 // The most scalars any one text read asked for, and a change to make after this many reads.
 int largestRead = 0, readsBeforeChange = -1, linkFetches = 0;
+// How many times each element's text was read.
+std::map<const void*, int> textReads;
+// Calls made to fail with an error: a character count, a character's rectangle, a link fetch, a
+// link's object; and a character count that is negative with no error.
+bool countFails = false, extentsFail = false, linkFails = false, objectFails = false, countNegative = false;
+// A character rectangle's width and height to give in place of the element's (a malformed provider).
+std::optional<int> rectWidth, rectHeight;
+// The text reads not yet freed, and the links not yet released.
+std::set<const void*> unfreed;
+int linksAlive = 0;
+void fail(GError** error) { g_set_error_literal(error, g_quark_from_static_string("synthetic"), 1, "synthetic failure"); }
 AtspiAccessible* changed = nullptr;
 Element& at(const void* value) { return elements.at(value); }
 AtspiAccessible* element(Element value) {
@@ -38,12 +55,24 @@ AtspiAccessible* element(Element value) {
 const std::string object = "\xEF\xBF\xBC";
 }
 extern "C" void __wrap_atspi_accessible_clear_cache(AtspiAccessible*) {}
-extern "C" AtspiText* __wrap_atspi_accessible_get_text_iface(AtspiAccessible* value) { return reinterpret_cast<AtspiText*>(g_object_ref(value)); }
-extern "C" gint __wrap_atspi_text_get_character_count(AtspiText* text, GError**) { return g_utf8_strlen(at(text).text.c_str(), -1); }
+extern "C" void __real_g_free(gpointer);
+extern "C" void __wrap_g_free(gpointer value) { unfreed.erase(value); __real_g_free(value); }
+extern "C" AtspiText* __wrap_atspi_accessible_get_text_iface(AtspiAccessible* value) {
+    return elements.count(value) && !at(value).hasText ? nullptr : reinterpret_cast<AtspiText*>(g_object_ref(value));
+}
+extern "C" gint __wrap_atspi_text_get_character_count(AtspiText* text, GError** error) {
+    // at-spi2-core answers a failed count with 0 and the error.
+    if (countFails) { fail(error); return 0; }
+    if (countNegative) return -1;
+    return g_utf8_strlen(at(text).text.c_str(), -1);
+}
 extern "C" gchar* __wrap_atspi_text_get_text(AtspiText* text, gint from, gint to, GError**) {
     largestRead = std::max(largestRead, to - from);
+    ++textReads[text];
     if (readsBeforeChange >= 0 && readsBeforeChange-- == 0) at(changed).caret += 1;
-    return g_utf8_substring(at(text).text.c_str(), from, to);
+    auto result = g_utf8_substring(at(text).text.c_str(), from, to);
+    unfreed.insert(result);
+    return result;
 }
 extern "C" gint __wrap_atspi_text_get_caret_offset(AtspiText* text, GError**) { return at(text).caret; }
 extern "C" gint __wrap_atspi_text_get_n_selections(AtspiText* text, GError**) { return at(text).selection ? 1 : 0; }
@@ -52,18 +81,40 @@ extern "C" AtspiRange* __wrap_atspi_text_get_selection(AtspiText* text, gint, GE
     result->start_offset = (*at(text).selection)[0]; result->end_offset = (*at(text).selection)[1];
     return result;
 }
+// Only the window's coordinates are given (Wayland has no screen coordinates for AT-SPI).
+extern "C" AtspiRect* __wrap_atspi_text_get_character_extents(AtspiText* text, gint offset, AtspiCoordType type, GError** error) {
+    if (type != ATSPI_COORD_TYPE_WINDOW) { fail(error); return nullptr; }
+    auto result = g_new0(AtspiRect, 1);
+    unfreed.insert(result);
+    if (extentsFail) fail(error);
+    const bool past = offset >= g_utf8_strlen(at(text).text.c_str(), -1);
+    result->x = at(text).x + (past ? 0 : 8 * offset); result->y = at(text).y + (past ? 16 : 0); result->width = 8; result->height = 16;
+    if (rectWidth) result->width = *rectWidth;
+    if (rectHeight) result->height = *rectHeight;
+    return result;
+}
+extern "C" gint __wrap_atspi_hypertext_get_link_index(AtspiHypertext* value, gint offset, GError**) {
+    const auto& links = at(value).links;
+    for (size_t i = 0; i < links.size(); ++i) if (links[i].first == offset) return static_cast<gint>(i);
+    return -1;
+}
 extern "C" AtspiHypertext* __wrap_atspi_accessible_get_hypertext_iface(AtspiAccessible* value) {
     return at(value).links.empty() ? nullptr : reinterpret_cast<AtspiHypertext*>(g_object_ref(value));
 }
 extern "C" gint __wrap_atspi_hypertext_get_n_links(AtspiHypertext* value, GError**) { return static_cast<gint>(at(value).links.size()); }
-extern "C" AtspiHyperlink* __wrap_atspi_hypertext_get_link(AtspiHypertext* value, gint index, GError**) {
+extern "C" AtspiHyperlink* __wrap_atspi_hypertext_get_link(AtspiHypertext* value, gint index, GError** error) {
     ++linkFetches;
+    if (linkFails) { fail(error); return nullptr; }
     auto link = static_cast<AtspiHyperlink*>(g_object_new(ATSPI_TYPE_HYPERLINK, nullptr));
     hyperlinks[link] = at(value).links.at(static_cast<size_t>(index));
+    ++linksAlive;
+    g_object_weak_ref(G_OBJECT(link), [](gpointer, GObject*) { --linksAlive; }, nullptr);
     return link;
 }
 extern "C" gint __wrap_atspi_hyperlink_get_start_index(AtspiHyperlink* link, GError**) { return hyperlinks.at(link).first; }
-extern "C" AtspiAccessible* __wrap_atspi_hyperlink_get_object(AtspiHyperlink* link, gint, GError**) {
+// A link here has one anchor, the first: any other is an error, as AT-SPI gives it.
+extern "C" AtspiAccessible* __wrap_atspi_hyperlink_get_object(AtspiHyperlink* link, gint anchor, GError** error) {
+    if (objectFails || anchor != 0) { fail(error); return nullptr; }
     return static_cast<AtspiAccessible*>(g_object_ref(hyperlinks.at(link).second));
 }
 extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* value, GError**) {
@@ -91,6 +142,116 @@ int main() {
             at(lines[static_cast<size_t>(caretIn)]).caret = caret;
             return std::pair{voice::own(element(root)), lines};
         };
+        {
+            // A rich editor's caret anchor (#371): the editor's caret is at the object standing for its
+            // line, drawn where the line starts; the anchor is the caret in that line, mid-line and at
+            // its end, on whichever line it is.
+            using Rect = std::optional<std::array<int, 4>>;
+            auto [root, lines] = editor(2, 5);
+            for (size_t i = 0; i < lines.size(); ++i) { at(lines[i]).x = 10; at(lines[i]).y = 30 + 20 * static_cast<int>(i); }
+            // Every reference the anchor takes (an interface, a followed element) is released.
+            const auto references = [editorRoot = root.get(), editorLines = lines] {
+                auto total = static_cast<unsigned>(G_OBJECT(editorRoot)->ref_count);
+                for (auto* line : editorLines) total += G_OBJECT(line)->ref_count;
+                return total;
+            };
+            const auto referencesBefore = references();
+            expect(voice::caretInWindow(root) == Rect(std::array<int, 4>{10 + 8 * 5, 70, 8, 16}), "a rich editor's caret is the caret in its line");
+            at(lines[2]).caret = 17;
+            expect(voice::caretInWindow(root) == Rect(std::array<int, 4>{10 + 8 * 17, 70, 1, 16}), "a caret at a line's end is where its last character ends");
+            at(lines[2]).caret = -1; at(lines[0]).caret = 3; at(root.get()).caret = 0;
+            expect(voice::caretInWindow(root) == Rect(std::array<int, 4>{10 + 8 * 3, 30, 8, 16}), "a caret on the first line is in that line");
+            // A line that says the caret is not in it has none to give.
+            at(lines[0]).caret = -1;
+            expect(!voice::caretInWindow(root), "a line without the caret gives no anchor");
+            // A field with no objects is read where its caret is, as before, its end too: after a final
+            // newline (GTK's text view) the provider's rectangle is the empty last line, never the
+            // newline's own on the line above.
+            const auto plain = voice::own(element({"Synthetic text\n", 4, std::nullopt, {}, "block"}));
+            at(plain.get()).x = 6; at(plain.get()).y = 9;
+            expect(voice::caretInWindow(plain) == Rect(std::array<int, 4>{6 + 8 * 4, 9, 8, 16}), "a caret in plain text is read there");
+            at(plain.get()).caret = 15;
+            expect(voice::caretInWindow(plain) == Rect(std::array<int, 4>{6, 25, 8, 16}), "a caret after plain text's final newline is on the empty last line");
+            // A password field's text is never read for its anchor, focused or reached through an
+            // object; it is read where its caret is.
+            Element secret{"Synthetic " + object + " text", 10, std::nullopt, {}, "block"};
+            secret.role = ATSPI_ROLE_PASSWORD_TEXT; secret.x = 6; secret.y = 9;
+            const auto password = voice::own(element(secret));
+            expect(voice::caretInWindow(password) == Rect(std::array<int, 4>{6 + 8 * 10, 9, 8, 16}), "a focused password field's anchor is its caret's");
+            expect(textReads[password.get()] == 0, "a focused password field's text is not read");
+            const auto reached = element(secret);
+            const auto holder = voice::own(element({object, 0, std::nullopt, {{0, reached}}, "block"}));
+            expect(voice::caretInWindow(holder) == Rect(std::array<int, 4>{6 + 8 * 10, 9, 8, 16}), "a password field reached through an object is read at its caret");
+            expect(textReads[reached] == 0, "a password field reached through an object is not read");
+            // An empty field's caret has no character before it: its own rectangle is read.
+            const auto empty = voice::own(element({"", 0, std::nullopt, {}, "block"}));
+            at(empty.get()).x = 6; at(empty.get()).y = 9;
+            expect(voice::caretInWindow(empty) == Rect(std::array<int, 4>{6, 25, 8, 16}), "an empty field's caret is its own rectangle");
+            // An empty line followed into has no character before its caret either: its own rectangle.
+            const auto emptyLine = element({"", 0, std::nullopt, {}, "block"});
+            at(emptyLine).x = 50; at(emptyLine).y = 60;
+            const auto emptyHolder = voice::own(element({object, 0, std::nullopt, {{0, emptyLine}}, "block"}));
+            expect(voice::caretInWindow(emptyHolder) == Rect(std::array<int, 4>{50, 76, 8, 16}), "an empty line's caret is its own rectangle");
+            // An object whose element can't be had is no anchor: never the object's own place, the line's start.
+            const auto orphan = voice::own(element({"Synthetic " + object + " text", 10, std::nullopt, {}, "block"}));
+            expect(!voice::caretInWindow(orphan), "a caret on an object with no element gives no anchor");
+            const auto unlinked = voice::own(element({object + object, 1, std::nullopt, {{0, lines[0]}}, "block"}));
+            expect(!voice::caretInWindow(unlinked), "a caret on an object the provider has no link for gives no anchor");
+            at(lines[2]).caret = 5; at(root.get()).caret = 2;
+            expect(voice::caretInWindow(root).has_value(), "the editor's caret is read before each failure");
+            for (auto* failing : {&linkFails, &objectFails}) {
+                *failing = true;
+                const auto anchor = voice::caretInWindow(root);
+                *failing = false;
+                expect(!anchor, "a link or object the provider fails to give is no anchor");
+            }
+            // A provider failing to count a followed line's characters (or giving a negative count), or to
+            // place its caret, gives none.
+            for (auto* failing : {&countFails, &countNegative, &extentsFail}) {
+                *failing = true;
+                const auto anchor = voice::caretInWindow(root);
+                *failing = false;
+                expect(!anchor, "a count or rectangle the provider fails to give is no anchor");
+            }
+            // A rectangle of negative width, or of no height, is no anchor.
+            for (auto [width, height] : {std::pair{-1, 16}, std::pair{8, 0}}) {
+                rectWidth = width; rectHeight = height;
+                const auto anchor = voice::caretInWindow(root);
+                rectWidth.reset(); rectHeight.reset();
+                expect(!anchor, "a malformed rectangle is no anchor");
+            }
+            // An object after ordinary text is followed by its link's index, not its offset in the text.
+            at(lines[1]).caret = 0;
+            const auto afterText = voice::own(element({"Synthetic " + object, 10, std::nullopt, {{10, lines[1]}}, "block"}));
+            expect(voice::caretInWindow(afterText).has_value(), "an object after text is followed by its link");
+            at(lines[1]).caret = -1;
+            // An object with no text (an image) has no caret to give.
+            const auto image = element({"", 0, std::nullopt, {}, "block"});
+            at(image).hasText = false;
+            const auto pictured = voice::own(element({object, 0, std::nullopt, {{0, image}}, "block"}));
+            expect(!voice::caretInWindow(pictured), "a caret on an object with no text gives no anchor");
+            // A caret in a link inside a line is three elements deep (editor, line, link): read in the
+            // link, mid-link and at its end.
+            const auto linked = element({"docs", 2, std::nullopt, {}, "inline"});
+            at(linked).x = 100; at(linked).y = 200;
+            const auto withLink = element({"See " + object + " now", 4, std::nullopt, {{4, linked}}, "block"});
+            const auto linkEditor = voice::own(element({object, 0, std::nullopt, {{0, withLink}}, "block"}));
+            expect(voice::caretInWindow(linkEditor) == Rect(std::array<int, 4>{100 + 8 * 2, 200, 8, 16}), "a caret in a link in a line is read in the link");
+            at(linked).caret = 4;
+            expect(voice::caretInWindow(linkEditor) == Rect(std::array<int, 4>{100 + 8 * 4, 200, 1, 16}), "a caret at a link's end is where its last character ends");
+            // Every character read is freed, every link released, every reference given back.
+            expect(unfreed.empty() && linksAlive == 0, "the anchor's reads are released");
+            expect(references() == referencesBefore, "the anchor's references are released");
+            // Elements in elements are followed as deep as `caretObjectDepth`, and no deeper.
+            const auto nested = [](unsigned depth) {
+                auto inner = element({"Synthetic", 2, std::nullopt, {}, "block"});
+                at(inner).x = 50; at(inner).y = 60;
+                for (unsigned i = 1; i < depth; ++i) inner = element({object, 0, std::nullopt, {{0, inner}}, "block"});
+                return voice::own(inner);
+            };
+            expect(voice::caretInWindow(nested(voice::HelperConfig::caretObjectDepth)) == Rect(std::array<int, 4>{50 + 8 * 2, 60, 8, 16}), "a caret as deep as the limit is read");
+            expect(!voice::caretInWindow(nested(voice::HelperConfig::caretObjectDepth + 1)), "a caret deeper than the limit gives no anchor");
+        }
         {
             // The caret on the empty line after a paragraph follows that paragraph's break.
             auto [root, lines] = editor(1, 0);
