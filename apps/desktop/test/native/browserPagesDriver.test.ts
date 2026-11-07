@@ -6,13 +6,14 @@ import { spawn } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
 import { licences, packageOf } from "../../scripts/browser-pages.mts";
 import { correctionMaxFieldLength } from "../../src/core/config.ts";
 import { knownFailures, sometimesFailing, type PageReport } from "../../native/shared/browser-pages/checks.mjs";
 import { cases, lines, type Page, type Size } from "../../native/shared/browser-pages/document.mjs";
-import { fieldMaxLength, pageChannel, readPages, rpc, timing, type Browser, type Command, type Helper, type Helpers, type PageChannel } from "../../native/shared/browser-pages/driver.mjs";
+import { fieldMaxLength, pageChannel, readPages, RequestTimeoutError, rpc, timing, type Browser, type Command, type Helper, type Helpers, type PageChannel } from "../../native/shared/browser-pages/driver.mjs";
 
 const policy = { excludedAppIDs: [], excludedHosts: [] };
 
@@ -21,8 +22,57 @@ const policy = { excludedAppIDs: [], excludedHosts: [] };
 const screen = { x: 100, y: 50, frameX: 0, frameY: 80 };
 const content = { x: 100, y: 130 };
 
+/** A screen reader over the real request wire (`rpc`, with its own timer): it answers each read as the
+ * world says, and none the world gives as a `RequestTimeoutError` (the read runs on, never answered in time);
+ * it answers a stop, refuses it, or never answers it (`stop`). `sent` is every line the driver wrote
+ * to it, in order, and `unanswered` the reads it never answered. */
+interface Wire {
+  request: number;
+  stop: "answer" | "refuse" | "silent";
+  sent: { method: string; params: { read?: number } }[];
+  unanswered: number[];
+  /** The reads the helper answered with an error reply, and how it answered each stop. */
+  refused: number[];
+  stopsAnswered: Wire["stop"][];
+}
+function wired(wire: Wire, read: (params: unknown) => unknown, stopped: (params: unknown) => void): Helper {
+  const child = { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true };
+  createInterface({ input: child.stdin }).on("line", (line) => {
+    const { id, method, params } = JSON.parse(line) as { id: number; method: string; params: { read?: number } };
+    wire.sent.push({ method, params });
+    // What went back on the wire, as it went.
+    let answered = "silent" as Wire["stop"];
+    const reply = (body: object) => {
+      answered = "error" in body ? "refuse" : "answer";
+      child.stdout.write(`${JSON.stringify({ id, ...body })}\n`);
+    };
+    if (method === "readScreenStop") {
+      stopped(params);
+      if (wire.stop === "answer") reply({ result: null });
+      else if (wire.stop === "refuse") reply({ error: { message: "refused" } });
+      wire.stopsAnswered.push(answered);
+      return;
+    }
+    const answer = read(params);
+    if (answer instanceof RequestTimeoutError) wire.unanswered.push(params.read ?? 0);
+    else if (answer instanceof Error) reply({ error: { message: answer.message } });
+    else reply({ result: answer });
+    if (answered === "refuse") wire.refused.push(params.read ?? 0);
+  });
+  return rpc("voice-screen-reader", child, { request: wire.request, log: () => undefined });
+}
+
+/** The driver's screen reads on a wire, in order: each one's number, and whether its next request to
+ * the reader was a stop naming it. */
+function stopsOnTheWire(wire: Wire) {
+  const reads = wire.sent.filter(({ method }) => method === "readScreen").map(({ params }) => params.read);
+  const stopped = wire.sent.flatMap(({ method, params }, index) => (method === "readScreen" && wire.sent[index + 1]?.method === "readScreenStop" && wire.sent[index + 1]?.params.read === params.read ? [params.read] : []));
+  const stops = wire.sent.filter(({ method }) => method === "readScreenStop").map(({ params }) => params.read);
+  return { reads, stopped, stops };
+}
+
 /** A page in a browser, the helpers reading it, and everything each was asked, in order. */
-function world(options: { platform?: string; selected?: (command: Command, text: string) => string; screen?: (read: object, count: number, key: string) => object | null; anchor?: (count: number, right: object | null) => object | Error | null; shellAnchor?: object | null; field?: (count: number, right: object, sincePlaced: number) => object | Error | null; loads?: boolean } = {}) {
+function world(options: { platform?: string; selected?: (command: Command, text: string) => string; screen?: (read: object, count: number, key: string) => object | null; anchor?: (count: number, right: object | null) => object | Error | null; shellAnchor?: object | null; field?: (count: number, right: object, sincePlaced: number) => object | Error | null; loads?: boolean; wire?: Wire } = {}) {
   const events: string[] = [];
   const requests: { helper: string; method: string; params: unknown }[] = [];
   // Requests outside what each helper is asked for reading (a clipboard request, say), which no run may make.
@@ -97,7 +147,16 @@ function world(options: { platform?: string; selected?: (command: Command, text:
         const right = placed ? { x: content.x + (placed.to ?? 0) * 8, y: content.y + (placed.line ?? 0) * 20, height: 16 } : null;
         return options.anchor ? options.anchor(count(`anchor ${key()}`), right) : right;
       }),
-      reader: helper("reader", ["readScreen"], () => {
+      reader: options.wire ? wired(options.wire, (params) => {
+        requests.push({ helper: "reader", method: "readScreen", params });
+        events.push("reader readScreen");
+        const read = rightScreen();
+        return options.screen ? options.screen(read, count(`screen ${key()}`), key()) : read;
+      }, (params) => {
+        requests.push({ helper: "reader", method: "readScreenStop", params });
+        events.push("reader readScreenStop");
+      }) : helper("reader", ["readScreen", "readScreenStop"], (method) => {
+        if (method === "readScreenStop") return null;
         const read = rightScreen();
         return options.screen ? options.screen(read, count(`screen ${key()}`), key()) : read;
       }),
@@ -201,7 +260,8 @@ describe("the browser-page driver", () => {
     expect(first.at(-2)).toBe("deliver done");
     expect(first.at(-1)).toBe("close");
     const asked = (method: string) => requests.filter((each) => each.method === method);
-    expect(asked("readScreen").every(({ helper, params }) => helper === "reader" && JSON.stringify(params) === JSON.stringify(policy))).toBe(true);
+    // Each screen read is numbered, as the app numbers its reads, so one can be asked to stop.
+    expect(asked("readScreen").map(({ helper, params }) => ({ helper, params }))).toEqual(asked("readScreen").map((_, index) => ({ helper: "reader", params: { ...policy, read: index + 1 } })));
     expect(asked("focusedFieldValue").every(({ helper, params }) => helper === "field" && JSON.stringify(params) === JSON.stringify({ ...policy, pid: 42, maxLength: fieldMaxLength }))).toBe(true);
     expect(asked("caretAnchor").every(({ helper, params }) => helper === "main" && JSON.stringify(params) === "{}")).toBe(true);
   });
@@ -293,6 +353,63 @@ describe("the browser-page driver", () => {
     expect(started()).toBe(1);
   });
 
+  test("a screen read not answered in time is asked to stop by its number, so the next read does not wait behind it", async () => {
+    // The first read for each caret placed (the check that the browser is in front, then each case's
+    // caret read) is never answered: the request's own timer gives it up. The next is answered.
+    for (const platform of ["linux", "win32"]) {
+      const wire: Wire = { request: 5, stop: "answer", sent: [], unanswered: [], refused: [], stopsAnswered: [] };
+      const { run, started } = world({ platform, wire, screen: (read, count) => (count === 1 ? new RequestTimeoutError("never answered") : read) });
+      const { results, status } = await run();
+      // Every read is right in the end (on Windows, those recorded as failing for other issues are fixed).
+      expect(results.filter(({ outcome }) => outcome === "fail"), platform).toEqual([]);
+      if (platform === "linux") expect(status).toBe(0);
+      const { reads, stopped, stops } = stopsOnTheWire(wire);
+      // One read a case went unanswered, from both callers: the front check's, of each page's first
+      // case, and the caret read's of every other case.
+      expect(wire.unanswered).toHaveLength(14);
+      // Every read given up is stopped by its number before anything else is asked of the reader, and
+      // only those are; reads are numbered in order.
+      expect(stopped).toEqual(wire.unanswered);
+      expect(stops).toEqual(wire.unanswered);
+      expect(reads).toEqual(reads.map((_, index) => index + 1));
+      expect(started()).toBe(1);
+    }
+  });
+
+  test("a stop refused or never answered still lets the run go on, and the read is reported as timed out", async () => {
+    for (const stop of ["refuse", "silent"] as const) {
+      // No read is ever answered: the browser never comes to the front, every page fails on the
+      // timeout, and each read is stopped.
+      const wire: Wire = { request: 2, stop, sent: [], unanswered: [], refused: [], stopsAnswered: [] };
+      const { run, output } = world({ wire, screen: () => new RequestTimeoutError("never answered") });
+      const { results, status } = await run();
+      expect(results.map(({ outcome }) => outcome)).toEqual(["fail", "fail", "fail", "fail"]);
+      expect(status).toBe(1);
+      expect(output[0]).toBe("FAIL edge codemirror short-document: edge never came to the front; the last read was voice-screen-reader readScreen timed out\n");
+      const { stopped } = stopsOnTheWire(wire);
+      expect(stopped).toEqual(wire.unanswered);
+      expect(wire.unanswered).toHaveLength(4 * timing.front);
+      // Every stop was refused, or never answered.
+      expect(wire.stopsAnswered).toEqual(Array(4 * timing.front).fill(stop));
+    }
+  });
+
+  test("a screen read refused is not asked to stop: only one not answered in time is", async () => {
+    // The helper answers the first read of each caret placed with an error reply, on the real wire.
+    const wire: Wire = { request: 5, stop: "answer", sent: [], unanswered: [], refused: [], stopsAnswered: [] };
+    const { run } = world({ wire, screen: (read, count) => (count === 1 ? new Error("refused") : read) });
+    const { results, status } = await run();
+    expect(results.every(({ outcome }) => outcome === "pass")).toBe(true);
+    expect(status).toBe(0);
+    const { reads, stops } = stopsOnTheWire(wire);
+    // Each case's refused read was tried again and answered; none went unanswered, none was stopped.
+    // One read refused for each caret placed, each a read the driver made.
+    expect(wire.refused).toHaveLength(14);
+    expect(wire.refused.every((read) => reads.includes(read))).toBe(true);
+    expect(wire.unanswered).toEqual([]);
+    expect(stops).toEqual([]);
+  });
+
   test("a request refused every time fails that read alone, after its tries, and every other read is still made", async () => {
     const { run, requests, output, started } = world({ field: () => new Error("the field reader refused") });
     const { results, status } = await run();
@@ -357,7 +474,7 @@ describe("the browser-page driver", () => {
   });
 
   test("a page whose reads cannot go on is one failure: its window is closed, the helpers start afresh, and the next page is read", async () => {
-    const { run, events, windows, output, started } = world({ selected: (command, text) => (command.line === 13 && text === "" ? "stray" : text.slice(command.from, command.to)) });
+    const { run, events, requests, windows, output, started } = world({ selected: (command, text) => (command.line === 13 && text === "" ? "stray" : text.slice(command.from, command.to)) });
     const { results, status } = await run();
     expect(output).toContain("FAIL edge codemirror short-document: edge codemirror empty-line: the page selected \"stray\", not \"\"\n");
     expect(results.filter(({ key }) => key.startsWith("edge codemirror short-document"))).toHaveLength(2);
@@ -366,6 +483,9 @@ describe("the browser-page driver", () => {
     expect(results.map(({ key }) => key).filter((key) => key.endsWith("-document"))).toEqual(["edge codemirror short-document", "edge compose short-document"]);
     expect(started()).toBe(3);
     expect(events.filter((each) => each === "stop helpers")).toHaveLength(3);
+    // The screen reads are numbered in order across the helpers started afresh, never one number twice.
+    const numbers = requests.filter(({ method }) => method === "readScreen").map(({ params }) => (params as { read: number }).read);
+    expect(numbers).toEqual(numbers.map((_, index) => index + 1));
     // The long page after it is still read whole.
     expect(results.filter(({ key }) => key.startsWith("edge codemirror long-") && key !== "edge codemirror long-document identity")).toHaveLength(6);
     expect(status).toBe(1);
