@@ -37,7 +37,8 @@ export interface FieldSource {
  * Watches the field a dictation was pasted into and learns the user's corrections of it
  * (ADR-DESK-038): `target`, the app or window the paste went to and was checked against, never
  * whatever is in front after it (a window the user switched to in that moment may show the same
- * words). Every `interval` for `duration`, it reads that one's field: the first
+ * words). Every `interval` for `duration`, counted from the paste however long each read takes (a
+ * rich editor's can take seconds), it reads that one's field: the first
  * read holding the pasted text is the field before any edit; after that, each change that stays for
  * one interval is compared with it (`learnedCorrections`), and the words the last one teaches are
  * learned when the watch ends, not before, unless a later change teaches otherwise: a pause in the
@@ -84,9 +85,15 @@ export class CorrectionWatch {
     let previous: string | null = null;
     // How the field holds the pasted text, found with it, and every later read joined the same way.
     let join = joins[0]!;
-    for (let elapsed = this.interval; elapsed <= this.duration; elapsed += this.interval) {
+    // Each read starts within `duration` of the paste, by the clock: a read that took long leaves
+    // fewer reads, never a read after it. The clock is asked again on waking, as a busy app can wake
+    // a poll late.
+    const started = performance.now();
+    const over = () => performance.now() - started > this.duration;
+    while (performance.now() - started + this.interval <= this.duration) {
       await sleep(this.interval);
       if (!isCurrent()) return;
+      if (over()) break;
       const read = await this.field.value(target, exclusions).catch((error: unknown) => {
         log.debug(`CorrectionWatch: read failed: ${errorName(error)}`);
         return null;

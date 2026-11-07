@@ -635,3 +635,14 @@ other third-party work Voice ships be credited too.
   cutoff 3.5 for the new data ("Frequency cutoff 3.5 is fine."), the page's place as the last section
   of Settings' sidebar ("Yes, last item like ios, yes."), and the hand-written notices file until #366
   generates it ("bless the license thing").
+
+### Amendment 2026-11-07 (#396): the watch's duration is counted by the clock
+
+The correction watch reads the field every `correctionPollInterval` for `correctionWatchDuration`,
+counted by the clock from the paste. It used to count its reads instead (`duration / interval` of
+them, however long each took), so reads that take time stretched the watch. A Windows browser rich
+editor's read takes about 1 to 4 s (the look for a password element inside the field, ADR-DESK-053
+amendment 2026-11-06), which made a 30 s watch last minutes and learn edits made long after it should
+have ended. Now each read starts within the duration, a slow read leaving fewer reads; the read that
+began inside it still counts when it answers, and nothing after it does. With instant reads and timers
+on time nothing changes: the same reads at the same times, and the watch ends with its last one.

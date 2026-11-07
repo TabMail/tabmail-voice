@@ -272,8 +272,9 @@ export const dictionaryMaxEntries = 5_000;
 export const dictionaryMaxTypedWords = 100;
 export const dictionaryWordMaxChars = 50;
 export const dictionaryWordMaxWords = 6;
-/** After a dictation's paste, the field is read this often, for this long, to learn the user's
- * corrections to it. A correction counts once the field has not changed for one interval. */
+/** After a dictation's paste, the field is read this often, for this long (counted from the paste,
+ * however long each read takes), to learn the user's corrections to it. A correction counts once the
+ * field has not changed for one interval. */
 export const correctionPollInterval = 500;
 export const correctionWatchDuration = 30_000;
 /** A field longer than this (UTF-16 code units) is not read: a whole document, not a message. */
@@ -594,7 +595,7 @@ export const linuxCaretRequestTimeout = 200;
  * has read so far. */
 export const screenReaderTimeout = maxRecordingDuration;
 /** Longest a request to voice-field-reader (`FieldReader`) may run before that process is ended
- * (ms): past a correction watch, nothing it reads is used. */
+ * (ms): a read longer than a whole correction watch is not waited for. */
 export const fieldReaderTimeout = correctionWatchDuration;
 /** Longest a Calendar or Reminders request to the helper may take: the first one waits while
  * macOS asks the user for access. */

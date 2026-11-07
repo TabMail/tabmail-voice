@@ -1782,7 +1782,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * finds in front, as a watch that asked it would. */
     describe("with the real watch", () => {
       const interval = 10;
-      const duration = 120;
+      // Real timers, which run late on a busy machine: the watch ends by the clock, so it lasts long
+      // enough for the edit to be read twice unless each poll runs about a third of the watch late.
+      const duration = 1_000;
       const pasteTarget = 101;
       const otherWindow = 202;
 
@@ -1816,8 +1818,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
         });
         transcription.enqueue(200, cleanedReply);
         await holdAndRelease(controller);
-        expect(await eventually(() => reads >= duration / interval && settled(controller))).toBe(true);
-        await sleep(interval * 3);
+        expect(await eventually(() => reads >= 2 && settled(controller))).toBe(true);
+        // The watch ends by the clock, its duration after the paste.
+        await sleep(duration + interval * 3);
         return learned;
       }
 
