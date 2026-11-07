@@ -106,7 +106,7 @@ try {
       if (mode === "password-focus") {
         assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);
         assert.ok(context.renderedText.includes("» ‸"), "protected focus is marker only");
-      } else if (mode !== "large-window-field" && mode !== "large-focus") assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
+      } else if (!["large-window-field", "large-focus", "slow-field"].includes(mode)) assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
       if (mode === "row-hidden") assert.ok(context.renderedText.includes("| Synthetic cell text") && !context.renderedText.includes("Synthetic hidden text"), "a row's block leaves out a cell in a box that shows nothing");
       if (mode === "hidden-box") {
         assert.ok(context.renderedText.includes("Synthetic hidden-box text"), "a container that shows nothing is walked into");

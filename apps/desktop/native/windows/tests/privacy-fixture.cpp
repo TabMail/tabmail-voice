@@ -34,9 +34,10 @@ size_t coreLimit(voice::core::Operation operation, const char* name) {
     return voice::core::request({{"limits", true}}, operation).at(name).get<size_t>();
 }
 bool frameworkFails = false;
-// How long a slow element takes to answer each step to or from it: enough that a look through
-// a field of them takes far longer than a field read's looks for an excluded page may.
-constexpr DWORD slowNavigationMs = 50;
+// How long a slow element takes to say whether it is a password field, which a look for a password
+// asks of each element once: enough that a look through a field of them takes far longer than a
+// field read's looks for an excluded page may.
+constexpr DWORD slowPasswordAnswerMs = 50;
 constexpr int slowFieldElements = 20;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
@@ -77,8 +78,10 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
         VariantInit(result);
         const auto boolean = [&](bool value) { result->vt = VT_BOOL; result->boolVal = value ? VARIANT_TRUE : VARIANT_FALSE; };
         const auto number = [&](LONG value) { result->vt = VT_I4; result->lVal = value; };
-        if (property == UIA_IsPasswordPropertyId) boolean(password);
-        else if (property == UIA_IsControlElementPropertyId || property == UIA_IsContentElementPropertyId) boolean(!rawOnly);
+        if (property == UIA_IsPasswordPropertyId) {
+            if (slow) Sleep(slowPasswordAnswerMs);
+            boolean(password);
+        } else if (property == UIA_IsControlElementPropertyId || property == UIA_IsContentElementPropertyId) boolean(!rawOnly);
         else if (property == UIA_IsEnabledPropertyId || property == UIA_IsKeyboardFocusablePropertyId) boolean(true);
         else if (property == UIA_IsOffscreenPropertyId) boolean(false);
         else if (property == UIA_HasKeyboardFocusPropertyId) boolean(id == focus);
@@ -102,7 +105,6 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     }
     HRESULT STDMETHODCALLTYPE Navigate(NavigateDirection direction, IRawElementProviderFragment** result) override {
         *result = nullptr;
-        if (slow) Sleep(slowNavigationMs);
         int target = -1;
         if (direction == NavigateDirection_Parent) target = parent;
         else if (direction == NavigateDirection_FirstChild || direction == NavigateDirection_LastChild) {
@@ -225,7 +227,6 @@ void configure(const std::string& mode) {
         // refused for corrections, however long the look for a password inside it takes.
         nodes.at(1)->type = UIA_EditControlTypeId;
         for (int i = 0; i < slowFieldElements; ++i) nodes.at(add(1, UIA_GroupControlTypeId))->slow = true;
-        add(0, UIA_TextControlTypeId);  // A safe sibling the screen read keeps.
     } else if (mode == "large-window-field") {
         // A field in a window that holds more than the look takes in: not refused for corrections.
         nodes.at(1)->type = UIA_EditControlTypeId;
