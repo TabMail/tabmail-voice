@@ -36,10 +36,13 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
   due, which keeps the minute only, not at the instant asked. One due on a day gets no alarm, as in
   Reminders, where its own setting for the day's reminders notifies. On Linux the task gets one
   display alarm at its saved due the same way (`reminderAdd`), and none when due on a day, so
-  nothing notifies a task due on a day there (amended 2026-11-06, issue #358). On macOS the due
-  carries no time zone (a floating date) while the alarm is a fixed instant, so if the Mac's zone
-  changes before the due, Reminders shows the due at the same clock time and the alarm keeps its
-  instant; on Linux both are one stored instant (issue #383).
+  nothing notifies a task due on a day there (amended 2026-11-06, issue #358). A due at a time is
+  an instant in the zone it was set in: on macOS its components carry this Mac's zone
+  (`ReminderItem.dueDateComponents`), so if the Mac's zone changes before the due, Reminders shows
+  the due and fires the alarm at the same instant (without a zone EventKit floats the due to the
+  same clock time in the new zone while the alarm keeps its instant); on Linux the DUE is stored in
+  UTC. A due on a day carries no zone on either: it is a calendar date and stays that day (amended
+  2026-11-06, issue #383).
 - `calendar_read` refuses a range longer than `config.calendarReadMaxDays` (four years of 365
   days): EventKit reads at most four years of events for one request and silently drops the rest,
   so a longer read would report events missing. The model is told to read it in parts.

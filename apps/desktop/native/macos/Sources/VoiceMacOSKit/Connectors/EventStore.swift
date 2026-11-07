@@ -242,9 +242,16 @@ struct ReminderItem: Equatable, Sendable {
     }
 
     /// Its due date as EventKit stores it: the day, and the time only when it names one, in this Mac's
-    /// zone (the user's, as the app's).
+    /// zone (the user's, as the app's). A time carries that zone, so it stays the instant it was set
+    /// for (with no zone EventKit floats it to the same clock time in whatever zone the Mac is in
+    /// later, while its alarm keeps the instant). A day carries none: it is a calendar date, not an
+    /// instant, and stays that day wherever the Mac is.
     var dueDateComponents: DateComponents? {
-        due.map { Self.dueCalendar.dateComponents(dueHasTime ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day], from: $0) }
+        due.map {
+            var components = Self.dueCalendar.dateComponents(dueHasTime ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day], from: $0)
+            if dueHasTime { components.timeZone = Self.dueCalendar.timeZone }
+            return components
+        }
     }
 
     /// The calendar a due date's components are in: EventKit reads them as Gregorian, whatever calendar
