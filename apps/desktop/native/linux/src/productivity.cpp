@@ -367,6 +367,15 @@ JSON reminderAdd(ESourceRegistry* registry, const JSON& input) {
         // EventKit stores reminder due dates at minute precision.
         if (hasTime) i_cal_time_set_second(date.get(), 0);
         i_cal_component_set_due(component.get(), date.get());
+        // A due date alone raises no notification: one due at a time gets a display alarm at the
+        // saved due, as on macOS. One due on a day gets none.
+        if (hasTime) {
+            std::unique_ptr<ECalComponentAlarm, decltype(&e_cal_component_alarm_free)> alarm(e_cal_component_alarm_new(), e_cal_component_alarm_free);
+            e_cal_component_alarm_set_action(alarm.get(), E_CAL_COMPONENT_ALARM_DISPLAY);
+            e_cal_component_alarm_take_description(alarm.get(), e_cal_component_text_new(title.c_str(), nullptr));
+            e_cal_component_alarm_take_trigger(alarm.get(), e_cal_component_alarm_trigger_new_absolute(date.get()));
+            i_cal_component_take_component(component.get(), e_cal_component_alarm_get_as_component(alarm.get()));
+        }
     }
     Object<ICalTime> now(i_cal_time_new_current_with_zone(i_cal_timezone_get_utc_timezone()), g_object_unref);
     i_cal_component_set_dtstamp(component.get(), now.get());
