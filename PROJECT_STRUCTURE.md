@@ -25,7 +25,7 @@ Every file, folder and what it holds: [the file tree](Companion/Memory/Current/0
 apps/desktop/
 ├── resources/           Icons, tray images, DMG background, entitlements; Linux apt source and keys (ADR-DESK-058); Windows installer.nsh, the VC++ runtime (ADR-DESK-057)
 ├── scripts/             build-native (macOS SwiftPM, Windows CMake), memory-helper (ADR-DESK-061), third-party-notices, home-folder, gen-registries, swift-errors.sh, preview/
-├── native/shared/       rust/ (the ONE home of logic the helpers share, ADR-DESK-054), context/, dictionary/ (the word list screen terms are judged by, its generator and cases, ADR-DESK-038), microphone/, privacy/ (redactors.json, ADR-DESK-046/047): cases every helper runs
+├── native/shared/       rust/ (the ONE home of logic the helpers share, ADR-DESK-054), context/, dictionary/ (the word list screen terms are judged by, its generator and cases, ADR-DESK-038), browser-pages/ (real browser editors the Linux and Windows helpers are read against in the test machines), microphone/, privacy/ (redactors.json, ADR-DESK-046/047): cases every helper runs
 ├── native/memory/       native-fts.json, the tabmail-native-fts commit `voice-memory` is built from (ADR-DESK-061)
 ├── native/macos/        SwiftPM helpers voice-hotkey, voice-macos, voice-microphone, voice-screen-reader, voice-field-reader (ADR-DESK-044)
 ├── native/windows/      CMake/MSVC helpers (Win32 hotkey, UI Automation and paste, WASAPI, the screen read)
