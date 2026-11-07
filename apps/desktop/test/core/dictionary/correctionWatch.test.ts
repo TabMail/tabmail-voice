@@ -17,7 +17,8 @@ const corrected = "Please forward the Xyvora contract today.";
 /** A field the test edits, read as the field reader would read it (of the target the watch was
  * given), and the words learned. */
 function setup(initial: string | null = pasted) {
-  const field = { value: initial as string | null, reads: 0, pids: [] as number[], excluded: [] as ScreenExclusions[], fails: false };
+  // `delay`: how long each read takes, its text as the field was when the read began.
+  const field = { value: initial as string | null, reads: 0, pids: [] as number[], excluded: [] as ScreenExclusions[], fails: false, delay: 0 };
   const learned: string[][] = [];
   const watch = new CorrectionWatch(
     {
@@ -26,7 +27,9 @@ function setup(initial: string | null = pasted) {
         field.pids.push(readPid);
         field.excluded.push(exclusions);
         if (field.fails) throw new Error("helper gone");
-        return field.value;
+        const value = field.value;
+        if (field.delay > 0) await new Promise((resolve) => setTimeout(resolve, field.delay));
+        return value;
       },
     },
     (words) => learned.push(words),
@@ -320,6 +323,21 @@ describe("CorrectionWatch", () => {
     field.value = corrected;
     await vi.advanceTimersByTimeAsync(duration);
     expect(field.reads).toBe(duration / interval);
+    expect(learned).toEqual([]);
+  });
+
+  /** The watch lasts its duration, however long each read takes (a rich editor's can take seconds):
+   * no read starts after it, and an edit made after it is never learned. */
+  test("ends at its duration however long each read takes", async () => {
+    const { field, learned, watch } = setup();
+    field.delay = 3.4 * interval;
+    watch.watch(pid, pasted, none);
+    await vi.advanceTimersByTimeAsync(duration + interval + field.delay);
+    const reads = field.reads;
+    expect(reads).toBe(Math.ceil(duration / (interval + field.delay)));
+    field.value = corrected;
+    await vi.advanceTimersByTimeAsync(10 * duration);
+    expect(field.reads).toBe(reads);
     expect(learned).toEqual([]);
   });
 
