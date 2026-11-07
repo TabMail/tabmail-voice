@@ -167,10 +167,10 @@ describe("the browser test pages", () => {
         expect(Number.isInteger(issue) && issue > 0, `${system}: ${name}`).toBe(true);
       }
     }
-    // The one issue whose reads fail in some runs only is #381, a screen read that times out; it has
-    // reads recorded under it. Another issue's read that passes is a fix, and fails the run.
+    // The issues whose reads fail in some runs only are #381 and #390, reads that run out their time; each
+    // has reads recorded under it. Another issue's read that passes is a fix, and fails the run.
     const recorded = new Set(Object.values(knownFailures).flatMap((each) => Object.values(each)));
-    expect([...sometimesFailing]).toEqual([381]);
+    expect([...sometimesFailing]).toEqual([381, 390]);
     for (const issue of sometimesFailing) expect(recorded.has(issue), `#${issue}`).toBe(true);
   });
 

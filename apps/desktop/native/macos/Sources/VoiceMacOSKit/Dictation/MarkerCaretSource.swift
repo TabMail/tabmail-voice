@@ -112,7 +112,7 @@ enum MarkerCaretSource {
                 return NSRange(location: first - origin, length: last - first)
             }
             let starts = blockStarts(in: blocks.field, around: selection, within: limits.paragraphStartUnits,
-                                     elements: limits.caretSourceElements, children: blocks.children, isBlock: blocks.isBlock, span: span)
+                                     elements: limits.blockWalkElements, children: blocks.children, isBlock: blocks.isBlock, span: span)
             // The element the caret is in, to tell the end of a line from the start of the block after it.
             let caretMarker = parameterized("AXStartTextMarkerForTextMarkerRange", initial.selection)
             let caretNode = caretMarker.flatMap(blocks.element)

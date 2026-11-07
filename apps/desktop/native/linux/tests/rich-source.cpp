@@ -402,21 +402,70 @@ int main() {
                    rendered.find("Synthetic label") != std::string::npos, "a rich field longer than a whole read is not shown, and the rest of the screen is");
         }
         {
-            // A rich text holding more elements than the read may take is not read, and the
-            // rest of the screen still is: nothing throws.
-            const auto limit = voice::core::request({{"limits", true}}, voice_core_context_json).at("caretSourceElements").get<size_t>();
-            Element many{"", 0, std::nullopt, {}, "block"};
-            for (size_t index = 0; index < limit; ++index) {
-                many.text += object;
-                many.links.push_back({static_cast<int>(index), element({"a", -1, std::nullopt, {}, "inline"})});
+            // A rich editor is read however many elements it holds, while their text fits the read's
+            // bytes (#361): 500 paragraphs, past the 300 elements the read once stopped at (a long
+            // Overleaf document or mail thread), the caret at the last one's start.
+            const int paragraphs = 500;
+            // The editor's caret is on the last paragraph's embedded object, as a browser puts it.
+            Element editor{"", paragraphs - 1, std::nullopt, {}, "block"};
+            std::string whole;
+            for (int index = 1; index <= paragraphs; ++index) {
+                editor.text += object;
+                editor.links.push_back({index - 1, element({"p" + std::to_string(index), index == paragraphs ? 0 : -1, std::nullopt, {}, "block"})});
+                whole += (index > 1 ? blockBreak : "") + "p" + std::to_string(index);
             }
-            auto root = voice::own(element(many));
+            auto root = voice::own(element(editor));
+            voice::LiveScreenTree tree(root);
+            expect(tree.screenText(root) == whole && tree.field(root, std::numeric_limits<int>::max()) == whole, "a rich editor of 500 paragraphs is read whole");
+            const auto caret = tree.caret(root);
+            expect(caret && !caret->selectionUnavailable && caret->parts[0].ends_with("p499" + blockBreak) && caret->parts[2] == "p500",
+                   "the caret in a rich editor of 500 paragraphs has the text around it");
+        }
+        {
+            // An element claiming more links than it has characters is malformed: none of its links
+            // is fetched, it is not read, and nothing throws (a provider's count never drives fetches).
+            const auto first = element({"a", -1, std::nullopt, {}, "inline"});
+            const auto second = element({"b", -1, std::nullopt, {}, "inline"});
+            auto root = voice::own(element({object, 0, std::nullopt, {{0, first}, {0, second}}, "block"}));
             voice::LiveScreenTree tree(root);
             linkFetches = 0;
-            expect(!tree.screenText(root) && !tree.field(root, std::numeric_limits<int>::max()), "a rich text with too many elements is not read");
+            expect(!tree.screenText(root) && !tree.field(root, std::numeric_limits<int>::max()), "an element with more links than characters is not read");
             const auto caret = tree.caret(root);
-            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret in a rich text with too many elements is an empty window");
-            expect(linkFetches == 0, "the links of a rich text with too many elements are never fetched");
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "its caret is an empty window");
+            expect(linkFetches == 0, "the links of an element with more links than characters are never fetched");
+        }
+        {
+            // A rich editor nested as deep as the core's depth is read; one level deeper is not, and the
+            // rest of the screen still is.
+            const auto depth = static_cast<int>(voice::core::request({{"limits", true}}, voice_core_context_json).at("hypertextDepth").get<size_t>());
+            const auto chain = [](int levels) {
+                auto inner = element({"Synthetic", -1, std::nullopt, {}, "block"});
+                for (int i = 0; i < levels; ++i) inner = element({object, -1, std::nullopt, {{0, inner}}, "block"});
+                return voice::own(inner);
+            };
+            const auto within = chain(depth);
+            expect(voice::LiveScreenTree(within).screenText(within) == "Synthetic", "a rich editor nested as deep as the limit is read");
+            const auto past = chain(depth + 1);
+            expect(!voice::LiveScreenTree(past).screenText(past), "a rich editor nested past the limit is not read");
+            // The walk itself stops at the limit: of an editor two levels deeper, only the links of the
+            // elements down to the limit are fetched, one each, and none below it.
+            const auto deeper = chain(depth + 2);
+            linkFetches = 0;
+            expect(!voice::LiveScreenTree(deeper).screenText(deeper), "a rich editor nested two past the limit is not read");
+            expect(linkFetches == depth + 1, "the walk fetches no link below the depth limit");
+        }
+        {
+            // A screen read the app stopped gives up a rich editor at its next element, unread.
+            const auto line = element({"Synthetic", -1, std::nullopt, {}, "block"});
+            auto root = voice::own(element({object, -1, std::nullopt, {{0, line}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            expect(tree.screenText(root) == "Synthetic", "a rich editor is read while its read is not stopped");
+            voice::walk::readStops().reading = 41;
+            voice::walk::readStops().ask(41);
+            const auto stopped = tree.screenText(root);
+            voice::walk::readStops().reading = 0;
+            expect(!stopped, "a stopped read gives up a rich editor unread");
+            expect(tree.screenText(root) == "Synthetic", "a read with no number is never stopped");
         }
         {
             // A rich text the read can't make sense of (a link past its text) is not read either.

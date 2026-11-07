@@ -368,11 +368,14 @@ const CARET_SOURCE_BYTES: usize = SELECTION_SOURCE_BYTES + 2 * SOURCE_WINDOW_BYT
 // How much of the line at a caret an adapter reads to tell an empty line (a break) from words;
 // a longer line is sent as `null`.
 const CARET_LINE_BYTES: usize = 3;
-/// The most elements a rich editor's text may hold for the caret's or the walk's read of it (Linux
-/// AT-SPI asks each a handful of D-Bus calls): one holding more is not read, so a large editor in
-/// focus can't spend the screen read's time on it. Measured in Chrome on Ubuntu (2026-10-06): 200
-/// paragraphs read in about 0.5 s, 300 in 0.6–0.7 s, 499 in 0.9–1.5 s.
-const CARET_SOURCE_ELEMENTS: usize = 300;
+/// The most elements the Mac and Windows walk of a Chromium editor's blocks around the caret visits
+/// (`blockStarts`, `blocks.rs`); past it, it walks the selection alone (ADR-DESK-007). A Linux rich
+/// editor's read has no element budget: its bytes (`CARET_SOURCE_BYTES`) bound it (#361).
+const BLOCK_WALK_ELEMENTS: usize = 300;
+/// How deep a Linux rich editor's elements may nest (an element inside an element's text): the
+/// depth Chromium's HTML parser nests markup to. A deeper one is not read: the read and the join
+/// recurse once a level, and with no element budget only this bounds them (#361).
+const HYPERTEXT_DEPTH: usize = 512;
 const CARET_SIDE_GRAPHEMES: usize = 2_000;
 /// How far either side of the selection an adapter reports where paragraphs start (in the
 /// provider's offsets): twice the graphemes a side shows, so the breaks of all the text shown are
@@ -647,6 +650,7 @@ fn hypertext_parts(elements: &[Value]) -> Result<Vec<Value>, u32> {
     fn emit(
         read: &[Element],
         id: usize,
+        depth: usize,
         next: &mut usize,
         parts: &mut Vec<Value>,
     ) -> Result<(), u32> {
@@ -694,7 +698,10 @@ fn hypertext_parts(elements: &[Value]) -> Result<Vec<Value>, u32> {
                 // element's object, and a start or end anywhere else in it a part of its own. A
                 // start there is before the break after a paragraph, and an end after it.
                 let own = within(index) && inner.selection.is_some_and(|(start, end)| start < end);
-                emit(read, child, next, parts)?;
+                if depth + 1 > HYPERTEXT_DEPTH {
+                    return Err(1);
+                }
+                emit(read, child, depth + 1, next, parts)?;
                 if selected.is_some_and(|(start, _)| index == start) && !own {
                     mark(parts, "selectionStart");
                 }
@@ -763,13 +770,13 @@ fn hypertext_parts(elements: &[Value]) -> Result<Vec<Value>, u32> {
             links,
         });
     }
-    // The helper reads no more elements or text than these; more is no read of this core's.
-    if read.is_empty() || read.len() > CARET_SOURCE_ELEMENTS || bytes > CARET_SOURCE_BYTES {
+    // The helper reads no more text than this; more is no read of this core's.
+    if read.is_empty() || bytes > CARET_SOURCE_BYTES {
         return Err(1);
     }
     let mut parts = Vec::new();
     let mut next = 1;
-    emit(&read, 0, &mut next, &mut parts)?;
+    emit(&read, 0, 0, &mut next, &mut parts)?;
     // Every element sent is in the text.
     if next != read.len() {
         return Err(1);
@@ -1066,7 +1073,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER,"redactedMarker":privacy::PLACEHOLDER})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"blockWalkElements":BLOCK_WALK_ELEMENTS,"hypertextDepth":HYPERTEXT_DEPTH,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER,"redactedMarker":privacy::PLACEHOLDER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.
@@ -3356,31 +3363,7 @@ mod hypertext_tests {
         ];
         assert_eq!(join(&unread), Err(1));
         assert_eq!(join(&[]), Err(1));
-        // More elements or text than a helper may read.
-        let many: Vec<Value> = std::iter::once(element(
-            &OBJECT.repeat(CARET_SOURCE_ELEMENTS),
-            false,
-            json!(
-                (0..CARET_SOURCE_ELEMENTS)
-                    .map(|i| json!([i, i + 1]))
-                    .collect::<Vec<_>>()
-            ),
-        ))
-        .chain((0..CARET_SOURCE_ELEMENTS).map(|_| element("x", true, json!([]))))
-        .collect();
-        assert_eq!(join(&many), Err(1));
-        let fits: Vec<Value> = std::iter::once(element(
-            &OBJECT.repeat(CARET_SOURCE_ELEMENTS - 1),
-            false,
-            json!(
-                (0..CARET_SOURCE_ELEMENTS - 1)
-                    .map(|i| json!([i, i + 1]))
-                    .collect::<Vec<_>>()
-            ),
-        ))
-        .chain((0..CARET_SOURCE_ELEMENTS - 1).map(|_| element("x", true, json!([]))))
-        .collect();
-        assert!(join(&fits).is_ok());
+        // More text than a helper may read.
         assert_eq!(
             join(&[element(
                 &"a".repeat(CARET_SOURCE_BYTES + 1),
@@ -3390,6 +3373,47 @@ mod hypertext_tests {
             Err(1)
         );
         assert_eq!(process(br#"{"hypertext":{}}"#), Err(1));
+    }
+    /// However many elements a rich editor holds, they join while their text fits its bytes (#361):
+    /// 500 paragraphs, more than any element count the join was once held to.
+    #[test]
+    fn a_rich_editor_of_any_number_of_elements_joins() {
+        let paragraphs = 500;
+        let many: Vec<Value> = std::iter::once(element(
+            &OBJECT.repeat(paragraphs),
+            false,
+            json!(
+                (0..paragraphs)
+                    .map(|i| json!([i, i + 1]))
+                    .collect::<Vec<_>>()
+            ),
+        ))
+        .chain((0..paragraphs).map(|_| element("x", true, json!([]))))
+        .collect();
+        let joined = join(&many).unwrap();
+        assert_eq!(
+            joined["text"].as_str().unwrap(),
+            vec!["x"; paragraphs].join("\n")
+        );
+    }
+    /// Elements nest as deep as `HYPERTEXT_DEPTH` and join; one level deeper, or far deeper, is
+    /// refused before the join recurses that far (#361).
+    #[test]
+    fn a_rich_editor_nested_past_its_depth_is_refused() {
+        let nested = |depth: usize| -> Vec<Value> {
+            (0..depth)
+                .map(|i| element(OBJECT, true, json!([[0, i + 1]])))
+                .chain(std::iter::once(element("x", true, json!([]))))
+                .collect()
+        };
+        assert_eq!(
+            join(&nested(HYPERTEXT_DEPTH)).unwrap()["text"]
+                .as_str()
+                .unwrap(),
+            "x"
+        );
+        assert!(join(&nested(HYPERTEXT_DEPTH + 1)).is_err());
+        assert!(join(&nested(200_000)).is_err());
     }
     /// The elements' text, objects included, is held to the budget, though the joined text,
     /// without the objects, fits it.

@@ -289,7 +289,7 @@ enum ScreenContextReader {
                 return NSRange(location: start, length: count)
             }
             let starts = MarkerCaretSource.blockStarts(in: element, around: snapshot.range, within: limits.paragraphStartUnits,
-                                                       elements: limits.caretSourceElements, children: { node in
+                                                       elements: limits.blockWalkElements, children: { node in
                 (CaretLocator.attribute(node, kAXChildrenAttribute) as? [AXUIElement]) ?? []
             }, isBlock: { node in
                 (CaretLocator.attribute(node, kAXRoleAttribute) as? String).map(HelperConfig.blockRoles.contains) ?? false

@@ -514,6 +514,8 @@ private:
             return tree.range(text, 0, count);
         }
         bool same(const Node& first, const Node& second) { return tree.same(first, second); }
+        // A screen read the app stopped (the field reader's reads have no number, never stopped).
+        bool stopped() { return walk::readStops().asked(); }
         int caret(const Node& node) {
             auto text = own(atspi_accessible_get_text_iface(node.get()));
             if (!text) return -1;
@@ -573,14 +575,14 @@ private:
         }
     };
     // A rich editor's text, its caret and selection placed (hypertext.h); none for any other element.
-    // One the read can't take (too many elements or bytes, or malformed) is not read, and the rest of
-    // the screen is.
+    // One the read can't take (too many bytes, or malformed) is not read, and the rest of the screen
+    // is.
     std::optional<Hypertext> hypertext(const Node& node) {
         if (!hasLinks(node)) return {};
         HypertextSource source{*this};
         static const auto limits = core::request({{"limits", true}}, voice_core_context_json);
         try {
-            return flattenHypertext(source, node, limits.at("caretSourceElements").get<size_t>(), limits.at("caretSourceBytes").get<size_t>());
+            return flattenHypertext(source, node, limits.at("caretSourceBytes").get<size_t>(), limits.at("hypertextDepth").get<size_t>());
         } catch (const ScreenBudgetExceeded&) { throw; }
         catch (const std::exception&) { return Hypertext{{}, 0, std::nullopt, std::nullopt, false}; }
     }

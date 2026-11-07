@@ -117,7 +117,7 @@ public:
                 if (FAILED(pattern->RangeFromChild(node.Get(), &range))) range.Reset();
                 return range;
             };
-            const auto elements = core::request({{"limits", true}}, voice_core_context_json).at("caretSourceElements").get<size_t>();
+            const auto elements = core::request({{"limits", true}}, voice_core_context_json).at("blockWalkElements").get<size_t>();
             auto starts = blockStarts(Node(field), selected, low, high, elements, children, isBlock, place);
             if (!starts) return std::nullopt;
             // The element the selection's start is in tells the end of a line from the start of
