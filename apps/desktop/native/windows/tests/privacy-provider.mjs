@@ -69,7 +69,7 @@ try {
     "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw",
     "password-web-control", "password-focus", "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row",
     "page-link", "page-unknown", "page-no-address", "page-address-bar", "page-gecko", "page-ie", "page-no-framework", "page-framework-fails",
-    "open-page", "open-page-focus", "text-document"];
+    "open-page", "open-page-focus", "text-document", "slow-field"];
   for (const mode of modes) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever
     // app runs it. A terminal is told by its program's name, so that mode runs a copy named as one.
@@ -106,7 +106,7 @@ try {
       if (mode === "password-focus") {
         assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);
         assert.ok(context.renderedText.includes("» ‸"), "protected focus is marker only");
-      } else if (mode !== "large-window-field" && mode !== "large-focus") assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
+      } else if (!["large-window-field", "large-focus", "slow-field"].includes(mode)) assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
       if (mode === "row-hidden") assert.ok(context.renderedText.includes("| Synthetic cell text") && !context.renderedText.includes("Synthetic hidden text"), "a row's block leaves out a cell in a box that shows nothing");
       if (mode === "hidden-box") {
         assert.ok(context.renderedText.includes("Synthetic hidden-box text"), "a container that shows nothing is walked into");
@@ -163,6 +163,11 @@ try {
       // (no text pattern, no Win32 edit), so going on answers null.
       assert.equal(await request("focusedFieldValue", { ...exclusions, window: initial.window, maxLength: 20000 }), null,
         "a field in a window too large to look through whole is not refused for corrections");
+    }
+    if (mode === "slow-field") {
+      // As above, going on answers null; a field refused for how long its look took answers { value: null }.
+      assert.equal(await request("focusedFieldValue", { ...exclusions, window: initial.window, maxLength: 20000 }), null,
+        "a field slow to look through, within the look's elements, is not refused for corrections");
     }
     if (mode === "password-focus" || mode === "page-address-bar") {
       assert.deepEqual(await request("focusedFieldValue", { ...exclusions, window: initial.window, maxLength: 20000 }), { value: null });

@@ -164,7 +164,10 @@ public:
             return core::request({{"field", {{"maxLength", maxLength}, {"viewport", viewport}}}}, voice_core_request_json);
         }
         if (!editable(element.Get())) return nullptr;
-        if (!safeTextSubtree(element.Get(), 200)) return {{"value", nullptr}};
+        // The look for a password inside the field is bounded by its elements alone, as a screen
+        // read is: a rich editor's takes longer than any fixed time on a slow machine, and a field
+        // refused for time ends the correction watch.
+        if (!safeTextSubtree(element.Get())) return {{"value", nullptr}};
         std::optional<std::wstring> value;
         auto logical = AccessibleText::focused(window, automation.Get());
         if (logical) {
@@ -172,7 +175,7 @@ public:
             // identity can differ from the native provider's focused element.
             if (!logical->valid() || !owns(window, logical->metadata()) ||
                 refusedPages(window, logical->metadata(), exclusions, 200, true) ||
-                !safeTextSubtree(logical->metadata(), 200)) return {{"value", nullptr}};
+                !safeTextSubtree(logical->metadata())) return {{"value", nullptr}};
             value = logical->value(maxLength);
         }
         // IA2 gives a rich editor's paragraphs and links as embedded objects, not their text;
@@ -349,7 +352,9 @@ private:
         Automation* owner;
         ComPtr<IUIAutomationTreeWalker> walker;
         ULONGLONG started;
-        // None for a screen read, which has no time limit; a field read's own looks have one.
+        // None for a screen read and for the look for a password inside a field, which have no time
+        // limit; a field read's looks for an excluded page have one, as do a terminal field read's looks
+        // (`terminalFieldReadMs`).
         std::optional<ULONGLONG> budget;
         bool protectedNode = false;
         ComPtr<IUIAutomationCacheRequest> passwordCache;
