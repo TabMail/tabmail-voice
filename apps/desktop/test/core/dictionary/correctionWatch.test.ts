@@ -372,6 +372,45 @@ describe("CorrectionWatch", () => {
     }
   });
 
+  /** A read that started within the duration and answers after it still counts: the correction it
+   * settles is learned once, when it answers. */
+  test("a slow read started in time settles a correction after the duration", async () => {
+    const { field, learned, watch } = setup();
+    field.delay = 3.4 * interval;
+    const began = performance.now();
+    watch.watch(pid, pasted, none);
+    await vi.advanceTimersByTimeAsync(interval + field.delay + interval / 10);
+    field.value = corrected;
+    await vi.advanceTimersByTimeAsync(duration - (interval + field.delay + interval / 10) + field.delay - interval);
+    expect(learned).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10 * duration);
+    expect(Math.max(...field.starts.map((start) => start - began))).toBeLessThanOrEqual(duration);
+    expect(field.starts.length).toBe(3);
+    expect(learned).toEqual([["Xyvora"]]);
+  });
+
+  /** A poll that wakes late, past the duration, reads no more but learns the correction already
+   * settled, once. */
+  test("a poll that wakes after its duration learns what the field settled on", async () => {
+    const { field, learned, watch } = setup();
+    const clock = performance.now.bind(performance);
+    let late = 0;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock() + late);
+    try {
+      watch.watch(pid, pasted, none);
+      await poll();
+      field.value = corrected;
+      await vi.advanceTimersByTimeAsync(duration - 2 * interval);
+      expect(learned).toEqual([]);
+      setTimeout(() => (late = interval), interval / 2);
+      await vi.advanceTimersByTimeAsync(10 * duration);
+      expect(field.reads).toBe(duration / interval - 1);
+      expect(learned).toEqual([["Xyvora"]]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   /** No field to read (a password field, one too long, none focused), or a failed read: the watch
    * ends. */
   test.each([
