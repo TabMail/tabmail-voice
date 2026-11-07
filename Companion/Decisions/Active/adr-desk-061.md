@@ -258,15 +258,17 @@ Thunderbird's copy or its files.
 > kept (measured: a 2.7 GB memory lowered to 100 MiB was left at 1.34 GB). Now `MemoryHelper` keeps
 > the running helper on the path a helper without its model already takes, until the app quits,
 > while its latest `memoryTrim` answered `withinLimit: false` or hasn't answered with its result (it
-> may still be trimming after its request timed out; an error reply keeps it too, which only keeps
-> the model loaded). Only the latest trim asked decides: when the user changes the limit twice in
+> may still be trimming after its request timed out). An error reply keeps it too, though the helper
+> leaves nothing pending after a failed trim, so the helper and its model (about 100 to 145 MB on
+> macOS) stay loaded until quit with nothing to finish; that is to self-heal within a bounded time,
+> #405. Only the latest trim asked decides: when the user changes the limit twice in
 > quick succession, the older trim's answer, arriving while the newer one is unanswered, does not let
 > the helper end, as the helper's latest `memoryTrim` replaces an older one's limit. A later
 > `memoryTrim` answering within its limit lets it end when unused again, as the helper ends its idle
 > trim then. Quitting and Clear All still end it, and
 > a helper started afterwards, or after one that died or couldn't be spawned, has no trim left. As
 > the helper's own rule, only `memoryTrim` counts: a `memoryIndexBatch` trims within its own budget
-> and leaves nothing pending. The cost is the model kept loaded until quit after such a trim. A
+> and leaves nothing pending. The cost is the model kept loaded until quit after a trim cut short. A
 > narrower end (once `memoryStats` reads usage within the limit) would need polling, so it isn't
 > done. The helper Voice pins does not trim while idle yet; until the pin moves past #12, the
 > helper is only kept longer, and Settings' "more go as new requests are kept" stays true. Tests:
