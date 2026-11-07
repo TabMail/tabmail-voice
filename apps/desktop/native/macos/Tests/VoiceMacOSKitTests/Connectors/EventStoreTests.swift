@@ -843,7 +843,7 @@ extension EventKitTests {
 
         /// A reminder due at a time keeps its instant when the Mac's zone changes before it is due: its
         /// due carries the zone it was set in, so it reads back, and is shown, at the instant its alarm
-        /// fires. One due on a day stays that calendar day in the new zone.
+        /// fires, at midnight too. One due on a day stays that calendar day in the new zone.
         @Test
         func aTimedReminderKeepsItsInstantWhenTheZoneChanges() async throws {
             let savedZone = getenv("TZ").map { String(cString: $0) }
@@ -862,14 +862,16 @@ extension EventKitTests {
             var gregorian = Calendar(identifier: .gregorian)
             gregorian.timeZone = .current
             let day = gregorian.dateComponents([.year, .month, .day], from: start)
+            let midnight = gregorian.startOfDay(for: start)
             let fake = FakeEventStore()
             let events = store(fake)
 
             let timedReply = try await events.add(ReminderItem(title: "Call back", list: "", due: start, dueHasTime: true, notes: nil))
             _ = try await events.add(ReminderItem(title: "Call back", list: "", due: start, dueHasTime: false, notes: nil))
+            _ = try await events.add(ReminderItem(title: "Call back", list: "", due: midnight, dueHasTime: true, notes: nil))
             let saved = fake.saved.compactMap { $0 as? EKReminder }
-            guard saved.count == 2 else {
-                Issue.record("expected two reminders saved, got \(saved.count)")
+            guard saved.count == 3 else {
+                Issue.record("expected three reminders saved, got \(saved.count)")
                 return
             }
             #expect(timedReply.due == start)
@@ -880,6 +882,10 @@ extension EventKitTests {
             #expect(timed.due == start)
             #expect(timed.dueHasTime)
             #expect(saved[0].alarms?.first?.absoluteDate == timed.due)
+            let atMidnight = EventKitStore.reminderItem(saved[2])
+            #expect(atMidnight.due == midnight)
+            #expect(atMidnight.dueHasTime)
+            #expect(saved[2].alarms?.first?.absoluteDate == atMidnight.due)
             let dated = EventKitStore.reminderItem(saved[1])
             gregorian.timeZone = .current
             #expect(!dated.dueHasTime)
