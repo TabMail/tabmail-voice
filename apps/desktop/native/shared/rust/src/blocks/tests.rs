@@ -742,6 +742,14 @@ fn a_caret_over_two_lines_is_on_the_one_at_its_bottom() {
         ),
         Ok(rect(30.0, 306.0, 1.0, 17.0))
     );
+    // Only the height and top move: a wider caret keeps its own x and width, whatever the character's.
+    assert_eq!(
+        line(
+            rect(30.0, 286.0, 2.0, 37.0),
+            Some(rect(22.0, 306.0, 8.0, 17.0))
+        ),
+        Ok(rect(30.0, 306.0, 2.0, 17.0))
+    );
     // An empty line: the place drawn there is a little taller than a line of text.
     assert_eq!(
         line(
