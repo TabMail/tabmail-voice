@@ -118,7 +118,7 @@ export class MemoryPage extends Observable {
   }
 
   /** Keeps `value` as the size limit, and applies it now: the oldest exchanges go until memory fits,
-   * or as many as the helper's time allows, and the rest go with the next requests kept. */
+   * or as many as the helper's time allows, and the helper goes on deleting the rest while idle. */
   async setSizeLimit(value: number): Promise<void> {
     if (!this.settings.setMemorySizeLimit(value)) throw new Error("That size limit couldn't be saved. Try again.");
     const size = formatBytes(value);
@@ -127,7 +127,7 @@ export class MemoryPage extends Observable {
       try {
         const { removed, withinLimit } = await this.store.trim(value);
         if (removed > 0) status += removed === 1 ? " Removed the oldest request." : ` Removed the ${removed} oldest requests.`;
-        if (!withinLimit) status += " More are removed as new requests are kept.";
+        if (!withinLimit) status += " Deleting older memory…";
       } catch (error) {
         log.error(`MemoryPage: the size limit couldn't be applied: ${errorName(error)}`);
         status = `Size limit set to ${size}. It applies with the next request kept.`;

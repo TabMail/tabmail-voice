@@ -185,10 +185,10 @@ describe("MemoryPage", () => {
     test("says more go later when the helper ran out of time", async () => {
       memory.nextTrim = { removed: 4, withinLimit: false };
       await page.setSizeLimit(100 * MB);
-      expect(page.state.status).toBe("Size limit set to 100 MB. Removed the 4 oldest requests. More are removed as new requests are kept.");
+      expect(page.state.status).toBe("Size limit set to 100 MB. Removed the 4 oldest requests. Deleting older memory…");
       memory.nextTrim = { removed: 0, withinLimit: false };
       await page.setSizeLimit(100 * MB);
-      expect(page.state.status).toBe("Size limit set to 100 MB. More are removed as new requests are kept.");
+      expect(page.state.status).toBe("Size limit set to 100 MB. Deleting older memory…");
     });
 
     test("keeps the limit and says when it applies when the helper can't trim now", async () => {
