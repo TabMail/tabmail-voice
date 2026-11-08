@@ -46,6 +46,17 @@
 //! (Overleaf's code editor in Firefox on the Mac, 2026-11-05; Windows and Linux give that caret
 //! its own line's place). Without both rectangles, or with one of no height (no place on screen),
 //! the element decides alone.
+//!
+//! `{"caretLine": {"caret", "drawn"?}}` → `{"caretLine": rect}`: the line a collapsed caret is on.
+//! Gecko draws a caret at a line's start, or on an empty line, over that line and the one above it
+//! (`caret`: Firefox's CodeMirror page on Windows, the same rectangle from UI Automation's caret
+//! range and from the system caret, its top the line above's and its bottom its own line's;
+//! measured 2026-11-08, #380). `drawn` is what the screen has just above the caret's bottom (the
+//! character there, or the empty line's place). When it starts inside the caret, at least
+//! `LINE_ABOVE_SHARE` of its own height below the caret's top (room for a line above it), and is
+//! shorter than the caret, the caret is on its line: its top and height, with the caret's x and
+//! width. Otherwise, or without it, the caret is where it is drawn: a caret on one line has what
+//! is drawn at its bottom at about its own top.
 
 use serde_json::{Value, json};
 
@@ -58,6 +69,11 @@ fn number(value: &Value) -> Result<usize, u32> {
 fn flag(value: &Value) -> Result<bool, u32> {
     value.as_bool().ok_or(1)
 }
+
+/// How far below a caret's top what is drawn at its bottom must start, as a share of its own
+/// height, for the caret to cover a line above it (`caretLine`): a caret on one line is at most a
+/// few pixels taller than its text, and one covering two is a line taller.
+const LINE_ABOVE_SHARE: f64 = 0.5;
 
 /// Where something is drawn on screen.
 struct Rect {
@@ -302,6 +318,29 @@ pub(crate) fn process(input: &Value) -> Result<Value, u32> {
         return Ok(
             json!({"state": walk.state(), "ask": {"children": {"depth": null, "child": 0}},
             "start": false}),
+        );
+    }
+    if let Some(line) = input.get("caretLine") {
+        if fields.len() != 1 {
+            return Err(1);
+        }
+        let caret = drawn(line.get("caret"))?.ok_or(1u32)?;
+        let place = match drawn(line.get("drawn"))? {
+            Some(below)
+                if below.height < caret.height
+                    && below.y >= caret.y + below.height * LINE_ABOVE_SHARE
+                    && below.y < caret.y + caret.height =>
+            {
+                Rect {
+                    y: below.y,
+                    height: below.height,
+                    ..caret
+                }
+            }
+            _ => caret,
+        };
+        return Ok(
+            json!({"caretLine": {"x": place.x, "y": place.y, "width": place.width, "height": place.height}}),
         );
     }
     if let Some(line) = input.get("endsLine") {

@@ -22,6 +22,11 @@ inline constexpr unsigned long long terminalFieldReadMs = 1000;
 // Longest a paste waits for another program to close the clipboard (ms), never past the paste's
 // deadline. A paste's watchdog gets this on top of its deadline, so the wait is never what ends the helper.
 inline constexpr unsigned long long clipboardOpenWaitMs = 500;
+// Where a caret's own line is looked up (#380): the point this many pixels right of the caret's
+// left edge and above its bottom, inside the text of the line it ends on. Firefox draws a caret at
+// a line's start, or on an empty line, over the line above too; the core keeps the line found there.
+inline constexpr long caretLinePointRight = 1;
+inline constexpr long caretLinePointAbove = 2;
 // The control types that lay their text out as a block of its own (a rich editor's paragraph is a
 // group), as the Mac's block roles; Chromium gives a heading the text type and a level. The UI
 // Automation ids of group, list, list item and table (this header stays free of Windows headers;

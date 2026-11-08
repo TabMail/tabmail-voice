@@ -549,3 +549,20 @@ with embedded objects is removed (a field IAccessible2 does not give is still re
 Automation, and its block walk is unchanged). Chromium's fields take the same path on Windows as on
 Linux, where it has read them since 2026-10-06. The privacy checks before the read are unchanged: the
 field's subtree is looked through, as before, before any of its text is read.
+
+**Amendment 2026-11-08 — a Windows caret Firefox draws over two lines is put on its own (#380).**
+On Windows, the pill's anchor in Firefox's CodeMirror page (Overleaf-like) was a line above the
+caret at a line's start and on an empty line. Firefox draws such a caret over its own line and the
+one above it: the same rectangle comes from UI Automation's caret range and from the system caret
+(at a line's start y 286, 37 high, for the line at 306, 17 high; on an empty line y 326, 36 high,
+for the line at 344; measured in the test VM with Firefox's caret sources side by side, 2026-11-08).
+IAccessible2 gives no caret on that empty line (`caretOffset` -1, above), so it could not place it.
+The helper now asks the field's text what is drawn just above the caret's bottom (`RangeFromPoint`,
+expanded to a character: the line's first character, or the empty line's place) and sends both
+rectangles to the shared core's `caretLine` step, which keeps the caret's x and width and takes that
+line's top and height when it starts inside the caret, at least half its own height below the
+caret's top, and is shorter than the caret. A caret on one line has what is drawn at its bottom at
+about its own top and keeps its place (a line's middle and end, the compose page, Chrome and Edge).
+The step runs for the UI Automation and the system caret, not a classic edit control's caret, the
+selection's anchor or the field's frame. A field with no text pattern, or nothing at that point,
+keeps the caret as drawn.

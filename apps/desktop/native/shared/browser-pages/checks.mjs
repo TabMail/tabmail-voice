@@ -25,21 +25,13 @@ export const knownFailures = {
     "chrome compose long-mid-line focusedFieldValue": 390,
   },
   // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #402: Firefox gives no caret on an empty line of its
-  // CodeMirror page. #380: in Firefox's CodeMirror page the anchor is a line above
-  // the caret. #403: the screen read of the long compose page can take longer than the
+  // CodeMirror page. #403: the screen read of the long compose page can take longer than the
   // driver's request time (Edge, Chrome), or its field's census runs out and the read has no caret context
   // (Firefox), so its reads fail in some runs and not others (`sometimesFailing`). A page that fails as a whole is
   // never recorded: whatever stopped it (a page not loaded, not in front, a wrong selection) fails the run.
   win32: {
     "firefox codemirror empty-line readScreen": 402,
     "firefox codemirror long-empty-line readScreen": 402,
-    "firefox codemirror empty-line caretAnchor": 380,
-    "firefox codemirror line-start caretAnchor": 380,
-    "firefox codemirror mid-line caretAnchor": 380,
-    "firefox codemirror line-end caretAnchor": 380,
-    "firefox codemirror selection caretAnchor": 380,
-    "firefox codemirror long-empty-line caretAnchor": 380,
-    "firefox codemirror long-mid-line caretAnchor": 380,
     "edge compose long-empty-line readScreen": 403,
     "edge compose long-mid-line readScreen": 403,
     "chrome compose long-empty-line readScreen": 403,
