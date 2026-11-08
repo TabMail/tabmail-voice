@@ -1,5 +1,11 @@
 ## ADR-DESK-061: Memory: agent-mode requests kept on this computer, searched by Thunderbird's helper
 
+> **Amended (2026-11-08): the size limit's line says "Deleting older memory…".** When a size limit
+> set in Settings › Memory leaves memory over it, the line now ends "Deleting older memory…" in place
+> of "More are removed as new requests are kept." Since native-fts 0.12.3 (the amendment below) the
+> helper goes on trimming while idle, so the rest goes without new requests, and the old line no
+> longer said what happens. Test: `memory/page.test.ts` (the limit applied at once).
+
 **Context:** Owner, 2026-10-17: port the agent's memory from Thunderbird (the reference) and iOS to
 Voice, so agent mode can look back at earlier requests as Thunderbird's chat does with
 `memory_search` and `memory_read`; Voice's own memory, not synced. Decisions (owner, 2026-10-17):
