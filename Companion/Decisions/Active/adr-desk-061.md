@@ -307,4 +307,4 @@ Thunderbird's copy or its files.
 > error reply, arriving while a newer trim is unanswered, changes nothing, as with its result. A
 > timeout or a reply of the wrong shape still keeps the helper (it may still be trimming). Tests: see
 > `TESTS.md` (`main/native/memoryHelper` › a trim cut short, with the fake helper's `--error-on` and
-> `--error-once-on` failing a trim as the real helper does).
+> `--error-nth-on` failing a trim as the real helper does).
