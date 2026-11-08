@@ -305,9 +305,9 @@ async function main() {
     assert.ok(rich && rich.renderedText.includes("Unrelated") && !rich.renderedText.includes("synthetic-secret"), "rich editor retains safe visible window context");
     assert.ok(!rich.textBeforeCaret.includes("Unrelated") && !rich.textAfterCaret.includes("Unrelated"), "rich caret text remains scoped to its field");
     await anchor(target, "rich");
-    // A rich editor's paragraphs: IA2 gives each as an embedded object, not its text, so the field is
-    // read through UI Automation. Its text leaves out the break before each paragraph that follows
-    // text; the paragraphs say where they start, so each is a line of its own, as on the Mac.
+    // A rich editor's paragraphs: IA2 gives each as an embedded object in the field's text, so the
+    // field is read through its elements, as on Linux: each paragraph, an empty one too, is a line of
+    // its own.
     for (const [line, end, before] of [[3, false, "Hi All,\n\nWhy does it move?\n"], [1, false, "Hi All,\n"], [2, true, "Hi All,\n\nWhy does it move?"]]) {
       await window.webContents.executeJavaScript(`(() => {
         const field = document.getElementById("paragraphs"), line = field.children[${line}], range = document.createRange();
@@ -316,8 +316,9 @@ async function main() {
         range.collapse(true); getSelection().removeAllRanges(); getSelection().addRange(range);
       })()`);
       await delay(150);
-      assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Hi All,\nWhy does it move?\n--" },
-        "a rich editor's value is its text, not embedded objects");
+      const value = await request("focusedFieldValue", { window: target, maxLength: 20_000 });
+      assert.deepEqual(value, { value: "Hi All,\n\nWhy does it move?\n\n--" },
+        `a rich editor's value is its text, empty paragraphs too, not embedded objects: ${JSON.stringify(value)}`);
       const paragraphs = await request("readScreen");
       assert.equal(paragraphs?.textBeforeCaret, before, `the text before a caret on line ${line} of a rich editor`);
       assert.ok(!JSON.stringify(paragraphs).includes("\uFFFC"), "no embedded-object placeholder is read");
@@ -427,7 +428,7 @@ async function main() {
     const exited = [once(helper, "exit"), once(reader, "exit"), once(fieldReader, "exit")]; helper.stdin.end(); reader.stdin.end(); fieldReader.stdin.end();
     for (const exit of exited) assert.deepEqual(await exit, [0, null]);
     assert.equal(pending.size, 0);
-    const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: (protected or incomplete subtree|embedded objects, read by UI Automation)\n/gmu, "").replace(/^debug caret start: (paragraph [01], line [01]|paragraphs or lines unavailable|(\d+|no) block starts near the caret; the caret (ends a line|starts its text))\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete) after \d+ms\n/gmu, "").replace(/^debug clipboard keeper: (no save of the clipboard as it was; it won't be put back|nothing saved to put back; the paste's text stays|the paste's text read after \d+ms|no app read the paste's text in \d+ms)\n/gmu, "");
+    const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug caret start: (paragraph [01], line [01]|paragraphs or lines unavailable|(\d+|no) block starts near the caret; the caret (ends a line|starts its text))\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete) after \d+ms\n/gmu, "").replace(/^debug clipboard keeper: (no save of the clipboard as it was; it won't be put back|nothing saved to put back; the paste's text stays|the paste's text read after \d+ms|no app read the paste's text in \d+ms)\n/gmu, "");
     assert.equal(logged(stderr), "debug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     assert.equal(logged(readerErrors), "debug screen access: excluded or unknown page not read\n", "the reader's refusals log categories without exposing focused content");
     assert.equal(logged(fieldReaderErrors), "debug screen access: excluded or unknown page not read\n", "the field reader's refusals log categories without exposing focused content");

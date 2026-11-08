@@ -6,6 +6,7 @@
 #include <servprov.h>
 #include <UIAutomation.h>
 #include "../vendor/ia2/AccessibleText.h"
+#include "accessible_hypertext.h"
 #include "com.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
@@ -23,7 +24,7 @@ class AccessibleText {
 public:
     static std::optional<AccessibleText> focused(HWND window, IUIAutomation* automation) {
         auto source = focusObject(window);
-        if (!source) return std::nullopt;
+        if (!source) { std::cerr << "debug accessible text: no MSAA focus\n"; return std::nullopt; }
         ComPtr<IServiceProvider> service;
         if (FAILED(source.As(&service)) || !service) return std::nullopt;
         ComPtr<IAccessibleText> text;
@@ -68,6 +69,7 @@ public:
     }
 
     std::optional<std::wstring> value(unsigned limit) const {
+        if (AccessibleHypertextSource::hasLinks(text.Get())) return richValue(text.Get(), limit, [this] { return valid(); });
         long length = 0;
         require(text->get_nCharacters(&length));
         if (length < 0 || static_cast<unsigned long>(length) > limit) return std::nullopt;
@@ -78,7 +80,46 @@ public:
         return result;
     }
 
-    CaretSource caret() const { return read(text.Get(), [this] { return valid(); }); }
+    CaretSource caret() const {
+        if (AccessibleHypertextSource::hasLinks(text.Get())) return richCaret(text.Get(), [this] { return valid(); });
+        return read(text.Get(), [this] { return valid(); });
+    }
+
+    // A rich editor's text is its elements', joined; read whole or not at all. stillValid says
+    // whether it is still the focused field read.
+    template<class StillValid> static std::optional<std::wstring> richValue(IAccessibleText* text, unsigned limit, StillValid&& stillValid) {
+        const auto initial = AccessibleHypertextSource::state(text);
+        const auto rich = hypertext(text);
+        if (!rich.complete) return std::nullopt;
+        // An editor holding only an image, or empty elements, is read as empty.
+        auto result = rich.text.empty() ? std::wstring() : utf16(rich.text);
+        if (result.size() > limit || AccessibleHypertextSource::state(text) != initial || !stillValid()) return std::nullopt;
+        return result;
+    }
+
+    // The caret window of a rich editor, from its joined elements (as Linux's `caretText`).
+    template<class StillValid> static CaretSource richCaret(IAccessibleText* text, StillValid&& stillValid) {
+        // What the field's own text says of its size, caret and selection, compared before and
+        // after the elements are read.
+        const auto initial = AccessibleHypertextSource::state(text);
+        const long count = initial[2];
+        // A caret (no selection, or an empty one) selects nothing.
+        const bool selectsText = count == 1 && initial[3] < initial[4];
+        if (count > 1) return CaretSource::unread(true);
+        const auto rich = hypertext(text);
+        if (!rich.complete) return CaretSource::unread(selectsText);
+        // A selection the elements' parts lost is not read as none.
+        if (selectsText && rich.selection && rich.selection->first == rich.selection->second) return CaretSource::unread(true);
+        // The field's selection is in its own offsets; the elements' own parts place it.
+        std::optional<std::pair<size_t, size_t>> range;
+        if (count == 1 && rich.selection) range = rich.selection;
+        else if (count == 0 && rich.caret) range = std::pair{*rich.caret, *rich.caret};
+        if (!range) return CaretSource::unread(selectsText);
+        auto result = readScalarCaret(rich.length, range->first, range->second,
+            [&](size_t begin, size_t end) { return scalarSlice(rich.text, begin, end); });
+        if (AccessibleHypertextSource::state(text) != initial || !stillValid()) return CaretSource::unread(selectsText);
+        return result;
+    }
 
     // The caret window of any IA2 text; stillValid says whether it is still the focused field read.
     template<class StillValid> static CaretSource read(IAccessibleText* text, StillValid&& stillValid) {
@@ -92,6 +133,24 @@ public:
     }
 
 private:
+    // A rich editor's elements joined by the shared core (`flattenHypertext`), as on Linux: its
+    // paragraphs or lines are embedded objects in the field's own text, whose breaks the core puts
+    // back. One the read can't take (too many bytes, too deep, malformed, a stopped screen read, an
+    // element read that changed before the last was) is not complete, and none of it is read.
+    static Hypertext hypertext(IAccessibleText* text) {
+        static const auto limits = core::request({{"limits", true}}, voice_core_context_json);
+        const auto bytes = limits.at("caretSourceBytes").get<size_t>();
+        const Hypertext incomplete{{}, 0, std::nullopt, std::nullopt, false};
+        try {
+            AccessibleHypertextSource elements(bytes);
+            auto result = flattenHypertext(elements, AccessibleHypertextSource::nodeOf(text), bytes, limits.at("hypertextDepth").get<size_t>());
+            if (result.complete && !elements.unchanged()) {
+                std::cerr << "debug accessible text: an element changed during the read\n";
+                return incomplete;
+            }
+            return result;
+        } catch (const std::exception&) { return incomplete; }
+    }
     HWND window;
     ComPtr<IUIAutomation> automation;
     ComPtr<IAccessible> source;
@@ -111,7 +170,7 @@ private:
         for (unsigned depth = 0; depth < 64; ++depth) {
             VARIANT focus{};
             const HRESULT status = object->get_accFocus(&focus);
-            if (status != S_OK) { VariantClear(&focus); return {}; }
+            if (status != S_OK) { VariantClear(&focus); std::cerr << "debug accessible text: focus lost at depth " << depth << '\n'; return {}; }
             if (focus.vt == VT_I4 && focus.lVal == CHILDID_SELF) {
                 VariantClear(&focus);
                 return GetForegroundWindow() == window ? object : ComPtr<IAccessible>{};
@@ -120,7 +179,7 @@ private:
             if (focus.vt == VT_DISPATCH) child = focus.pdispVal;
             else if (focus.vt == VT_I4) object->get_accChild(focus, &child);
             VariantClear(&focus);
-            if (!child) return {};
+            if (!child) { std::cerr << "debug accessible text: focused child unavailable at depth " << depth << '\n'; return {}; }
             ComPtr<IAccessible> next;
             if (FAILED(child.As(&next)) || !next) return {};
             object = std::move(next);

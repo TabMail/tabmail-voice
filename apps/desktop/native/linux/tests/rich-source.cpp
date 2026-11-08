@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// The live tree's rich text (hypertext.h) through AT-SPI's own calls, wrapped at link time: a rich
+// The live tree's rich text (shared/context/hypertext.h) through AT-SPI's own calls, wrapped at link time: a rich
 // editor's caret, selection and length limit, links in the walk's text, GTK's self-linking labels,
 // an element too large to read, and the caret anchor's rectangle in a rich editor (`caretInWindow`).
 #include "../src/screen.h"

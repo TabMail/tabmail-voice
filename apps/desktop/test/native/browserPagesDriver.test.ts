@@ -293,12 +293,12 @@ describe("the browser-page driver", () => {
     const asked = (method: string) => requests.filter((each) => each.method === method);
     expect(asked("focusedFieldValue").every(({ params }) => JSON.stringify(params) === JSON.stringify({ ...policy, window: 7, maxLength: fieldMaxLength }))).toBe(true);
     expect(asked("caretAnchor").every(({ helper, params }) => helper === "main" && JSON.stringify(params) === JSON.stringify({ window: 7 }))).toBe(true);
-    // Every read right: those Windows records as failing are fixed, which fails the run.
+    // Every read right: Edge has no read recorded as always failing, so the run passes.
     for (const { key, outcome } of results) {
       const issue = knownFailures.win32?.[key];
       expect(outcome, key).toBe(issue && !sometimesFailing.has(issue) ? "fixed" : "pass");
     }
-    expect(status).toBe(1);
+    expect(status).toBe(0);
   });
 
   test("on Windows, an anchor as far from every caret but not where the page is on the screen is wrong", async () => {

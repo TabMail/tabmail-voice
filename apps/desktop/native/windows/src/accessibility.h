@@ -178,10 +178,9 @@ public:
                 !safeTextSubtree(logical->metadata())) return {{"value", nullptr}};
             value = logical->value(maxLength);
         }
-        // IA2 gives a rich editor's paragraphs and links as embedded objects, not their text;
-        // UI Automation gives the text, so such a field is read through it.
-        if (!logical || (value && value->find(L'\uFFFC') != std::wstring::npos)) {
-            value.reset();
+        // A field IA2 does not give is read through UI Automation. A rich editor's, whose paragraphs
+        // and links IA2 gives as embedded objects, is read through its elements (`AccessibleText`).
+        if (!logical) {
             ComPtr<IUIAutomationTextPattern> pattern;
             if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) && pattern) {
                 ComPtr<IUIAutomationTextRange> document;
@@ -245,14 +244,10 @@ public:
             if (refusedPages(window, logical->metadata(), exclusions, std::nullopt, false)) return hiddenScreen();
             // A field that can't be shown safe gives no caret text, and the rest of the
             // window is still read, as for a field read through UI Automation below.
+            // A rich editor's caret is read through its elements, whose breaks the core puts back
+            // (`AccessibleText`, as on Linux).
             if (safeTextSubtree(logical->metadata())) caret = logical->caret();
             else std::cerr << "debug accessible text: protected or incomplete subtree\n";
-            // IA2 gives a rich editor's paragraphs and links as embedded objects, not their text;
-            // UI Automation gives the text, so such a field is read through it.
-            if (caret && std::any_of(caret->parts.begin(), caret->parts.end(), [](const std::string& part) { return part.find("\xEF\xBF\xBC") != std::string::npos; })) {
-                std::cerr << "debug accessible text: embedded objects, read by UI Automation\n";
-                caret = safeTextSubtree(element.Get()) ? textParts(element.Get()) : std::nullopt;
-            }
         } else if (isEditable) {
             if (safeTextSubtree(element.Get())) caret = textParts(element.Get());
         } else if (pageInFocus && !walk::readingWholeWindow()) {
