@@ -83,6 +83,11 @@ try {
   assert.equal(initial.mode, "editable");
   const window = await mode("editable");
   if (document) {
+    // The RichEdit document's caret, measured through its text pattern, is on one line, so the
+    // core's caret-line step keeps it where it is: a "debug caret line" in the log fails the
+    // log check below.
+    const caret = await request("caretAnchor", { window });
+    assert.ok(caret && caret.height > 0 && caret.width >= 0, "the document exposes its caret");
     const captured = await request("captureTarget");
     assert.equal(captured.window, window);
     const frontRead = await request("readScreen", { target: captured });

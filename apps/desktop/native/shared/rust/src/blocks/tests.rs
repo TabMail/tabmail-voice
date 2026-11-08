@@ -801,4 +801,20 @@ fn a_caret_over_two_lines_is_on_the_one_at_its_bottom() {
         process(&json!({"caretLine": {"caret": tall.clone()}, "start": {"elements": 1}})),
         Err(1)
     );
+    assert_eq!(
+        process(&json!({"caretLine": {"caret": tall.clone()}, "state": "x"})),
+        Err(1)
+    );
+    // Every place is four numbers.
+    assert_eq!(
+        line(json!({"x": 100.0, "y": "200", "width": 1.0, "height": 20.0}), None),
+        Err(1)
+    );
+    assert_eq!(
+        line(
+            tall.clone(),
+            Some(json!({"x": 100.0, "y": 205.0, "width": 8.0, "height": "10"}))
+        ),
+        Err(1)
+    );
 }
