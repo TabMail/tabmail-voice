@@ -120,6 +120,9 @@ public:
             result = accessibleCaret(element.Get(), window);
             if (!result.is_null()) source = "accessible-caret";
         }
+        // Firefox draws a caret at a line's start, or on an empty line, over the line above too, and
+        // gives that rectangle from both sources (#380): the core puts it on its own line.
+        if (!result.is_null() && std::string_view(source) != "win32-edit-caret") result = caretLine(element.Get(), result);
         // Geometry capabilities are independent of editable-value capabilities.
         // Providers without an editable value may expose an active TextPattern2
         // caret or a collapsed TextPattern selection (for example terminal grids).
@@ -1211,6 +1214,27 @@ private:
             if (width > 4 || adjacent) result["width"] = 0;
         }
         return result;
+    }
+    // The caret on its own line (the core's `caretLine`), from what the field's text has just above
+    // the caret's bottom: the character there, or the empty line's place. A field with no text
+    // pattern, or nothing there, leaves the caret where it is drawn. The lookup runs on every caret
+    // read, because only the character's rectangle shows whether the caret covers two lines: in
+    // Firefox it adds about 20 ms to a caret read (median, measured 2026-11-08 on a loaded Windows
+    // 11 ARM64 machine, no timeouts), once per placement of the pill, never in a loop.
+    static JSON caretLine(IUIAutomationElement* element, const JSON& caret) {
+        ComPtr<IUIAutomationTextPattern> text;
+        if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text))) || !text) return caret;
+        const POINT point{
+            static_cast<LONG>(std::floor(caret["x"].get<double>())) + HelperConfig::caretLinePointRight,
+            static_cast<LONG>(std::floor(caret["y"].get<double>() + caret["height"].get<double>())) - HelperConfig::caretLinePointAbove};
+        ComPtr<IUIAutomationTextRange> at, character;
+        if (FAILED(text->RangeFromPoint(point, &at)) || !at || FAILED(at->Clone(&character)) || !character ||
+            FAILED(character->ExpandToEnclosingUnit(TextUnit_Character))) return caret;
+        const JSON drawn = rangeRect(character.Get());
+        if (drawn.is_null()) return caret;
+        const JSON line = core::request({{"blockStarts", {{"caretLine", {{"caret", caret}, {"drawn", drawn}}}}}}, voice_core_context_json).at("caretLine");
+        if (line != caret) std::cerr << "debug caret line: the caret covered the line above; placed on its own\n";
+        return line;
     }
     static JSON accessibleCaret(IUIAutomationElement* element, HWND expected) {
         GUITHREADINFO info{}; info.cbSize = sizeof(info);

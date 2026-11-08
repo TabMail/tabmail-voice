@@ -719,3 +719,110 @@ fn answers_out_of_turn_are_refused() {
     );
     assert_eq!(process(&json!({"state": children["state"]})), Err(1));
 }
+
+/// A Gecko caret over its own line and the one above takes the line drawn at its bottom; one on a
+/// single line keeps its place. Rectangles as measured in Firefox's CodeMirror page on Windows,
+/// 2026-11-08 (#380): a line's start, an empty line, a line's middle, and the compose page's
+/// empty line, whose caret is shorter than the line drawn there.
+#[test]
+fn a_caret_over_two_lines_is_on_the_one_at_its_bottom() {
+    let rect = |x: f64, y: f64, width: f64, height: f64| json!({"x": x, "y": y, "width": width, "height": height});
+    let line = |caret: Value, drawn: Option<Value>| {
+        let mut facts = json!({"caret": caret});
+        if let Some(drawn) = drawn {
+            facts["drawn"] = drawn;
+        }
+        process(&json!({"caretLine": facts})).map(|reply| reply["caretLine"].clone())
+    };
+    // A line's start: the caret covers line 12 (286) and its own (306); the character there is 17 high.
+    assert_eq!(
+        line(
+            rect(30.0, 286.0, 1.0, 37.0),
+            Some(rect(30.0, 306.0, 8.0, 17.0))
+        ),
+        Ok(rect(30.0, 306.0, 1.0, 17.0))
+    );
+    // Only the height and top move: a wider caret keeps its own x and width, whatever the character's.
+    assert_eq!(
+        line(
+            rect(30.0, 286.0, 2.0, 37.0),
+            Some(rect(22.0, 306.0, 8.0, 17.0))
+        ),
+        Ok(rect(30.0, 306.0, 2.0, 17.0))
+    );
+    // An empty line: the place drawn there is a little taller than a line of text.
+    assert_eq!(
+        line(
+            rect(30.0, 326.0, 1.0, 36.0),
+            Some(rect(30.0, 344.0, 1.0, 19.0))
+        ),
+        Ok(rect(30.0, 344.0, 1.0, 19.0))
+    );
+    // On one line: the character is as high as the caret, or taller, and starts at its top.
+    let middle = rect(184.0, 306.0, 1.0, 17.0);
+    assert_eq!(
+        line(middle.clone(), Some(rect(184.0, 306.0, 8.0, 17.0))),
+        Ok(middle.clone())
+    );
+    let compose = rect(16.0, 353.0, 1.0, 18.0);
+    assert_eq!(
+        line(compose.clone(), Some(rect(16.0, 353.0, 1.0, 20.0))),
+        Ok(compose.clone())
+    );
+    // Text a little shorter than its caret, a few pixels below its top, is the caret's own line.
+    let tall = rect(100.0, 200.0, 1.0, 20.0);
+    assert_eq!(
+        line(tall.clone(), Some(rect(100.0, 202.0, 8.0, 16.0))),
+        Ok(tall.clone())
+    );
+    // The line above must have room: from half the drawn line's height below the caret's top.
+    assert_eq!(
+        line(tall.clone(), Some(rect(100.0, 205.0, 8.0, 10.0))),
+        Ok(rect(100.0, 205.0, 1.0, 10.0))
+    );
+    assert_eq!(
+        line(tall.clone(), Some(rect(100.0, 204.9, 8.0, 10.0))),
+        Ok(tall.clone())
+    );
+    // Drawn below the caret, or as tall as it: not the caret's line.
+    assert_eq!(
+        line(tall.clone(), Some(rect(100.0, 220.0, 8.0, 10.0))),
+        Ok(tall.clone())
+    );
+    assert_eq!(
+        line(tall.clone(), Some(rect(100.0, 210.0, 8.0, 20.0))),
+        Ok(tall.clone())
+    );
+    // Nothing drawn there, or nothing with a height: the caret stays.
+    assert_eq!(line(tall.clone(), None), Ok(tall.clone()));
+    assert_eq!(
+        line(tall.clone(), Some(rect(100.0, 210.0, 8.0, 0.0))),
+        Ok(tall.clone())
+    );
+    // A caret is required, with a place; nothing else may come with the ask.
+    assert_eq!(process(&json!({"caretLine": {}})), Err(1));
+    assert_eq!(
+        process(&json!({"caretLine": {"caret": rect(1.0, 1.0, 1.0, 0.0)}})),
+        Err(1)
+    );
+    assert_eq!(
+        process(&json!({"caretLine": {"caret": tall.clone()}, "start": {"elements": 1}})),
+        Err(1)
+    );
+    assert_eq!(
+        process(&json!({"caretLine": {"caret": tall.clone()}, "state": "x"})),
+        Err(1)
+    );
+    // Every place is four numbers.
+    assert_eq!(
+        line(json!({"x": 100.0, "y": "200", "width": 1.0, "height": 20.0}), None),
+        Err(1)
+    );
+    assert_eq!(
+        line(
+            tall.clone(),
+            Some(json!({"x": 100.0, "y": 205.0, "width": 8.0, "height": "10"}))
+        ),
+        Err(1)
+    );
+}
