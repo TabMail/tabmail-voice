@@ -273,4 +273,22 @@ Thunderbird's copy or its files.
 > done. The helper Voice pins does not trim while idle yet; until the pin moves past #12, the
 > helper is only kept longer, and Settings' "more go as new requests are kept" stays true. Tests:
 > see `TESTS.md` (`main/native/memoryHelper` › a trim cut short, with the fake helper's
-> `--trim-step`).
+> `--trim-step`). (Since the 0.12.3 amendment below, the helper Voice pins does trim while idle.)
+
+> **Amended (2026-11-07): the helper is native-fts 0.12.3.** The pin moves to the 0.12.3 release
+> commit (`31385ea`), from `bc5a27d` (the notices commit #377 pinned). A `memoryTrim` that runs out
+> of time now goes on trimming while the helper is idle, one step at a time, so a request waits for
+> at most one step (TabMail/tabmail-native-fts#72); only `memoryTrim` starts that idle trim, each step has
+> the trim's own budget, and it stops at the next row once the helper's stdin closes, so a helper
+> ended during an idle trim step exits at once rather than holding the database into its successor (TabMail/tabmail-native-fts#74); a request's own trim still runs to its budget, as before. So the
+> kept-until-quit helper of #393 now finishes the trim, and memory reaches
+> the limit the user chose without waiting for new requests; Settings' "More are removed as new
+> requests are kept." stays true. `init` now refuses a `profilePath` that is missing, empty or
+> relative instead of guessing a Thunderbird profile (TabMail/tabmail-native-fts#71); Voice always sends its absolute
+> `<userData>/memory/database`, with `modelDir`, and reads only `hasEmbeddings` from the reply, so
+> the reply's `tbProfile` and `addonDataDir` change nothing here. TabMail/tabmail-native-fts#66,
+> #68 and #70 change the helper's self-update and notices, which Voice never asks for (it sends no
+> `hello` and no update request); the notices file it ships still comes from the pinned checkout.
+> The requests Voice sends and the replies it reads keep their shape (`init`, `memoryIndexBatch`,
+> `memorySearch`, `memoryRead`, `memoryStats`, `memoryTrim`, `memoryRemoveBatch`), and the schema
+> version is unchanged, so nothing is indexed again.
