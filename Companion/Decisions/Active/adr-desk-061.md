@@ -292,3 +292,19 @@ Thunderbird's copy or its files.
 > The requests Voice sends and the replies it reads keep their shape (`init`, `memoryIndexBatch`,
 > `memorySearch`, `memoryRead`, `memoryStats`, `memoryTrim`, `memoryRemoveBatch`), and the schema
 > version is unchanged, so nothing is indexed again.
+
+> **Amended (2026-11-07, #405): a failed trim no longer keeps the helper.** The #393 amendment kept
+> the helper until quit after an error reply to its latest `memoryTrim` too, though the helper leaves
+> nothing pending after a failed trim (it clears its pending limit before trimming), so the helper and
+> its model (about 100 to 145 MB on macOS) stayed loaded with nothing to finish, for most of a day in a
+> long session. Now an error reply (`MemoryError`) to the latest trim asked counts as nothing pending:
+> the helper ends `memoryHelperIdleTimeout` after its last request as usual, and the next exchange
+> kept with a limit trims again, within its own budget. The helper never refuses the limits Voice
+> sends (it refuses only a limit that isn't a positive whole number), so an error reply means the
+> trim failed: a storage error (a damaged memory among them), or the database still locked by a
+> helper that is exiting. A memory that can't be opened isn't one: the helper trims the empty
+> stand-in it keeps in its place, which answers within the limit. An older trim's
+> error reply, arriving while a newer trim is unanswered, changes nothing, as with its result. A
+> timeout or a reply of the wrong shape still keeps the helper (it may still be trimming). Tests: see
+> `TESTS.md` (`main/native/memoryHelper` › a trim cut short, with the fake helper's `--error-on` and
+> `--error-nth-on` failing a trim as the real helper does).
