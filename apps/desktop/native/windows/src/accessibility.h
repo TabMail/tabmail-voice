@@ -1217,7 +1217,10 @@ private:
     }
     // The caret on its own line (the core's `caretLine`), from what the field's text has just above
     // the caret's bottom: the character there, or the empty line's place. A field with no text
-    // pattern, or nothing there, leaves the caret where it is drawn.
+    // pattern, or nothing there, leaves the caret where it is drawn. The lookup runs on every caret
+    // read, because only the character's rectangle shows whether the caret covers two lines: in
+    // Firefox it adds about 20 ms to a caret read (median, measured 2026-11-08 on a loaded Windows
+    // 11 ARM64 machine, no timeouts), once per placement of the pill, never in a loop.
     static JSON caretLine(IUIAutomationElement* element, const JSON& caret) {
         ComPtr<IUIAutomationTextPattern> text;
         if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text))) || !text) return caret;
