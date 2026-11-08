@@ -521,3 +521,31 @@ rich editor through its own elements and has no such walk. The owner's field, as
 it (roles and places, no text), is the test fixture `native/shared/context/gecko-code-editor-tree.json`,
 replayed through the Mac read: red before the change, with the same log line as the owner's
 dictation.
+
+**Amendment 2026-11-07 — Windows reads a rich editor through its IAccessible2 elements, as Linux
+does through AT-SPI's (issue #379).** On Windows, Firefox's rich editors lost their line breaks in the
+screen read and the field read: a CodeMirror page (Overleaf-like) read `...here.Line 11 has...`, and
+so did a long contenteditable page (Gmail-compose-like). IAccessible2 gives such an editor's
+paragraphs, a code editor's lines and its links as embedded objects (U+FFFC) in the field's own text,
+and the helper read such a field through UI Automation instead, whose text in Firefox runs every line
+into the next. The block walk that puts Chromium's left-out breaks back (`blockStarts`, above) found
+Firefox's only where its budget held the window: a code editor gives each highlighted piece of a line
+an element of its own, so the walk ran out and kept the caret's own starts alone (#355), and the rest
+of the window's breaks were lost. On an empty line Firefox gave the field's own text no caret at all
+(`caretOffset` -1), and the read said a selection was there and withheld it.
+
+A field whose IAccessible2 text has links (`IAccessibleHypertext`) is now read through its elements
+by the walk Linux uses (`flattenHypertext`, moved from the Linux helper to
+`native/shared/context/hypertext.h`; the core's `hypertext` op joins the elements and places the caret,
+the selection and the breaks between blocks). The Windows adapter (`AccessibleHypertextSource`) gives
+each element's own text, caret, part of the selection, links, and whether it is a block (its `display`
+object attribute, or, without one, any role but a link's or an image's), and counts IAccessible2's
+UTF-16 offsets over in Unicode scalars, as the walk and the core count. An element with no text of its
+own (an image) reads as empty, as on Linux. The field's own size, caret and selection are read before
+and after its elements, and a read where they changed, or the field lost the focus, is not used. The
+bounds are Linux's: the caret source's bytes, `hypertextDepth`, and a stopped screen read. The screen
+read and the field read both take this path; the UI Automation read of a field IAccessible2 gives
+with embedded objects is removed (a field IAccessible2 does not give is still read through UI
+Automation, and its block walk is unchanged). Chromium's fields take the same path on Windows as on
+Linux, where it has read them since 2026-10-06. The privacy checks before the read are unchanged: the
+field's subtree is looked through, as before, before any of its text is read.

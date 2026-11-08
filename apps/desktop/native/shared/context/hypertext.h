@@ -2,8 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
-#include "../../shared/rust/VoiceCore.h"
-#include <glib.h>
+#include "../rust/VoiceCore.h"
 #include <array>
 #include <algorithm>
 #include <optional>
@@ -13,12 +12,31 @@
 #include <vector>
 
 namespace voice {
-// A rich editor's text (Chromium's contenteditable; Gmail's compose), whose paragraphs and links
-// AT-SPI gives as embedded objects (U+FFFC), each an element with text of its own and its own caret
-// and part of the selection. This walk sends each element's own text, caret, part of the selection,
+// A rich editor's text (Chromium's contenteditable, Gmail's compose; Firefox's, and a code editor's
+// lines), whose paragraphs and links AT-SPI and IAccessible2 give as embedded objects (U+FFFC), each
+// an element with text of its own and its own caret and part of the selection. This walk sends each element's own text, caret, part of the selection,
 // whether it is a block and its links, in the order it goes into them; the shared core places the
 // caret, the selection and the blocks' breaks and joins them (`hypertext`, ADR-DESK-007, -054).
-// Offsets count Unicode scalars, as AT-SPI does.
+// Offsets count Unicode scalars, as AT-SPI does (Windows counts IAccessible2's UTF-16 units over).
+// The bytes of the UTF-8 sequence starting at `at` (the text is well formed: the provider's, or the core's).
+inline size_t utf8Width(const std::string& text, size_t at) {
+    const auto lead = static_cast<unsigned char>(text[at]);
+    const size_t width = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+    return std::min(width, text.size() - at);
+}
+// The text's Unicode scalars, in order.
+inline std::vector<char32_t> unicodeScalars(const std::string& text) {
+    std::vector<char32_t> scalars;
+    for (size_t at = 0; at < text.size();) {
+        const size_t width = utf8Width(text, at);
+        char32_t value = static_cast<unsigned char>(text[at]) & (width == 1 ? 0x7F : width == 2 ? 0x1F : width == 3 ? 0x0F : 0x07);
+        for (size_t next = 1; next < width; ++next) value = (value << 6) | (static_cast<unsigned char>(text[at + next]) & 0x3F);
+        scalars.push_back(value);
+        at += width;
+    }
+    return scalars;
+}
+
 struct Hypertext {
     std::string text;
     size_t length = 0;
@@ -60,8 +78,7 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
                             {"selection", selected ? nlohmann::json::array({selected->first, selected->second}) : nlohmann::json()},
                             {"block", source.block(node)}, {"links", nlohmann::json::array()}});
         // Each link's offset counts Unicode scalars; what is there says whether it is an object.
-        std::vector<gunichar> scalars;
-        for (const char* at = owned->c_str(); *at; at = g_utf8_next_char(at)) scalars.push_back(g_utf8_get_char(at));
+        const auto scalars = unicodeScalars(*owned);
         const auto found = source.links(node, scalars.size());
         if (!found) { fits = false; return; }
         path.push_back(node);
@@ -93,7 +110,11 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
 
 // A Unicode-scalar slice of UTF-8 text, as AT-SPI ranges count.
 inline std::string scalarSlice(const std::string& text, size_t from, size_t to) {
-    const auto begin = g_utf8_offset_to_pointer(text.c_str(), static_cast<glong>(from));
-    return std::string(begin, g_utf8_offset_to_pointer(begin, static_cast<glong>(to - from)));
+    if (from >= to) return {};
+    size_t at = 0, index = 0;
+    for (; at < text.size() && index < from; ++index) at += utf8Width(text, at);
+    const size_t begin = at;
+    for (; at < text.size() && index < to; ++index) at += utf8Width(text, at);
+    return text.substr(begin, at - begin);
 }
 }

@@ -24,44 +24,15 @@ export const knownFailures = {
     "chrome compose long-empty-line focusedFieldValue": 390,
     "chrome compose long-mid-line focusedFieldValue": 390,
   },
-  // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #379: Firefox's rich editors read
-  // through UI Automation lose their line breaks, in the screen read and the field read. #391: a field read
-  // in Edge and Chrome gives an empty line as one line break. #380: in Firefox's CodeMirror page the anchor is a line above
+  // Windows 11 ARM64, Edge, Chrome and Firefox (three runs on 2026-11-06 and one on 2026-11-07). #402: Firefox gives no caret on an empty line of its
+  // CodeMirror page. #380: in Firefox's CodeMirror page the anchor is a line above
   // the caret. #403: the screen read of the long compose page can take longer than the
   // driver's request time (Edge, Chrome), or its field's census runs out and the read has no caret context
   // (Firefox), so its reads fail in some runs and not others (`sometimesFailing`). A page that fails as a whole is
   // never recorded: whatever stopped it (a page not loaded, not in front, a wrong selection) fails the run.
   win32: {
-    "edge codemirror empty-line focusedFieldValue": 391,
-    "edge codemirror long-empty-line focusedFieldValue": 391,
-    "edge compose empty-line focusedFieldValue": 391,
-    "edge compose long-empty-line focusedFieldValue": 391,
-    "chrome codemirror empty-line focusedFieldValue": 391,
-    "chrome codemirror long-empty-line focusedFieldValue": 391,
-    "chrome compose empty-line focusedFieldValue": 391,
-    "chrome compose long-empty-line focusedFieldValue": 391,
-    "firefox codemirror empty-line focusedFieldValue": 379,
-    "firefox codemirror line-start focusedFieldValue": 379,
-    "firefox codemirror mid-line focusedFieldValue": 379,
-    "firefox codemirror line-end focusedFieldValue": 379,
-    "firefox codemirror selection focusedFieldValue": 379,
-    "firefox codemirror long-empty-line focusedFieldValue": 379,
-    "firefox codemirror long-mid-line focusedFieldValue": 379,
-    "firefox compose empty-line focusedFieldValue": 379,
-    "firefox compose line-start focusedFieldValue": 379,
-    "firefox compose mid-line focusedFieldValue": 379,
-    "firefox compose line-end focusedFieldValue": 379,
-    "firefox compose selection focusedFieldValue": 379,
-    "firefox compose long-empty-line focusedFieldValue": 379,
-    "firefox compose long-mid-line focusedFieldValue": 379,
-    "firefox codemirror empty-line readScreen": 379,
-    "firefox codemirror line-start readScreen": 379,
-    "firefox codemirror mid-line readScreen": 379,
-    "firefox codemirror line-end readScreen": 379,
-    "firefox codemirror selection readScreen": 379,
-    "firefox codemirror long-empty-line readScreen": 379,
-    "firefox codemirror long-mid-line readScreen": 379,
-    "firefox compose long-mid-line readScreen": 379,
+    "firefox codemirror empty-line readScreen": 402,
+    "firefox codemirror long-empty-line readScreen": 402,
     "firefox codemirror empty-line caretAnchor": 380,
     "firefox codemirror line-start caretAnchor": 380,
     "firefox codemirror mid-line caretAnchor": 380,
@@ -74,6 +45,7 @@ export const knownFailures = {
     "chrome compose long-empty-line readScreen": 403,
     "chrome compose long-mid-line readScreen": 403,
     "firefox compose long-empty-line readScreen": 403,
+    "firefox compose long-mid-line readScreen": 403,
   },
 };
 

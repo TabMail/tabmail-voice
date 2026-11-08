@@ -1,7 +1,8 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-#include "../src/hypertext.h"
+#include "../../shared/context/hypertext.h"
+#include <glib.h>
 #include <iostream>
 #include <map>
 
@@ -239,6 +240,28 @@ int main() {
         bool refused = false;
         try { (void)flattenHypertext(outside, 0, 1000, 64); } catch (const std::exception&) { refused = true; }
         expect(refused, "a link outside its element's text is refused");
+        // The scalar helpers count as GLib does (AT-SPI's offsets): every UTF-8 width, at its
+        // bounds, sliced at every pair of scalar offsets, and past the end.
+        std::string mixed;
+        std::vector<gunichar> chars;
+        for (const gunichar c : {0x41u, 0x7Fu, 0x80u, 0x7FFu, 0x800u, 0xD7FFu, 0xE000u, 0xFFFCu, 0xFFFFu, 0x10000u, 0x1F600u, 0x10FFFFu}) {
+            char bytes[6];
+            mixed.append(bytes, static_cast<size_t>(g_unichar_to_utf8(c, bytes)));
+            chars.push_back(c);
+        }
+        const auto scalars = unicodeScalars(mixed);
+        expect(scalars.size() == static_cast<size_t>(g_utf8_strlen(mixed.c_str(), -1)) &&
+               std::equal(scalars.begin(), scalars.end(), chars.begin(), chars.end()), "the text's scalars are GLib's");
+        const size_t scalarCount = chars.size();
+        for (size_t from = 0; from <= scalarCount + 1; ++from) {
+            for (size_t to = 0; to <= scalarCount + 2; ++to) {
+                const auto glibFrom = static_cast<glong>(std::min(from, scalarCount)), glibTo = static_cast<glong>(std::min(to, scalarCount));
+                gchar* slice = from < to ? g_utf8_substring(mixed.c_str(), glibFrom, glibTo) : g_strdup("");
+                const bool same = scalarSlice(mixed, from, to) == slice;
+                g_free(slice);
+                expect(same, "a scalar slice is GLib's, past the end too");
+            }
+        }
         std::cout << "rich editor hypertext flattening passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

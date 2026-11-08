@@ -11,7 +11,7 @@
 #include "../../shared/privacy/ScreenPrivacy.h"
 #include "../../shared/context/screen_context.h"
 #include "../../shared/context/walk.h"
-#include "hypertext.h"
+#include "../../shared/context/hypertext.h"
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -574,7 +574,7 @@ private:
             return kind != ATSPI_ROLE_LINK && kind != ATSPI_ROLE_IMAGE;
         }
     };
-    // A rich editor's text, its caret and selection placed (hypertext.h); none for any other element.
+    // A rich editor's text, its caret and selection placed (shared/context/hypertext.h); none for any other element.
     // One the read can't take (too many bytes, or malformed) is not read, and the rest of the screen
     // is.
     std::optional<Hypertext> hypertext(const Node& node) {
