@@ -78,6 +78,57 @@ struct HelperChannelTests {
         #expect(ran.withLock { $0 } == ["first", "second", "exit"])
     }
 
+    /// The helpers live as long as the app, so a request must leave nothing behind once answered:
+    /// thousands of requests read by a real helper (`voice-field-reader`, which reads them through
+    /// `HelperChannel`) keep that process's footprint flat. The child is measured, not this process,
+    /// so suites running beside this one cannot move the number. (Each read once stayed in memory for
+    /// good, about 16 KB a request, and a helper reached hundreds of MB.)
+    @Test func aHelperReadingRequestsKeepsItsFootprintFlat() throws {
+        let requests = 3000
+        let allowedGrowth: UInt64 = 8 * 1024 * 1024
+        // The helpers are built beside this test bundle.
+        let products = Bundle(for: Lines.self).bundleURL.deletingLastPathComponent()
+        let helper = Process()
+        helper.executableURL = products.appendingPathComponent("voice-field-reader")
+        let input = Pipe(), output = Pipe()
+        helper.standardInput = input
+        helper.standardOutput = output
+        helper.standardError = FileHandle.nullDevice
+        try helper.run()
+        defer {
+            try? input.fileHandleForWriting.close()
+            helper.terminate()
+            helper.waitUntilExit()
+        }
+        var pending = Data()
+        // Sends `count` requests one at a time, each answered before the next, so each is its own read.
+        func send(_ count: Int) throws {
+            for id in 0..<count {
+                try input.fileHandleForWriting.write(contentsOf: Data(#"{"id":\#(id),"method":"none"}"#.utf8 + [0x0A]))
+                while !pending.contains(0x0A) {
+                    let chunk = output.fileHandleForReading.availableData
+                    guard !chunk.isEmpty else { throw HelperError("the helper closed its output") }
+                    pending.append(chunk)
+                }
+                pending.removeSubrange(...pending.firstIndex(of: 0x0A)!)
+            }
+        }
+        try send(200) // Warm up: the first requests fill caches that stay, leak or not.
+        let before = try #require(Self.footprint(helper.processIdentifier))
+        try send(requests)
+        let after = try #require(Self.footprint(helper.processIdentifier))
+        #expect(after < before + allowedGrowth, "the helper's footprint grew from \(before) to \(after) bytes over \(requests) requests")
+    }
+
+    /// A process's physical footprint, as `footprint` reports it.
+    private static func footprint(_ pid: pid_t) -> UInt64? {
+        var usage = rusage_info_v4()
+        let status = withUnsafeMutablePointer(to: &usage) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
+        }
+        return status == 0 ? usage.ri_phys_footprint : nil
+    }
+
     @Test func eventsCarryTheirName() {
         let (channel, lines) = channel()
         channel.emit("action", ["action": "start"])
