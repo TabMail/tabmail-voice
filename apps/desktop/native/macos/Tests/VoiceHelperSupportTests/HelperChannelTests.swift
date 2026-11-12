@@ -78,6 +78,41 @@ struct HelperChannelTests {
         #expect(ran.withLock { $0 } == ["first", "second", "exit"])
     }
 
+    /// The helpers live as long as the app, so a request must leave nothing behind once answered:
+    /// thousands of requests read through `start` keep the process's footprint flat. (Each read once
+    /// stayed in memory for good, about 16 KB a request, and a helper reached hundreds of MB.)
+    @Test func readingRequestsKeepsTheFootprintFlat() throws {
+        let requests = 3000
+        let allowedGrowth = 8 * 1024 * 1024
+        let answered = DispatchSemaphore(value: 0)
+        let channel = HelperChannel(output: { _ in answered.signal() })
+        channel.on("ping") { _ in .null }
+        let input = Pipe()
+        channel.start(input: input.fileHandleForReading, exit: {})
+        defer { try? input.fileHandleForWriting.close() }
+        func send(_ count: Int) throws {
+            for id in 0..<count {
+                try input.fileHandleForWriting.write(contentsOf: Data(#"{"id":\#(id),"method":"ping"}"#.utf8 + [0x0A]))
+                answered.wait()
+            }
+        }
+        try send(200) // Warm up: the first requests fill caches that stay, leak or not.
+        let before = try #require(Self.footprint())
+        try send(requests)
+        let after = try #require(Self.footprint())
+        #expect(after - before < allowedGrowth, "footprint grew \(after - before) bytes over \(requests) requests")
+    }
+
+    /// The process's physical footprint, as `footprint` reports it.
+    private static func footprint() -> Int? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return status == KERN_SUCCESS ? Int(info.phys_footprint) : nil
+    }
+
     @Test func eventsCarryTheirName() {
         let (channel, lines) = channel()
         channel.emit("action", ["action": "start"])

@@ -82,7 +82,10 @@ public final class HelperChannel: Sendable {
         let thread = Thread { [self] in
             var buffer = Data()
             while true {
-                let chunk = input.availableData
+                // `availableData` hands back an autoreleased buffer, and this loop never returns to
+                // the thread's outer pool: drain one per read, or every request's read stays in
+                // memory for the helper's life (#419).
+                let chunk = autoreleasepool { input.availableData }
                 if chunk.isEmpty {
                     end()
                     exit()
