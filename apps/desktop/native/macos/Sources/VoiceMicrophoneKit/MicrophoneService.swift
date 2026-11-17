@@ -7,18 +7,19 @@ import Foundation
 import VoiceHelperSupport
 
 /// The requests `voice-microphone` answers: the microphone, and nothing else, in a process of its
-/// own, which runs one engine: the process ends itself (`restartExitCode`) once its engine has run
-/// or failed to start, or the input device changes, and the app starts it afresh at once, which
-/// prepares the next engine (`MicrophoneCapture` says why). A dictation running when the input
-/// changes ends as any exit of its helper ends it: what was said is sent. The reply to the stop or
-/// the failed start that ends the process may not get out first; the app takes that exit as their
-/// answer.
+/// own, which runs one engine: the process ends itself (`restartExitCode`) at once when a session
+/// it ran stops, after the chunks already queued when its engine failed to start or the input
+/// device changes, and the app starts it afresh at once, which prepares the next engine
+/// (`MicrophoneCapture` says why). A dictation running when the input changes ends as any exit of
+/// its helper ends it: what was said is sent. The reply to a stop that ends the process does not
+/// get out, and that to a failed start may not; the app takes that exit as their answer.
 ///
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
-///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}`: the microphone
-///   off.
+///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}` when nothing it
+///   names runs; one that stops a session ends the process at once, the microphone off as it ends,
+///   and the exit is its answer.
 public enum MicrophoneService {
     static let microphoneChunkEvent = "microphoneChunk"
     /// The process's exit code when it ends itself to be started afresh: the app's
@@ -65,6 +66,16 @@ public enum MicrophoneService {
         register(on: channel, end: { _exit(restartExitCode) })
     }
 
+    /// Ends the process at once, the chunks still queued dropped: the app stopped the session they
+    /// belong to. Not behind them, as writing one waits on the app reading the pipe, and the
+    /// microphone runs until the process ends.
+    static func endingNow(end: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
+        {
+            HelperLog.debug("MicrophoneService: stopped; ending at once, to be started afresh")
+            end()
+        }
+    }
+
     /// `end` ends the process, or is a test's stand-in.
     static func register(on channel: HelperChannel, end: @escaping @Sendable () -> Void) -> AnyObject {
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
@@ -75,7 +86,8 @@ public enum MicrophoneService {
                     channel.emit(microphoneChunkEvent, microphoneChunk(session: session, samples: samples))
                 }
             },
-            onEnd: ending(after: chunkQueue, end: end)
+            onEnd: ending(after: chunkQueue, end: end),
+            onStopped: endingNow(end: end)
         )
 
         channel.on("microphonePrepare") { _ in

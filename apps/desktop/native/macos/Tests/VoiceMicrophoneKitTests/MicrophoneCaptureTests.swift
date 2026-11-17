@@ -135,3 +135,64 @@ struct MicrophoneTransportNameTests {
         #expect(MicrophoneCapture.transportName(0x7F7F_7F7F) == "unknown")
     }
 }
+
+/// A stop at any point after a start ends the process without the engine being stopped in it: the
+/// process's exit stops it. `AVAudioEngine.stop` (or `pause`, or removing the tap) just after
+/// `start` tears the input down under Core Audio's IO thread, which then crashes the helper. The
+/// engine cannot run without a microphone, so this reads the source, as the app's
+/// `helperContract.test.ts` reads the helpers'.
+struct MicrophoneCaptureSourceTests {
+    private func source(_ name: String) throws -> String {
+        let kit = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/VoiceMicrophoneKit")
+        return try String(contentsOf: kit.appendingPathComponent(name), encoding: .utf8)
+    }
+
+    /// The code alone, each line's comment cut off.
+    private func code(_ name: String) throws -> String {
+        try source(name).split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in line.range(of: "//").map { String(line[..<$0.lowerBound]) } ?? String(line) }
+            .joined(separator: "\n")
+    }
+
+    /// The text from `start` to the nearest line that begins the type's next member.
+    private func body(of start: String, in code: String) throws -> String {
+        let begin = try #require(code.range(of: start))
+        let rest = code[begin.upperBound...]
+        let end = rest.range(of: #"\n    [^ \n}]"#, options: .regularExpression)
+        return String(rest[..<(end?.lowerBound ?? rest.endIndex)])
+    }
+
+    private func count(_ needle: String, in code: String) -> Int {
+        code.components(separatedBy: needle).count - 1
+    }
+
+    @Test func noEngineIsStoppedInTheProcess() throws {
+        let capture = try code("MicrophoneCapture.swift")
+        for call in [".stop()", ".pause()", "removeTap"] {
+            #expect(!capture.contains(call), "MicrophoneCapture calls \(call)")
+        }
+    }
+
+    @Test func aStopEndsTheProcessAtOnce() throws {
+        let capture = try code("MicrophoneCapture.swift")
+        let stop = try body(of: "func stop(session: Int) async {", in: capture)
+        #expect(stop.contains("onStopped()") && !stop.contains("onEnd()"))
+        let endsProcess = try body(of: "case .endsProcess:", in: capture)
+        let endsProcessCase = String(endsProcess[..<(endsProcess.range(of: "case .runs:")?.lowerBound ?? endsProcess.endIndex)])
+        #expect(endsProcessCase.contains("onStopped()") && !endsProcessCase.contains("onEnd()"))
+
+        // Only those two end at once; a failed start, an input change and a configuration change
+        // (the observer's copy of `onEnd`) end after the chunks already queued.
+        #expect(count("onStopped()", in: capture) == 2)
+        #expect(count("onEnd()", in: capture) == 3)
+        #expect(capture.contains("let onEnd = self.onEnd"))
+        let afterObserver = try body(of: "configurationObserver = NotificationCenter.default.addObserver(", in: capture)
+        let observer = try #require(afterObserver.components(separatedBy: "try engine.start()").first)
+        #expect(observer.contains("onEnd()") && !observer.contains("onStopped"))
+
+        let service = try code("MicrophoneService.swift")
+        #expect(service.contains("onStopped: endingNow(end: end)"))
+        #expect(service.contains("onEnd: ending(after: chunkQueue, end: end)"))
+    }
+}

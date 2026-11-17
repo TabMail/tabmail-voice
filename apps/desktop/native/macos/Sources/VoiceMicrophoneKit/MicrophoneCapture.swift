@@ -15,12 +15,14 @@ import VoiceHelperSupport
 /// converted to mono float samples at the app's rate and handed to `onSamples`.
 ///
 /// Sessions are numbered by the app; which one runs is `MicrophoneSessions`' decision. The
-/// microphone runs only between a start and its stop, and a prepared engine never opens the device.
+/// microphone runs only from a start until the process ends at its stop, and a prepared engine
+/// never opens the device.
 ///
-/// One engine per process: after its engine has run (a session stopped) or failed to start, when
-/// the default input changes (System Settings › Sound, AirPods connecting or switched off), or when
-/// the running engine stops by itself (AVAudioEngine stops when its input's format changes),
-/// `onEnd` is told and the process is expected to end; the app starts the helper afresh, which
+/// One engine per process: when a session stops (or a start comes after the engine started),
+/// `onStopped` is told and the process is expected to end at once; when its engine failed to start,
+/// the default input changes (System Settings › Sound, AirPods connecting or switched off), or the
+/// running engine stops by itself (AVAudioEngine stops when its input's format changes), `onEnd`
+/// is told and the process is expected to end after the chunks already queued; the app starts the helper afresh, which
 /// prepares the next engine, and a dictation that was running ends as the helper's exit ends it.
 /// A second engine in the same process did not work: with a Bluetooth headset, which changes mode
 /// as a dictation ends, the engine prepared after a stop lost its configuration as it started,
@@ -31,6 +33,12 @@ import VoiceHelperSupport
 /// change but by saying so, from a queue no engine work runs on, and no engine that was prepared
 /// or ran is released here: the process ending releases it. (One built for an input with no
 /// format, which never had a tap, is dropped at once.)
+///
+/// Nor is an engine that started ever stopped here: the process ending stops it. `AVAudioEngine.stop`
+/// called just after `start` returned (a dictation stopped or cancelled at once) tears down the input
+/// while Core Audio's IO thread is still starting on it, and that thread then calls a null function
+/// and crashes the process. A stop only stops the chunks (nothing more reaches the app) and ends the
+/// process, whose exit turns the microphone off.
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
@@ -54,9 +62,14 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Receives each converted chunk, with its session, on the audio render thread.
     private let onSamples: @Sendable (Int, [Float]) -> Void
-    /// Told that the process should end (its engine ran or failed, or the input changed). Not on
+    /// Told that the process should end after the chunks already queued (its engine failed to
+    /// start, or the input changed, so a dictation running keeps all that was heard). Not on
     /// the capture queue when the input changed, as an engine may be holding it.
     private let onEnd: @Sendable () -> Void
+    /// Told that the process should end at once, the microphone still running: the app stopped its
+    /// session (or moved to a newer one) and takes none of its chunks, so nothing waits on them; the
+    /// exit is what turns the microphone off, and must not wait on the app reading its output.
+    private let onStopped: @Sendable () -> Void
     /// Where the default input's changes arrive.
     private let changeQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChanges", qos: .userInitiated)
     private let queue = DispatchQueue(label: "ai.tabmail.voice.helper.microphone", qos: .userInitiated)
@@ -64,19 +77,19 @@ final class MicrophoneCapture: @unchecked Sendable {
     private let tap = OSAllocatedUnfairLock<TapState?>(uncheckedState: nil)
     // Queue-confined.
     private var prepared: Prepared?
-    /// The running session's engine; `sessions.running` names its session.
-    private var engine: AVAudioEngine?
-    /// The engine that ran, kept until the process ends: releasing it while a headset changes waits
-    /// on the audio system, and would hold up the process's end.
-    private var stopped: AVAudioEngine?
+    /// The engine that started (or failed to), kept running until the process ends: stopping it
+    /// races Core Audio's IO thread, and releasing it while a headset changes waits on the audio
+    /// system, which would hold up the process's end.
+    private var started: AVAudioEngine?
     private var sessions = MicrophoneSessions()
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
     /// Watches the running engine for a configuration change (it stopped by itself).
     private var configurationObserver: NSObjectProtocol?
 
-    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void) {
+    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void, onStopped: @escaping @Sendable () -> Void) {
         self.onSamples = onSamples
         self.onEnd = onEnd
+        self.onStopped = onStopped
         let listener: AudioObjectPropertyListenerBlock = { _, _ in
             HelperLog.debug("MicrophoneCapture: the default input changed")
             onEnd()
@@ -119,14 +132,14 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    /// Stops `session` (and any older one) if it runs; the process then ends, and the next engine
-    /// is prepared in the one started in its place.
+    /// Stops `session` (and any older one) if it runs: its chunks stop, and the process then ends,
+    /// which turns the microphone off; the next engine is prepared in the one started in its place.
     func stop(session: Int) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             queue.async {
                 if self.sessions.stop(session) {
-                    self.stopEngine()
-                    self.onEnd()
+                    self.endSession()
+                    self.onStopped()
                 }
                 continuation.resume()
             }
@@ -140,8 +153,8 @@ final class MicrophoneCapture: @unchecked Sendable {
             return
         case .endsProcess:
             HelperLog.debug("MicrophoneCapture: session \(session) asked after this process's engine started; ending")
-            stopEngine()
-            onEnd()
+            endSession()
+            onStopped()
             throw CaptureError.engineUsed
         case .runs:
             break
@@ -160,7 +173,7 @@ final class MicrophoneCapture: @unchecked Sendable {
             prepared = nil
             tap.withLockUnchecked { $0 = TapState(session: session, sampleRate: sampleRate) }
             // Watched before it starts, so a change as it starts is not missed. Only the running
-            // engine is watched (the observer is removed as it stops), and the notification names it
+            // engine is watched (the observer is removed as its session ends), and the notification names it
             // without being handed it: nothing here may hold the engine.
             let onEnd = self.onEnd
             configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { _ in
@@ -173,11 +186,11 @@ final class MicrophoneCapture: @unchecked Sendable {
                 tap.withLockUnchecked { $0 = nil }
                 if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
                 configurationObserver = nil
-                // Kept, as a stopped engine is: the process ends with it.
-                stopped = engine
+                // Kept, as a started engine is: the process ends with it.
+                started = engine
                 throw error
             }
-            self.engine = engine
+            started = engine
         } catch {
             sessions.failed(session)
             // A start the app tries again goes to a fresh process.
@@ -187,18 +200,15 @@ final class MicrophoneCapture: @unchecked Sendable {
         HelperLog.debug("MicrophoneCapture: session \(session) started")
     }
 
-    /// Stops the running engine, if any, so the microphone is off. The engine is kept: the process
-    /// ends with it.
-    private func stopEngine() {
+    /// Ends the running session: no chunk reaches the app after it, and a change of the input no
+    /// longer counts as its loss. The engine is neither stopped nor released (see the type): the
+    /// process ending, which follows, does both.
+    private func endSession() {
         tap.withLockUnchecked { $0 = nil }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
-        guard let engine else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        stopped = engine
-        self.engine = nil
-        HelperLog.debug("MicrophoneCapture: engine stopped")
+        guard started != nil else { return }
+        HelperLog.debug("MicrophoneCapture: session ended; the process's exit stops the engine")
     }
 
     /// Prepares the process's engine, unless one is prepared or has started.

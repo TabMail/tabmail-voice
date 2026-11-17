@@ -101,6 +101,22 @@ struct MicrophoneServiceEndingTests {
     }
 }
 
+/// A stop ends the process at once, not behind the chunks still queued: the app takes none after
+/// its stop, and writing one waits on the app reading the pipe while the microphone runs until the
+/// process ends.
+struct MicrophoneServiceStopTests {
+    @Test func aStopEndsTheProcessBeforeItReturnsWhileAChunkWriteIsBlocked() {
+        let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.test.microphoneChunks")
+        let gate = DispatchSemaphore(value: 0)
+        chunkQueue.async { gate.wait() }
+        let ended = OSAllocatedUnfairLock(initialState: false)
+        MicrophoneService.endingNow(end: { ended.withLock { $0 = true } })()
+        // Ended on the caller's thread, before returning, with the write still blocked.
+        #expect(ended.withLock { $0 })
+        gate.signal()
+    }
+}
+
 /// A chunk as the app reads it off the wire: its session a number, its samples base64 of
 /// little-endian 32-bit floats that decode back to the samples sent.
 struct MicrophoneChunkEventTests {
