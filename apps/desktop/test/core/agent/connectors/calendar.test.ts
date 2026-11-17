@@ -789,7 +789,7 @@ describe("calendar_event_edit", () => {
    * duration never makes up a missing time. */
   test("a change between all day and timed is given whole, as make_all_day or make_timed", async () => {
     editor.byID.set("trip", { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" });
-    const fields = /make_all_day \{first_day, last_day\}.*make_timed \{start_iso, end_iso\}|make_timed \{start_iso, end_iso\}|make_all_day \{first_day, last_day\}/u;
+    const bothForms = /takes no all_day\. .*make_all_day \{first_day, last_day\}.*make_timed \{start_iso, end_iso\}/u;
     const refused: [Record<string, unknown>, RegExp][] = [
       [{ event_id: "trip", all_day: false }, /takes no all_day/u],
       [{ event_id: "trip", all_day: false, start_iso: iso(at(9)), end_iso: iso(at(18)) }, /takes no all_day/u],
@@ -817,13 +817,19 @@ describe("calendar_event_edit", () => {
       await expect(confirmed(tool, args, live, { eventDuration: 90 })).rejects.toThrow(reason);
       expect(editor.edits.length).toBe(writes);
     }
-    for (const [args] of refused.slice(0, 7)) await expect(confirmed(tool, args, live)).rejects.toThrow(fields);
+    // all_day is refused naming both whole forms, so either direction can be asked for next.
+    for (const [args] of refused.slice(0, 4)) await expect(confirmed(tool, args, live)).rejects.toThrow(bothForms);
     expect(editor.edits).toEqual([]);
 
     await confirmed(tool, { event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) } }, live, { eventDuration: 90 });
     expect(lastChanges()).toMatchObject({ start: at(9), end: at(18), isAllDay: false });
     await confirmed(tool, { event_id: "event-1", make_all_day: { first_day: iso(at(0, 0, 1), false), last_day: iso(at(0, 0, 2), false) } }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 1), end: at(0, 0, 2), isAllDay: true });
+    // Null, which a model may fill unused fields with, is not given.
+    await confirmed(tool, { event_id: "event-1", title: "Kickoff", make_all_day: null, make_timed: null, all_day: null }, live);
+    expect(lastChanges()).toEqual({ title: "Kickoff", invite: [], uninvite: [], exclude: [] });
+    await confirmed(tool, { event_id: "trip", make_timed: { start_iso: iso(at(10)), end_iso: iso(at(11)) }, make_all_day: null }, live);
+    expect(lastChanges()).toMatchObject({ start: at(10), end: at(11), isAllDay: false });
     // Given for an event already of that kind, it sets its times.
     await confirmed(tool, { event_id: "trip", make_all_day: { first_day: iso(at(0, 0, 4), false), last_day: iso(at(0, 0, 5), false) } }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 4), end: at(0, 0, 5), isAllDay: true });
