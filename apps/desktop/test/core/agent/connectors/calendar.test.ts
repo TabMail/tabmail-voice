@@ -809,6 +809,8 @@ describe("calendar_event_edit", () => {
       [{ event_id: "trip", make_timed: { start_iso: iso(at(18)), end_iso: iso(at(9)) } }, /make_timed's end_iso is before its start_iso/u],
       [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(day, false) }, make_timed: { start_iso: iso(at(9)), end_iso: iso(at(10)) } }, /not both/u],
       [{ event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) }, start_iso: iso(at(9)) }, /give no start_iso or end_iso beside it/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) }, end_iso: iso(at(20)) }, /give no start_iso or end_iso beside it/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(day, false) }, end_iso: iso(at(0, 0, 2), false) }, /give no start_iso or end_iso beside it/u],
     ];
     for (const [args, reason] of refused) {
       const writes = editor.edits.length;
