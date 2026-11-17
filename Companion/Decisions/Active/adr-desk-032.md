@@ -377,5 +377,11 @@ could fail.
 - The microphone goes off when the process ends, a few milliseconds after the stop, where it went
   off as the engine stopped just before.
 - Windows and Linux are unchanged: their helpers write the replies and chunks already sent first.
-  macOS differs only in dropping the chunks of a stopped session, which the app discards anyway.
+  macOS differs in dropping the reply to a stop (and to a start refused because the engine
+  started) and the chunks of the stopped session, which the app discards anyway.
+- For macOS this replaces what the 2026-10-01 amendments say of the stop: that the running engine
+  is stopped in the process, that the helper ends after the chunks already queued once its engine
+  has run (the session's stop), and, in the 2026-10-07 amendment, "as on macOS" for writing the
+  replies and chunks already sent first. `microphoneStop` answers `{}` only when nothing was
+  running; otherwise the helper's exit is its answer.
 

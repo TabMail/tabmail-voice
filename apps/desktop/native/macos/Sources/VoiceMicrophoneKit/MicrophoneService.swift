@@ -17,8 +17,9 @@ import VoiceHelperSupport
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
-///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}`: the microphone
-///   off.
+///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}` when nothing it
+///   names runs; one that stops a session ends the process at once, the microphone off as it ends,
+///   and the exit is its answer.
 public enum MicrophoneService {
     static let microphoneChunkEvent = "microphoneChunk"
     /// The process's exit code when it ends itself to be started afresh: the app's

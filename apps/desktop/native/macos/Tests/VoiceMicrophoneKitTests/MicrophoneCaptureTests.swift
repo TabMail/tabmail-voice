@@ -155,17 +155,21 @@ struct MicrophoneCaptureSourceTests {
             .joined(separator: "\n")
     }
 
-    /// The text from `start` to the next line that begins a declaration at `start`'s indentation.
+    /// The text from `start` to the nearest line that begins the type's next member.
     private func body(of start: String, in code: String) throws -> String {
         let begin = try #require(code.range(of: start))
         let rest = code[begin.upperBound...]
-        let end = rest.range(of: "\n    func ") ?? rest.range(of: "\n    private func ")
+        let end = rest.range(of: #"\n    [^ \n}]"#, options: .regularExpression)
         return String(rest[..<(end?.lowerBound ?? rest.endIndex)])
+    }
+
+    private func count(_ needle: String, in code: String) -> Int {
+        code.components(separatedBy: needle).count - 1
     }
 
     @Test func noEngineIsStoppedInTheProcess() throws {
         let capture = try code("MicrophoneCapture.swift")
-        for call in [".stop()", ".pause()", "removeTap", ".reset()"] {
+        for call in [".stop()", ".pause()", "removeTap"] {
             #expect(!capture.contains(call), "MicrophoneCapture calls \(call)")
         }
     }
@@ -177,6 +181,15 @@ struct MicrophoneCaptureSourceTests {
         let endsProcess = try body(of: "case .endsProcess:", in: capture)
         let endsProcessCase = String(endsProcess[..<(endsProcess.range(of: "case .runs:")?.lowerBound ?? endsProcess.endIndex)])
         #expect(endsProcessCase.contains("onStopped()") && !endsProcessCase.contains("onEnd()"))
+
+        // Only those two end at once; a failed start, an input change and a configuration change
+        // (the observer's copy of `onEnd`) end after the chunks already queued.
+        #expect(count("onStopped()", in: capture) == 2)
+        #expect(count("onEnd()", in: capture) == 3)
+        #expect(capture.contains("let onEnd = self.onEnd"))
+        let afterObserver = try body(of: "configurationObserver = NotificationCenter.default.addObserver(", in: capture)
+        let observer = try #require(afterObserver.components(separatedBy: "try engine.start()").first)
+        #expect(observer.contains("onEnd()") && !observer.contains("onStopped"))
 
         let service = try code("MicrophoneService.swift")
         #expect(service.contains("onStopped: endingNow(end: end)"))

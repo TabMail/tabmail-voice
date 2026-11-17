@@ -48,8 +48,9 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   tale). That helper, its own process on every platform, runs one capture: it ends itself after
   each dictation, a failed start or an input change, and the app starts it afresh (ADR-DESK-032;
   which session runs is the shared core's decision). Never run a second engine in the
-  process, or stop or release one there (on macOS stopping one just after it started crashes
-  the helper; the process's exit stops it).
+  process or release one there. On macOS never stop the engine in the process either (stopping one
+  just after it started crashes the helper; the process's exit stops it); Windows and Linux stop
+  their capture, then end.
 - **Names follow `PROJECT_STRUCTURE.md` › Naming** (files, helpers, targets, wire methods,
   config): match it, and add to it when a new kind of thing gets a name.
 - **No internal mistake IDs (`MIS-…`) in this public repo** (owner, 2026-09-28): they point into

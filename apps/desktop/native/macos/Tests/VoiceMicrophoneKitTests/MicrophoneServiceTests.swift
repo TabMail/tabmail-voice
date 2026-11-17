@@ -105,24 +105,14 @@ struct MicrophoneServiceEndingTests {
 /// its stop, and writing one waits on the app reading the pipe while the microphone runs until the
 /// process ends.
 struct MicrophoneServiceStopTests {
-    @Test func aStopEndsTheProcessWhileAChunkWriteIsBlocked() async {
+    @Test func aStopEndsTheProcessBeforeItReturnsWhileAChunkWriteIsBlocked() {
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.test.microphoneChunks")
         let gate = DispatchSemaphore(value: 0)
-        let written = OSAllocatedUnfairLock(initialState: false)
-        chunkQueue.async {
-            gate.wait()
-            written.withLock { $0 = true }
-        }
-        let ended = DispatchSemaphore(value: 0)
-        MicrophoneService.endingNow(end: { ended.signal() })()
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                continuation.resume(returning: ended.wait(timeout: .now() + .seconds(5)))
-            }
-        }
-        #expect(result == .success)
-        #expect(!written.withLock { $0 })
-        // Lets the blocked write finish, so the test leaves no thread waiting.
+        chunkQueue.async { gate.wait() }
+        let ended = OSAllocatedUnfairLock(initialState: false)
+        MicrophoneService.endingNow(end: { ended.withLock { $0 = true } })()
+        // Ended on the caller's thread, before returning, with the write still blocked.
+        #expect(ended.withLock { $0 })
         gate.signal()
     }
 }
