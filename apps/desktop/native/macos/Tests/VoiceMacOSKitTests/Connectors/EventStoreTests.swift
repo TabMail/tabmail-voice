@@ -794,6 +794,28 @@ extension EventKitTests {
             #expect(fake.removed.last?.title == "Their review")
         }
 
+        /// A series with one occurrence changed on its own: EventKit gives that occurrence an id of its own
+        /// (`<series>/RID=<seconds>`). Deleting by that id removes that occurrence alone, and nothing of the
+        /// series; deleting by the series id removes the series with every occurrence, never only one.
+        @Test
+        func aChangedOccurrenceIsDeletedAloneByItsOwnIDAndTheSeriesIDNeverDeletesOnlyOne() async throws {
+            let fake = FakeEventStore()
+            let series = fake.occurrence("Sync", id: "series-1", start: start)
+            let moved = fake.occurrence("Sync moved", id: "series-1/RID=1", start: start + 8 * 86_400, occurrence: start + 7 * 86_400)
+            moved.stubDetached = true
+            fake.byID = ["series-1": series, "series-1/RID=1": moved]
+
+            try await store(fake).delete(id: "series-1/RID=1")
+            #expect(fake.removed.count == 1)
+            guard fake.removed.count == 1 else { return }
+            #expect(fake.removed[0].title == "Sync moved" && fake.removed[0].span == .thisEvent && fake.removed[0].commit)
+
+            try await store(fake).delete(id: "series-1")
+            #expect(fake.removed.count == 2)
+            guard fake.removed.count == 2 else { return }
+            #expect(fake.removed[1].title == "Sync" && fake.removed[1].span == .futureEvents)
+        }
+
         /// An event with an organizer who isn't the user but nobody invited (one in someone else's shared
         /// calendar) is no invitation: it is read as the user's and changes.
         @Test
