@@ -34,3 +34,12 @@ with bugfixes will be 1.10"*, with every client's number aligned. `config.client
 their 1.10.0 releases. The backend's new common file at 1.10.0 is `email_search`, which this app does
 not list in `loopTools`, so it is never offered here; every prompt and tool this app uses resolves as
 it did at 1.9.3. Tests: the same two, at 1.10.0.
+
+**Amendment 2026-11-17: the protocol is 1.11.4.** Voice's own `calendar_event_edit` and
+`calendar_event_create` texts changed contract (an end alone keeps the start; a change between all day
+and timed is given whole as `make_all_day` or `make_timed`; an all-day create takes days only), so the backend carries them as
+new Voice tool files at 1.11.4, the Thunderbird release whose wording they adapt, and
+`config.clientProtocol` is `1.11.4`. Between 1.10.0 and 1.11.4 the only other file Voice resolves is the
+common `email_search` at 1.10.2, which this app does not list in `loopTools`, so every other prompt and
+tool it uses resolves as at 1.10.0. Builds on 1.10.0 keep the v0.2.5 texts they follow. The backend change
+deploys before a Voice build that sends 1.11.4 is released. The backend is never rolled back below this once a 1.11.4 build ships. Tests: the same two, at 1.11.4.

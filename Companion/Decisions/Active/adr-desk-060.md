@@ -208,3 +208,17 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   labels a time converted to a zone as UTC, which stored 09:00 in Toronto as 09:00 UTC.
 - Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
   (`tests/productivity.py`); a server-backed calendar (Google) by hand (TESTS.md).
+
+**Amendment 2026-11-17: an end alone keeps the start; all day and timed need both times (voice #422, #423).**
+An edit's new end alone changes only when the event ends, and the start stays, as Google Calendar does;
+a new start alone keeps the length. A change between all day and timed is one argument with both its fields
+required, `make_all_day {first_day, last_day}` (dates, the last day included) or
+`make_timed {start_iso, end_iso}` (dates and times); the edit takes no `all_day`, and `start_iso` and
+`end_iso` alone are of the kind the event is. Any other way of asking is refused before the question,
+naming the fields it needs. A model A/B showed a boolean with a sentence saying "both times" was sent
+without them; a shape that can't be half-given replaces the sentence. Thunderbird and iOS keep
+`all_day` with both times, which they refuse without. An empty `recurrence` leaves an event that happens
+once unchanged, and a rule of one occurrence is refused for it as no repeat; on a series, count 1 ends it
+after that occurrence, and the question says the later ones are deleted. The
+default event duration no longer applies to edits (ADR-DESK-062). The tool texts that say so are the
+backend's Voice files at protocol 1.11.4 (ADR-DESK-064).

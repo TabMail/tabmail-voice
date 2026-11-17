@@ -66,3 +66,7 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
 - The permission prompt raised from a helper process, attributed to the app, is checked by hand on a
   signed build (TESTS.md).
 
+
+**Amendment 2026-11-17: an all-day create never drops a time (voice #423).** `all_day: true` with a timed
+`start_iso`, or an all-day event (by `all_day` or a day as its start) with a timed `end_iso`, is refused
+before the question with what to ask, the rule an edit follows (ADR-DESK-060 amendment 2026-11-17).

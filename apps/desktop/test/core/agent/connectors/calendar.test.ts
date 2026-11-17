@@ -257,14 +257,17 @@ describe("calendar_event_create", () => {
     expect(store.added).toMatchObject([{ start: at(10), end: at(11, 30), isAllDay: false }]);
   });
 
-  /** A day for the start makes an all-day event, through the day `end_iso` names (its time ignored); `all_day` makes one
-   * of a timed start; `end_iso` sets a timed event's end. */
+  /** A day for the start makes an all-day event, through the day `end_iso` names; `all_day` true with a
+   * timed start, or an all-day event with a timed end, is refused before the card, never its time dropped; `end_iso` sets a timed event's end. */
   test("a day makes an all-day event", async () => {
     expect(new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(0, 0, 2), false) }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: at(0, 0, 2) });
-    expect(new CalendarEventCreateTool(store).draft({ title: "Holiday", start_iso: iso(at(9)), all_day: true }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: day });
-    expect(new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)) }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: at(0, 0, 2) });
+    expect(new CalendarEventCreateTool(store).draft({ title: "Holiday", start_iso: iso(day, false), all_day: true }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: day });
+    expect(() => new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)) }, toolSettings)).toThrow(/all day, but end_iso gives a time of day/u);
+    expect(() => new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)), all_day: true }, toolSettings)).toThrow(/all day, but end_iso gives a time of day/u);
+    await expect(new CalendarEventCreateTool(store).confirmation({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)), all_day: true }, new AbortController().signal, toolSettings)).rejects.toThrow(/all day, but end_iso gives a time of day/u);
     expect(new CalendarEventCreateTool(store).draft({ title: "Call", start_iso: iso(at(9)), end_iso: iso(at(9, 30)) }, toolSettings)).toMatchObject({ isAllDay: false, start: at(9), end: at(9, 30) });
     expect(new CalendarEventCreateTool(store).draft({ title: "Call", start_iso: iso(day, false), all_day: false }, toolSettings)).toMatchObject({ isAllDay: false, start: day });
+    expect(() => new CalendarEventCreateTool(store).draft({ title: "Holiday", start_iso: iso(at(9)), all_day: true }, toolSettings)).toThrow(/all_day is true, but start_iso gives a time of day/u);
 
     const tool = new CalendarEventCreateTool(store);
     const first = LocalDateTime.spoken(day, false);
@@ -779,23 +782,84 @@ describe("calendar_event_edit", () => {
 
   const lastChanges = () => editor.edits.at(-1)?.changes;
 
-  /** An all-day event made timed lasts the request's default event duration, from the start or back
-   * from the end given; a timed event keeps its own length, whatever the duration. */
-  test("an all-day event made timed lasts the request's default event duration", async () => {
-    const settings = { eventDuration: 90 };
+  /** A change between all day and timed is given whole, as make_all_day {first_day, last_day} or
+   * make_timed {start_iso, end_iso}; every other way of asking for it (all_day, a field missing or of
+   * the wrong kind, a time of the other kind alone, both objects, an object beside start_iso/end_iso) is
+   * refused before the card, naming the fields it needs, and nothing is written. The default event
+   * duration never makes up a missing time. */
+  test("a change between all day and timed is given whole, as make_all_day or make_timed", async () => {
     editor.byID.set("trip", { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" });
-    await confirmed(tool, { event_id: "trip", start_iso: iso(at(9)) }, live, settings);
-    expect(lastChanges()).toMatchObject({ start: at(9), end: at(10, 30), isAllDay: false });
-    await confirmed(tool, { event_id: "trip", all_day: false }, live, settings);
-    expect(lastChanges()).toMatchObject({ start: day, end: at(1, 30), isAllDay: false });
-    await confirmed(tool, { event_id: "trip", end_iso: iso(at(18)) }, live, settings);
-    expect(lastChanges()).toMatchObject({ start: at(16, 30), end: at(18), isAllDay: false });
-    await confirmed(tool, { event_id: "event-1", start_iso: iso(at(15)) }, live, settings);
-    expect(lastChanges()).toMatchObject({ start: at(15), end: at(15, 30) });
+    const bothForms = /takes no all_day\. .*make_all_day \{first_day, last_day\}.*make_timed \{start_iso, end_iso\}/u;
+    const refused: [Record<string, unknown>, RegExp][] = [
+      [{ event_id: "trip", all_day: false }, /takes no all_day/u],
+      [{ event_id: "trip", all_day: false, start_iso: iso(at(9)), end_iso: iso(at(18)) }, /takes no all_day/u],
+      [{ event_id: "event-1", all_day: true }, /takes no all_day/u],
+      [{ event_id: "trip", all_day: true }, /takes no all_day/u],
+      [{ event_id: "trip", start_iso: iso(at(9)) }, /all-day event, and the edit gives a time of day.*make_timed \{start_iso, end_iso\}/u],
+      [{ event_id: "trip", end_iso: iso(at(18)) }, /all-day event, and the edit gives a time of day/u],
+      [{ event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, /timed event, and the edit gives a date without a time of day.*make_all_day \{first_day, last_day\}/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(9)) } }, /make_timed needs both start_iso and end_iso, each a date and a time of day/u],
+      [{ event_id: "trip", make_timed: { end_iso: iso(at(18)) } }, /make_timed needs both start_iso and end_iso/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(day, false), end_iso: iso(at(18)) } }, /make_timed needs both start_iso and end_iso/u],
+      [{ event_id: "trip", make_timed: "9 to 5" }, /make_timed needs both start_iso and end_iso/u],
+      [{ event_id: "event-1", make_all_day: {} }, /make_all_day needs both first_day and last_day, each a date without a time of day/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false) } }, /make_all_day needs both first_day and last_day/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(at(18)) } }, /make_all_day needs both first_day and last_day/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(at(0, 0, 2), false), last_day: iso(day, false) } }, /last_day is before its first_day/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(18)), end_iso: iso(at(9)) } }, /make_timed's end_iso is before its start_iso/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(day, false) }, make_timed: { start_iso: iso(at(9)), end_iso: iso(at(10)) } }, /not both/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) }, start_iso: iso(at(9)) }, /give no start_iso or end_iso beside it/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) }, end_iso: iso(at(20)) }, /give no start_iso or end_iso beside it/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(day, false) }, end_iso: iso(at(0, 0, 2), false) }, /give no start_iso or end_iso beside it/u],
+    ];
+    for (const [args, reason] of refused) {
+      const writes = editor.edits.length;
+      await expect(confirmed(tool, args, live, { eventDuration: 90 })).rejects.toThrow(reason);
+      expect(editor.edits.length).toBe(writes);
+    }
+    // all_day is refused naming both whole forms, so either direction can be asked for next.
+    for (const [args] of refused.slice(0, 4)) await expect(confirmed(tool, args, live)).rejects.toThrow(bothForms);
+    expect(editor.edits).toEqual([]);
+
+    await confirmed(tool, { event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) } }, live, { eventDuration: 90 });
+    expect(lastChanges()).toMatchObject({ start: at(9), end: at(18), isAllDay: false });
+    await confirmed(tool, { event_id: "event-1", make_all_day: { first_day: iso(at(0, 0, 1), false), last_day: iso(at(0, 0, 2), false) } }, live);
+    expect(lastChanges()).toMatchObject({ start: at(0, 0, 1), end: at(0, 0, 2), isAllDay: true });
+    // Null, which a model may fill unused fields with, is not given.
+    await confirmed(tool, { event_id: "event-1", title: "Kickoff", make_all_day: null, make_timed: null, all_day: null }, live);
+    expect(lastChanges()).toEqual({ title: "Kickoff", invite: [], uninvite: [], exclude: [] });
+    await confirmed(tool, { event_id: "trip", make_timed: { start_iso: iso(at(10)), end_iso: iso(at(11)) }, make_all_day: null }, live);
+    expect(lastChanges()).toMatchObject({ start: at(10), end: at(11), isAllDay: false });
+    // Given for an event already of that kind, it sets its times.
+    await confirmed(tool, { event_id: "trip", make_all_day: { first_day: iso(at(0, 0, 4), false), last_day: iso(at(0, 0, 5), false) } }, live);
+    expect(lastChanges()).toMatchObject({ start: at(0, 0, 4), end: at(0, 0, 5), isAllDay: true });
+    await confirmed(tool, { event_id: "event-1", make_timed: { start_iso: iso(at(13)), end_iso: iso(at(14)) } }, live);
+    expect(lastChanges()).toMatchObject({ start: at(13), end: at(14), isAllDay: false });
   });
 
-  /** A new start alone keeps the event's length; a new end alone keeps it too, moving the start; both
-   * set both. The user is asked about the event as it is and the change. */
+  /** An event that happens once is not changed by an empty recurrence, and a rule of one occurrence is
+   * refused for it as no repeat; on a series, count 1 ends it after its first occurrence, said plainly. */
+  test("a recurrence of one occurrence", async () => {
+    await expect(confirmed(tool, { event_id: "event-1", recurrence: {} }, live)).rejects.toThrow(/Nothing to change/u);
+    await confirmed(tool, { event_id: "event-1", title: "Kickoff", recurrence: {} }, live);
+    expect(lastChanges()).toEqual({ title: "Kickoff", invite: [], uninvite: [], exclude: [] });
+    const writes = editor.edits.length;
+    await expect(confirmed(tool, { event_id: "event-1", recurrence: { freq: "DAILY", count: 1 } }, live)).rejects.toThrow(/count 1 is not a repeat: this event happens once already, so leave recurrence out/u);
+    await expect(confirmed(tool, { event_id: "event-1", title: "Kickoff", recurrence: { freq: "WEEKLY", count: 1 } }, live)).rejects.toThrow(/count 1 is not a repeat/u);
+    expect(editor.edits.length).toBe(writes);
+    // A single event made to repeat still is.
+    await confirmed(tool, { event_id: "event-1", recurrence: { freq: "WEEKLY", count: 3 } }, live);
+    expect(lastChanges()?.recurrence).toMatchObject({ frequency: "WEEKLY", count: 3 });
+
+    const args = { event_id: "series-1", recurrence: { freq: "DAILY", count: 1 } };
+    expect(await words(tool.confirmation(args, new AbortController().signal, toolSettings))).toContain("Ends after 1 occurrence: the later ones are deleted");
+    expect((await card(tool.confirmation(args, new AbortController().signal, toolSettings))).lines).toContainEqual({ icon: "repeat", text: "Ends after 1 occurrence: the later ones are deleted", detail: null, tone: "added" });
+    await tool.run(args, live);
+    expect(lastChanges()?.recurrence).toMatchObject({ frequency: "DAILY", count: 1 });
+  });
+
+  /** A new start alone keeps the event's length; both set both. The user is asked about the event as
+   * it is and the change. */
   test("a moved event keeps its length", async () => {
     const args = { event_id: "event-1", start_iso: iso(at(15)) };
     expect((await words(tool.confirmation(args, new AbortController().signal, toolSettings)))?.split("\n")).toEqual([
@@ -807,40 +871,46 @@ describe("calendar_event_edit", () => {
     expect(await tool.run(args, live)).toBe(`Changed "Launch review": ${describeDate(at(10))} to ${describeDate(at(10, 30))} (event_id event-1).`);
     expect(editor.edits).toEqual([{ id: "event-1", occurrence: null, scope: "all", changes: { start: at(15), end: at(15, 30), isAllDay: false, invite: [], uninvite: [], exclude: [] } }]);
 
-    await confirmed(tool, { event_id: "event-1", end_iso: iso(at(12)) }, live);
-    expect(lastChanges()).toMatchObject({ start: at(11, 30), end: at(12) });
     await confirmed(tool, { event_id: "event-1", start_iso: iso(at(9)), end_iso: iso(at(11)) }, live);
     expect(lastChanges()).toMatchObject({ start: at(9), end: at(11) });
     await expect(confirmed(tool, { event_id: "event-1", start_iso: iso(at(9)), end_iso: iso(at(8)) }, live)).rejects.toEqual(new ToolArgumentError("end_iso is before start_iso."));
   });
 
-  /** A day makes a timed event all day (one day, unless an end is given); a time makes an all-day
-   * event timed, lasting the default; an all-day event moved keeps its days. */
-  test("between all day and timed", async () => {
-    await confirmed(tool, { event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, live);
-    expect(lastChanges()).toMatchObject({ start: at(0, 0, 1), end: at(0, 0, 1), isAllDay: true });
-    await confirmed(tool, { event_id: "event-1", all_day: true }, live);
-    expect(lastChanges()).toMatchObject({ start: day, end: day, isAllDay: true });
-    // A timed event past midnight made all day lasts its first day.
-    editor.byID.set("late", { ...event("Late shift", at(22), at(1, 0, 1)), id: "late" });
-    await confirmed(tool, { event_id: "late", all_day: true }, live);
+  /** A new end alone changes only when the event ends: the start stays, on the card and in the write,
+   * for a timed event and for an all-day one that stays all day, as Google Calendar does. An end
+   * before the start is refused before the card, with nothing written. */
+  test("an end alone keeps the start", async () => {
+    const args = { event_id: "event-1", end_iso: iso(at(11)) };
+    expect((await words(tool.confirmation(args, new AbortController().signal, toolSettings)))?.split("\n")).toEqual([
+      "Change this event?",
+      "Launch review",
+      `${LocalDateTime.spoken(at(10))} to ${LocalDateTime.spoken(at(10, 30))}`,
+      `New time: ${LocalDateTime.spoken(at(10))} to ${LocalDateTime.spoken(at(11))}`,
+    ]);
+    await tool.run(args, live);
+    expect(lastChanges()).toMatchObject({ start: at(10), end: at(11), isAllDay: false });
+
+    editor.byID.set("trip", { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" });
+    await confirmed(tool, { event_id: "trip", end_iso: iso(at(0, 0, 4), false) }, live);
+    expect(lastChanges()).toMatchObject({ start: day, end: at(0, 0, 4), isAllDay: true });
+    await confirmed(tool, { event_id: "trip", end_iso: iso(day, false) }, live);
     expect(lastChanges()).toMatchObject({ start: day, end: day, isAllDay: true });
 
+    const writes = editor.edits.length;
+    await expect(confirmed(tool, { event_id: "event-1", end_iso: iso(at(9)) }, live)).rejects.toThrow(/end_iso alone changes only the end and keeps the start/u);
+    await expect(confirmed(tool, { event_id: "trip", end_iso: iso(at(0, 0, -1), false) }, live)).rejects.toThrow(/end_iso alone changes only the end and keeps the start/u);
+    expect(editor.edits.length).toBe(writes);
+  });
+
+  /** An all-day event moved keeps its days; given both, it spans them. */
+  test("an all-day event moved keeps its days", async () => {
     editor.byID.set("trip", { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" });
     await confirmed(tool, { event_id: "trip", start_iso: iso(at(0, 0, 7), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 7), end: at(0, 0, 9), isAllDay: true });
     await confirmed(tool, { event_id: "trip", end_iso: iso(at(0, 0, 5), false) }, live);
-    expect(lastChanges()).toMatchObject({ start: at(0, 0, 3), end: at(0, 0, 5), isAllDay: true });
+    expect(lastChanges()).toMatchObject({ start: day, end: at(0, 0, 5), isAllDay: true });
     await confirmed(tool, { event_id: "trip", start_iso: iso(at(0, 0, 10), false), end_iso: iso(at(0, 0, 13), false) }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 10), end: at(0, 0, 13), isAllDay: true });
-    await confirmed(tool, { event_id: "trip", all_day: true }, live);
-    expect(lastChanges()).toMatchObject({ start: day, end: at(0, 0, 2), isAllDay: true });
-    await confirmed(tool, { event_id: "trip", start_iso: iso(at(9)) }, live);
-    expect(lastChanges()).toMatchObject({ start: at(9), end: new Date(at(9).getTime() + toolSettings.eventDuration * 60_000), isAllDay: false });
-    await confirmed(tool, { event_id: "trip", all_day: false }, live);
-    expect(lastChanges()).toMatchObject({ start: day, end: new Date(day.getTime() + toolSettings.eventDuration * 60_000), isAllDay: false });
-    await confirmed(tool, { event_id: "trip", end_iso: iso(at(18)) }, live);
-    expect(lastChanges()).toMatchObject({ start: new Date(at(18).getTime() - toolSettings.eventDuration * 60_000), end: at(18), isAllDay: false });
   });
 
   /** Title, place, notes and free or busy change as given; "" removes a place or notes; every one is
@@ -1237,9 +1307,9 @@ describe("a question's card", () => {
     // Made all day, the new time is the day; an all-day event given a time shows the time, and moved
     // to another day names that day beside the old one's page.
     editor.byID.set("planning", { ...event("Planning", inThisYear(10), inThisYear(11)), id: "planning", attendees: [], organizer: null, recurrence: null });
-    expect((await card(tool.confirmation({ event_id: "planning", all_day: true }, new AbortController().signal, toolSettings))).newTime).toBe("All day");
+    expect((await card(tool.confirmation({ event_id: "planning", make_all_day: { first_day: iso(inThisYear(0), false), last_day: iso(inThisYear(0), false) } }, new AbortController().signal, toolSettings))).newTime).toBe("All day");
     editor.byID.set("holiday", { ...event("Holiday", inThisYear(0), inThisYear(0), { allDay: true }), id: "holiday", attendees: [], organizer: null, recurrence: null });
-    expect((await card(tool.confirmation({ event_id: "holiday", start_iso: iso(inThisYear(9)), all_day: false }, new AbortController().signal, toolSettings))).newTime).toBe(LocalDateTime.timeRange(inThisYear(9), new Date(inThisYear(9).getTime() + toolSettings.eventDuration * 60_000), false));
+    expect((await card(tool.confirmation({ event_id: "holiday", make_timed: { start_iso: iso(inThisYear(9)), end_iso: iso(inThisYear(10)) } }, new AbortController().signal, toolSettings))).newTime).toBe(LocalDateTime.timeRange(inThisYear(9), inThisYear(10), false));
     // Notes given are shown in the accent, notes cleared are struck out, and each is what is written.
     editor.byID.set("briefing", { ...event("Briefing", at(9), at(10)), id: "briefing", notes: "Old agenda", attendees: [], organizer: null, recurrence: null });
     expect((await card(tool.confirmation({ event_id: "planning", notes: "Bring the deck" }, new AbortController().signal, toolSettings))).lines).toEqual([line("notes", "Bring the deck", "added")]);
