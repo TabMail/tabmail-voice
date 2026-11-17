@@ -67,6 +67,10 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Told that the process should end (its engine ran or failed, or the input changed). Not on
     /// the capture queue when the input changed, as an engine may be holding it.
     private let onEnd: @Sendable () -> Void
+    /// Told that the process should end at once, the microphone still running: the app stopped its
+    /// session (or moved to a newer one) and takes none of its chunks, so nothing waits on them; the
+    /// exit is what turns the microphone off, and must not wait on the app reading its output.
+    private let onStopped: @Sendable () -> Void
     /// Where the default input's changes arrive.
     private let changeQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChanges", qos: .userInitiated)
     private let queue = DispatchQueue(label: "ai.tabmail.voice.helper.microphone", qos: .userInitiated)
@@ -84,9 +88,10 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Watches the running engine for a configuration change (it stopped by itself).
     private var configurationObserver: NSObjectProtocol?
 
-    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void, makeEngine: @escaping EngineFactory = MicrophoneCapture.makeAudioEngine) {
+    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void, onStopped: @escaping @Sendable () -> Void, makeEngine: @escaping EngineFactory = MicrophoneCapture.makeAudioEngine) {
         self.onSamples = onSamples
         self.onEnd = onEnd
+        self.onStopped = onStopped
         self.makeEngine = makeEngine
         let listener: AudioObjectPropertyListenerBlock = { _, _ in
             HelperLog.debug("MicrophoneCapture: the default input changed")
@@ -137,7 +142,7 @@ final class MicrophoneCapture: @unchecked Sendable {
             queue.async {
                 if self.sessions.stop(session) {
                     self.endSession()
-                    self.onEnd()
+                    self.onStopped()
                 }
                 continuation.resume()
             }
@@ -152,7 +157,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         case .endsProcess:
             HelperLog.debug("MicrophoneCapture: session \(session) asked after this process's engine started; ending")
             endSession()
-            onEnd()
+            onStopped()
             throw CaptureError.engineUsed
         case .runs:
             break

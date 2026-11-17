@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AVFoundation
 import Foundation
 import os
 import Testing
@@ -124,3 +125,45 @@ struct MicrophoneChunkEventTests {
         #expect(decoded == samples)
     }
 }
+
+/// A stop ends the process even while the app is not reading its output: the chunks still queued
+/// are not waited on, as the app takes none after its stop, and the microphone runs until the
+/// process ends. No microphone is used.
+struct MicrophoneServiceStopTests {
+    @Test func aStopEndsTheProcessWhileTheOutputIsBlocked() async throws {
+        let blocked = DispatchSemaphore(value: 0)
+        let ended = DispatchSemaphore(value: 0)
+        let stops = OSAllocatedUnfairLock(initialState: 0)
+        let deliver = OSAllocatedUnfairLock<(@Sendable (AVAudioPCMBuffer) -> Void)?>(uncheckedState: nil)
+        // The app reads replies but stops reading at the first chunk: that write never returns.
+        let channel = HelperChannel(output: { line in
+            if String(decoding: line, as: UTF8.self).contains(#""microphoneChunk""#) { blocked.wait() }
+        })
+        let service = MicrophoneService.register(on: channel, end: { ended.signal() }, makeEngine: { tap in
+            deliver.withLockUnchecked { $0 = tap }
+            return MicrophoneCaptureStopTests.StandInEngine(stops: stops, fails: false)
+        })
+
+        await channel.handle(line: Data(#"{"id":1,"method":"microphoneStart","params":{"session":1,"sampleRate":16000}}"#.utf8))
+        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
+        buffer.frameLength = 4096
+        let tap = try #require(deliver.withLockUnchecked { $0 })
+        tap(buffer)
+        tap(buffer)
+        Task { await channel.handle(line: Data(#"{"id":2,"method":"microphoneStop","params":{"session":1}}"#.utf8)) }
+
+        let result = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(returning: ended.wait(timeout: .now() + .seconds(5)))
+            }
+        }
+        #expect(result == .success)
+        #expect(stops.withLock { $0 } == 0)
+        // Lets the blocked writes finish, so the test leaves no thread waiting.
+        blocked.signal()
+        blocked.signal()
+        withExtendedLifetime(service) {}
+    }
+}
+

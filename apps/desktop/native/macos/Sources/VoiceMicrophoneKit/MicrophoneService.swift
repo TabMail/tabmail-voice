@@ -65,8 +65,19 @@ public enum MicrophoneService {
         register(on: channel, end: { _exit(restartExitCode) })
     }
 
-    /// `end` ends the process, or is a test's stand-in.
-    static func register(on channel: HelperChannel, end: @escaping @Sendable () -> Void) -> AnyObject {
+    /// Ends the process at once, the chunks still queued dropped: the app stopped the session they
+    /// belong to. Not behind them, as writing one waits on the app reading the pipe, and the
+    /// microphone runs until the process ends.
+    static func endingNow(end: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
+        {
+            HelperLog.debug("MicrophoneService: stopped; ending at once, to be started afresh")
+            end()
+        }
+    }
+
+    /// `end` ends the process, or is a test's stand-in; `makeEngine` builds the audio engine, or a
+    /// test's stand-in.
+    static func register(on channel: HelperChannel, end: @escaping @Sendable () -> Void, makeEngine: @escaping MicrophoneCapture.EngineFactory = MicrophoneCapture.makeAudioEngine) -> AnyObject {
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
         let microphone = MicrophoneCapture(
@@ -75,7 +86,9 @@ public enum MicrophoneService {
                     channel.emit(microphoneChunkEvent, microphoneChunk(session: session, samples: samples))
                 }
             },
-            onEnd: ending(after: chunkQueue, end: end)
+            onEnd: ending(after: chunkQueue, end: end),
+            onStopped: endingNow(end: end),
+            makeEngine: makeEngine
         )
 
         channel.on("microphonePrepare") { _ in
