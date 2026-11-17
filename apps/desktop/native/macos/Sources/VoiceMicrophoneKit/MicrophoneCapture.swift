@@ -15,12 +15,14 @@ import VoiceHelperSupport
 /// converted to mono float samples at the app's rate and handed to `onSamples`.
 ///
 /// Sessions are numbered by the app; which one runs is `MicrophoneSessions`' decision. The
-/// microphone runs only between a start and its stop, and a prepared engine never opens the device.
+/// microphone runs only from a start until the process ends at its stop, and a prepared engine
+/// never opens the device.
 ///
-/// One engine per process: after its engine has run (a session stopped) or failed to start, when
-/// the default input changes (System Settings › Sound, AirPods connecting or switched off), or when
-/// the running engine stops by itself (AVAudioEngine stops when its input's format changes),
-/// `onEnd` is told and the process is expected to end; the app starts the helper afresh, which
+/// One engine per process: when a session stops (or a start comes after the engine started),
+/// `onStopped` is told and the process is expected to end at once; when its engine failed to start,
+/// the default input changes (System Settings › Sound, AirPods connecting or switched off), or the
+/// running engine stops by itself (AVAudioEngine stops when its input's format changes), `onEnd`
+/// is told and the process is expected to end after the chunks already queued; the app starts the helper afresh, which
 /// prepares the next engine, and a dictation that was running ends as the helper's exit ends it.
 /// A second engine in the same process did not work: with a Bluetooth headset, which changes mode
 /// as a dictation ends, the engine prepared after a stop lost its configuration as it started,
@@ -51,10 +53,6 @@ final class MicrophoneCapture: @unchecked Sendable {
         let device: AudioDeviceID
     }
 
-    /// Builds and prepares an engine whose tap hands each buffer to its argument (a test's stand-in
-    /// subclass replaces the audio system).
-    typealias EngineFactory = (@escaping @Sendable (AVAudioPCMBuffer) -> Void) throws -> AVAudioEngine
-
     /// The running session's state, read on the render thread.
     struct TapState {
         let session: Int
@@ -64,7 +62,8 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Receives each converted chunk, with its session, on the audio render thread.
     private let onSamples: @Sendable (Int, [Float]) -> Void
-    /// Told that the process should end (its engine ran or failed, or the input changed). Not on
+    /// Told that the process should end after the chunks already queued (its engine failed to
+    /// start, or the input changed, so a dictation running keeps all that was heard). Not on
     /// the capture queue when the input changed, as an engine may be holding it.
     private let onEnd: @Sendable () -> Void
     /// Told that the process should end at once, the microphone still running: the app stopped its
@@ -82,17 +81,15 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// races Core Audio's IO thread, and releasing it while a headset changes waits on the audio
     /// system, which would hold up the process's end.
     private var started: AVAudioEngine?
-    private let makeEngine: EngineFactory
     private var sessions = MicrophoneSessions()
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
     /// Watches the running engine for a configuration change (it stopped by itself).
     private var configurationObserver: NSObjectProtocol?
 
-    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void, onStopped: @escaping @Sendable () -> Void, makeEngine: @escaping EngineFactory = MicrophoneCapture.makeAudioEngine) {
+    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void, onStopped: @escaping @Sendable () -> Void) {
         self.onSamples = onSamples
         self.onEnd = onEnd
         self.onStopped = onStopped
-        self.makeEngine = makeEngine
         let listener: AudioObjectPropertyListenerBlock = { _, _ in
             HelperLog.debug("MicrophoneCapture: the default input changed")
             onEnd()
@@ -171,7 +168,7 @@ final class MicrophoneCapture: @unchecked Sendable {
                 engine = prepared.engine
             } else {
                 HelperLog.debug("MicrophoneCapture: no engine prepared for device \(current); building one")
-                engine = try makeEngine { [weak self] buffer in self?.deliver(buffer) }
+                engine = try makeEngine()
             }
             prepared = nil
             tap.withLockUnchecked { $0 = TapState(session: session, sampleRate: sampleRate) }
@@ -220,15 +217,14 @@ final class MicrophoneCapture: @unchecked Sendable {
         do {
             let device = Self.defaultInputDevice()
             let began = ContinuousClock.now
-            prepared = Prepared(engine: try makeEngine { [weak self] buffer in self?.deliver(buffer) }, device: device)
+            prepared = Prepared(engine: try makeEngine(), device: device)
             HelperLog.debug("MicrophoneCapture: prepared for device \(device) (\(Self.transportName(Self.transport(of: device)))) in \((ContinuousClock.now - began).formatted(.units(allowed: [.milliseconds])))")
         } catch {
             HelperLog.error("MicrophoneCapture: prepare failed: \(type(of: error))")
         }
     }
 
-    /// The real engine: the default input, its tap installed, prepared.
-    static func makeAudioEngine(deliver: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws -> AVAudioEngine {
+    private func makeEngine() throws -> AVAudioEngine {
         let engine = AVAudioEngine()
         let input = engine.inputNode
         // The device's own format: `installTap` raises an exception Swift cannot catch when it has
@@ -238,8 +234,8 @@ final class MicrophoneCapture: @unchecked Sendable {
         HelperLog.debug("MicrophoneCapture: input at \(Int(hardware.sampleRate)) Hz, \(hardware.channelCount) channel(s)")
         // No format given: the tap takes the node's own. One read here and passed in can already
         // differ from the device's by the time it is installed, which raises the same exception.
-        input.installTap(onBus: 0, bufferSize: HelperConfig.tapBufferSize, format: nil) { buffer, _ in
-            deliver(buffer)
+        input.installTap(onBus: 0, bufferSize: HelperConfig.tapBufferSize, format: nil) { [weak self] buffer, _ in
+            self?.deliver(buffer)
         }
         engine.prepare()
         return engine

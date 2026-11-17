@@ -4,7 +4,6 @@
 
 import AVFoundation
 import Foundation
-import os
 import Testing
 @testable import VoiceMicrophoneKit
 
@@ -137,172 +136,50 @@ struct MicrophoneTransportNameTests {
     }
 }
 
-/// A stop at any point after a start leaves the helper alive until it ends itself to be started
-/// afresh: the engine that started is never stopped in the process, as `AVAudioEngine.stop` just
-/// after `start` tears the input down under Core Audio's IO thread, which then crashes the process.
-/// No microphone is used: each engine is a stand-in whose `start` and `stop` touch no device.
-struct MicrophoneCaptureStopTests {
-    struct StartFailed: Error {}
-
-    /// An engine that runs no audio, and records each stop: one here is the crash.
-    final class StandInEngine: AVAudioEngine, @unchecked Sendable {
-        let stops: OSAllocatedUnfairLock<Int>
-        let fails: Bool
-        init(stops: OSAllocatedUnfairLock<Int>, fails: Bool) {
-            self.stops = stops
-            self.fails = fails
-            super.init()
-        }
-        override func start() throws { if fails { throw StartFailed() } }
-        override func stop() { stops.withLock { $0 += 1 } }
+/// A stop at any point after a start ends the process without the engine being stopped in it: the
+/// process's exit stops it. `AVAudioEngine.stop` (or `pause`, or removing the tap) just after
+/// `start` tears the input down under Core Audio's IO thread, which then crashes the helper. The
+/// engine cannot run without a microphone, so this reads the source, as the app's
+/// `helperContract.test.ts` reads the helpers'.
+struct MicrophoneCaptureSourceTests {
+    private func source(_ name: String) throws -> String {
+        let kit = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/VoiceMicrophoneKit")
+        return try String(contentsOf: kit.appendingPathComponent(name), encoding: .utf8)
     }
 
-    final class Recorder: @unchecked Sendable {
-        let stops = OSAllocatedUnfairLock(initialState: 0)
-        let chunks = OSAllocatedUnfairLock<[Int]>(initialState: [])
-        /// Ends after the queued chunks (the input changed, a start failed), and at once (a stop).
-        let ends = OSAllocatedUnfairLock(initialState: 0)
-        let stoppedEnds = OSAllocatedUnfairLock(initialState: 0)
-        let startFails: Bool
-        let factoryFails: Bool
-        /// The engine built, held weakly: only the capture keeps it.
-        weak var engine: StandInEngine?
-        /// The tap's handler; set as the engine is built, before the start that reads it.
-        var deliver: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    /// The code alone, each line's comment cut off.
+    private func code(_ name: String) throws -> String {
+        try source(name).split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in line.range(of: "//").map { String(line[..<$0.lowerBound]) } ?? String(line) }
+            .joined(separator: "\n")
+    }
 
-        init(startFails: Bool = false, factoryFails: Bool = false) {
-            self.startFails = startFails
-            self.factoryFails = factoryFails
-        }
+    /// The text from `start` to the next line that begins a declaration at `start`'s indentation.
+    private func body(of start: String, in code: String) throws -> String {
+        let begin = try #require(code.range(of: start))
+        let rest = code[begin.upperBound...]
+        let end = rest.range(of: "\n    func ") ?? rest.range(of: "\n    private func ")
+        return String(rest[..<(end?.lowerBound ?? rest.endIndex)])
+    }
 
-        func capture() -> MicrophoneCapture {
-            MicrophoneCapture(
-                onSamples: { session, _ in self.chunks.withLock { $0.append(session) } },
-                onEnd: { self.ends.withLock { $0 += 1 } },
-                onStopped: { self.stoppedEnds.withLock { $0 += 1 } },
-                makeEngine: { deliver in
-                    if self.factoryFails { throw StartFailed() }
-                    let engine = StandInEngine(stops: self.stops, fails: self.startFails)
-                    self.engine = engine
-                    self.deliver = deliver
-                    return engine
-                }
-            )
-        }
-
-        func hear() throws {
-            let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false))
-            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-            buffer.frameLength = 4096
-            let deliver = try #require(self.deliver)
-            deliver(buffer)
-        }
-
-        var counts: (stops: Int, ends: Int, stoppedEnds: Int) {
-            (stops.withLock { $0 }, ends.withLock { $0 }, stoppedEnds.withLock { $0 })
+    @Test func noEngineIsStoppedInTheProcess() throws {
+        let capture = try code("MicrophoneCapture.swift")
+        for call in [".stop()", ".pause()", "removeTap", ".reset()"] {
+            #expect(!capture.contains(call), "MicrophoneCapture calls \(call)")
         }
     }
 
-    @Test(arguments: [false, true])
-    func aStopRightAfterTheStartEndsTheProcessWithoutStoppingTheEngine(prepared: Bool) async throws {
-        let recorder = Recorder()
-        let capture = recorder.capture()
-        if prepared { await capture.prepare() }
+    @Test func aStopEndsTheProcessAtOnce() throws {
+        let capture = try code("MicrophoneCapture.swift")
+        let stop = try body(of: "func stop(session: Int) async {", in: capture)
+        #expect(stop.contains("onStopped()") && !stop.contains("onEnd()"))
+        let endsProcess = try body(of: "case .endsProcess:", in: capture)
+        let endsProcessCase = String(endsProcess[..<(endsProcess.range(of: "case .runs:")?.lowerBound ?? endsProcess.endIndex)])
+        #expect(endsProcessCase.contains("onStopped()") && !endsProcessCase.contains("onEnd()"))
 
-        try await capture.start(session: 1, sampleRate: 16_000)
-        try recorder.hear()
-        await capture.stop(session: 1)
-        try recorder.hear()
-
-        #expect(recorder.counts == (0, 0, 1))
-        // Heard while it ran, and nothing after the stop.
-        #expect(recorder.chunks.withLock { $0 } == [1])
-        // Kept running until the process ends, never released here.
-        #expect(recorder.engine != nil)
-        withExtendedLifetime(capture) {}
-    }
-
-    /// A stop for a newer session than the running one stops it too; one for an older session, or
-    /// one that arrives before its session's start, leaves nothing running and the process alone
-    /// until a start would run.
-    @Test func aStopOfANewerSessionEndsTheRunningOne() async throws {
-        let recorder = Recorder()
-        let capture = recorder.capture()
-
-        try await capture.start(session: 2, sampleRate: 16_000)
-        await capture.stop(session: 1)
-        // The older stop leaves session 2 running and heard.
-        try recorder.hear()
-        #expect(recorder.counts == (0, 0, 0))
-        await capture.stop(session: 3)
-        try recorder.hear()
-
-        #expect(recorder.counts == (0, 0, 1))
-        #expect(recorder.chunks.withLock { $0 } == [2])
-        #expect(recorder.engine != nil)
-        withExtendedLifetime(capture) {}
-    }
-
-    @Test func aStopBeforeItsStartKeepsTheEngineOff() async throws {
-        let recorder = Recorder()
-        let capture = recorder.capture()
-
-        await capture.stop(session: 1)
-        try await capture.start(session: 1, sampleRate: 16_000)
-
-        #expect(recorder.counts == (0, 0, 0))
-        #expect(recorder.engine == nil)
-        withExtendedLifetime(capture) {}
-    }
-
-    /// A start that comes after this process's engine started ends the process the same way.
-    @Test func aStartAfterTheStopEndsTheProcessWithoutStoppingTheEngine() async throws {
-        let recorder = Recorder()
-        let capture = recorder.capture()
-
-        try await capture.start(session: 1, sampleRate: 16_000)
-        await capture.stop(session: 1)
-        var refused = false
-        do { try await capture.start(session: 2, sampleRate: 16_000) } catch { refused = true }
-
-        #expect(refused)
-        #expect(recorder.counts == (0, 0, 2))
-        #expect(recorder.engine != nil)
-        withExtendedLifetime(capture) {}
-    }
-
-    /// A newer session's start supersedes the running one in the same process: it too ends the
-    /// process and leaves the engine to its exit.
-    @Test func aNewerStartWhileRunningEndsTheProcessWithoutStoppingTheEngine() async throws {
-        let recorder = Recorder()
-        let capture = recorder.capture()
-
-        try await capture.start(session: 1, sampleRate: 16_000)
-        var refused = false
-        do { try await capture.start(session: 2, sampleRate: 16_000) } catch { refused = true }
-        try recorder.hear()
-
-        #expect(refused)
-        #expect(recorder.counts == (0, 0, 1))
-        #expect(recorder.chunks.withLock { $0 }.isEmpty)
-        #expect(recorder.engine != nil)
-        withExtendedLifetime(capture) {}
-    }
-
-    /// A start that fails ends the process (after its chunks, of which there are none), and the
-    /// engine that failed is kept, not stopped; a stop then has nothing to stop.
-    @Test(arguments: [false, true])
-    func aFailedStartEndsTheProcessWithoutStoppingTheEngine(inFactory: Bool) async throws {
-        let recorder = Recorder(startFails: !inFactory, factoryFails: inFactory)
-        let capture = recorder.capture()
-
-        var failed = false
-        do { try await capture.start(session: 1, sampleRate: 16_000) } catch { failed = true }
-        await capture.stop(session: 1)
-
-        #expect(failed)
-        #expect(recorder.counts == (0, 1, 0))
-        #expect((recorder.engine != nil) == !inFactory)
-        withExtendedLifetime(capture) {}
+        let service = try code("MicrophoneService.swift")
+        #expect(service.contains("onStopped: endingNow(end: end)"))
+        #expect(service.contains("onEnd: ending(after: chunkQueue, end: end)"))
     }
 }

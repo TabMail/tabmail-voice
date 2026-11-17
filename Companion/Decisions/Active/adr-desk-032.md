@@ -355,3 +355,27 @@ slice in every Mach-O component; universal bundles must also retain every Intel 
 release helper checks the actual signed bundle, in addition to its existing signing/notarization
 and helper checks. The addon’s two original slices are preserved; no credential-store behavior
 or existing sign-in is changed. Installed copies receive this through the next signed update.
+
+### Amendment 2026-11-17: on macOS a stop ends `voice-microphone` at once, its engine never stopped in the process
+
+A dictation stopped or cancelled right after it started crashed the macOS helper (`SIGSEGV` on
+Core Audio's IO thread, `HALC_ProxyIOContext::IOWorkLoop` calling a null function). In every crash
+report the helper's microphone queue was inside `AVAudioEngine.stop` (`AudioOutputUnitStop`):
+stopping the engine just after `start` returned tore its input down while the IO thread was still
+starting on it. The app restarted the helper, so it healed, but a dictation started in that second
+could fail.
+
+- `MicrophoneCapture` never stops, pauses or removes the tap of an engine that started: the
+  process's exit does. A stop (and a start after the process's engine started) only ends the
+  session, so no chunk reaches the app after it, and the process ends.
+- That end is at once (`MicrophoneService.endingNow`), not after the chunks already queued: the app
+  takes none of a session's chunks after its stop, and with the engine running until the exit,
+  waiting on a chunk write (which waits on the app reading the pipe) would keep the microphone on.
+  The stop's reply does not get out; the app already takes the helper's exit as the stop's answer.
+- A failed start, a default-input change and `AVAudioEngineConfigurationChange` still end after
+  the chunks already queued, so a dictation that was running sends all that was heard.
+- The microphone goes off when the process ends, a few milliseconds after the stop, where it went
+  off as the engine stopped just before.
+- Windows and Linux are unchanged: their helpers write the replies and chunks already sent first.
+  macOS differs only in dropping the chunks of a stopped session, which the app discards anyway.
+

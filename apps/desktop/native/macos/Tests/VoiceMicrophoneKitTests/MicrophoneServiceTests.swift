@@ -2,7 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import AVFoundation
 import Foundation
 import os
 import Testing
@@ -102,6 +101,32 @@ struct MicrophoneServiceEndingTests {
     }
 }
 
+/// A stop ends the process at once, not behind the chunks still queued: the app takes none after
+/// its stop, and writing one waits on the app reading the pipe while the microphone runs until the
+/// process ends.
+struct MicrophoneServiceStopTests {
+    @Test func aStopEndsTheProcessWhileAChunkWriteIsBlocked() async {
+        let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.test.microphoneChunks")
+        let gate = DispatchSemaphore(value: 0)
+        let written = OSAllocatedUnfairLock(initialState: false)
+        chunkQueue.async {
+            gate.wait()
+            written.withLock { $0 = true }
+        }
+        let ended = DispatchSemaphore(value: 0)
+        MicrophoneService.endingNow(end: { ended.signal() })()
+        let result = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(returning: ended.wait(timeout: .now() + .seconds(5)))
+            }
+        }
+        #expect(result == .success)
+        #expect(!written.withLock { $0 })
+        // Lets the blocked write finish, so the test leaves no thread waiting.
+        gate.signal()
+    }
+}
+
 /// A chunk as the app reads it off the wire: its session a number, its samples base64 of
 /// little-endian 32-bit floats that decode back to the samples sent.
 struct MicrophoneChunkEventTests {
@@ -123,87 +148,5 @@ struct MicrophoneChunkEventTests {
             Float(bitPattern: UInt32(bytes[index * 4]) | UInt32(bytes[index * 4 + 1]) << 8 | UInt32(bytes[index * 4 + 2]) << 16 | UInt32(bytes[index * 4 + 3]) << 24)
         }
         #expect(decoded == samples)
-    }
-}
-
-/// A stop ends the process even while the app is not reading its output: the chunks still queued
-/// are not waited on, as the app takes none after its stop, and the microphone runs until the
-/// process ends. No microphone is used.
-struct MicrophoneServiceStopTests {
-    @Test func aStopEndsTheProcessWhileTheOutputIsBlocked() async throws {
-        let blocked = DispatchSemaphore(value: 0)
-        let ended = DispatchSemaphore(value: 0)
-        let stops = OSAllocatedUnfairLock(initialState: 0)
-        let deliver = OSAllocatedUnfairLock<(@Sendable (AVAudioPCMBuffer) -> Void)?>(uncheckedState: nil)
-        // The app reads replies but stops reading at the first chunk: that write never returns.
-        let channel = HelperChannel(output: { line in
-            if String(decoding: line, as: UTF8.self).contains(#""microphoneChunk""#) { blocked.wait() }
-        })
-        let service = MicrophoneService.register(on: channel, end: { ended.signal() }, makeEngine: { tap in
-            deliver.withLockUnchecked { $0 = tap }
-            return MicrophoneCaptureStopTests.StandInEngine(stops: stops, fails: false)
-        })
-
-        await channel.handle(line: Data(#"{"id":1,"method":"microphoneStart","params":{"session":1,"sampleRate":16000}}"#.utf8))
-        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false))
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        buffer.frameLength = 4096
-        let tap = try #require(deliver.withLockUnchecked { $0 })
-        tap(buffer)
-        tap(buffer)
-        Task { await channel.handle(line: Data(#"{"id":2,"method":"microphoneStop","params":{"session":1}}"#.utf8)) }
-
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                continuation.resume(returning: ended.wait(timeout: .now() + .seconds(5)))
-            }
-        }
-        #expect(result == .success)
-        #expect(stops.withLock { $0 } == 0)
-        // Lets the blocked writes finish, so the test leaves no thread waiting.
-        blocked.signal()
-        blocked.signal()
-        withExtendedLifetime(service) {}
-    }
-
-    /// The input changing under a running dictation still ends the process only after the chunks
-    /// already queued, so the app has all that was heard.
-    @Test func aConfigurationChangeEndsTheProcessAfterTheQueuedChunks() async throws {
-        let blocked = DispatchSemaphore(value: 0)
-        let ended = DispatchSemaphore(value: 0)
-        let written = OSAllocatedUnfairLock(initialState: 0)
-        let stops = OSAllocatedUnfairLock(initialState: 0)
-        let built = OSAllocatedUnfairLock<(tap: (@Sendable (AVAudioPCMBuffer) -> Void), engine: AVAudioEngine)?>(uncheckedState: nil)
-        let channel = HelperChannel(output: { line in
-            guard String(decoding: line, as: UTF8.self).contains(#""microphoneChunk""#) else { return }
-            blocked.wait()
-            written.withLock { $0 += 1 }
-        })
-        let service = MicrophoneService.register(on: channel, end: { ended.signal() }, makeEngine: { tap in
-            let engine = MicrophoneCaptureStopTests.StandInEngine(stops: stops, fails: false)
-            built.withLockUnchecked { $0 = (tap, engine) }
-            return engine
-        })
-
-        await channel.handle(line: Data(#"{"id":1,"method":"microphoneStart","params":{"session":1,"sampleRate":16000}}"#.utf8))
-        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false))
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        buffer.frameLength = 4096
-        let (tap, engine) = try #require(built.withLockUnchecked { $0 })
-        tap(buffer)
-        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: engine)
-
-        let wait: @Sendable (DispatchTime) async -> DispatchTimeoutResult = { deadline in
-            await withCheckedContinuation { continuation in
-                DispatchQueue.global().async { continuation.resume(returning: ended.wait(timeout: deadline)) }
-            }
-        }
-        // Not while the queued chunk is still being written.
-        #expect(await wait(.now() + .milliseconds(300)) == .timedOut)
-        blocked.signal()
-        #expect(await wait(.now() + .seconds(5)) == .success)
-        #expect(written.withLock { $0 } == 1)
-        #expect(stops.withLock { $0 } == 0)
-        withExtendedLifetime(service) {}
     }
 }
