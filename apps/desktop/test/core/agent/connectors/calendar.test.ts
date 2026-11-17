@@ -782,39 +782,72 @@ describe("calendar_event_edit", () => {
 
   const lastChanges = () => editor.edits.at(-1)?.changes;
 
-  /** A change between all day and timed is asked for with all_day and gives both times; with one of
-   * them, or a time of the other kind without all_day, it is refused before the card with what to ask,
-   * and nothing is written. The default event duration never makes up the missing time. */
-  test("a change between all day and timed needs all_day and both times", async () => {
-    const trip = { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" };
-    editor.byID.set("trip", trip);
+  /** A change between all day and timed is given whole, as make_all_day {first_day, last_day} or
+   * make_timed {start_iso, end_iso}; every other way of asking for it (all_day, a field missing or of
+   * the wrong kind, a time of the other kind alone, both objects, an object beside start_iso/end_iso) is
+   * refused before the card, naming the fields it needs, and nothing is written. The default event
+   * duration never makes up a missing time. */
+  test("a change between all day and timed is given whole, as make_all_day or make_timed", async () => {
+    editor.byID.set("trip", { ...event("Trip", day, new Date(at(0, 0, 3).getTime() - 1000), { allDay: true }), id: "trip" });
+    const fields = /make_all_day \{first_day, last_day\}.*make_timed \{start_iso, end_iso\}|make_timed \{start_iso, end_iso\}|make_all_day \{first_day, last_day\}/u;
     const refused: [Record<string, unknown>, RegExp][] = [
-      [{ event_id: "trip", start_iso: iso(at(9)) }, /all-day event, and the edit gives a time of day without all_day/u],
-      [{ event_id: "trip", end_iso: iso(at(18)) }, /all-day event, and the edit gives a time of day without all_day/u],
-      [{ event_id: "trip", all_day: false }, /makes this all-day event timed, which needs both start_iso and end_iso/u],
-      [{ event_id: "trip", all_day: false, start_iso: iso(at(9)) }, /makes this all-day event timed, which needs both start_iso and end_iso/u],
-      [{ event_id: "trip", all_day: false, end_iso: iso(at(18)) }, /makes this all-day event timed, which needs both start_iso and end_iso/u],
-      [{ event_id: "trip", all_day: false, start_iso: iso(day, false), end_iso: iso(at(18)) }, /all_day is false, so start_iso and end_iso each give a date and a time of day/u],
-      [{ event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, /timed event, and the edit gives a date without a time of day and without all_day/u],
-      [{ event_id: "event-1", all_day: true }, /makes this timed event all-day, which needs both start_iso and end_iso/u],
-      [{ event_id: "event-1", all_day: true, end_iso: iso(day, false) }, /makes this timed event all-day, which needs both start_iso and end_iso/u],
-      [{ event_id: "event-1", all_day: true, start_iso: iso(at(0, 0, 1), false) }, /makes this timed event all-day, which needs both start_iso and end_iso/u],
-      [{ event_id: "trip", all_day: true, start_iso: iso(at(9)) }, /all_day is true, so start_iso and end_iso are dates/u],
-      [{ event_id: "event-1", all_day: false, start_iso: iso(at(0, 0, 1), false) }, /all_day is false, so start_iso and end_iso each give a date and a time of day/u],
-      [{ event_id: "event-1", all_day: true, start_iso: iso(day, false), end_iso: iso(at(18)) }, /all_day is true, so start_iso and end_iso are dates/u],
+      [{ event_id: "trip", all_day: false }, /takes no all_day/u],
+      [{ event_id: "trip", all_day: false, start_iso: iso(at(9)), end_iso: iso(at(18)) }, /takes no all_day/u],
+      [{ event_id: "event-1", all_day: true }, /takes no all_day/u],
+      [{ event_id: "trip", all_day: true }, /takes no all_day/u],
+      [{ event_id: "trip", start_iso: iso(at(9)) }, /all-day event, and the edit gives a time of day.*make_timed \{start_iso, end_iso\}/u],
+      [{ event_id: "trip", end_iso: iso(at(18)) }, /all-day event, and the edit gives a time of day/u],
+      [{ event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, /timed event, and the edit gives a date without a time of day.*make_all_day \{first_day, last_day\}/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(9)) } }, /make_timed needs both start_iso and end_iso, each a date and a time of day/u],
+      [{ event_id: "trip", make_timed: { end_iso: iso(at(18)) } }, /make_timed needs both start_iso and end_iso/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(day, false), end_iso: iso(at(18)) } }, /make_timed needs both start_iso and end_iso/u],
+      [{ event_id: "trip", make_timed: "9 to 5" }, /make_timed needs both start_iso and end_iso/u],
+      [{ event_id: "event-1", make_all_day: {} }, /make_all_day needs both first_day and last_day, each a date without a time of day/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false) } }, /make_all_day needs both first_day and last_day/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(at(18)) } }, /make_all_day needs both first_day and last_day/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(at(0, 0, 2), false), last_day: iso(day, false) } }, /last_day is before its first_day/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(18)), end_iso: iso(at(9)) } }, /make_timed's end_iso is before its start_iso/u],
+      [{ event_id: "event-1", make_all_day: { first_day: iso(day, false), last_day: iso(day, false) }, make_timed: { start_iso: iso(at(9)), end_iso: iso(at(10)) } }, /not both/u],
+      [{ event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) }, start_iso: iso(at(9)) }, /give no start_iso or end_iso beside it/u],
     ];
     for (const [args, reason] of refused) {
-      await expect(tool.confirmation(args, live, { eventDuration: 90 })).rejects.toThrow(reason);
+      const writes = editor.edits.length;
+      await expect(confirmed(tool, args, live, { eventDuration: 90 })).rejects.toThrow(reason);
+      expect(editor.edits.length).toBe(writes);
     }
+    for (const [args] of refused.slice(0, 7)) await expect(confirmed(tool, args, live)).rejects.toThrow(fields);
     expect(editor.edits).toEqual([]);
 
-    await confirmed(tool, { event_id: "trip", all_day: false, start_iso: iso(at(9)), end_iso: iso(at(18)) }, live, { eventDuration: 90 });
+    await confirmed(tool, { event_id: "trip", make_timed: { start_iso: iso(at(9)), end_iso: iso(at(18)) } }, live, { eventDuration: 90 });
     expect(lastChanges()).toMatchObject({ start: at(9), end: at(18), isAllDay: false });
-    await confirmed(tool, { event_id: "event-1", all_day: true, start_iso: iso(at(0, 0, 1), false), end_iso: iso(at(0, 0, 2), false) }, live);
+    await confirmed(tool, { event_id: "event-1", make_all_day: { first_day: iso(at(0, 0, 1), false), last_day: iso(at(0, 0, 2), false) } }, live);
     expect(lastChanges()).toMatchObject({ start: at(0, 0, 1), end: at(0, 0, 2), isAllDay: true });
-    // all_day the event already is changes nothing about its kind.
-    await confirmed(tool, { event_id: "trip", all_day: true }, live);
-    expect(lastChanges()).toMatchObject({ start: day, end: at(0, 0, 2), isAllDay: true });
+    // Given for an event already of that kind, it sets its times.
+    await confirmed(tool, { event_id: "trip", make_all_day: { first_day: iso(at(0, 0, 4), false), last_day: iso(at(0, 0, 5), false) } }, live);
+    expect(lastChanges()).toMatchObject({ start: at(0, 0, 4), end: at(0, 0, 5), isAllDay: true });
+    await confirmed(tool, { event_id: "event-1", make_timed: { start_iso: iso(at(13)), end_iso: iso(at(14)) } }, live);
+    expect(lastChanges()).toMatchObject({ start: at(13), end: at(14), isAllDay: false });
+  });
+
+  /** An event that happens once is not changed by an empty recurrence, and a rule of one occurrence is
+   * refused for it as no repeat; on a series, count 1 ends it after its first occurrence, said plainly. */
+  test("a recurrence of one occurrence", async () => {
+    await expect(confirmed(tool, { event_id: "event-1", recurrence: {} }, live)).rejects.toThrow(/Nothing to change/u);
+    await confirmed(tool, { event_id: "event-1", title: "Kickoff", recurrence: {} }, live);
+    expect(lastChanges()).toEqual({ title: "Kickoff", invite: [], uninvite: [], exclude: [] });
+    const writes = editor.edits.length;
+    await expect(confirmed(tool, { event_id: "event-1", recurrence: { freq: "DAILY", count: 1 } }, live)).rejects.toThrow(/count 1 is not a repeat: this event happens once already, so leave recurrence out/u);
+    await expect(confirmed(tool, { event_id: "event-1", title: "Kickoff", recurrence: { freq: "WEEKLY", count: 1 } }, live)).rejects.toThrow(/count 1 is not a repeat/u);
+    expect(editor.edits.length).toBe(writes);
+    // A single event made to repeat still is.
+    await confirmed(tool, { event_id: "event-1", recurrence: { freq: "WEEKLY", count: 3 } }, live);
+    expect(lastChanges()?.recurrence).toMatchObject({ frequency: "WEEKLY", count: 3 });
+
+    const args = { event_id: "series-1", recurrence: { freq: "DAILY", count: 1 } };
+    expect(await words(tool.confirmation(args, new AbortController().signal, toolSettings))).toContain("Ends after 1 occurrence: the later ones are deleted");
+    expect((await card(tool.confirmation(args, new AbortController().signal, toolSettings))).lines).toContainEqual({ icon: "repeat", text: "Ends after 1 occurrence: the later ones are deleted", detail: null, tone: "added" });
+    await tool.run(args, live);
+    expect(lastChanges()?.recurrence).toMatchObject({ frequency: "DAILY", count: 1 });
   });
 
   /** A new start alone keeps the event's length; both set both. The user is asked about the event as
@@ -1266,9 +1299,9 @@ describe("a question's card", () => {
     // Made all day, the new time is the day; an all-day event given a time shows the time, and moved
     // to another day names that day beside the old one's page.
     editor.byID.set("planning", { ...event("Planning", inThisYear(10), inThisYear(11)), id: "planning", attendees: [], organizer: null, recurrence: null });
-    expect((await card(tool.confirmation({ event_id: "planning", all_day: true, start_iso: iso(inThisYear(0), false), end_iso: iso(inThisYear(0), false) }, new AbortController().signal, toolSettings))).newTime).toBe("All day");
+    expect((await card(tool.confirmation({ event_id: "planning", make_all_day: { first_day: iso(inThisYear(0), false), last_day: iso(inThisYear(0), false) } }, new AbortController().signal, toolSettings))).newTime).toBe("All day");
     editor.byID.set("holiday", { ...event("Holiday", inThisYear(0), inThisYear(0), { allDay: true }), id: "holiday", attendees: [], organizer: null, recurrence: null });
-    expect((await card(tool.confirmation({ event_id: "holiday", start_iso: iso(inThisYear(9)), end_iso: iso(inThisYear(10)), all_day: false }, new AbortController().signal, toolSettings))).newTime).toBe(LocalDateTime.timeRange(inThisYear(9), inThisYear(10), false));
+    expect((await card(tool.confirmation({ event_id: "holiday", make_timed: { start_iso: iso(inThisYear(9)), end_iso: iso(inThisYear(10)) } }, new AbortController().signal, toolSettings))).newTime).toBe(LocalDateTime.timeRange(inThisYear(9), inThisYear(10), false));
     // Notes given are shown in the accent, notes cleared are struck out, and each is what is written.
     editor.byID.set("briefing", { ...event("Briefing", at(9), at(10)), id: "briefing", notes: "Old agenda", attendees: [], organizer: null, recurrence: null });
     expect((await card(tool.confirmation({ event_id: "planning", notes: "Bring the deck" }, new AbortController().signal, toolSettings))).lines).toEqual([line("notes", "Bring the deck", "added")]);

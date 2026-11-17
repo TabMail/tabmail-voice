@@ -37,7 +37,7 @@ it did at 1.9.3. Tests: the same two, at 1.10.0.
 
 **Amendment 2026-11-17: the protocol is 1.11.4.** Voice's own `calendar_event_edit` and
 `calendar_event_create` texts changed contract (an end alone keeps the start; a change between all day
-and timed needs `all_day` and both times; `all_day` true takes a day), so the backend carries them as
+and timed is given whole as `make_all_day` or `make_timed`; an all-day create takes days only), so the backend carries them as
 new Voice tool files at 1.11.4, the Thunderbird release whose wording they adapt, and
 `config.clientProtocol` is `1.11.4`. Between 1.10.0 and 1.11.4 the only other file Voice resolves is the
 common `email_search` at 1.10.2, which this app does not list in `loopTools`, so every other prompt and
