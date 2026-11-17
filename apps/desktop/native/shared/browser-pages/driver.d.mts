@@ -6,7 +6,7 @@
 import type { Readable, Writable } from "node:stream";
 import type { Page, Size } from "./document.mjs";
 
-export interface Timing { request: number; page: number; settle: number; retry: number; tries: number; front: number }
+export interface Timing { request: number; page: number; settle: number; retry: number; tries: number; front: number; loads: number }
 export const timing: Timing;
 export const fieldMaxLength: number;
 export const pages: Page[];

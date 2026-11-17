@@ -12,9 +12,10 @@ import { cases, lines } from "./document.mjs";
 
 /** How long, in milliseconds: a helper may take to answer; a page may take to load and to place a
  * caret; and the reads wait for the browser's accessibility events after a caret moves, then
- * between tries of a read the browser has not caught up with. How many tries a read gets, and how
- * many a new window gets to be named as in front. */
-export const timing = { request: 10_000, page: 30_000, settle: 300, retry: 300, tries: 5, front: 20 };
+ * between tries of a read the browser has not caught up with. How many tries a read gets, how
+ * many a new window gets to be named as in front, and how many windows a page gets to load in (a
+ * busy machine can miss one load). */
+export const timing = { request: 10_000, page: 30_000, settle: 300, retry: 300, tries: 5, front: 20, loads: 3 };
 /** The longest field `focusedFieldValue` reads, as the app asks it. */
 export const fieldMaxLength = 20_000;
 export const pages = ["codemirror", "compose"];
@@ -173,14 +174,23 @@ export async function readPages({ platform, browsers, startHelpers, launch, chan
       for (const page of pages) {
         for (const size of ["short", "long"]) {
           const documentLines = lines(page, size);
-          const loaded = channel.open();
-          const window = launch(browser, url(page, size));
+          let window = null;
           try {
-            // A timer cleared once the page loads, so none is left to keep the run going after its last page.
-            await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => reject(new Error(`${page} did not load in ${browser.name}`)), times.page);
-              loaded.then(() => { clearTimeout(timer); resolve(); });
-            });
+            // A page that does not load in time is closed and opened again in a new window, a bounded
+            // number of times. A timer is cleared once the page loads, so none is left to keep the run
+            // going after its last page.
+            for (let tries = 1; ; ++tries) {
+              const loaded = channel.open();
+              window = launch(browser, url(page, size));
+              const done = await new Promise((resolve) => {
+                const timer = setTimeout(() => resolve(false), times.page);
+                loaded.then(() => { clearTimeout(timer); resolve(true); });
+              });
+              if (done) break;
+              if (tries >= times.loads) throw new Error(`${page} did not load in ${browser.name}`);
+              await window.close();
+              window = null;
+            }
             const first = await bringToFront(browser, window, cases(page).find((each) => each.size === size));
             record(`${browser.name} ${page} ${size}-document identity`, checkIdentity(browser.name, first));
             const anchors = [];
@@ -210,7 +220,7 @@ export async function readPages({ platform, browsers, startHelpers, launch, chan
             helpers.stop();
             helpers = startHelpers();
           } finally {
-            await window.close();
+            await window?.close();
           }
         }
       }

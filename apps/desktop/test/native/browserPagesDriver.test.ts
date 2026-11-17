@@ -72,7 +72,8 @@ function stopsOnTheWire(wire: Wire) {
 }
 
 /** A page in a browser, the helpers reading it, and everything each was asked, in order. */
-function world(options: { platform?: string; selected?: (command: Command, text: string) => string; screen?: (read: object, count: number, key: string) => object | null; anchor?: (count: number, right: object | null) => object | Error | null; shellAnchor?: object | null; field?: (count: number, right: object, sincePlaced: number) => object | Error | null; loads?: boolean; wire?: Wire } = {}) {
+function world(options: { platform?: string; selected?: (command: Command, text: string) => string; screen?: (read: object, count: number, key: string) => object | null; anchor?: (count: number, right: object | null) => object | Error | null; shellAnchor?: object | null; field?: (count: number, right: object, sincePlaced: number) => object | Error | null; loads?: boolean | number; wire?: Wire } = {}) {
+  let opened = 0;
   const events: string[] = [];
   const requests: { helper: string; method: string; params: unknown }[] = [];
   // Requests outside what each helper is asked for reading (a clipboard request, say), which no run may make.
@@ -108,7 +109,12 @@ function world(options: { platform?: string; selected?: (command: Command, text:
       };
       return Promise.resolve(report);
     },
-    open: () => (options.loads === false ? new Promise(() => undefined) : Promise.resolve({ ready: true })),
+    // `loads` false: no page ever loads; a number: that many opens never load before one does.
+    open: () => {
+      opened += 1;
+      const hangs = options.loads === false || (typeof options.loads === "number" && opened <= options.loads);
+      return hangs ? new Promise(() => undefined) : Promise.resolve({ ready: true });
+    },
   };
   const key = () => `${current.page} ${current.size} ${placed?.line} ${placed?.from} ${placed?.to}`;
   const helper = (name: string, methods: string[], answer: (method: string, params: unknown) => unknown): Helper => ({
@@ -193,7 +199,7 @@ function world(options: { platform?: string; selected?: (command: Command, text:
     write: (line) => { output.push(line); },
     wait: (ms) => { waits.push(ms); now += ms; return Promise.resolve(); },
     // A page that never loads fails at once.
-    times: { ...timing, page: options.loads === false ? 1 : timing.page },
+    times: { ...timing, page: options.loads === undefined || options.loads === true ? timing.page : 1 },
   });
   return { run, events, requests, forbidden, waits, windows, output, started: () => started };
 }
@@ -515,6 +521,22 @@ describe("the browser-page driver", () => {
     expect(unloadedResults.every(({ outcome }) => outcome === "fail")).toBe(true);
     expect(unloaded.output[0]).toBe("FAIL edge codemirror short-document: codemirror did not load in edge\n");
     expect(status).toBe(1);
+  });
+
+  test("a page that does not load is opened again in a new window, a bounded number of times", async () => {
+    // A slow load (a busy machine) costs a new window, not the page's reads.
+    const slow = world({ loads: timing.loads - 1 });
+    const { status, results } = await slow.run();
+    expect(results.map(({ key }) => key)).toEqual(every("edge"));
+    expect(status).toBe(0);
+    const launches = slow.events.filter((each) => each.startsWith("launch ")).map((each) => each.slice("launch ".length));
+    expect(launches.slice(0, timing.loads)).toEqual(Array.from({ length: timing.loads }, () => "http://page/codemirror.html?size=short"));
+    expect(slow.windows.slice(0, timing.loads - 1).every(({ closed }) => closed)).toBe(true);
+    // One that never loads fails its page after that many windows, each closed.
+    const never = world({ loads: false });
+    await never.run();
+    expect(never.events.filter((each) => each === "launch http://page/codemirror.html?size=short")).toHaveLength(timing.loads);
+    expect(never.windows.every(({ closed }) => closed)).toBe(true);
   });
 
   test("a screen read naming another app while the caret is read stops the page", async () => {
