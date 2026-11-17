@@ -31,6 +31,10 @@ menu ... settings tool").
   request, which the tool's result tells the model.
 - **Edits.** An all-day event made timed (ADR-DESK-060) lasts the same duration, from its new start
   or back from its new end; a timed event keeps its own length.
+  *Superseded 2026-11-17:* the duration no longer applies to edits. A change between all day and
+  timed is asked for with `all_day` and gives both `start_iso` and `end_iso`, or is refused before
+  the card with what to ask (as Thunderbird and iOS do); a new end alone keeps the start, as Google
+  Calendar does; a new start alone keeps the event's length.
 
 **Consequences:**
 - The default changes from an hour to 45 minutes, matching Thunderbird and iOS.

@@ -547,6 +547,8 @@ export class CalendarEventCreateTool implements ConnectorTool {
     if (start === null) throw ToolArgumentError.missing("start_iso");
     const end = Arguments.localDate(args, "end_iso");
     const isAllDay = typeof args.all_day === "boolean" ? args.all_day : !start.hasTime;
+    // all_day true never drops the time the start gives: it is asked which the user meant.
+    if (isAllDay && start.hasTime) throw new ToolArgumentError("all_day is true, but start_iso gives a time of day. Give start_iso as a date (end_iso its last day), or all_day: false to keep the time; ask the user which they meant if they did not say.");
     const fields = { title, calendar: "", location: Arguments.text(args, "location"), notes: Arguments.text(args, "notes") };
     let event: CalendarEvent;
     if (isAllDay) {
@@ -640,8 +642,8 @@ export class CalendarEventEditTool implements ConnectorTool {
   constructor(private readonly editor: EventEditor) {}
 
   /** Throws for a change it can't make or an event it can't read, so nothing is changed unasked. */
-  async confirmation(args: Record<string, unknown>, _signal: AbortSignal, settings: ToolSettings): Promise<{ text: string; event: EventQuestion }> {
-    const plan = await this.plan(args, settings);
+  async confirmation(args: Record<string, unknown>, _signal: AbortSignal, _settings: ToolSettings): Promise<{ text: string; event: EventQuestion }> {
+    const plan = await this.plan(args);
     this.prepared.set(args, plan);
     const { current, changes, scope, occurrence } = plan;
     const lines = ["Change this event?", current.title, spokenWhen(current)];
@@ -678,7 +680,7 @@ export class CalendarEventEditTool implements ConnectorTool {
   }
 
   /** The change the arguments ask for, over the event as it is when asked; throws for one it can't make. */
-  async plan(args: Record<string, unknown>, settings: ToolSettings): Promise<EditPlan> {
+  async plan(args: Record<string, unknown>): Promise<EditPlan> {
     const id = Arguments.text(args, "event_id");
     if (id === null) throw ToolArgumentError.missing("event_id");
     const occurrence = Arguments.localDate(args, "recurrence_id")?.date ?? null;
@@ -700,7 +702,7 @@ export class CalendarEventEditTool implements ConnectorTool {
     const changes: EventChanges = { invite: attendeesArgument(args, "add_attendees"), uninvite: [], exclude: [] };
     const title = Arguments.text(args, "title");
     if (title !== null) changes.title = title;
-    const times = editedTimes(args, current, settings.eventDuration);
+    const times = editedTimes(args, current);
     if (times !== null) {
       // Moving a series needs the occurrence the new times are for: every one moves by as much.
       if (repeats && occurrence === null) throw new ToolArgumentError("A repeating event's new start_iso or end_iso needs recurrence_id: the occurrence those times are for.");
@@ -780,38 +782,49 @@ function picksDays(rule: EventRecurrence): boolean {
 }
 
 /** The new start, end and all-day of an edit, or null when it changes none of them. A new start
- * alone keeps the event's length; a new end alone keeps its start, as Google Calendar does; changed between all day and timed,
- * the event lasts a day, or `eventDuration` minutes. */
-function editedTimes(args: Record<string, unknown>, current: CalendarEvent, eventDuration: number): { start: Date; end: Date; isAllDay: boolean } | null {
+ * alone keeps the event's length; a new end alone keeps its start, as Google Calendar does. A change
+ * between all day and timed is asked for with `all_day` and gives both `start_iso` and `end_iso`;
+ * a time given without one, or a kind the event isn't, is refused before the card, with what to ask. */
+function editedTimes(args: Record<string, unknown>, current: CalendarEvent): { start: Date; end: Date; isAllDay: boolean } | null {
   const start = Arguments.localDate(args, "start_iso");
   const end = Arguments.localDate(args, "end_iso");
   const allDay = typeof args.all_day === "boolean" ? args.all_day : undefined;
   if (start === null && end === null && allDay === undefined) return null;
-  const isAllDay = allDay ?? (start ? !start.hasTime : end ? !end.hasTime : current.isAllDay);
-  const sameKind = isAllDay === current.isAllDay;
+  const isAllDay = allDay ?? current.isAllDay;
+  refuseKindMismatch(current.isAllDay, allDay, start, end);
   let times: { start: Date; end: Date };
   if (isAllDay) {
     const first = LocalDateTime.startOfDay(current.start);
-    const days = sameKind ? Math.round((LocalDateTime.startOfDay(current.end).getTime() - first.getTime()) / (24 * 60 * 60 * 1_000)) : 0;
-    if (start) {
-      const newFirst = LocalDateTime.startOfDay(start.date);
-      times = { start: newFirst, end: end ? LocalDateTime.startOfDay(end.date) : LocalDateTime.addingDays(newFirst, days) };
-    } else if (end) {
-      const last = LocalDateTime.startOfDay(end.date);
-      times = { start: sameKind ? first : LocalDateTime.addingDays(last, -days), end: last };
-    } else {
-      times = { start: first, end: LocalDateTime.addingDays(first, days) };
-    }
+    const days = Math.round((LocalDateTime.startOfDay(current.end).getTime() - first.getTime()) / (24 * 60 * 60 * 1_000));
+    const newFirst = start ? LocalDateTime.startOfDay(start.date) : first;
+    times = { start: newFirst, end: end ? LocalDateTime.startOfDay(end.date) : LocalDateTime.addingDays(newFirst, days) };
   } else {
-    const length = sameKind ? current.end.getTime() - current.start.getTime() : eventDuration * 60_000;
-    if (start) times = { start: start.date, end: end ? end.date : new Date(start.date.getTime() + length) };
-    else if (end) times = { start: sameKind ? current.start : new Date(end.date.getTime() - length), end: end.date };
-    else times = { start: current.start, end: new Date(current.start.getTime() + length) };
+    const length = current.end.getTime() - current.start.getTime();
+    const newStart = start ? start.date : current.start;
+    times = { start: newStart, end: end ? end.date : new Date(newStart.getTime() + length) };
   }
   if (times.end < times.start) {
     throw new ToolArgumentError(start ? "end_iso is before start_iso." : "end_iso is before the event's start: an end_iso alone changes only the end and keeps the start. To move the event, give start_iso too, or ask the user when it should start and end.");
   }
   return { ...times, isAllDay };
+}
+
+/** Throws why an edit's times don't fit the kind the event stays or is asked to become: a change
+ * between all day and timed needs `all_day` and both times, and every time given is the new kind's
+ * (a date for all day, a date and time for timed), so nothing is guessed. */
+function refuseKindMismatch(wasAllDay: boolean, allDay: boolean | undefined, start: { hasTime: boolean } | null, end: { hasTime: boolean } | null): void {
+  const asks = "Ask the user whether it should stay all day (dates only: start_iso its first day, end_iso its last day) or become a timed event (all_day: false, with start_iso and end_iso), then retry with their answer.";
+  const askTimed = "Ask the user whether it should keep its times or become an all-day event (all_day: true, with start_iso its first day and end_iso its last day), then retry with their answer.";
+  if (allDay !== undefined && allDay !== wasAllDay && (start === null || end === null)) {
+    const missing = allDay ? "the days it covers" : "the start time and how long it lasts";
+    throw new ToolArgumentError(`The edit makes this ${wasAllDay ? "all-day" : "timed"} event ${allDay ? "all-day" : "timed"}, which needs both start_iso and end_iso: give both with all_day${allDay ? " (end_iso its last day)" : ""}. Use the times the user said, or ask them for ${missing}.`);
+  }
+  const isAllDay = allDay ?? wasAllDay;
+  const wrong = [start, end].some((value) => value !== null && value.hasTime === isAllDay);
+  if (!wrong) return;
+  if (allDay === undefined && wasAllDay) throw new ToolArgumentError(`This is an all-day event, and the edit gives a time of day without all_day. ${asks}`);
+  if (allDay === undefined) throw new ToolArgumentError(`This is a timed event, and the edit gives a date without a time of day and without all_day. ${askTimed}`);
+  throw new ToolArgumentError(isAllDay ? "all_day is true, so start_iso and end_iso are dates without a time of day (end_iso its last day)." : "all_day is false, so start_iso and end_iso each give a date and a time of day.");
 }
 
 /** The emails `remove_attendees` names that are the event's attendees (not its organizer),
