@@ -629,8 +629,8 @@ const scopes: Record<string, EventScope> = { all: "all", this_only: "thisOnly", 
 
 /** Changes an event (`calendar_event_edit`) once the user confirms what the chat window shows: the
  * change made is the one the question was made from, never planned again over the event as it is
- * when it runs. Only the fields given change; a new start alone keeps the event's length, as does a
- * new end alone. */
+ * when it runs. Only the fields given change; a new start alone keeps the event's length, and a new
+ * end alone keeps its start. */
 export class CalendarEventEditTool implements ConnectorTool {
   readonly name = "calendar_event_edit";
   readonly connector = "calendar";
@@ -780,7 +780,7 @@ function picksDays(rule: EventRecurrence): boolean {
 }
 
 /** The new start, end and all-day of an edit, or null when it changes none of them. A new start
- * alone keeps the event's length, and so does a new end alone; changed between all day and timed,
+ * alone keeps the event's length; a new end alone keeps its start, as Google Calendar does; changed between all day and timed,
  * the event lasts a day, or `eventDuration` minutes. */
 function editedTimes(args: Record<string, unknown>, current: CalendarEvent, eventDuration: number): { start: Date; end: Date; isAllDay: boolean } | null {
   const start = Arguments.localDate(args, "start_iso");
@@ -798,17 +798,19 @@ function editedTimes(args: Record<string, unknown>, current: CalendarEvent, even
       times = { start: newFirst, end: end ? LocalDateTime.startOfDay(end.date) : LocalDateTime.addingDays(newFirst, days) };
     } else if (end) {
       const last = LocalDateTime.startOfDay(end.date);
-      times = { start: LocalDateTime.addingDays(last, -days), end: last };
+      times = { start: sameKind ? first : LocalDateTime.addingDays(last, -days), end: last };
     } else {
       times = { start: first, end: LocalDateTime.addingDays(first, days) };
     }
   } else {
     const length = sameKind ? current.end.getTime() - current.start.getTime() : eventDuration * 60_000;
     if (start) times = { start: start.date, end: end ? end.date : new Date(start.date.getTime() + length) };
-    else if (end) times = { start: new Date(end.date.getTime() - length), end: end.date };
+    else if (end) times = { start: sameKind ? current.start : new Date(end.date.getTime() - length), end: end.date };
     else times = { start: current.start, end: new Date(current.start.getTime() + length) };
   }
-  if (times.end < times.start) throw new ToolArgumentError("end_iso is before start_iso.");
+  if (times.end < times.start) {
+    throw new ToolArgumentError(start ? "end_iso is before start_iso." : "end_iso is before the event's start: an end_iso alone changes only the end and keeps the start. To move the event, give start_iso too, or ask the user when it should start and end.");
+  }
   return { ...times, isAllDay };
 }
 
