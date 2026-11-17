@@ -208,3 +208,11 @@ without an editor (voice #229: its app calendar is invisible to the user and has
   labels a time converted to a zone as UTC, which stored 09:00 in Toronto as 09:00 UTC.
 - Measured in the Ubuntu VM on EDS's local calendars, in UTC and in a daylight-saving zone
   (`tests/productivity.py`); a server-backed calendar (Google) by hand (TESTS.md).
+
+**Amendment 2026-11-17: an end alone keeps the start; all day and timed need both times (voice #422, #423).**
+An edit's new end alone changes only when the event ends, and the start stays, as Google Calendar does;
+a new start alone keeps the length. A change between all day and timed is asked for with `all_day` and
+gives both `start_iso` and `end_iso`, and every time given is the kind the event stays or becomes;
+otherwise the edit is refused before the question with what to ask, as on Thunderbird and iOS. The
+default event duration no longer applies to edits (ADR-DESK-062). The tool texts that say so are the
+backend's Voice files at protocol 1.11.4 (ADR-DESK-064).
