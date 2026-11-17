@@ -4,6 +4,7 @@
 
 import AVFoundation
 import Foundation
+import os
 import Testing
 @testable import VoiceMicrophoneKit
 
@@ -133,5 +134,94 @@ struct MicrophoneTransportNameTests {
         #expect(MicrophoneCapture.transportName(0) == "unknown")
         #expect(MicrophoneCapture.transportName(0xFFFF_FFFF) == "unknown")
         #expect(MicrophoneCapture.transportName(0x7F7F_7F7F) == "unknown")
+    }
+}
+
+/// A stop at any point after a start leaves the helper alive until it ends itself to be started
+/// afresh: the engine that started is never stopped in the process, as `AVAudioEngine.stop` just
+/// after `start` tears the input down under Core Audio's IO thread, which then crashes the process.
+/// No microphone is used: the engine is a stand-in whose `start` and `stop` touch no device.
+struct MicrophoneCaptureStopTests {
+    /// An engine that runs no audio, and records each stop: one here is the crash.
+    final class StandInEngine: AVAudioEngine, @unchecked Sendable {
+        let stops = OSAllocatedUnfairLock(initialState: 0)
+        override func start() throws {}
+        override func stop() { stops.withLock { $0 += 1 } }
+    }
+
+    final class Recorder: @unchecked Sendable {
+        let engine = StandInEngine()
+        /// The tap's handler; set as the engine is built, before the start that reads it.
+        var deliver: (@Sendable (AVAudioPCMBuffer) -> Void)?
+        let chunks = OSAllocatedUnfairLock<[Int]>(initialState: [])
+        let ends = OSAllocatedUnfairLock(initialState: 0)
+
+        func capture() -> MicrophoneCapture {
+            MicrophoneCapture(
+                onSamples: { session, _ in self.chunks.withLock { $0.append(session) } },
+                onEnd: { self.ends.withLock { $0 += 1 } },
+                makeEngine: { deliver in
+                    self.deliver = deliver
+                    return self.engine
+                }
+            )
+        }
+
+        func hear() throws {
+            let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false))
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
+            buffer.frameLength = 4096
+            let deliver = try #require(self.deliver)
+            deliver(buffer)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func aStopRightAfterTheStartEndsTheProcessWithoutStoppingTheEngine(prepared: Bool) async throws {
+        let recorder = Recorder()
+        let capture = recorder.capture()
+        if prepared { await capture.prepare() }
+
+        try await capture.start(session: 1, sampleRate: 16_000)
+        try recorder.hear()
+        await capture.stop(session: 1)
+        try recorder.hear()
+
+        #expect(recorder.engine.stops.withLock { $0 } == 0)
+        #expect(recorder.ends.withLock { $0 } == 1)
+        // Heard while it ran, and nothing after the stop.
+        #expect(recorder.chunks.withLock { $0 } == [1])
+    }
+
+    /// A start that comes after this process's engine started ends the process the same way.
+    @Test func aStartAfterTheStopEndsTheProcessWithoutStoppingTheEngine() async throws {
+        let recorder = Recorder()
+        let capture = recorder.capture()
+
+        try await capture.start(session: 1, sampleRate: 16_000)
+        await capture.stop(session: 1)
+        var refused = false
+        do { try await capture.start(session: 2, sampleRate: 16_000) } catch { refused = true }
+        #expect(refused)
+
+        #expect(recorder.engine.stops.withLock { $0 } == 0)
+        #expect(recorder.ends.withLock { $0 } == 2)
+    }
+
+    /// A newer session's start supersedes the running one in the same process: it too ends the
+    /// process and leaves the engine to its exit.
+    @Test func aNewerStartWhileRunningEndsTheProcessWithoutStoppingTheEngine() async throws {
+        let recorder = Recorder()
+        let capture = recorder.capture()
+
+        try await capture.start(session: 1, sampleRate: 16_000)
+        var refused = false
+        do { try await capture.start(session: 2, sampleRate: 16_000) } catch { refused = true }
+        #expect(refused)
+        try recorder.hear()
+
+        #expect(recorder.engine.stops.withLock { $0 } == 0)
+        #expect(recorder.ends.withLock { $0 } == 1)
+        #expect(recorder.chunks.withLock { $0 }.isEmpty)
     }
 }
