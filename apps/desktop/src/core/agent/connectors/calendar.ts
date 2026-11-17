@@ -537,7 +537,7 @@ export class CalendarEventCreateTool implements ConnectorTool {
   }
 
   /** The event the arguments describe. A day for `start_iso` (or `all_day`) makes it all day, through
-   * the day `end_iso` names; without `end_iso`, a timed event lasts the request's `eventDuration`.
+   * the day `end_iso` names (a date; a time of day for either is refused); without `end_iso`, a timed event lasts the request's `eventDuration`.
    * An all-day event's `end` is the start of its last day. Invitations, repeating, a chosen calendar
    * and showing as free need the store's `editor`. */
   draft(args: Record<string, unknown>, settings: ToolSettings): CalendarEvent {
@@ -547,8 +547,9 @@ export class CalendarEventCreateTool implements ConnectorTool {
     if (start === null) throw ToolArgumentError.missing("start_iso");
     const end = Arguments.localDate(args, "end_iso");
     const isAllDay = typeof args.all_day === "boolean" ? args.all_day : !start.hasTime;
-    // all_day true never drops the time the start gives: it is asked which the user meant.
+    // An all-day event never drops a time it is given, as an edit's times are refused: it is asked which the user meant.
     if (isAllDay && start.hasTime) throw new ToolArgumentError("all_day is true, but start_iso gives a time of day. Give start_iso as a date (end_iso its last day), or all_day: false to keep the time; ask the user which they meant if they did not say.");
+    if (isAllDay && end?.hasTime) throw new ToolArgumentError("This event is all day, but end_iso gives a time of day. Give end_iso as a date (its last day), or all_day: false with start_iso and end_iso times; ask the user which they meant if they did not say.");
     const fields = { title, calendar: "", location: Arguments.text(args, "location"), notes: Arguments.text(args, "notes") };
     let event: CalendarEvent;
     if (isAllDay) {

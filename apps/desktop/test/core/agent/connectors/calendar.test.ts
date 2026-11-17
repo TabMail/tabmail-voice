@@ -257,12 +257,14 @@ describe("calendar_event_create", () => {
     expect(store.added).toMatchObject([{ start: at(10), end: at(11, 30), isAllDay: false }]);
   });
 
-  /** A day for the start makes an all-day event, through the day `end_iso` names (its time ignored);
-   * `all_day` true with a timed start is refused, never its time dropped; `end_iso` sets a timed event's end. */
+  /** A day for the start makes an all-day event, through the day `end_iso` names; `all_day` true with a
+   * timed start, or an all-day event with a timed end, is refused before the card, never its time dropped; `end_iso` sets a timed event's end. */
   test("a day makes an all-day event", async () => {
     expect(new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(0, 0, 2), false) }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: at(0, 0, 2) });
     expect(new CalendarEventCreateTool(store).draft({ title: "Holiday", start_iso: iso(day, false), all_day: true }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: day });
-    expect(new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)) }, toolSettings)).toMatchObject({ isAllDay: true, start: day, end: at(0, 0, 2) });
+    expect(() => new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)) }, toolSettings)).toThrow(/all day, but end_iso gives a time of day/u);
+    expect(() => new CalendarEventCreateTool(store).draft({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)), all_day: true }, toolSettings)).toThrow(/all day, but end_iso gives a time of day/u);
+    await expect(new CalendarEventCreateTool(store).confirmation({ title: "Offsite", start_iso: iso(day, false), end_iso: iso(at(15, 0, 2)), all_day: true }, new AbortController().signal, toolSettings)).rejects.toThrow(/all day, but end_iso gives a time of day/u);
     expect(new CalendarEventCreateTool(store).draft({ title: "Call", start_iso: iso(at(9)), end_iso: iso(at(9, 30)) }, toolSettings)).toMatchObject({ isAllDay: false, start: at(9), end: at(9, 30) });
     expect(new CalendarEventCreateTool(store).draft({ title: "Call", start_iso: iso(day, false), all_day: false }, toolSettings)).toMatchObject({ isAllDay: false, start: day });
     expect(() => new CalendarEventCreateTool(store).draft({ title: "Holiday", start_iso: iso(at(9)), all_day: true }, toolSettings)).toThrow(/all_day is true, but start_iso gives a time of day/u);
