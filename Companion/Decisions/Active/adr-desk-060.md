@@ -222,3 +222,20 @@ once unchanged, and a rule of one occurrence is refused for it as no repeat; on 
 after that occurrence, and the question says the later ones are deleted. The
 default event duration no longer applies to edits (ADR-DESK-062). The tool texts that say so are the
 backend's Voice files at protocol 1.11.4 (ADR-DESK-064).
+
+**Amendment 2026-11-17: "this and following" at an occurrence changed on its own cuts where it is shown now (voice #429).**
+Decided 2026-11-12 for every TabMail calendar client, the same rule as iOS: a "this and following" change named at
+an occurrence moved on its own changes that occurrence and every one shown after it, and leaves every one shown
+before it untouched. The cut is the occurrence's current start (or the next date of the rule on or after it); an
+occurrence changed on its own goes with the part it is shown in, and occurrences deleted between its original
+slot and the cut stay deleted. Moved past the series' last occurrence, no new series is made: only that
+occurrence is edited, and a change of the repeat there is refused. The series rule (a new start resets the
+changed occurrences of the new part) applies as for any split. This replaces the cut at the original slot that
+Google Calendar makes from its web page: one rule for every calendar was chosen over matching Google there.
+Until a platform's helper can make that split, the refusal before the question stays on that platform, as
+today; it is lifted per platform as each lands (macOS after measuring what EventKit's `.futureEvents` does
+with an occurrence changed on its own; Linux after the split carries changed occurrences, voice #430).
+Decided 2026-11-17, the same rule for deleting: "delete this and following" named at an occurrence moved on its
+own deletes only that occurrence and every one shown after it; nothing shown before it is deleted or changed. This
+holds on iOS, Thunderbird and Voice alike.
+
