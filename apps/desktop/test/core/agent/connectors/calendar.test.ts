@@ -796,6 +796,9 @@ describe("calendar_event_edit", () => {
       [{ event_id: "event-1", start_iso: iso(at(0, 0, 1), false) }, /timed event, and the edit gives a date without a time of day and without all_day/u],
       [{ event_id: "event-1", all_day: true }, /makes this timed event all-day, which needs both start_iso and end_iso/u],
       [{ event_id: "event-1", all_day: true, end_iso: iso(day, false) }, /makes this timed event all-day, which needs both start_iso and end_iso/u],
+      [{ event_id: "event-1", all_day: true, start_iso: iso(at(0, 0, 1), false) }, /makes this timed event all-day, which needs both start_iso and end_iso/u],
+      [{ event_id: "trip", all_day: true, start_iso: iso(at(9)) }, /all_day is true, so start_iso and end_iso are dates/u],
+      [{ event_id: "event-1", all_day: false, start_iso: iso(at(0, 0, 1), false) }, /all_day is false, so start_iso and end_iso each give a date and a time of day/u],
       [{ event_id: "event-1", all_day: true, start_iso: iso(day, false), end_iso: iso(at(18)) }, /all_day is true, so start_iso and end_iso are dates/u],
     ];
     for (const [args, reason] of refused) {
