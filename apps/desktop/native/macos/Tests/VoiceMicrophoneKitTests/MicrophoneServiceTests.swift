@@ -165,5 +165,45 @@ struct MicrophoneServiceStopTests {
         blocked.signal()
         withExtendedLifetime(service) {}
     }
-}
 
+    /// The input changing under a running dictation still ends the process only after the chunks
+    /// already queued, so the app has all that was heard.
+    @Test func aConfigurationChangeEndsTheProcessAfterTheQueuedChunks() async throws {
+        let blocked = DispatchSemaphore(value: 0)
+        let ended = DispatchSemaphore(value: 0)
+        let written = OSAllocatedUnfairLock(initialState: 0)
+        let stops = OSAllocatedUnfairLock(initialState: 0)
+        let built = OSAllocatedUnfairLock<(tap: (@Sendable (AVAudioPCMBuffer) -> Void), engine: AVAudioEngine)?>(uncheckedState: nil)
+        let channel = HelperChannel(output: { line in
+            guard String(decoding: line, as: UTF8.self).contains(#""microphoneChunk""#) else { return }
+            blocked.wait()
+            written.withLock { $0 += 1 }
+        })
+        let service = MicrophoneService.register(on: channel, end: { ended.signal() }, makeEngine: { tap in
+            let engine = MicrophoneCaptureStopTests.StandInEngine(stops: stops, fails: false)
+            built.withLockUnchecked { $0 = (tap, engine) }
+            return engine
+        })
+
+        await channel.handle(line: Data(#"{"id":1,"method":"microphoneStart","params":{"session":1,"sampleRate":16000}}"#.utf8))
+        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
+        buffer.frameLength = 4096
+        let (tap, engine) = try #require(built.withLockUnchecked { $0 })
+        tap(buffer)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: engine)
+
+        let wait: @Sendable (DispatchTime) async -> DispatchTimeoutResult = { deadline in
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().async { continuation.resume(returning: ended.wait(timeout: deadline)) }
+            }
+        }
+        // Not while the queued chunk is still being written.
+        #expect(await wait(.now() + .milliseconds(300)) == .timedOut)
+        blocked.signal()
+        #expect(await wait(.now() + .seconds(5)) == .success)
+        #expect(written.withLock { $0 } == 1)
+        #expect(stops.withLock { $0 } == 0)
+        withExtendedLifetime(service) {}
+    }
+}

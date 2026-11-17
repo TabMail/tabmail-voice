@@ -231,12 +231,14 @@ struct MicrophoneCaptureStopTests {
 
         try await capture.start(session: 2, sampleRate: 16_000)
         await capture.stop(session: 1)
+        // The older stop leaves session 2 running and heard.
+        try recorder.hear()
         #expect(recorder.counts == (0, 0, 0))
         await capture.stop(session: 3)
         try recorder.hear()
 
         #expect(recorder.counts == (0, 0, 1))
-        #expect(recorder.chunks.withLock { $0 }.isEmpty)
+        #expect(recorder.chunks.withLock { $0 } == [2])
         #expect(recorder.engine != nil)
         withExtendedLifetime(capture) {}
     }
