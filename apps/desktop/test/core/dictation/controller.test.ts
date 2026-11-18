@@ -32,7 +32,7 @@ import type { ScreenContext, ScreenRead } from "../../../src/core/dictation/scre
 import { AppSettings, type DictationSettings, optedOutOfAILine } from "../../../src/core/settings.js";
 import { TipBook, tipDetails } from "../../../src/core/onboarding/tips.js";
 import { CancellationError, sleep } from "../../../src/core/util/timeout.js";
-import { type HTTPTransport, liveTransport, TransportError } from "../../../src/core/backend/http.js";
+import { aiGatedTransport, type HTTPTransport, liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import { FakeThunderbird } from "../../support/fakeThunderbird.js";
 import { memoryDate, memoryRow } from "../../../src/core/memory/store.js";
 import { FakeMemory } from "../../support/fakeMemory.js";
@@ -86,6 +86,14 @@ const switchedOnTools: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "a
 
 function defaultSettings(): DictationSettings {
   return { aiOffLine: null, hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", keepsRecording: false, readsScreen: true, enabledTools: switchedOnTools, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: { typed: [], learned: [] }, learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true, memorySizeLimit: config.memorySizeLimitDefault, eventDuration: config.eventDurationDefault };
+}
+
+/** The user's settings with AI on, Opt Out of AI switched as a test goes; `live` reads them at each
+ * hold's start as the app does (`AppSettings.dictation`), with the test's server and tools. */
+function switchableAI(): { settings: AppSettings; live: { readonly value: DictationSettings } } {
+  const settings = new AppSettings(new MemoryStore(), () => true);
+  settings.hasConsented = true;
+  return { settings, live: { get value() { return { ...defaultSettings(), aiOffLine: settings.aiOffLine }; } } };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -160,8 +168,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"]; wordFrequencies?: DictationDependencies["wordFrequencies"] } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"]; wordFrequencies?: DictationDependencies["wordFrequencies"]; aiSettings?: { readonly aiOffLine: string | null } } = {},
   ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory; clipboardSaves: () => number } {
+    // With `aiSettings`, the AI requests go through the app's transport that refuses them while AI
+    // features are off (`aiGatedTransport`), as the app wires them.
+    const ai = (transport: HTTPTransport): HTTPTransport => (options.aiSettings ? aiGatedTransport(transport, options.aiSettings) : transport);
     const pastes: string[] = [];
     const copies: string[] = [];
     let clipboardSaves = 0;
@@ -201,9 +212,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       frontmostApp: options.frontmostApp ?? (async () => front.pid),
       keyboardLanguage: async () => keyboard.language,
       systemEmailApp: async () => null,
-      makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", options.transcriptionTransport ?? transcription.transport),
-      warmUp: (url, token) => new TranscriptionClient(url, "test", warmUps.transport).warmUp(token),
-      makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
+      makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", ai(options.transcriptionTransport ?? transcription.transport)),
+      warmUp: (url, token) => new TranscriptionClient(url, "test", ai(warmUps.transport)).warmUp(token),
+      makeCompletionsClient: (url) => new CompletionsClient(url, "test", ai(completions.transport)),
       connectorTools: options.connectorTools ?? [],
       corrections: options.corrections,
       keepRecording: options.keepRecording,
@@ -959,6 +970,76 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect([capture.starts, reads, transcription.requests.length, completions.requests.length, warmUps.requests.length, memory.prepared]).toEqual([0, 0, 0, 0, 0, 0]);
     expect(pastes).toEqual([]);
     expect(watches).toEqual([]);
+  });
+
+  /** Opt Out of AI applies at every AI request (ADR-DESK-010, amended 2026-11-18): switched on while
+   * an agent request's tool round is on its way, that round is not recalled, its tool runs, and the
+   * next round never goes out: the request ends as a hold refused at its start does, saying AI
+   * features are off, nothing pasted or remembered. Switched off again, the next request sends. */
+  test("Opt Out of AI switched on while an agent round is on its way sends no round after it, and switched off the next request sends", async () => {
+    const { settings, live } = switchableAI();
+    prefs = live;
+    transcription.enqueue(200, { text: request });
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) }]));
+    completions.enqueue(200, writes("compose", "Written."));
+    const roundAnswered = deferred<void>();
+    completions.gate = () => roundAnswered.promise;
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: settings });
+    controller.captureContext = () => Promise.resolve(selectionScreen(""));
+    await holdAndRelease(controller, "agent");
+    expect(await eventually(() => completions.requests.length === 1)).toBe(true);
+
+    expect(settings.setOptsOutOfAI(true)).toBe(true);
+    roundAnswered.resolve();
+    expect(await eventually(() => settled(controller))).toBe(true);
+    await sleep(50);
+    expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+    expect([completions.requests.length, transcription.requests.length, warmUps.requests.length]).toEqual([1, 1, 1]);
+    expect(pastes).toEqual([]);
+    expect(memory.rows).toEqual([]);
+
+    expect(settings.setOptsOutOfAI(false)).toBe(true);
+    completions.gate = undefined;
+    transcription.enqueue(200, { text: request });
+    await holdAndRelease(controller, "agent");
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(pastes).toEqual(["Written."]);
+    expect([completions.requests.length, transcription.requests.length]).toEqual([2, 2]);
+  });
+
+  /** The same while the transcription is on its way: it is not recalled, and agent mode's first round
+   * never goes out. */
+  test("Opt Out of AI switched on while an agent request's transcription is on its way sends no round", async () => {
+    const { settings, live } = switchableAI();
+    prefs = live;
+    transcription.enqueue(200, { text: request });
+    completions.enqueue(200, writes("compose", "Written."));
+    const heard = deferred<void>();
+    transcription.gate = () => heard.promise;
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: settings });
+    controller.captureContext = () => Promise.resolve(selectionScreen(""));
+    await holdAndRelease(controller, "agent");
+    expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+
+    expect(settings.setOptsOutOfAI(true)).toBe(true);
+    heard.resolve();
+    expect(await eventually(() => settled(controller))).toBe(true);
+    await sleep(50);
+    expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+    expect([completions.requests.length, pastes.length]).toEqual([0, 0]);
+  });
+
+  /** A hold under way when Opt Out of AI is switched on sends no warm-up: refused like any AI request. */
+  test("Opt Out of AI switched on before a hold's warm-up goes out refuses it", async () => {
+    const { settings, live } = switchableAI();
+    prefs = live;
+    const { controller } = makeController({ capture: new CountingCapture(true), aiSettings: settings });
+    // The account is asked for its token before the warm-up goes: switched on meanwhile.
+    controller.handle("start");
+    expect(settings.setOptsOutOfAI(true)).toBe(true);
+    await sleep(50);
+    controller.handle("cancel");
+    expect(warmUps.requests).toHaveLength(0);
   });
 
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
@@ -8177,9 +8258,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return concat(...seconds.flatMap((length, index) => (index === seconds.length - 1 ? [speech(length, rand)] : [speech(length, rand), room(1.5, rand)])));
     }
 
-    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"]; account?: AccountModel; wordFrequencies?: DictationDependencies["wordFrequencies"] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
+    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"]; account?: AccountModel; wordFrequencies?: DictationDependencies["wordFrequencies"]; aiSettings?: { readonly aiOffLine: string | null } } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
       const capture = new CountingCapture();
-      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste, account: options.account, wordFrequencies: options.wordFrequencies });
+      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste, account: options.account, wordFrequencies: options.wordFrequencies, aiSettings: options.aiSettings });
       made.controller.chunkRetryDelays = options.chunkRetryDelays ?? [1];
       made.controller.transcriptionRetryDelays = [1, 1];
       made.controller.transcriptionRetryNoticeDelay = 0;
@@ -8222,6 +8303,46 @@ describe("DictationController", { timeout: 20_000 }, () => {
       // Each chunk is a whole request: its cleanup goes with it.
       expect(backend.sent.every((sent) => sent.body.cleanup !== undefined)).toBe(true);
       expect(used).toEqual([["raw 0", "Part 0.", "raw 1", "Part 1.", "raw 2", "Part 2."]]);
+    });
+
+    /** Opt Out of AI applies at every AI request (ADR-DESK-010, amended 2026-11-18): switched on while
+     * a chunk's retry is on its way, that retry is not recalled, and nothing goes out after it, no
+     * further retry, chunk or polish. The dictation ends as a hold refused at its start does, saying AI
+     * features are off, with nothing pasted, the chunk already transcribed included. Switched off
+     * again, the next dictation sends. */
+    test("Opt Out of AI switched on while a chunk's retry is on its way sends nothing after it, and switched off the next dictation sends", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      completions.enqueue(200, reply("Polished."));
+      const retryAnswered = deferred<void>();
+      const backend = new ChunkBackend(async (chunk, attempt) => {
+        if (chunk !== 1) return part(chunk);
+        if (attempt === 0) return serverError;
+        if (attempt === 1) await retryAnswered.promise;
+        return attempt === 1 ? serverError : part(chunk);
+      });
+      const { controller, capture, pastes } = makeLong(backend, { aiSettings: settings });
+
+      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 0.5));
+      expect(await eventually(() => backend.attempts(1) === 2 && backend.inFlight === 1)).toBe(true);
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      retryAnswered.resolve();
+      await sleep(50);
+      capture.feed(pausedSpeech(2, 12, 5));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      await sleep(50);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect(backend.sent.map(({ chunk, attempt }) => [chunk, attempt])).toEqual([[0, 0], [1, 0], [1, 1]]);
+      expect(completions.requests).toHaveLength(0);
+      expect(pastes).toEqual([]);
+
+      expect(settings.setOptsOutOfAI(false)).toBe(true);
+      await startHearing(controller, capture, pausedSpeech(3, 5));
+      controller.handle("finish");
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(backend.sent.length).toBeGreaterThan(3);
     });
 
     /** Owner, 2026-10-03: "a final polished pass if time permits". Once its chunks are in, their

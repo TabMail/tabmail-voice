@@ -30,10 +30,10 @@ import { holdsSectionMarker, UserPrompts } from "../core/personalization/prompts
 import { DeviceSync } from "../core/sync/deviceSync.js";
 import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
-import { type HTTPTransport, liveTransport } from "../core/backend/http.js";
+import { aiGatedTransport, type HTTPTransport, liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
 import { acknowledgements, sourceLine } from "../core/ui/acknowledgements.js";
-import { aiOffLine, fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
+import { fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
 import type { StoreProblem } from "../core/util/keyValueStore.js";
 import { historyWindowFrame, type Point, type Rect } from "../core/ui/overlayGeometry.js";
@@ -236,11 +236,11 @@ function launch(): void {
   const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
   const portalHotkeys = ["F8", "F9"] as const;
   const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
-  // While the settings file can't be read its AI features are off (owner, 2026-10-27): transcription,
-  // its warm-up and completions are refused, whatever asks for them (dictation and agent mode, which
-  // the rest goes through, are refused at their start). Signing in and updates work as ever;
-  // Settings › Memory searches nothing and sets no size limit (below).
-  const aiTransport: HTTPTransport = (request) => (settings.fileProblem === undefined ? liveTransport(request) : Promise.reject(new Error(`${aiOffLine}.`)));
+  // While AI features are off, the settings file unreadable (owner, 2026-10-27) or Opt Out of AI on
+  // (ADR-DESK-010), transcription, its warm-up and completions are refused, whatever asks for them,
+  // at every request: a hold or agent request under way stops at its next one. Signing in and updates
+  // work as ever; Settings › Memory searches nothing and sets no size limit (below).
+  const aiTransport: HTTPTransport = aiGatedTransport(liveTransport, settings);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");

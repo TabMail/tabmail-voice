@@ -146,3 +146,25 @@ Tests: `settings.test.ts` (the memory line; a failed save reported, the switch a
 search; search and the size limit are refused and memory is never trimmed or searched; a failed save
 says so, on or off, Settings and the menu as they were); `renderer/settings/index.test.ts` (the
 failure said under the switch, which shows what is saved).
+
+**Amendment 2026-11-18 — Opt Out of AI applies at every AI request.** Opt Out of AI withdraws consent,
+so it is the one setting a running operation does not keep from its start (the AI-consent exception
+to the snapshot rule, as on iOS and in Thunderbird). It is asked again as each AI request goes out:
+`aiGatedTransport` (`src/core/backend/http.ts`), which the app's transcription, warm-up and
+completions go through, refuses a request while `AppSettings.aiOffLine` is set, the unreadable
+settings file and the opt-out alike. This supersedes "The opt-out is read once at a hold's start" and
+"the transport ... stays tied to that file only" above, and, for Opt Out of AI only, "a dictation or
+memory operation under way when the switch changes finishes".
+- A hold or agent request under way stops at its next request: an agent tool round, a long
+  dictation's chunk or its retry, the polish, or the warm-up. A request already sent is not recalled,
+  and a tool the model already called still runs.
+- The refusal (`AIOffError`) ends the operation as a hold refused at its start does: the pill says
+  the same line, nothing is tried again, and it is not said as a network error. A long dictation
+  pastes nothing, not even the chunks already transcribed, and its polish is not sent.
+- Every other setting keeps the snapshot rule. Settings › Memory is as before.
+
+Tests: `dictation/controller.test.ts` (switched on while an agent round, an agent request's
+transcription, or a chunk's retry is on its way: no request after it, the line shown, nothing pasted;
+switched off, the next one sends; a warm-up refused); `main/index.test.ts` (the app's clients refuse
+transcription, warm-up and completions once switched on, a request on its way is not recalled,
+signing in still works, and switched off the next request goes out).

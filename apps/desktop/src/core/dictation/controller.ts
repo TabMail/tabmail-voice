@@ -24,7 +24,7 @@ import { contextTerms, termCandidates, type WordFrequencies } from "../dictionar
 import type { DictionaryWords } from "../dictionary/entries.js";
 import { cleanupDictionary, dictationVocabulary } from "../dictionary/vocabulary.js";
 import { type DictationMode, type HotkeyAction, toggled } from "../hotkey/bindings.js";
-import { TransportError } from "../backend/http.js";
+import { AIOffError, TransportError } from "../backend/http.js";
 import { LevelEnvelope } from "../audio/levelEnvelope.js";
 import { agentPart, type AgentMemory, memoryRow } from "../memory/store.js";
 import { MemoryTools } from "../memory/tools.js";
@@ -825,7 +825,9 @@ export class DictationController extends Observable {
       const texts = parts.map((part) => ({ ...part, text: trimWhitespace(part.transcription.text) }));
       const heard = texts.filter((part) => part.text !== "");
       const transcript = joinChunkTexts(texts);
-      if (lost !== null && (transcript === "" || mode !== "dictation")) throw lost;
+      // A chunk refused because AI features were turned off meanwhile ends the dictation, as a hold
+      // refused at its start does: nothing of it is pasted.
+      if (lost !== null && (transcript === "" || mode !== "dictation" || lost instanceof AIOffError)) throw lost;
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)}${this.sinceRelease()} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
@@ -898,7 +900,10 @@ export class DictationController extends Observable {
         this.showMessage({ kind: "notPasted", message: error.message, text: error.text }, config.notPastedDisplayDuration);
         return;
       }
-      log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
+      // AI features turned off while it ran: it ends at its next request as a hold refused at its start
+      // does, with the line that says why (`aiGatedTransport`), and is not a failure to report.
+      if (error instanceof AIOffError) log.debug(`DictationController: ${mode} ended: AI features are off`);
+      else log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
       this.fail(error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again.");
     }
   }
@@ -924,7 +929,8 @@ export class DictationController extends Observable {
       log.debug(() => `DictationController: polished in ${elapsed(started)}${this.sinceRelease()} (${charCount(text)} → ${charCount(polishedText)} chars)`);
       return polishedText;
     } catch (error) {
-      if (signal.aborted) throw error;
+      // AI features turned off meanwhile end the dictation (`AIOffError`), not just its polish.
+      if (signal.aborted || error instanceof AIOffError) throw error;
       log.debug(`DictationController: polish ${error instanceof TimeoutError ? "ran out of time" : `failed (${errorName(error)})`} after ${elapsed(started)}; pasting the chunks' cleanups`);
       return text;
     }
@@ -1032,7 +1038,7 @@ export class DictationController extends Observable {
       log.debug(() => `DictationController: chunk ${chunk.index} transcribed in ${elapsed(sent)}`);
       return { transcription };
     } catch (error) {
-      if (isCurrent()) log.error(`DictationController: chunk ${chunk.index} failed for good: ${errorName(error)}`);
+      if (isCurrent() && !(error instanceof AIOffError)) log.error(`DictationController: chunk ${chunk.index} failed for good: ${errorName(error)}`);
       return { error };
     }
   }
