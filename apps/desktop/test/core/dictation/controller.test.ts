@@ -8307,24 +8307,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** Opt Out of AI applies at every AI request (ADR-DESK-010, amended 2026-11-18): switched on while
      * a chunk's retry is on its way, that retry is not recalled, and nothing goes out after it, no
-     * further retry, chunk or polish. The dictation ends as a hold refused at its start does, saying AI
-     * features are off, with nothing pasted, the chunk already transcribed included. Switched off
-     * again, the next dictation sends. */
-    test("Opt Out of AI switched on while a chunk's retry is on its way sends nothing after it, and switched off the next dictation sends", async () => {
+     * further retry, chunk or polish. The chunks transcribed before it are pasted as they came, unpolished
+     * (a paste is local, not an AI request), and the pill says AI features are off, as a hold refused at
+     * its start does. Switched off again, the next dictation sends. */
+    test("Opt Out of AI switched on while a chunk's retry is on its way pastes the chunks before it unpolished, sends nothing after it, and switched off the next dictation sends", async () => {
       const { settings, live } = switchableAI();
       prefs = live;
       completions.enqueue(200, reply("Polished."));
       const retryAnswered = deferred<void>();
       const backend = new ChunkBackend(async (chunk, attempt) => {
-        if (chunk !== 1) return part(chunk);
+        if (chunk !== 2) return part(chunk);
         if (attempt === 0) return serverError;
         if (attempt === 1) await retryAnswered.promise;
         return attempt === 1 ? serverError : part(chunk);
       });
       const { controller, capture, pastes } = makeLong(backend, { aiSettings: settings });
 
-      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 0.5));
-      expect(await eventually(() => backend.attempts(1) === 2 && backend.inFlight === 1)).toBe(true);
+      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 12, 0.5));
+      expect(await eventually(() => backend.attempts(2) === 2 && backend.inFlight === 1)).toBe(true);
       expect(settings.setOptsOutOfAI(true)).toBe(true);
       retryAnswered.resolve();
       await sleep(50);
@@ -8334,15 +8334,47 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       await sleep(50);
       expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
-      expect(backend.sent.map(({ chunk, attempt }) => [chunk, attempt])).toEqual([[0, 0], [1, 0], [1, 1]]);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+      expect(backend.sent.map(({ chunk, attempt }) => `${chunk}:${attempt}`).sort()).toEqual(["0:0", "1:0", "2:0", "2:1"]);
       expect(completions.requests).toHaveLength(0);
-      expect(pastes).toEqual([]);
 
       expect(settings.setOptsOutOfAI(false)).toBe(true);
       await startHearing(controller, capture, pausedSpeech(3, 5));
       controller.handle("finish");
-      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-      expect(backend.sent.length).toBeGreaterThan(3);
+      expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
+      expect(backend.sent.length).toBeGreaterThan(4);
+    });
+
+    /** Switched on after every chunk is in but before the polish goes out: the polish is refused, the
+     * chunks' text is pasted unpolished, and the pill says AI features are off. */
+    test("Opt Out of AI switched on before a long dictation's polish pastes the chunks' text unpolished and sends no polish", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      completions.enqueue(200, reply("Polished."));
+      const lastAnswered = deferred<void>();
+      let lastAsked = false;
+      const backend = new ChunkBackend(async (chunk) => {
+        if (chunk === 2) {
+          lastAsked = true;
+          await lastAnswered.promise;
+        }
+        return part(chunk);
+      });
+      const { controller, capture, pastes } = makeLong(backend, { aiSettings: settings });
+
+      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+      expect(await eventually(() => lastAsked)).toBe(true);
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      lastAnswered.resolve();
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      await sleep(50);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect(pastes).toEqual(["Part 0. Part 1. Part 2."]);
+      expect(backend.sent).toHaveLength(3);
+      expect(completions.requests).toHaveLength(0);
     });
 
     /** Owner, 2026-10-03: "a final polished pass if time permits". Once its chunks are in, their

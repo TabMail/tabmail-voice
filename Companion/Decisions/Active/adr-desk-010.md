@@ -159,12 +159,15 @@ memory operation under way when the switch changes finishes".
   dictation's chunk or its retry, the polish, or the warm-up. A request already sent is not recalled,
   and a tool the model already called still runs.
 - The refusal (`AIOffError`) ends the operation as a hold refused at its start does: the pill says
-  the same line, nothing is tried again, and it is not said as a network error. A long dictation
-  pastes nothing, not even the chunks already transcribed, and its polish is not sent.
+  the same line, nothing is tried again, and it is not said as a network error.
+- A long dictation refused part-way, at a chunk (or its retry) or at its polish, first pastes the
+  chunks transcribed before it, as they came and unpolished: a paste is local, not an AI request. No
+  chunk after it, retry or polish is sent, and the pill then says the same line. An agent request
+  has nothing to paste and simply ends.
 - Every other setting keeps the snapshot rule. Settings › Memory is as before.
 
 Tests: `dictation/controller.test.ts` (switched on while an agent round, an agent request's
-transcription, or a chunk's retry is on its way: no request after it, the line shown, nothing pasted;
-switched off, the next one sends; a warm-up refused); `main/index.test.ts` (the app's clients refuse
+transcription, a chunk's retry, or before a long dictation's polish: no request after it, the line
+shown, the earlier chunks' text pasted unpolished; switched off, the next one sends; a warm-up refused); `main/index.test.ts` (the app's clients refuse
 transcription, warm-up and completions once switched on, a request on its way is not recalled,
 signing in still works, and switched off the next request goes out).

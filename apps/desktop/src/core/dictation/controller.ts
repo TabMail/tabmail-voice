@@ -812,6 +812,9 @@ export class DictationController extends Observable {
     const targetApp = this.targetApp;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     let lost: unknown = null;
+    // AI features turned off while a long dictation's chunks or its polish were sent: what was already
+    // transcribed is pasted (a paste is local, not an AI request), then the dictation ends saying so.
+    let aiOff: AIOffError | null = null;
     try {
       const read = this.contextRead;
       const windowRead = this.windowRead;
@@ -825,9 +828,8 @@ export class DictationController extends Observable {
       const texts = parts.map((part) => ({ ...part, text: trimWhitespace(part.transcription.text) }));
       const heard = texts.filter((part) => part.text !== "");
       const transcript = joinChunkTexts(texts);
-      // A chunk refused because AI features were turned off meanwhile ends the dictation, as a hold
-      // refused at its start does: nothing of it is pasted.
-      if (lost !== null && (transcript === "" || mode !== "dictation" || lost instanceof AIOffError)) throw lost;
+      if (lost instanceof AIOffError) aiOff = lost;
+      if (lost !== null && (transcript === "" || mode !== "dictation")) throw lost;
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)}${this.sinceRelease()} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
@@ -838,7 +840,16 @@ export class DictationController extends Observable {
       this.deps.useWords(heard.flatMap((part) => (part.transcription.cleanedText === null ? [part.text] : [part.text, part.transcription.cleanedText])));
       if (mode === "dictation") {
         const joined = joinChunkTexts(texts.map((part) => ({ text: part.text === "" || !settings.smartDictation ? part.text : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
-        const text = result.polish ? await this.polished(joined, result.polish, result.deadline, signal) : joined;
+        let text = joined;
+        if (result.polish && aiOff === null) {
+          try {
+            text = await this.polished(joined, result.polish, result.deadline, signal);
+          } catch (error) {
+            // A polish refused because AI features were turned off: the chunks' text, unpolished.
+            if (!(error instanceof AIOffError)) throw error;
+            aiOff = error;
+          }
+        }
         if (!isCurrent()) return;
         await this.paste(text, targetApp, signal, this.screenRead);
         const corrections = this.deps.corrections;
@@ -890,6 +901,12 @@ export class DictationController extends Observable {
       }
       if (this.generation !== generation) return;
       this.teardown();
+      if (aiOff !== null) {
+        // Pasted what was transcribed before AI features were turned off; the pill says why the rest wasn't.
+        log.debug("DictationController: dictation ended early: AI features are off");
+        this.fail(aiOff.message);
+        return;
+      }
       if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
       this.setPhase({ kind: "idle" });
     } catch (error) {
@@ -929,7 +946,7 @@ export class DictationController extends Observable {
       log.debug(() => `DictationController: polished in ${elapsed(started)}${this.sinceRelease()} (${charCount(text)} → ${charCount(polishedText)} chars)`);
       return polishedText;
     } catch (error) {
-      // AI features turned off meanwhile end the dictation (`AIOffError`), not just its polish.
+      // AI features turned off meanwhile (`AIOffError`): the caller pastes the text and says so.
       if (signal.aborted || error instanceof AIOffError) throw error;
       log.debug(`DictationController: polish ${error instanceof TimeoutError ? "ran out of time" : `failed (${errorName(error)})`} after ${elapsed(started)}; pasting the chunks' cleanups`);
       return text;
