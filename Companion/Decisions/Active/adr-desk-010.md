@@ -162,16 +162,20 @@ memory operation under way when the switch changes finishes".
 - The refusal (`AIOffError`) ends the operation as a hold refused at its start does: the pill says
   the same line, nothing is tried again, and it is not said or logged as a failure. Once one of a
   hold's requests is refused, none of its requests goes out again, even if Opt Out of AI is switched
-  off meanwhile (`Release.aiOff`): not a chunk, a retry, the polish, a warm-up, a spoken answer's
-  transcription, nor a resend after the user's sign-in is renewed. The next hold sends.
+  off meanwhile (`Release.aiOff`): not a chunk, a retry, the polish, a warm-up, an agent round, a
+  spoken answer's transcription, nor a resend after the user's sign-in is renewed (`sendForHold`).
+  The next hold sends.
 - A hold still recording ends at the refusal (its warm-up, or a long dictation's chunk), not at the
-  release; a refusal from an earlier hold leaves the current one alone. An agent request under way
-  ends at the refusal too, even one met after the release (a late warm-up). A refused spoken answer
-  ends the request it answers, its question with it.
+  release; a refusal from an earlier hold leaves the current one alone. Released, a hold stops at
+  its next request, refused without going out; a refusal met by a request still on its way (a late
+  warm-up) ends nothing by itself, so a tool the model already called runs to its end. A refused
+  spoken answer ends the request it answers, its question with it.
 - A long dictation refused part-way, at a chunk (or its retry) or at its polish, first pastes the
   chunks transcribed before it, as they came and unpolished: a paste is local, not an AI request. No
   chunk after it, retry or polish is sent, and the pill then says the same line, whichever chunk
-  gave up first (one still awaited gives up at the deadline as before). When the paste
+  gave up first (one still awaited gives up at the deadline as before). A dictation fully
+  transcribed when one of its requests was refused (a late warm-up) is pasted, then says the line
+  too: a hold one of whose requests was refused always ends saying so. When the paste
   can't be made (the user is in another app, as in Settings to switch Opt Out of AI on), the note
   that copies the text says that line instead of "Couldn't paste". An agent request has nothing to
   paste and simply ends.
@@ -182,8 +186,9 @@ transcription, a spoken answer, a chunk or its retry, during a hold, or before a
 polish: no request after it, counted at the gate, the hold ended before its release, the line shown
 and no error logged, the earlier chunks' text pasted unpolished or offered in the note; switched off
 during the same hold, nothing more of it sends, not even a resend after a renewed sign-in, and the
-next one sends; a warm-up refused ends its hold, a late one included, and an earlier hold's leaves
-the current one alone; a refused chunk while an earlier one is awaited still says the line; real
+next one sends; a warm-up refused ends a hold still recording, and an earlier hold's leaves the
+current one alone; one refused after the release lets an agent tool finish and sends no further
+round, and a transcribed dictation is pasted, then says the line; a refused chunk while an earlier one is awaited still says the line; real
 failures of the same requests are still logged); `main/index.test.ts` (the app's clients refuse transcription, warm-up and completions once
 switched on, a request on its way is not recalled and answers, signing in still works, and switched
 off the next request goes out).

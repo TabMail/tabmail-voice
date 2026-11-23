@@ -57,7 +57,7 @@ export const DesktopAgent = {
     userName: string,
     personalization: Personalization,
     tools: ToolRegistry,
-    client: CompletionsClient,
+    client: Pick<CompletionsClient, "round">,
     account: AccountModel,
     userID: string | null,
     onServerTool: (event: ServerToolEvent) => void,
