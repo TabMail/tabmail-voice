@@ -1225,6 +1225,77 @@ describe("DictationController", { timeout: 20_000 }, () => {
     }
   });
 
+  /** Nor sent again: a warm-up gone out while its hold recorded, answered "signed out" only after the
+   * release, is not sent again after the new sign-in (AI features on throughout). */
+  test("a warm-up answered 'signed out' after its hold's release is not sent again after the new sign-in", async () => {
+    const log = errorLog();
+    try {
+      const signedOut = deferred<void>();
+      warmUps.gate = () => signedOut.promise;
+      transcription.enqueue(200, { text: transcript });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 1)).toBe(true);
+      controller.handle("finish");
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+
+      const refreshes = auth.requests.length;
+      warmUps.enqueue(401, { error: "unauthorized" });
+      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+      signedOut.resolve();
+      expect(await eventually(() => auth.requests.length - refreshes === 1)).toBe(true);
+      await sleep(50);
+      expect(warmUps.requests).toHaveLength(1);
+      expect(pastes).toEqual([transcript]);
+      expect(controller.phase).toEqual(idle);
+      expect(log.errors).toEqual([]);
+    } finally {
+      log.stop();
+    }
+  });
+
+  /** The same when its hold ended and a newer one records: the earlier hold's warm-up, answered "signed
+   * out" then, is not sent again after the new sign-in, and the newer hold, its own warm-up sent, is left
+   * alone. */
+  test("a warm-up answered 'signed out' after its hold ended is not sent again while a newer hold records", async () => {
+    const capture = new CountingCapture(true);
+    const log = errorLog();
+    try {
+      // Only the earlier hold's warm-up waits for its answer.
+      const signedOut = deferred<void>();
+      let held = true;
+      warmUps.gate = () => {
+        if (!held) return Promise.resolve();
+        held = false;
+        return signedOut.promise;
+      };
+      const { controller } = makeController({ capture });
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 1)).toBe(true);
+      controller.handle("cancel");
+      expect(controller.phase).toEqual(idle);
+
+      warmUps.enqueue(200, { logged_in: true });
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 2)).toBe(true);
+      const starts = capture.starts;
+      const refreshes = auth.requests.length;
+      warmUps.enqueue(401, { error: "unauthorized" });
+      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+      signedOut.resolve();
+
+      expect(await eventually(() => auth.requests.length - refreshes === 1)).toBe(true);
+      await sleep(50);
+      expect(warmUps.requests).toHaveLength(2);
+      expect(controller.phase).toEqual({ kind: "listening" });
+      expect(capture.starts).toBe(starts);
+      expect(log.errors).toEqual([]);
+      controller.handle("cancel");
+    } finally {
+      log.stop();
+    }
+  });
+
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
   test("with screen reading off no terms are sent", async () => {
     prefs.value = { ...defaultSettings(), readsScreen: false };
@@ -8748,6 +8819,41 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await controller.copyNotPasted();
           expect(copies).toEqual(["Part 0."]);
         }
+      } finally {
+        log.stop();
+      }
+    });
+
+    /** The same with nothing to paste after it: a dictation whose first chunk gave up, or a request in
+     * agent mode (carried out whole or not at all), ends saying AI features are off, not that a chunk
+     * was lost, although the earlier chunk gave up first. Nothing is pasted or carried out. */
+    test.each([
+      { mode: "dictation" as const, unanswered: 0, chunks: 1 },
+      { mode: "agent" as const, unanswered: 1, chunks: 2 },
+    ])("a long $mode refused at a chunk after an earlier one gave up says AI features are off and nothing more", async ({ mode, unanswered, chunks }) => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        const backend = new ChunkBackend((chunk) => (chunk === unanswered ? never() : part(chunk)));
+        const { controller, capture, pastes } = makeLong(backend, { aiSettings: gate });
+        controller.transcriptionDeadline = 400;
+
+        await startHearing(controller, capture, chunks === 1 ? pausedSpeech(1, 12, 0.5) : pausedSpeech(23, 12, 12, 0.5), mode);
+        expect(await eventually(() => backend.chunks === chunks && backend.attempts(unanswered) === 1 && backend.inFlight === 1)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        const asked = gate.answers.length;
+        capture.feed(pausedSpeech(2, 12, 5));
+
+        // Not released: the refused chunk ends the hold; the unanswered one gives up at the deadline.
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(backend.chunks).toBe(chunks);
+        expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(pastes).toEqual([]);
+        expect(completions.requests).toHaveLength(0);
+        expect(log.errors).toEqual([]);
       } finally {
         log.stop();
       }

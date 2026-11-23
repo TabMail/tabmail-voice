@@ -187,7 +187,9 @@ and no error logged, the earlier chunks' text pasted unpolished or offered in th
 during the same hold, nothing more of it sends, not even a resend after a renewed sign-in (a chunk's
 or the warm-up's), and the next one sends; a warm-up refused ends a hold still recording; a warm-up
 still waiting for a slow sign-in at the release, or when its hold ends, is not sent, and a newer
-hold's is; a refused chunk while an earlier one is awaited still says the line; real failures of the
+hold's is; nor is one answered "signed out" after its hold's release or end sent again after the new
+sign-in, AI features on; a refused chunk while an earlier one is awaited or gave up still says the
+line, with nothing to paste and in agent mode too; real failures of the
 same requests are still logged); `main/index.test.ts` (the app's clients refuse transcription, warm-up and completions once
 switched on, a request on its way is not recalled and answers, signing in still works, and switched
 off the next request goes out).
