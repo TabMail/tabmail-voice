@@ -6080,14 +6080,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
               expect(controller.chat?.confirmation ?? null).toBeNull();
               expect(log.errors).toEqual([]);
 
-              // Switched off again, the next request goes out and ends as any does.
+              // Switched off again, the next request goes out and ends as any does: its transcription is
+              // the reply the refused answer left unused, its round the one queued for it.
               expect(settings.setOptsOutOfAI(false)).toBe(true);
-              transcription.enqueue(200, cleanedReply);
-              controller.handle("start");
+              controller.handle("startAgent");
               expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+              await sleep(config.minimumHoldDuration + 50);
               controller.handle("finish");
-              expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
-              expect(transcription.requests).toHaveLength(sent[0] + 1);
+              expect(await eventually(() => settled(controller))).toBe(true);
+              expect(controller.phase).toEqual(idle);
+              expect([transcription.requests.length, completions.requests.length]).toEqual([sent[0] + 1, sent[1] + 1]);
               expect(log.errors).toEqual([]);
             } finally {
               log.stop();
