@@ -19,8 +19,17 @@ const app = vi.hoisted(() => ({
   credential: null as string | null,
   refusesDelete: false,
   account: null as AccountModel | null,
+  roots: [] as { unmount(): void }[],
 }));
 
+vi.mock("react-dom/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-dom/client")>();
+  return { ...actual, createRoot: (...args: Parameters<typeof actual.createRoot>) => {
+    const root = actual.createRoot(...args);
+    app.roots.push(root);
+    return root;
+  } };
+});
 vi.mock("electron", () => ({
   app: {
     isPackaged: false,
@@ -81,7 +90,8 @@ vi.mock("@napi-rs/keyring", () => ({
     }
   },
 }));
-vi.mock("../../../src/core/backend/http.js", () => ({
+vi.mock("../../../src/core/backend/http.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../src/core/backend/http.js")>(),
   liveTransport: async () => {
     throw new Error("no network in tests");
   },
@@ -199,7 +209,10 @@ async function signedInSettings(): Promise<void> {
   });
 }
 
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => {
+    for (const root of app.roots.splice(0)) root.unmount();
+  });
   app.handlers.clear();
   app.listeners.clear();
   app.refusesDelete = false;
