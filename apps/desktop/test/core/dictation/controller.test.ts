@@ -1211,7 +1211,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     const log = errorLog();
     try {
       const signedInLate = slowSignIn();
-      transcription.enqueue(200, { text: transcript });
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ account: signedInLate.account, capture: new CountingCapture(true), aiSettings: gate });
       await holdAndRelease(controller);
       expect(auth.requests).toHaveLength(1);
@@ -1219,7 +1219,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       await sleep(50);
-      expect(pastes).toEqual([transcript]);
+      expect(pastes).toEqual([cleaned]);
       expect(controller.phase).toEqual(idle);
       expect(warmUps.requests).toHaveLength(0);
       expect(transcription.requests).toHaveLength(1);
@@ -1237,7 +1237,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     try {
       const signedOut = deferred<void>();
       warmUps.gate = () => signedOut.promise;
-      transcription.enqueue(200, { text: transcript });
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.handle("start");
       expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 1)).toBe(true);
@@ -1251,7 +1251,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => auth.requests.length - refreshes === 1)).toBe(true);
       await sleep(50);
       expect(warmUps.requests).toHaveLength(1);
-      expect(pastes).toEqual([transcript]);
+      expect(pastes).toEqual([cleaned]);
       expect(controller.phase).toEqual(idle);
       expect(log.errors).toEqual([]);
     } finally {
@@ -6082,7 +6082,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
               // Switched off again, the next request goes out and ends as any does.
               expect(settings.setOptsOutOfAI(false)).toBe(true);
-              transcription.enqueue(200, { text: question });
+              transcription.enqueue(200, cleanedReply);
               controller.handle("start");
               expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
               controller.handle("finish");
