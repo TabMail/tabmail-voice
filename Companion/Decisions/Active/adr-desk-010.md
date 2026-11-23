@@ -175,7 +175,8 @@ memory operation under way when the switch changes finishes".
   chunk after it, retry or polish is sent, and the pill then says the same line, whichever chunk
   gave up first (one still awaited gives up at the deadline as before). A dictation fully
   transcribed when one of its requests was refused (a late warm-up) is pasted, then says the line
-  too: a hold one of whose requests was refused always ends saying so. When the paste
+  too: a hold one of whose requests was refused always ends saying so, whatever else ended it
+  (nothing heard, or a failure, which is still logged as one). When the paste
   can't be made (the user is in another app, as in Settings to switch Opt Out of AI on), the note
   that copies the text says that line instead of "Couldn't paste". An agent request has nothing to
   paste and simply ends.
@@ -188,7 +189,9 @@ and no error logged, the earlier chunks' text pasted unpolished or offered in th
 during the same hold, nothing more of it sends, not even a resend after a renewed sign-in, and the
 next one sends; a warm-up refused ends a hold still recording, and an earlier hold's leaves the
 current one alone; one refused after the release lets an agent tool finish and sends no further
-round, and a transcribed dictation is pasted, then says the line; a refused chunk while an earlier one is awaited still says the line; real
+round, a spoken answer records on and is then refused, a transcribed dictation is pasted, then says
+the line, and one ending with no text says it too; each resend after a renewed sign-in, a chunk's
+and a warm-up's, is refused; a refused chunk while an earlier one is awaited still says the line; real
 failures of the same requests are still logged); `main/index.test.ts` (the app's clients refuse transcription, warm-up and completions once
 switched on, a request on its way is not recalled and answers, signing in still works, and switched
 off the next request goes out).

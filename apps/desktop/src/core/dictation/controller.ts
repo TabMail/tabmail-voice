@@ -838,7 +838,7 @@ export class DictationController extends Observable {
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
         this.teardown();
-        this.fail(nothingHeardMessage);
+        this.fail(aiOff?.message ?? nothingHeardMessage);
         return;
       }
       this.deps.useWords(heard.flatMap((part) => (part.transcription.cleanedText === null ? [part.text] : [part.text, part.transcription.cleanedText])));
@@ -935,7 +935,10 @@ export class DictationController extends Observable {
       // does, with the line that says why (`aiGatedTransport`), and is not a failure to report.
       if (error instanceof AIOffError) log.debug(`DictationController: ${mode} ended: AI features are off`);
       else log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
-      this.fail(error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again.");
+      // A failure is still reported; but once a request of this hold was refused because AI features were
+      // turned off (`Release.aiOff`, a late warm-up say), the pill says that, whatever else ended it.
+      const refused = error instanceof AIOffError ? error : release.aiOff;
+      this.fail(refused?.message ?? (error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again."));
     }
   }
 
