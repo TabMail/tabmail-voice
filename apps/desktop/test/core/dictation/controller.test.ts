@@ -96,6 +96,27 @@ function switchableAI(): { settings: AppSettings; live: { readonly value: Dictat
   return { settings, live: { get value() { return { ...defaultSettings(), aiOffLine: settings.aiOffLine }; } } };
 }
 
+/** `settings`' AI-off line as the app's AI transport asks it (`aiGatedTransport`), each answer kept: one
+ * per AI request that reached the transport, null when it went out, the line when it was refused. */
+function countingGate(settings: AppSettings): { readonly aiOffLine: string | null; readonly answers: (string | null)[] } {
+  const answers: (string | null)[] = [];
+  return {
+    answers,
+    get aiOffLine() {
+      const line = settings.aiOffLine;
+      answers.push(line);
+      return line;
+    },
+  };
+}
+
+/** What production's error log (`log.error`) reports until `stop`. */
+function errorLog(): { errors: string[]; stop: () => void } {
+  const errors: string[] = [];
+  configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
+  return { errors, stop: () => configureLog({ isDebugBuild: false, sinks: { error: () => {} } }) };
+}
+
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
 function screen(sentinel: string): ScreenContext {
   return blankScreen({ appName: `Example Notes ${sentinel}`, windowTitle: "Weekly sync", renderedText: `» Agenda ${sentinel} ‸` });
@@ -979,67 +1000,104 @@ describe("DictationController", { timeout: 20_000 }, () => {
   test("Opt Out of AI switched on while an agent round is on its way sends no round after it, and switched off the next request sends", async () => {
     const { settings, live } = switchableAI();
     prefs = live;
-    transcription.enqueue(200, { text: request });
-    completions.enqueue(200, Fixtures.toolCalls([{ id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) }]));
-    completions.enqueue(200, writes("compose", "Written."));
-    const roundAnswered = deferred<void>();
-    completions.gate = () => roundAnswered.promise;
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: settings });
-    controller.captureContext = () => Promise.resolve(selectionScreen(""));
-    await holdAndRelease(controller, "agent");
-    expect(await eventually(() => completions.requests.length === 1)).toBe(true);
+    const gate = countingGate(settings);
+    const log = errorLog();
+    try {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, Fixtures.toolCalls([{ id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) }]));
+      completions.enqueue(200, writes("compose", "Written."));
+      const roundAnswered = deferred<void>();
+      completions.gate = () => roundAnswered.promise;
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: gate });
+      controller.captureContext = () => Promise.resolve(selectionScreen(""));
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => completions.requests.length === 1)).toBe(true);
 
-    expect(settings.setOptsOutOfAI(true)).toBe(true);
-    roundAnswered.resolve();
-    expect(await eventually(() => settled(controller))).toBe(true);
-    await sleep(50);
-    expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
-    expect([completions.requests.length, transcription.requests.length, warmUps.requests.length]).toEqual([1, 1, 1]);
-    expect(pastes).toEqual([]);
-    expect(memory.rows).toEqual([]);
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      roundAnswered.resolve();
+      expect(await eventually(() => settled(controller))).toBe(true);
+      await sleep(50);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect([completions.requests.length, transcription.requests.length, warmUps.requests.length]).toEqual([1, 1, 1]);
+      // The warm-up, the transcription and the round went out; the round after the tool's was refused
+      // by the transport as it went out, and is not reported as a failure.
+      expect(gate.answers).toEqual([null, null, null, optedOutOfAILine]);
+      expect(memory.searches.map((search) => search.query)).toEqual(["launch budget"]);
+      expect(log.errors).toEqual([]);
+      expect(pastes).toEqual([]);
+      expect(memory.rows).toEqual([]);
 
-    expect(settings.setOptsOutOfAI(false)).toBe(true);
-    completions.gate = undefined;
-    transcription.enqueue(200, { text: request });
-    await holdAndRelease(controller, "agent");
-    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-    expect(pastes).toEqual(["Written."]);
-    expect([completions.requests.length, transcription.requests.length]).toEqual([2, 2]);
+      expect(settings.setOptsOutOfAI(false)).toBe(true);
+      completions.gate = undefined;
+      transcription.enqueue(200, { text: request });
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Written."]);
+      expect([completions.requests.length, transcription.requests.length]).toEqual([2, 2]);
+    } finally {
+      log.stop();
+    }
   });
 
   /** The same while the transcription is on its way: it is not recalled, and agent mode's first round
-   * never goes out. */
+   * is refused as it goes out. */
   test("Opt Out of AI switched on while an agent request's transcription is on its way sends no round", async () => {
     const { settings, live } = switchableAI();
     prefs = live;
-    transcription.enqueue(200, { text: request });
-    completions.enqueue(200, writes("compose", "Written."));
-    const heard = deferred<void>();
-    transcription.gate = () => heard.promise;
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: settings });
-    controller.captureContext = () => Promise.resolve(selectionScreen(""));
-    await holdAndRelease(controller, "agent");
-    expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+    const gate = countingGate(settings);
+    const log = errorLog();
+    try {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, writes("compose", "Written."));
+      const heard = deferred<void>();
+      transcription.gate = () => heard.promise;
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: gate });
+      controller.captureContext = () => Promise.resolve(selectionScreen(""));
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
 
-    expect(settings.setOptsOutOfAI(true)).toBe(true);
-    heard.resolve();
-    expect(await eventually(() => settled(controller))).toBe(true);
-    await sleep(50);
-    expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
-    expect([completions.requests.length, pastes.length]).toEqual([0, 0]);
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      const asked = gate.answers.length;
+      heard.resolve();
+      expect(await eventually(() => settled(controller))).toBe(true);
+      await sleep(50);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect([completions.requests.length, pastes.length]).toEqual([0, 0]);
+      expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+      expect(log.errors).toEqual([]);
+    } finally {
+      log.stop();
+    }
   });
 
-  /** A hold under way when Opt Out of AI is switched on sends no warm-up: refused like any AI request. */
-  test("Opt Out of AI switched on before a hold's warm-up goes out refuses it", async () => {
+  /** A hold under way when Opt Out of AI is switched on sends no warm-up: refused like any AI request,
+   * and the hold ends there as a hold refused at its start does. Its release sends nothing. */
+  test("Opt Out of AI switched on before a hold's warm-up goes out refuses it and ends the hold", async () => {
     const { settings, live } = switchableAI();
     prefs = live;
-    const { controller } = makeController({ capture: new CountingCapture(true), aiSettings: settings });
-    // The account is asked for its token before the warm-up goes: switched on meanwhile.
-    controller.handle("start");
-    expect(settings.setOptsOutOfAI(true)).toBe(true);
-    await sleep(50);
-    controller.handle("cancel");
-    expect(warmUps.requests).toHaveLength(0);
+    const gate = countingGate(settings);
+    const capture = new CountingCapture(true);
+    const log = errorLog();
+    try {
+      const { controller, pastes } = makeController({ capture, aiSettings: gate });
+      // The account is asked for its token before the warm-up goes: switched on meanwhile.
+      controller.handle("start");
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect(gate.answers).toEqual([optedOutOfAILine]);
+      expect(warmUps.requests).toHaveLength(0);
+      expect(capture.events.at(-1)).toBe("stop");
+
+      controller.handle("finish");
+      await sleep(50);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect([transcription.requests.length, completions.requests.length, pastes.length]).toEqual([0, 0, 0]);
+      expect(gate.answers).toEqual([optedOutOfAILine]);
+      expect(log.errors).toEqual([]);
+    } finally {
+      log.stop();
+    }
   });
 
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
@@ -2963,7 +3021,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       context: ScreenRead | null,
       thunderbird?: FakeThunderbird,
       prepare: (controller: DictationController) => void = () => {},
-      options: { account?: AccountModel; paste?: DictationDependencies["paste"]; frontmostApp?: () => Promise<number | null>; connectorTools?: ConnectorTool[] } = {},
+      options: { account?: AccountModel; paste?: DictationDependencies["paste"]; frontmostApp?: () => Promise<number | null>; connectorTools?: ConnectorTool[]; aiSettings?: { readonly aiOffLine: string | null } } = {},
     ): Promise<{ controller: DictationController; pastes: string[]; phases: Phase[] }> {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), thunderbird, ...options });
       const phases: Phase[] = [];
@@ -3587,28 +3645,44 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(memory.limits).toEqual([config.memorySizeLimitDefault, config.memorySizeLimitChoices[0]]);
     });
 
-    /** Opt Out of AI switched on during a hold applies from the next one, as every setting does: the hold
-     * under way finishes, and the next is refused, sending nothing. */
-    test("Opt Out of AI switched on during a hold applies from the next one", async () => {
-      transcription.enqueue(200, { text: "write we ship friday" });
-      completions.enqueue(200, writes("compose", "We ship on Friday."));
+    /** Opt Out of AI applies at every AI request (ADR-DESK-010, amended 2026-11-18): switched on during
+     * a hold, the hold's transcription is refused as it goes out, and the hold ends saying AI features
+     * are off, nothing pasted. The next hold is refused at its start, sending nothing. */
+    test("Opt Out of AI switched on during a hold refuses its transcription, and the next hold", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        transcription.enqueue(200, { text: "write we ship friday" });
+        completions.enqueue(200, writes("compose", "We ship on Friday."));
+        const { controller, pastes } = makeController({ capture: new CountingCapture(true), aiSettings: gate });
+        controller.captureContext = () => Promise.resolve(selectionScreen(""));
+        controller.handle("start");
+        controller.handle("toggleMode");
+        // The warm-up has gone out: only the hold's later requests meet the switch.
+        expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 1)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => settled(controller))).toBe(true);
+        await sleep(50);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(pastes).toEqual([]);
+        expect([transcription.requests.length, completions.requests.length]).toEqual([0, 0]);
+        expect(gate.answers).toEqual([null, optedOutOfAILine]);
 
-      const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
-        controller.onPhaseChange = (phase) => {
-          if (phase.kind !== "listening") return;
-          prefs.value = { ...defaultSettings(), aiOffLine: optedOutOfAILine };
-        };
-      });
-      expect(pastes).toEqual(["We ship on Friday."]);
-
-      controller.onPhaseChange = undefined;
-      const sent = transcription.requests.length + completions.requests.length;
-      controller.handle("startAgent");
-      controller.handle("finish");
-      expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
-      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
-      expect(transcription.requests.length + completions.requests.length).toBe(sent);
-      expect(pastes).toHaveLength(1);
+        controller.handle("startAgent");
+        controller.handle("finish");
+        await sleep(50);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect([transcription.requests.length, completions.requests.length, warmUps.requests.length]).toEqual([0, 0, 1]);
+        // Refused at its start from the settings read at key-down: no request reached the transport.
+        expect(gate.answers).toEqual([null, optedOutOfAILine]);
+        expect(pastes).toEqual([]);
+        expect(log.errors).toEqual([]);
+      } finally {
+        log.stop();
+      }
     });
 
     /** The last recording (ADR-DESK-018) is kept only for a dictation that started in debug mode, as the
@@ -5773,6 +5847,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes, go ahead.", "q1")]);
             expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
             expect(controller.chat?.confirmationEvent).toBeNull();
+          });
+
+          /** Opt Out of AI switched on while the question shows: the spoken answer's transcription is
+           * refused as it goes out, and the request it answers ends there saying AI features are off,
+           * its call never run and nothing more sent (ADR-DESK-010, amended 2026-11-18). */
+          test("Opt Out of AI switched on while a question shows refuses the spoken answer and ends the request", async () => {
+            const { settings } = switchableAI();
+            const gate = countingGate(settings);
+            const log = errorLog();
+            try {
+              const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+              const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)], () => {}, { aiSettings: gate });
+              expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+              const sent = [transcription.requests.length, completions.requests.length];
+              expect(sent).toEqual([1, 1]);
+
+              expect(settings.setOptsOutOfAI(true)).toBe(true);
+              const asked = gate.answers.length;
+              await sayAloud(controller, "Yes, go ahead.");
+              await done;
+              await sleep(50);
+
+              expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+              expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+              expect([transcription.requests.length, completions.requests.length]).toEqual(sent);
+              expect(tool.runs).toEqual([]);
+              expect(log.errors).toEqual([]);
+            } finally {
+              log.stop();
+            }
           });
 
           /** The hotkey answers the question: the model reads the question and the user's words, and
@@ -8306,43 +8410,54 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Opt Out of AI applies at every AI request (ADR-DESK-010, amended 2026-11-18): switched on while
-     * a chunk's retry is on its way, that retry is not recalled, and nothing goes out after it, no
-     * further retry, chunk or polish. The chunks transcribed before it are pasted as they came, unpolished
+     * a chunk's retry is on its way, that retry is not recalled, and the chunk's next retry is refused as
+     * it goes out. The hold, still recording, ends there as at its release, and nothing goes out after
+     * it, no further retry, chunk or polish. The chunks transcribed before it are pasted as they came, unpolished
      * (a paste is local, not an AI request), and the pill says AI features are off, as a hold refused at
      * its start does. Switched off again, the next dictation sends. */
     test("Opt Out of AI switched on while a chunk's retry is on its way pastes the chunks before it unpolished, sends nothing after it, and switched off the next dictation sends", async () => {
       const { settings, live } = switchableAI();
       prefs = live;
-      completions.enqueue(200, reply("Polished."));
-      const retryAnswered = deferred<void>();
-      const backend = new ChunkBackend(async (chunk, attempt) => {
-        if (chunk !== 2) return part(chunk);
-        if (attempt === 0) return serverError;
-        if (attempt === 1) await retryAnswered.promise;
-        return attempt === 1 ? serverError : part(chunk);
-      });
-      const { controller, capture, pastes } = makeLong(backend, { aiSettings: settings });
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        completions.enqueue(200, reply("Polished."));
+        const retryAnswered = deferred<void>();
+        const backend = new ChunkBackend(async (chunk, attempt) => {
+          if (chunk !== 2) return part(chunk);
+          if (attempt === 0) return serverError;
+          if (attempt === 1) await retryAnswered.promise;
+          return attempt === 1 ? serverError : part(chunk);
+        });
+        const { controller, capture, pastes } = makeLong(backend, { aiSettings: gate });
 
-      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 12, 0.5));
-      expect(await eventually(() => backend.attempts(2) === 2 && backend.inFlight === 1)).toBe(true);
-      expect(settings.setOptsOutOfAI(true)).toBe(true);
-      retryAnswered.resolve();
-      await sleep(50);
-      capture.feed(pausedSpeech(2, 12, 5));
-      controller.handle("finish");
+        await startHearing(controller, capture, pausedSpeech(1, 12, 12, 12, 0.5));
+        expect(await eventually(() => backend.attempts(2) === 2 && backend.inFlight === 1)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        const asked = gate.answers.length;
+        retryAnswered.resolve();
 
-      expect(await eventually(() => settled(controller))).toBe(true);
-      await sleep(50);
-      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
-      expect(pastes).toEqual(["Part 0. Part 1."]);
-      expect(backend.sent.map(({ chunk, attempt }) => `${chunk}:${attempt}`).sort()).toEqual(["0:0", "1:0", "2:0", "2:1"]);
-      expect(completions.requests).toHaveLength(0);
+        // Not released: the refused retry ends the hold.
+        expect(await eventually(() => settled(controller))).toBe(true);
+        await sleep(50);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(capture.events.at(-1)).toBe("stop");
+        expect(pastes).toEqual(["Part 0. Part 1."]);
+        expect(backend.sent.map(({ chunk, attempt }) => `${chunk}:${attempt}`).sort()).toEqual(["0:0", "1:0", "2:0", "2:1"]);
+        expect(completions.requests).toHaveLength(0);
+        // The next retry met the switch at the transport; nothing after it reached the transport, and
+        // the refusal is not a failure to report.
+        expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+        expect(log.errors).toEqual([]);
 
-      expect(settings.setOptsOutOfAI(false)).toBe(true);
-      await startHearing(controller, capture, pausedSpeech(3, 5));
-      controller.handle("finish");
-      expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
-      expect(backend.sent.length).toBeGreaterThan(4);
+        expect(settings.setOptsOutOfAI(false)).toBe(true);
+        await startHearing(controller, capture, pausedSpeech(3, 5));
+        controller.handle("finish");
+        expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
+        expect(backend.sent.length).toBeGreaterThan(4);
+      } finally {
+        log.stop();
+      }
     });
 
     /** Switched on after every chunk is in but before the polish goes out: the polish is refused, the
@@ -8350,31 +8465,109 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("Opt Out of AI switched on before a long dictation's polish pastes the chunks' text unpolished and sends no polish", async () => {
       const { settings, live } = switchableAI();
       prefs = live;
-      completions.enqueue(200, reply("Polished."));
-      const lastAnswered = deferred<void>();
-      let lastAsked = false;
-      const backend = new ChunkBackend(async (chunk) => {
-        if (chunk === 2) {
-          lastAsked = true;
-          await lastAnswered.promise;
-        }
-        return part(chunk);
-      });
-      const { controller, capture, pastes } = makeLong(backend, { aiSettings: settings });
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        completions.enqueue(200, reply("Polished."));
+        const lastAnswered = deferred<void>();
+        let lastAsked = false;
+        const backend = new ChunkBackend(async (chunk) => {
+          if (chunk === 2) {
+            lastAsked = true;
+            await lastAnswered.promise;
+          }
+          return part(chunk);
+        });
+        const { controller, capture, pastes } = makeLong(backend, { aiSettings: gate });
 
-      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 5));
-      expect(await eventually(() => backend.chunks === 2)).toBe(true);
-      controller.handle("finish");
-      expect(await eventually(() => lastAsked)).toBe(true);
-      expect(settings.setOptsOutOfAI(true)).toBe(true);
-      lastAnswered.resolve();
+        await startHearing(controller, capture, pausedSpeech(1, 12, 12, 5));
+        expect(await eventually(() => backend.chunks === 2)).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => lastAsked)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        const asked = gate.answers.length;
+        lastAnswered.resolve();
 
-      expect(await eventually(() => settled(controller))).toBe(true);
-      await sleep(50);
-      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
-      expect(pastes).toEqual(["Part 0. Part 1. Part 2."]);
-      expect(backend.sent).toHaveLength(3);
-      expect(completions.requests).toHaveLength(0);
+        expect(await eventually(() => settled(controller))).toBe(true);
+        await sleep(50);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(pastes).toEqual(["Part 0. Part 1. Part 2."]);
+        expect(backend.sent).toHaveLength(3);
+        expect(completions.requests).toHaveLength(0);
+        // The polish met the switch at the transport, and is not a failure to report.
+        expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+        expect(log.errors).toEqual([]);
+      } finally {
+        log.stop();
+      }
+    });
+
+    /** Once a request of a hold is refused, none of its requests goes out again, even with AI features
+     * turned on again meanwhile: switched back on as the refused chunk ends the hold, its last chunk is
+     * refused without reaching the transport. Only what was transcribed before is pasted. */
+    test("a long dictation refused at a chunk sends nothing more of it, even with Opt Out of AI switched off again", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        const backend = new ChunkBackend(part);
+        const { controller, capture, pastes } = makeLong(backend, { aiSettings: gate });
+        const phases = controller.onPhaseChange;
+        controller.onPhaseChange = (phase) => {
+          phases?.(phase);
+          if (phase.kind === "transcribing") settings.setOptsOutOfAI(false);
+        };
+
+        await startHearing(controller, capture, pausedSpeech(1, 12, 0.5));
+        expect(await eventually(() => backend.chunks === 1 && backend.inFlight === 0)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        const asked = gate.answers.length;
+        capture.feed(pausedSpeech(2, 12, 5));
+
+        // Not released: the refused chunk ends the hold.
+        expect(await eventually(() => settled(controller))).toBe(true);
+        await sleep(50);
+        expect(settings.aiOffLine).toBeNull();
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(pastes).toEqual(["Part 0."]);
+        expect(backend.chunks).toBe(1);
+        expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+        expect(capture.events.at(-1)).toBe("stop");
+        expect(completions.requests).toHaveLength(0);
+        expect(log.errors).toEqual([]);
+      } finally {
+        log.stop();
+      }
+    });
+
+    /** Not pasted (the user switched apps) after a refused chunk: the note copies what was transcribed
+     * before, and says AI features are off, as the pill would have. */
+    test("a long dictation refused at a chunk and not pasted, as the user switched apps, says AI features are off on its note", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        const backend = new ChunkBackend(part);
+        const { controller, capture, pastes, copies } = makeLong(backend, { aiSettings: gate });
+
+        await startHearing(controller, capture, pausedSpeech(19, 12, 0.5));
+        expect(await eventually(() => backend.chunks === 1 && backend.inFlight === 0)).toBe(true);
+        front.pid = 202;
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        capture.feed(pausedSpeech(2, 12, 5));
+
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(pastes).toEqual([]);
+        expect(controller.phase).toEqual({ kind: "notPasted", message: `${optedOutOfAILine}.`, text: "Part 0." });
+        expect(backend.chunks).toBe(1);
+        expect(log.errors).toEqual([]);
+        await controller.copyNotPasted();
+        expect(copies).toEqual(["Part 0."]);
+      } finally {
+        log.stop();
+      }
     });
 
     /** Owner, 2026-10-03: "a final polished pass if time permits". Once its chunks are in, their

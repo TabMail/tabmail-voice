@@ -120,6 +120,9 @@ const app = vi.hoisted(() => ({
   requests: [] as string[],
   /** Holds each request that reached the network until it resolves (a request on its way). */
   requestGate: null as (() => Promise<void>) | null,
+  /** What a transcription that reaches the network hears, answered as the backend does; null, it
+   * fails as every other request does. */
+  heard: null as string | null,
   /** The backend clients the app gives the dictation controller. */
   backend: null as {
     warmUp: (baseURL: string, accessToken: string) => Promise<void>;
@@ -335,6 +338,8 @@ vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
       const body = { access_token: "access-signed-in", refresh_token: "refresh-signed-in", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: as.id, email: as.email } };
       return { status: 200, headers: {}, body: JSON.stringify(body) };
     }
+    const heard = app.heard;
+    if (heard !== null && request.url.endsWith(`/${config.transcribePath}`)) return { status: 200, headers: {}, body: JSON.stringify({ text: heard }) };
     throw new Error("no network in tests");
   },
 }));
@@ -710,6 +715,7 @@ afterEach(() => {
   app.opened = [];
   app.requests = [];
   app.requestGate = null;
+  app.heard = null;
   app.openFailure = null;
   app.connectorTools = [];
   app.scripts = [];
@@ -2840,12 +2846,14 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     const completer = backend.makeCompletionsClient(url);
     const answered = deferred<void>();
     app.requestGate = () => answered.promise;
-    const onItsWay = transcriber.transcribe(new Uint8Array([1]), null, [], "token").catch(() => {});
+    app.heard = "We ship on Friday.";
+    const onItsWay = transcriber.transcribe(new Uint8Array([1]), null, [], "token");
     expect(await eventually(() => app.requests.length === 1)).toBe(true);
 
     expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
     answered.resolve();
-    await onItsWay;
+    // Not recalled: it is answered as it would have been.
+    await expect(onItsWay).resolves.toMatchObject({ text: "We ship on Friday." });
     app.requestGate = null;
     await expect(transcriber.transcribe(new Uint8Array([1]), null, [], "token")).rejects.toThrow(`${optedOutOfAILine}.`);
     await expect(completer.complete({ role: "user", content: "hello", vars: {} }, "token")).rejects.toThrow(`${optedOutOfAILine}.`);

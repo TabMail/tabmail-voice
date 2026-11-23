@@ -156,18 +156,28 @@ settings file and the opt-out alike. This supersedes "The opt-out is read once a
 "the transport ... stays tied to that file only" above, and, for Opt Out of AI only, "a dictation or
 memory operation under way when the switch changes finishes".
 - A hold or agent request under way stops at its next request: an agent tool round, a long
-  dictation's chunk or its retry, the polish, or the warm-up. A request already sent is not recalled,
-  and a tool the model already called still runs.
+  dictation's chunk or its retry, the polish, the warm-up, or the transcription of an answer spoken to
+  a tool's question. A request already sent is not recalled, and a tool the model already called
+  still runs.
 - The refusal (`AIOffError`) ends the operation as a hold refused at its start does: the pill says
-  the same line, nothing is tried again, and it is not said as a network error.
+  the same line, nothing is tried again, and it is not said or logged as a failure. Once one of a
+  hold's requests is refused, none of its requests goes out again, even if Opt Out of AI is switched
+  off meanwhile (`Release.aiOff`); the next hold sends.
+- A hold still recording ends at the refusal (its warm-up, or a long dictation's chunk), not at the
+  release. A refused spoken answer ends the request it answers, its question with it.
 - A long dictation refused part-way, at a chunk (or its retry) or at its polish, first pastes the
   chunks transcribed before it, as they came and unpolished: a paste is local, not an AI request. No
-  chunk after it, retry or polish is sent, and the pill then says the same line. An agent request
-  has nothing to paste and simply ends.
+  chunk after it, retry or polish is sent, and the pill then says the same line. When the paste
+  can't be made (the user is in another app, as in Settings to switch Opt Out of AI on), the note
+  that copies the text says that line instead of "Couldn't paste". An agent request has nothing to
+  paste and simply ends.
 - Every other setting keeps the snapshot rule. Settings › Memory is as before.
 
 Tests: `dictation/controller.test.ts` (switched on while an agent round, an agent request's
-transcription, a chunk's retry, or before a long dictation's polish: no request after it, the line
-shown, the earlier chunks' text pasted unpolished; switched off, the next one sends; a warm-up refused); `main/index.test.ts` (the app's clients refuse
-transcription, warm-up and completions once switched on, a request on its way is not recalled,
-signing in still works, and switched off the next request goes out).
+transcription, a spoken answer, a chunk or its retry, during a hold, or before a long dictation's
+polish: no request after it, counted at the gate, the hold ended before its release, the line shown
+and no error logged, the earlier chunks' text pasted unpolished or offered in the note; switched off
+during the same hold, nothing more of it sends, and the next one sends; a warm-up refused ends its
+hold); `main/index.test.ts` (the app's clients refuse transcription, warm-up and completions once
+switched on, a request on its way is not recalled and answers, signing in still works, and switched
+off the next request goes out).
