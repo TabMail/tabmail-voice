@@ -58,6 +58,10 @@ time; measured first (below).
   `colorTransitionSeconds`, and back when a retry answers.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
+**Amendment 2026-11-18:** the warm-up goes out only while its hold records: one whose token arrives
+after the hold's release or end (behind a slow sign-in, or its resend after a new sign-in) is not sent,
+and with Opt Out of AI on none is (ADR-DESK-010 amendment 2026-11-18).
+
 **Consequences:**
 - Every hold, a tap included, sends one small `GET /whoami`. For a user without an entitlement it can
   grant the signup trial, as the transcription request it precedes would.

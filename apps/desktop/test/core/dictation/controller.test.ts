@@ -8950,6 +8950,58 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
+    /** An earlier hold's refusal leaves a newer hold alone: the warm-up of a dictation that ended refused,
+     * answered "signed out" only once a newer hold listens with AI features on again, is not sent again
+     * after the new sign-in, and the newer hold goes on listening. */
+    test("an earlier hold's warm-up answered 'signed out' while a newer hold listens leaves the newer hold alone", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        // Only the earlier hold's warm-up waits for its answer.
+        const signedOut = deferred<void>();
+        let held = true;
+        warmUps.gate = () => {
+          if (!held) return Promise.resolve();
+          held = false;
+          return signedOut.promise;
+        };
+        const backend = new ChunkBackend(part);
+        const { controller, capture, pastes } = makeLong(backend, { aiSettings: gate });
+
+        await startHearing(controller, capture, pausedSpeech(1, 12, 0.5));
+        expect(await eventually(() => warmUps.requests.length === 1 && backend.chunks === 1 && backend.inFlight === 0)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        capture.feed(pausedSpeech(2, 12, 5));
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(pastes).toEqual(["Part 0."]);
+
+        expect(settings.setOptsOutOfAI(false)).toBe(true);
+        warmUps.enqueue(200, { logged_in: true });
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 2)).toBe(true);
+        const asked = gate.answers.length;
+        const refreshes = auth.requests.length;
+        warmUps.enqueue(401, { error: "unauthorized" });
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+        signedOut.resolve();
+
+        expect(await eventually(() => auth.requests.length - refreshes === 1)).toBe(true);
+        await sleep(50);
+        expect(controller.phase).toEqual(listening);
+        expect(capture.events.at(-1)).toBe("start");
+        expect(warmUps.requests).toHaveLength(2);
+        expect(gate.answers.slice(asked)).toEqual([]);
+        expect(pastes).toEqual(["Part 0."]);
+        expect(log.errors).toEqual([]);
+        controller.handle("cancel");
+      } finally {
+        log.stop();
+      }
+    });
+
     /** Owner, 2026-10-03: "a final polished pass if time permits". Once its chunks are in, their
      * cleanups, joined, go through the cleanup prompt once more as a whole, with the dictation's cleanup
      * variables, and its reply is pasted. */

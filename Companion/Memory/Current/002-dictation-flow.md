@@ -8,7 +8,7 @@ Routed verbatim from `PROJECT_STRUCTURE.md` (lines 121-182 at 45d9c585).
 process, which hands it to `DictationController` (`src/core/dictation/controller.ts`):
 
 1. **start** (key-down; AI features on, as `DictationSettings.aiOffLine` says: the settings file read at launch (ADR-DESK-063, #285) and Opt Out of AI off (ADR-DESK-010, #289), else the hold fails with that line; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
-   Opt Out of AI is also asked again as each AI request of the hold goes out (`aiGatedTransport`, ADR-DESK-010 amendment 2026-11-18): switched on mid-hold, the hold ends at its next request with the same line, a hold still recording at once and without a release (at its warm-up or a chunk), a released one at a chunk's last try, the polish, an agent round or a spoken answer, a long dictation first pasting the chunks already transcribed.
+   Opt Out of AI is also asked again as each AI request of the hold goes out (`aiGatedTransport`, ADR-DESK-010 amendment 2026-11-18): switched on mid-hold, the hold ends at its next request with the same line: a hold still recording at the refusal (its warm-up or a chunk), not at the user's release, a long dictation as at its release and any other without one; a released one at its transcription, a chunk's last try, the polish, an agent round or a spoken answer; a long dictation first pasting the chunks already transcribed.
    The microphone starts (`SessionAudioCapture` → `voice-microphone`'s `MicrophoneCapture`, its engine
    prepared ahead) and streams samples into `AudioRecorder`; `voice-macos` finds the caret; the
    keyboard's language is read once, for the overlay's badge and the transcription request; the app in
