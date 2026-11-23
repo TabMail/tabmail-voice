@@ -14,14 +14,14 @@ import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import { acknowledgements, sourceLine } from "../../src/core/ui/acknowledgements.js";
 import { aiOffLine, resetCopyPath, unsavedBecauseOf } from "../../src/core/ui/fileProblems.js";
-import { optedOutOfAIMemoryLine } from "../../src/core/settings.js";
+import { optedOutOfAILine, optedOutOfAIMemoryLine } from "../../src/core/settings.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import type { MemoryPageState } from "../../src/core/memory/page.js";
 import type { PersonalizationState } from "../../src/core/personalization/page.js";
 import { memoryRow, type MemorySearch } from "../../src/core/memory/store.js";
 import { memoryFolders } from "../../src/main/native/memoryHelper.js";
 import { channels, type SettingsState } from "../../src/shared/ipc.js";
-import { eventually, toolSettings } from "../support/stubs.js";
+import { deferred, eventually, toolSettings } from "../support/stubs.js";
 
 /** The texts of bullets as Settings shows them. */
 function texts(bullets: readonly { text: string }[] | undefined): string[] {
@@ -118,6 +118,11 @@ const app = vi.hoisted(() => ({
   presented: [] as string[],
   /** Every request that reached the network (`liveTransport`), by URL. */
   requests: [] as string[],
+  /** Holds each request that reached the network until it resolves (a request on its way). */
+  requestGate: null as (() => Promise<void>) | null,
+  /** What a transcription that reaches the network hears, answered as the backend does; null, it
+   * fails as every other request does. */
+  heard: null as string | null,
   /** The backend clients the app gives the dictation controller. */
   backend: null as {
     warmUp: (baseURL: string, accessToken: string) => Promise<void>;
@@ -327,11 +332,14 @@ vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/backend/http.js")>()),
   liveTransport: async (request: { url: string }) => {
     app.requests.push(request.url);
+    await app.requestGate?.();
     const as = app.verifiesAs;
     if (as !== null && request.url.includes("/verify")) {
       const body = { access_token: "access-signed-in", refresh_token: "refresh-signed-in", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: as.id, email: as.email } };
       return { status: 200, headers: {}, body: JSON.stringify(body) };
     }
+    const heard = app.heard;
+    if (heard !== null && request.url.endsWith(`/${config.transcribePath}`)) return { status: 200, headers: {}, body: JSON.stringify({ text: heard }) };
     throw new Error("no network in tests");
   },
 }));
@@ -706,6 +714,8 @@ afterEach(() => {
   app.openedFiles = [];
   app.opened = [];
   app.requests = [];
+  app.requestGate = null;
+  app.heard = null;
   app.openFailure = null;
   app.connectorTools = [];
   app.scripts = [];
@@ -2806,11 +2816,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
   /** Only the settings file turns the network off: with the knowledge base file alone unreadable,
    * requests go out as ever. */
-  // Opt Out of AI is read once at a hold's start (ADR-DESK-010 amendment 2026-10-28): the transport leaves
-  // a request a hold already made to finish.
-  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"], ["Opt Out of AI on", "optsOutOfAI"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
-    if (unreadable === "optsOutOfAI") app.stored.set("optsOutOfAI", true);
-    else if (unreadable !== null) {
+  test.each([["every file reads", null], ["only the knowledge base file can't be read", "userPrompts.json"]])("with %s a request reaches TabMail", async (_case, unreadable) => {
+    if (unreadable !== null) {
       const path = join(app.userData, unreadable);
       app.problems.set(path, { kind: "damaged", path, code: "invalid" });
       app.dialogResponse = 2;
@@ -2824,6 +2831,43 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await backend.makeTranscriptionClient("https://api.example.com").transcribe(new Uint8Array([1]), null, [], "token").catch(() => {});
     await backend.makeCompletionsClient("https://api.example.com").complete({ role: "user", content: "hello", vars: {} }, "token").catch(() => {});
     expect(app.requests).toHaveLength(4);
+  });
+
+  /** Opt Out of AI applies at every AI request, not only at a hold's start (ADR-DESK-010, amended
+   * 2026-11-18): switched on while a request is on its way, that request is not recalled, and no
+   * transcription, warm-up or completion goes out after it, from the clients the operation already
+   * holds; signing in still works. Switched off again, the next request goes out. */
+  test("Opt Out of AI switched on while a request is on its way lets no AI request out after it, and switched off lets the next one out", async () => {
+    await launch("darwin");
+    const backend = app.backend;
+    if (backend === null) throw new Error("no controller");
+    const url = "https://api.example.com";
+    const transcriber = backend.makeTranscriptionClient(url);
+    const completer = backend.makeCompletionsClient(url);
+    const answered = deferred<void>();
+    app.requestGate = () => answered.promise;
+    app.heard = "We ship on Friday.";
+    const onItsWay = transcriber.transcribe(new Uint8Array([1]), null, [], "token");
+    expect(await eventually(() => app.requests.length === 1)).toBe(true);
+
+    expect(await send({ type: "setOptsOutOfAI", value: true })).toEqual({ error: null });
+    answered.resolve();
+    // Not recalled: it is answered as it would have been.
+    await expect(onItsWay).resolves.toMatchObject({ text: "We ship on Friday." });
+    app.requestGate = null;
+    await expect(transcriber.transcribe(new Uint8Array([1]), null, [], "token")).rejects.toThrow(`${optedOutOfAILine}.`);
+    await expect(completer.complete({ role: "user", content: "hello", vars: {} }, "token")).rejects.toThrow(`${optedOutOfAILine}.`);
+    await expect(backend.warmUp(url, "token")).rejects.toThrow(`${optedOutOfAILine}.`);
+    expect(app.requests).toHaveLength(1);
+    // Signing in isn't AI: it reaches TabMail as ever.
+    await send({ type: "sendCode", email: "user@example.com" });
+    expect(app.requests).toHaveLength(2);
+
+    expect(await send({ type: "setOptsOutOfAI", value: false })).toEqual({ error: null });
+    await transcriber.transcribe(new Uint8Array([1]), null, [], "token").catch(() => {});
+    await completer.complete({ role: "user", content: "hello", vars: {} }, "token").catch(() => {});
+    await backend.warmUp(url, "token").catch(() => {});
+    expect(app.requests).toHaveLength(5);
   });
 
   /** While AI features are off, Settings › Memory lists the newest, removes one and clears all: they

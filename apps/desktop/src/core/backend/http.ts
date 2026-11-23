@@ -44,6 +44,27 @@ export class TransportError extends Error {
   }
 }
 
+/** A request to AI refused because AI features are off (`aiGatedTransport`); its message is the line
+ * that says why, as a hold refused at its start shows it. Not a network failure: never tried again. */
+export class AIOffError extends Error {
+  constructor(line: string) {
+    super(`${line}.`);
+    this.name = "AIOffError";
+  }
+}
+
+/** `transport` for the requests that reach AI (transcription, its warm-up, completions): each is
+ * refused while `settings.aiOffLine` says AI features are off, asked as the request goes out, not
+ * when its operation started. Opt Out of AI withdraws consent, so it is the one setting that applies
+ * at every request (the AI-consent exception to the snapshot rule, as on iOS and in Thunderbird): an
+ * operation under way stops at its next request, and a request already sent is not recalled. */
+export function aiGatedTransport(transport: HTTPTransport, settings: { readonly aiOffLine: string | null }): HTTPTransport {
+  return (request) => {
+    const line = settings.aiOffLine;
+    return line === null ? transport(request) : Promise.reject(new AIOffError(line));
+  };
+}
+
 /** The real network, through fetch. The body is read as it arrives, and the request is abandoned
  * when nothing has arrived for `timeout`. */
 export const liveTransport: HTTPTransport = async (request) => {
