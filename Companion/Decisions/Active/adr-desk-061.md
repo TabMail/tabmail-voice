@@ -314,3 +314,18 @@ Thunderbird's copy or its files.
 > timeout or a reply of the wrong shape still keeps the helper (it may still be trimming). Tests: see
 > `TESTS.md` (`main/native/memoryHelper` › a trim cut short, with the fake helper's `--error-on` and
 > `--error-nth-on` failing a trim as the real helper does).
+
+> **Amended (2026-11-23): the helper is native-fts 0.12.5.** The pin moves to the 0.12.5 release
+> commit (`b916f9d`, tag v0.12.5), from the 0.12.3 one (`31385ea`). Between the two: an idle shard
+> conversion, and the one-time VACUUM that converts a memory made before auto-vacuum, now stop once
+> the helper's stdin closes (TabMail/tabmail-native-fts#79), as the idle trim already did: SQLite
+> interrupts the step, its transaction rolls back with every row kept, and the helper exits at once
+> instead of holding the write lock into the helper Voice starts next; the next start converts what
+> was left. A request already sent is still answered in full. The bundled SQLite is 3.54.1, from
+> 3.46, through rusqlite 0.41.1 (TabMail/tabmail-native-fts#80), and the url crate is 2.5.9
+> (TabMail/tabmail-native-fts#81); neither changes what the helper answers.
+> TabMail/tabmail-native-fts#77 changes only the install scripts, which Voice never runs (it builds
+> the helper from the pinned source). The requests Voice sends and the replies it reads keep their
+> shape (`init`, `memoryIndexBatch`, `memorySearch`, `memoryRead`, `memoryStats`, `memoryTrim`,
+> `memoryRemoveBatch`), and the schema version is unchanged, so nothing is indexed again; the
+> helper's own version (0.12.5) is read by nothing in Voice, which sends no `hello`.
