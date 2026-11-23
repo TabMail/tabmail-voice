@@ -158,9 +158,11 @@ memory operation under way when the switch changes finishes".
 - A hold or agent request under way stops at its next request: an agent tool round, a long
   dictation's chunk or its retry, the polish, the warm-up, or the transcription of an answer spoken to
   a tool's question. A request already sent is not recalled, and a tool the model already called
-  still runs.
+  still runs; a text the model wrote beside a tool and held for the loop's end (ADR-DESK-055) is not
+  pasted, as when any later round fails.
 - The refusal (`AIOffError`) ends the operation as a hold refused at its start does: the pill says
-  the same line, nothing is tried again, and it is not said or logged as a failure. Once one of a
+  the same line, nothing is tried again, and it is not said or logged as a failure (a chunk of the
+  same hold lost for its own reason, a server error or the deadline, still is). Once one of a
   hold's requests is refused, none of its requests goes out again, even if Opt Out of AI is switched
   off meanwhile: no chunk, retry or polish (`Release.aiOff`, checked inside each send, so a resend
   after the user's sign-in is renewed too, `sendForHold`), and the request it was part of ends there,
@@ -176,20 +178,21 @@ memory operation under way when the switch changes finishes".
   chunk after it, retry or polish is sent, and the pill then says the same line, whichever chunk
   gave up first (one still awaited gives up at the deadline as before). When the paste
   can't be made (the user is in another app, as in Settings to switch Opt Out of AI on), the note
-  that copies the text says that line instead of "Couldn't paste". An agent request has nothing to
-  paste and simply ends.
+  that copies the text says that line instead of "Couldn't paste". An agent request simply ends,
+  carrying out nothing, a held text included.
 - Every other setting keeps the snapshot rule. Settings › Memory is as before.
 
 Tests: `dictation/controller.test.ts` (switched on while an agent round, an agent request's
 transcription, a spoken answer, a chunk or its retry, during a hold, or before a long dictation's
 polish: no request after it, counted at the gate, the hold ended before its release, the line shown
-and no error logged, the earlier chunks' text pasted unpolished or offered in the note; switched off
+and no error logged, the earlier chunks' text pasted unpolished or offered in the note, a text held
+for the agent loop's end not pasted, a hold refused at its warm-up never released; switched off
 during the same hold, nothing more of it sends, not even a resend after a renewed sign-in (a chunk's
 or the warm-up's), and the next one sends; a warm-up refused ends a hold still recording; a warm-up
 still waiting for a slow sign-in at the release, or when its hold ends, is not sent, and a newer
 hold's is; nor is one answered "signed out" after its hold's release or end sent again after the new
 sign-in, AI features on; a refused chunk while an earlier one is awaited or gave up still says the
-line, with nothing to paste and in agent mode too; real failures of the
-same requests are still logged); `main/index.test.ts` (the app's clients refuse transcription, warm-up and completions once
+line, with nothing to paste and in agent mode too, the chunk that gave up on its own still logged;
+real failures of the same requests are still logged); `main/index.test.ts` (the app's clients refuse transcription, warm-up and completions once
 switched on, a request on its way is not recalled and answers, signing in still works, and switched
 off the next request goes out).

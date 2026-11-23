@@ -18,6 +18,11 @@ another; each fix compared Settings again and missed the next window.
 - Facts about the world stay live: which app is in front (the key-down app for Edit and Compose), and
   whether the email app runs, is in front and has the chat focused.
 
+**Amendment 2026-11-18 — Opt Out of AI is the exception.** Opt Out of AI (the user's AI consent, not
+the welcome wizard's consent above) is not kept from the snapshot: it is asked again as each AI request
+goes out (`aiGatedTransport`), so a hold under way stops at its next AI request (ADR-DESK-010
+amendment 2026-11-18). Every other setting stays the hold's snapshot.
+
 **Consequences:**
 - Every "does Settings still say X" comparison in the relay is deleted; a mid-send Settings change
   can no longer retarget a send.

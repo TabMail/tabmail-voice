@@ -817,6 +817,11 @@ export class DictationController extends Observable {
     // AI features turned off while a long dictation's chunks or its polish were sent: what was already
     // transcribed is pasted (a paste is local, not an AI request), then the dictation ends saying so.
     let aiOff: AIOffError | null = null;
+    // A chunk lost for its own reason (a server error, the deadline), not refused, is a failure to
+    // report, even when AI features were turned off too and the pill says only that.
+    const reportLost = () => {
+      if (lost !== null && !(lost instanceof AIOffError)) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
+    };
     try {
       const read = this.contextRead;
       const windowRead = this.windowRead;
@@ -833,7 +838,11 @@ export class DictationController extends Observable {
       // Part of it lost after a request of this hold was refused because AI features were turned off
       // (`Release.aiOff`), whichever chunk gave up first: the pill says why.
       if (lost !== null) aiOff = release.aiOff;
-      if (lost !== null && (transcript === "" || mode !== "dictation")) throw aiOff ?? lost;
+      if (lost !== null && (transcript === "" || mode !== "dictation")) {
+        if (aiOff === null) throw lost;
+        reportLost();
+        throw aiOff;
+      }
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)}${this.sinceRelease()} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
@@ -906,13 +915,13 @@ export class DictationController extends Observable {
       }
       if (this.generation !== generation) return;
       this.teardown();
+      reportLost();
       if (aiOff !== null) {
         // Pasted what was transcribed before AI features were turned off; the pill says why the rest wasn't.
         log.debug("DictationController: dictation ended early: AI features are off");
         this.fail(aiOff.message);
         return;
       }
-      if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
       this.setPhase({ kind: "idle" });
     } catch (error) {
       if (!isCurrent()) return;
@@ -920,8 +929,8 @@ export class DictationController extends Observable {
       if (error instanceof NotPastedError) {
         // AI features turned off part-way: the note copies what was transcribed before, and says why
         // the rest wasn't, as the pill would have.
+        reportLost();
         if (aiOff !== null) log.debug("DictationController: dictation ended early, not pasted: AI features are off");
-        else if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
         this.showMessage({ kind: "notPasted", message: aiOff?.message ?? error.message, text: error.text }, config.notPastedDisplayDuration);
         return;
       }

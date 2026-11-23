@@ -1006,15 +1006,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** Opt Out of AI applies at every AI request (ADR-DESK-010, amended 2026-11-18): switched on while
    * an agent request's tool round is on its way, that round is not recalled, its tool runs, and the
    * next round never goes out: the request ends as a hold refused at its start does, saying AI
-   * features are off, nothing pasted or remembered. Switched off again, the next request sends. */
-  test("Opt Out of AI switched on while an agent round is on its way sends no round after it, and switched off the next request sends", async () => {
+   * features are off, nothing pasted or remembered, a text the round wrote beside its tool and held
+   * for the loop's end included. Switched off again, the next request sends. */
+  test.each([{ holds: false }, { holds: true }])("Opt Out of AI switched on while an agent round is on its way sends no round after it, and switched off the next request sends (a text held: $holds)", async ({ holds }) => {
     const { settings, live } = switchableAI();
     prefs = live;
     const gate = countingGate(settings);
     const log = errorLog();
     try {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, Fixtures.toolCalls([{ id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) }]));
+      const search = { id: "search", name: "memory_search", arguments: JSON.stringify({ query: "launch budget" }) };
+      completions.enqueue(200, Fixtures.toolCalls(holds ? [search, { id: "write", name: "compose", arguments: JSON.stringify({ text: "Held." }) }] : [search]));
       completions.enqueue(200, writes("compose", "Written."));
       const roundAnswered = deferred<void>();
       completions.gate = () => roundAnswered.promise;
@@ -1139,14 +1141,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
     try {
       const signedInLate = slowSignIn();
       const { controller, pastes } = makeController({ account: signedInLate.account, capture, aiSettings: gate });
+      const phases: Phase["kind"][] = [];
+      controller.onPhaseChange = (phase) => phases.push(phase.kind);
       controller.handle("start");
       expect(await eventually(() => controller.phase.kind === "listening" && auth.requests.length === 1)).toBe(true);
       expect(settings.setOptsOutOfAI(true)).toBe(true);
       signedInLate.resolve();
 
-      // Not released: the refused warm-up ends the hold.
+      // Not released: the refused warm-up ends the hold, which was never transcribed.
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect(phases).not.toContain("transcribing");
       expect(gate.answers).toEqual([optedOutOfAILine]);
       expect(warmUps.requests).toHaveLength(0);
       expect(capture.events.at(-1)).toBe("stop");
@@ -8786,7 +8791,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Refused at a chunk while an earlier chunk is still awaited: that one gives up at the deadline,
-     * and the pill (or the note) still says AI features are off, whichever chunk gave up first. */
+     * and the pill (or the note) still says AI features are off, whichever chunk gave up first. The
+     * chunk that gave up on its own is still reported as lost. */
     test.each([{ pasted: true }, { pasted: false }])("a long dictation refused at a chunk while an earlier one is awaited says AI features are off (pasted: $pasted)", async ({ pasted }) => {
       const { settings, live } = switchableAI();
       prefs = live;
@@ -8809,7 +8815,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(backend.chunks).toBe(2);
         expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
         expect(completions.requests).toHaveLength(0);
-        expect(log.errors).toEqual([]);
+        expect(log.errors).toEqual([expect.stringMatching(/^DictationController: the end of a long dictation was lost \(/)]);
         if (pasted) {
           expect(pastes).toEqual(["Part 0."]);
           expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
@@ -8826,7 +8832,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** The same with nothing to paste after it: a dictation whose first chunk gave up, or a request in
      * agent mode (carried out whole or not at all), ends saying AI features are off, not that a chunk
-     * was lost, although the earlier chunk gave up first. Nothing is pasted or carried out. */
+     * was lost, although the earlier chunk gave up first; that chunk is still reported as lost. Nothing
+     * is pasted or carried out. */
     test.each([
       { mode: "dictation" as const, unanswered: 0, chunks: 1 },
       { mode: "agent" as const, unanswered: 1, chunks: 2 },
@@ -8853,7 +8860,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
         expect(pastes).toEqual([]);
         expect(completions.requests).toHaveLength(0);
-        expect(log.errors).toEqual([]);
+        expect(log.errors).toEqual([expect.stringMatching(/^DictationController: the end of a long dictation was lost \(/)]);
       } finally {
         log.stop();
       }
