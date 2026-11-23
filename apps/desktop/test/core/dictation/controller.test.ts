@@ -6062,7 +6062,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
               // The second round is the next request's.
               const { controller, done } = await ask([tool], [calling(sameCall), reply(answer)], () => {}, { aiSettings: gate });
               expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
-              const sent = [transcription.requests.length, completions.requests.length];
+              const sent: [number, number] = [transcription.requests.length, completions.requests.length];
               expect(sent).toEqual([1, 1]);
 
               expect(settings.setOptsOutOfAI(true)).toBe(true);
