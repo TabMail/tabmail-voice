@@ -768,9 +768,9 @@ export class DictationController extends Observable {
     const userID = account.session?.userID ?? null;
     const settings = this.dictationSettings;
     // Once a request of this hold was refused because AI features were turned off, none of its
-    // requests goes out again (`Release.aiOff`): every send and the polish ask first.
+    // requests goes out again (`unlessRefused`): each send, its resend after a new sign-in, and the
+    // polish ask first.
     const release = this.release;
-    const unlessRefused = <T>(request: () => Promise<T>): Promise<T> => (release.aiOff === null ? request() : Promise.reject(release.aiOff));
     // Smart Dictation off (Settings, the default): no cleanup, so no screen to wait for.
     const cleans = settings.smartDictation && (forChunks || this.currentMode === "dictation");
     // This dictation's screen read, taken before the first wait: once that wait ends, a newer hold
@@ -792,10 +792,10 @@ export class DictationController extends Observable {
     const completions = this.deps.makeCompletionsClient(settings.backendURL);
     const vocabulary = await this.vocabulary(settings.dictionary, cleans);
     return {
-      send: (flac, signal) => unlessRefused(() => withFreshToken(account, userID, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup))),
+      send: (flac, signal) => withFreshToken(account, userID, (token) => unlessRefused(release, () => client.transcribe(flac, language, vocabulary, token, signal, cleanup))),
       polish: cleanup
         ? (text, signal) =>
-            unlessRefused(() => withFreshToken(account, userID, (token) => completions.complete({ role: "system", content: DictationCleanup.prompt, vars: { ...cleanup, dictation: text } }, token, signal)))
+            withFreshToken(account, userID, (token) => unlessRefused(release, () => completions.complete({ role: "system", content: DictationCleanup.prompt, vars: { ...cleanup, dictation: text } }, token, signal)))
         : null,
     };
   }
@@ -814,6 +814,7 @@ export class DictationController extends Observable {
     const mode = this.currentMode;
     const signal = this.abort.signal;
     const targetApp = this.targetApp;
+    const release = this.release;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     let lost: unknown = null;
     // AI features turned off while a long dictation's chunks or its polish were sent: what was already
@@ -832,8 +833,10 @@ export class DictationController extends Observable {
       const texts = parts.map((part) => ({ ...part, text: trimWhitespace(part.transcription.text) }));
       const heard = texts.filter((part) => part.text !== "");
       const transcript = joinChunkTexts(texts);
-      if (lost instanceof AIOffError) aiOff = lost;
-      if (lost !== null && (transcript === "" || mode !== "dictation")) throw lost;
+      // Part of it lost after a request of this hold was refused because AI features were turned off
+      // (`Release.aiOff`), whichever chunk gave up first: the pill says why.
+      if (lost !== null) aiOff = release.aiOff;
+      if (lost !== null && (transcript === "" || mode !== "dictation")) throw aiOff ?? lost;
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)}${this.sinceRelease()} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
@@ -968,24 +971,30 @@ export class DictationController extends Observable {
     const account = this.deps.account;
     const release = this.release;
     try {
-      await withFreshToken(account, account.session?.userID ?? null, (token) => this.deps.warmUp(backendURL, token));
+      await withFreshToken(account, account.session?.userID ?? null, (token) => unlessRefused(release, () => this.deps.warmUp(backendURL, token)));
     } catch (error) {
-      if (error instanceof AIOffError) return this.refusedForAIOff(error, generation, release);
+      if (error instanceof AIOffError) return this.refusedForAIOff(error, generation);
       log.debug(`DictationController: warm-up failed: ${errorName(error)}`);
     }
   }
 
   /** A request of a hold (its warm-up, a chunk or a chunk's retry) was refused because AI features
-   * were turned off (`aiGatedTransport`): the hold stops there, as at its next request. None of its
-   * requests goes out again (`Release.aiOff`). Still recording, it ends now: a long dictation as at its
-   * release, its chunks transcribed before the refused one pasted and the pill saying why
-   * (`deliver`); any other as a hold refused at its start. Once released, its end does the same. */
-  private refusedForAIOff(error: AIOffError, generation: number, release: Release): void {
-    release.aiOff ??= error;
+   * were turned off (`aiGatedTransport`): none of the hold's requests goes out again
+   * (`unlessRefused`), and the hold stops there, as at its next request. Still recording, it ends
+   * now: a long dictation as at its release, its chunks transcribed before the refused one pasted and
+   * the pill saying why (`deliver`); any other as a hold refused at its start. Released, a dictation's
+   * end does the same, and an agent request under way ends now, sending no further round. */
+  private refusedForAIOff(error: AIOffError, generation: number): void {
+    if (this.generation !== generation) return;
     const kind = this.currentPhase.kind;
-    if (this.generation !== generation || this.releasedAt !== null || (kind !== "arming" && kind !== "listening")) return;
-    log.debug("DictationController: hold ended: AI features are off");
-    if (kind === "listening" && this.chunks.length > 0) return this.finish();
+    if (this.releasedAt === null) {
+      if (kind !== "arming" && kind !== "listening") return;
+      log.debug("DictationController: hold ended: AI features are off");
+      if (kind === "listening" && this.chunks.length > 0) return this.finish();
+      return this.endHold(error.message);
+    }
+    if (this.currentMode !== "agent" || isResting(this.currentPhase)) return;
+    log.debug("DictationController: agent request ended: AI features are off");
     this.endHold(error.message);
   }
 
@@ -1080,7 +1089,7 @@ export class DictationController extends Observable {
       log.debug(() => `DictationController: chunk ${chunk.index} transcribed in ${elapsed(sent)}`);
       return { transcription };
     } catch (error) {
-      if (error instanceof AIOffError) this.refusedForAIOff(error, generation, release);
+      if (error instanceof AIOffError) this.refusedForAIOff(error, generation);
       else if (isCurrent()) log.error(`DictationController: chunk ${chunk.index} failed for good: ${errorName(error)}`);
       return { error };
     }
@@ -1514,6 +1523,8 @@ export class DictationController extends Observable {
     const account = this.deps.account;
     const userID = account.session?.userID ?? null;
     const settings = this.dictationSettings;
+    // The hold of the request it answers.
+    const release = this.release;
     // Ended with the request, or dropped on its own: nothing more is sent.
     const signal = AbortSignal.any([this.abort.signal, answerSignal]);
     try {
@@ -1522,7 +1533,7 @@ export class DictationController extends Observable {
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
       // Past the deadline the answer is abandoned below, which calls off its request and waits.
       const transcription = await this.withinDeadline(deadline, () =>
-        this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, dictationVocabulary(settings.dictionary, [], [], false), token, signal)), isCurrent, signal),
+        this.transcribeRetrying(() => withFreshToken(account, userID, (token) => unlessRefused(release, () => client.transcribe(recording.flac, language, dictationVocabulary(settings.dictionary, [], [], false), token, signal))), isCurrent, signal),
       );
       if (!isCurrent()) return;
       const transcript = trimWhitespace(transcription.text);
@@ -2059,8 +2070,8 @@ interface Release {
   released: Promise<void>;
   markReleased: () => void;
   notice: RetryNotice | null;
-  /** The refusal of one of this hold's requests because AI features were turned off
-   * (`refusedForAIOff`): from then on none of its requests goes out, even if they are turned on again. */
+  /** The first refusal of one of this hold's requests because AI features were turned off
+   * (`unlessRefused`): from then on none of its requests goes out, even if they are turned on again. */
   aiOff: AIOffError | null;
 }
 
@@ -2070,6 +2081,20 @@ function newRelease(): Release {
     markReleased = resolve;
   });
   return { done: false, released, markReleased, notice: null, aiOff: null };
+}
+
+/** One of `release`'s hold's AI requests, sent with `request` (each try, its resend after a new
+ * sign-in too): refused without going out once a request of that hold was refused because AI features
+ * were turned off (`Release.aiOff`), whatever the setting says now; a refusal it meets is kept there.
+ * Nothing waits between the check and the request. */
+async function unlessRefused<T>(release: Release, request: () => Promise<T>): Promise<T> {
+  if (release.aiOff !== null) throw release.aiOff;
+  try {
+    return await request();
+  } catch (error) {
+    if (error instanceof AIOffError) release.aiOff ??= error;
+    throw error;
+  }
 }
 
 /** The backend gave up waiting for the speech model (504 `transcription_timeout`). One recording is

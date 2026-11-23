@@ -4,7 +4,7 @@
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import type { AccountModel } from "../../../src/core/backend/account.js";
 import { type AgentChat, emptyChat, type EventQuestion } from "../../../src/core/agent/chat.js";
 import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
@@ -189,7 +189,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"]; wordFrequencies?: DictationDependencies["wordFrequencies"]; aiSettings?: { readonly aiOffLine: string | null } } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: DictationDependencies["paste"]; copy?: DictationDependencies["copy"]; connectorTools?: ConnectorTool[]; corrections?: DictationDependencies["corrections"]; keepRecording?: DictationDependencies["keepRecording"]; wordFrequencies?: DictationDependencies["wordFrequencies"]; aiSettings?: { readonly aiOffLine: string | null }; warmUpGate?: () => Promise<void> } = {},
   ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory; clipboardSaves: () => number } {
     // With `aiSettings`, the AI requests go through the app's transport that refuses them while AI
     // features are off (`aiGatedTransport`), as the app wires them.
@@ -234,7 +234,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
       keyboardLanguage: async () => keyboard.language,
       systemEmailApp: async () => null,
       makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", ai(options.transcriptionTransport ?? transcription.transport)),
-      warmUp: (url, token) => new TranscriptionClient(url, "test", ai(warmUps.transport)).warmUp(token),
+      // With `warmUpGate`, each warm-up waits for it before it goes out (a slow sign-in, say).
+      warmUp: (url, token) => {
+        const warmUp = () => new TranscriptionClient(url, "test", ai(warmUps.transport)).warmUp(token);
+        return options.warmUpGate ? options.warmUpGate().then(warmUp) : warmUp();
+      },
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", ai(completions.transport)),
       connectorTools: options.connectorTools ?? [],
       corrections: options.corrections,
@@ -1070,6 +1074,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
     }
   });
 
+  /** Beside the refusals above: a real failure of an agent request is reported as one. */
+  test("an agent request the server refuses is reported as a failure", async () => {
+    const log = errorLog();
+    try {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(400, { error: "bad_request" });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = () => Promise.resolve(selectionScreen(""));
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(controller.phase.kind).toBe("failed");
+      expect(pastes).toEqual([]);
+      expect(log.errors.some((line) => line.startsWith("DictationController: agent failed: "))).toBe(true);
+    } finally {
+      log.stop();
+    }
+  });
+
   /** A hold under way when Opt Out of AI is switched on sends no warm-up: refused like any AI request,
    * and the hold ends there as a hold refused at its start does. Its release sends nothing. */
   test("Opt Out of AI switched on before a hold's warm-up goes out refuses it and ends the hold", async () => {
@@ -1095,6 +1117,76 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect([transcription.requests.length, completions.requests.length, pastes.length]).toEqual([0, 0, 0]);
       expect(gate.answers).toEqual([optedOutOfAILine]);
       expect(log.errors).toEqual([]);
+    } finally {
+      log.stop();
+    }
+  });
+
+  /** The same once the hold is under way (its warm-up behind a slow sign-in): still recording, with no
+   * part of it sent yet, the hold ends there, as one refused at its start, without being released. */
+  test("Opt Out of AI switched on while a hold listens refuses its late warm-up and ends the hold", async () => {
+    const { settings, live } = switchableAI();
+    prefs = live;
+    const gate = countingGate(settings);
+    const capture = new CountingCapture(true);
+    const log = errorLog();
+    try {
+      const signedInLate = deferred<void>();
+      const { controller, pastes } = makeController({ capture, aiSettings: gate, warmUpGate: () => signedInLate.promise });
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      signedInLate.resolve();
+
+      // Not released: the refused warm-up ends the hold.
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect(gate.answers).toEqual([optedOutOfAILine]);
+      expect(warmUps.requests).toHaveLength(0);
+      expect(capture.events.at(-1)).toBe("stop");
+
+      controller.handle("finish");
+      await sleep(50);
+      expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+      expect([transcription.requests.length, completions.requests.length, pastes.length]).toEqual([0, 0, 0]);
+      expect(log.errors).toEqual([]);
+    } finally {
+      log.stop();
+    }
+  });
+
+  /** A refusal belongs to the hold whose request it was: an earlier hold's warm-up, refused after a
+   * newer hold started, leaves the newer hold recording. */
+  test("an earlier hold's warm-up refused during a newer hold leaves the newer hold alone", async () => {
+    const { settings, live } = switchableAI();
+    prefs = live;
+    const gate = countingGate(settings);
+    const capture = new CountingCapture(true);
+    const log = errorLog();
+    try {
+      const firstSignedIn = deferred<void>();
+      let warmUpsStarted = 0;
+      const { controller } = makeController({ capture, aiSettings: gate, warmUpGate: () => (++warmUpsStarted === 1 ? firstSignedIn.promise : Promise.resolve()) });
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      controller.handle("cancel");
+      expect(controller.phase).toEqual(idle);
+
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening" && warmUps.requests.length === 1)).toBe(true);
+      const starts = capture.starts;
+      expect(settings.setOptsOutOfAI(true)).toBe(true);
+      firstSignedIn.resolve();
+
+      // The first hold's warm-up met the switch at the transport; the newer hold's had gone out.
+      expect(await eventually(() => gate.answers.length === 2)).toBe(true);
+      expect(gate.answers).toEqual([null, optedOutOfAILine]);
+      await sleep(50);
+      expect(controller.phase).toEqual({ kind: "listening" });
+      expect(capture.events.at(-1)).toBe("start");
+      expect(capture.starts).toBe(starts);
+      expect(log.errors).toEqual([]);
+      controller.handle("cancel");
     } finally {
       log.stop();
     }
@@ -5858,7 +5950,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const log = errorLog();
             try {
               const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
-              const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)], () => {}, { aiSettings: gate });
+              // The second round is the next request's.
+              const { controller, done } = await ask([tool], [calling(sameCall), reply(answer)], () => {}, { aiSettings: gate });
               expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
               const sent = [transcription.requests.length, completions.requests.length];
               expect(sent).toEqual([1, 1]);
@@ -5873,6 +5966,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
               expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
               expect([transcription.requests.length, completions.requests.length]).toEqual(sent);
               expect(tool.runs).toEqual([]);
+              // The request it answers ended with it: called off, its question no longer asking.
+              expect(completions.requests[0]?.signal?.aborted).toBe(true);
+              expect(controller.chat?.confirmation ?? null).toBeNull();
+              expect(log.errors).toEqual([]);
+
+              // Switched off again, the next request goes out and ends as any does.
+              expect(settings.setOptsOutOfAI(false)).toBe(true);
+              transcription.enqueue(200, { text: question });
+              controller.handle("start");
+              expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+              controller.handle("finish");
+              expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+              expect(transcription.requests).toHaveLength(sent[0] + 1);
               expect(log.errors).toEqual([]);
             } finally {
               log.stop();
@@ -6356,6 +6462,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
            * the release tail runs out however soon the answer comes) leaves the question asking, its
            * time to answer whole again, and the request under way: a click still answers it. */
           test.each(["a tap", "canceled", "nothing heard", "not transcribed", "not transcribed in time", "out of time from the release"] as const)("an answer that comes to nothing leaves the question asking (%s)", async (how) => {
+            const log = errorLog();
+            onTestFinished(log.stop);
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const { controller, done } = await ask([tool], [calling(sameCall), reply(answer)], (controller) => {
               controller.confirmationTimeout = 5_000;
@@ -6401,6 +6509,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(completions.requests).toHaveLength(1);
             expect(transcription.requests).toHaveLength(how === "a tap" || how === "canceled" ? 1 : 2);
             expect(tool.runs).toEqual([]);
+            // A transcription that failed, unlike one refused because AI features were turned off: reported.
+            const failed = how === "not transcribed" || how === "not transcribed in time" || how === "out of time from the release";
+            expect(log.errors.some((line) => line.startsWith("DictationController: the answer to the question was not transcribed: "))).toBe(failed);
 
             controller.answerConfirmation(true);
             await done;
@@ -8570,6 +8681,90 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
+    /** Refused at a chunk while an earlier chunk is still awaited: that one gives up at the deadline,
+     * and the pill (or the note) still says AI features are off, whichever chunk gave up first. */
+    test.each([{ pasted: true }, { pasted: false }])("a long dictation refused at a chunk while an earlier one is awaited says AI features are off (pasted: $pasted)", async ({ pasted }) => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        const backend = new ChunkBackend((chunk) => (chunk === 1 ? never() : part(chunk)));
+        const { controller, capture, pastes, copies } = makeLong(backend, { aiSettings: gate });
+        controller.transcriptionDeadline = 400;
+
+        await startHearing(controller, capture, pausedSpeech(23, 12, 12, 0.5));
+        expect(await eventually(() => backend.chunks === 2 && backend.attempts(0) === 1 && backend.inFlight === 1)).toBe(true);
+        if (!pasted) front.pid = 202;
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        const asked = gate.answers.length;
+        capture.feed(pausedSpeech(2, 12, 5));
+
+        // Not released: the refused chunk ends the hold; chunk 1 gives up at the deadline.
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(backend.chunks).toBe(2);
+        expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+        expect(completions.requests).toHaveLength(0);
+        expect(log.errors).toEqual([]);
+        if (pasted) {
+          expect(pastes).toEqual(["Part 0."]);
+          expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        } else {
+          expect(pastes).toEqual([]);
+          expect(controller.phase).toEqual({ kind: "notPasted", message: `${optedOutOfAILine}.`, text: "Part 0." });
+          await controller.copyNotPasted();
+          expect(copies).toEqual(["Part 0."]);
+        }
+      } finally {
+        log.stop();
+      }
+    });
+
+    /** The resend after signing in again is one of the hold's requests too: a chunk the server answers
+     * "signed out" after another chunk was refused is not sent again, even with AI features turned on
+     * again by then. */
+    test("a chunk answered 'signed out' after another chunk was refused is not sent again after the new sign-in", async () => {
+      const { settings, live } = switchableAI();
+      prefs = live;
+      const gate = countingGate(settings);
+      const log = errorLog();
+      try {
+        const signedOut = deferred<void>();
+        const backend = new ChunkBackend(async (chunk, attempt) => {
+          if (chunk !== 0 || attempt !== 0) return part(chunk);
+          await signedOut.promise;
+          return { status: 401, body: { error: "unauthorized" } };
+        });
+        const { controller, capture, pastes } = makeLong(backend, { aiSettings: gate });
+
+        await startHearing(controller, capture, pausedSpeech(1, 12, 0.5));
+        expect(await eventually(() => backend.attempts(0) === 1 && backend.inFlight === 1)).toBe(true);
+        expect(settings.setOptsOutOfAI(true)).toBe(true);
+        const asked = gate.answers.length;
+        capture.feed(pausedSpeech(2, 12, 5));
+
+        // Not released: chunk 1, refused, ends the hold; then chunk 0 is answered "signed out" with AI
+        // features on again, and the sign-in is renewed.
+        expect(await eventually(() => controller.phase.kind === "transcribing")).toBe(true);
+        expect(settings.setOptsOutOfAI(false)).toBe(true);
+        const refreshes = auth.requests.length;
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+        signedOut.resolve();
+
+        expect(await eventually(() => settled(controller))).toBe(true);
+        await sleep(50);
+        expect(auth.requests.length - refreshes).toBe(1);
+        expect(backend.attempts(0)).toBe(1);
+        expect(backend.chunks).toBe(1);
+        expect(gate.answers.slice(asked)).toEqual([optedOutOfAILine]);
+        expect(controller.phase).toEqual(failed(`${optedOutOfAILine}.`));
+        expect(pastes).toEqual([]);
+        expect(log.errors).toEqual([]);
+      } finally {
+        log.stop();
+      }
+    });
+
     /** Owner, 2026-10-03: "a final polished pass if time permits". Once its chunks are in, their
      * cleanups, joined, go through the cleanup prompt once more as a whole, with the dictation's cleanup
      * variables, and its reply is pasted. */
@@ -9109,18 +9304,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
       { lost: "a middle chunk refused", answer: (chunk: number) => (chunk === 1 ? refused : part(chunk)), pasted: "Part 0." },
       { lost: "the last chunk failing on every try", answer: (chunk: number) => (chunk === 2 ? serverError : part(chunk)), pasted: "Part 0. Part 1." },
     ])("$lost: the chunks before it are pasted, as any dictation's text", async ({ answer, pasted }) => {
-      const backend = new ChunkBackend(answer);
-      const { controller, capture, pastes } = makeLong(backend);
+      const log = errorLog();
+      try {
+        const backend = new ChunkBackend(answer);
+        const { controller, capture, pastes } = makeLong(backend);
 
-      await startHearing(controller, capture, pausedSpeech(7, 12, 12, 4));
-      expect(await eventually(() => backend.chunks === 2)).toBe(true);
-      controller.handle("finish");
+        await startHearing(controller, capture, pausedSpeech(7, 12, 12, 4));
+        expect(await eventually(() => backend.chunks === 2)).toBe(true);
+        controller.handle("finish");
 
-      expect(await eventually(() => settled(controller))).toBe(true);
-      expect(pastes).toEqual([pasted]);
-      expect(controller.phase).toEqual(idle);
-      // The text pasted is polished when it is of two chunks or more (this backend's polish fails).
-      expect(completions.requests.map((_, index) => completions.message(index)?.dictation)).toEqual(pasted === "Part 0." ? [] : [pasted]);
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(pastes).toEqual([pasted]);
+        expect(controller.phase).toEqual(idle);
+        // The text pasted is polished when it is of two chunks or more (this backend's polish fails).
+        expect(completions.requests.map((_, index) => completions.message(index)?.dictation)).toEqual(pasted === "Part 0." ? [] : [pasted]);
+        // A failure, unlike a refusal because AI features were turned off: reported.
+        expect(log.errors.some((line) => /^DictationController: chunk \d+ failed for good: /.test(line))).toBe(true);
+        expect(log.errors.some((line) => line.startsWith("DictationController: the end of a long dictation was lost ("))).toBe(true);
+      } finally {
+        log.stop();
+      }
     });
 
     /** The chunks after the first that gave up are no longer needed: their requests stop. */
@@ -9141,20 +9344,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** Not pasted (the user switched apps, ADR-DESK-042), the note is any dictation's, with the text
      * that came in. */
     test("a dictation whose end was lost and that is not pasted, as the user switched apps, gets the usual note", async () => {
-      const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : part(chunk)));
-      const { controller, capture, pastes, copies } = makeLong(backend);
+      const log = errorLog();
+      try {
+        const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : part(chunk)));
+        const { controller, capture, pastes, copies } = makeLong(backend);
 
-      await startHearing(controller, capture, pausedSpeech(19, 12, 12, 4));
-      expect(await eventually(() => backend.chunks === 2)).toBe(true);
-      front.pid = 202;
-      controller.handle("finish");
+        await startHearing(controller, capture, pausedSpeech(19, 12, 12, 4));
+        expect(await eventually(() => backend.chunks === 2)).toBe(true);
+        front.pid = 202;
+        controller.handle("finish");
 
-      expect(await eventually(() => settled(controller))).toBe(true);
-      expect(pastes).toEqual([]);
-      expect(copies).toEqual([]);
-      expect(controller.phase).toEqual({ kind: "notPasted", message: notPastedMessage, text: "Part 0." });
-      await controller.copyNotPasted();
-      expect(copies).toEqual(["Part 0."]);
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(pastes).toEqual([]);
+        expect(copies).toEqual([]);
+        expect(controller.phase).toEqual({ kind: "notPasted", message: notPastedMessage, text: "Part 0." });
+        // A failure, unlike a refusal because AI features were turned off: reported.
+        expect(log.errors.some((line) => line.startsWith("DictationController: the end of a long dictation was lost ("))).toBe(true);
+        await controller.copyNotPasted();
+        expect(copies).toEqual(["Part 0."]);
+      } finally {
+        log.stop();
+      }
     });
 
     /** A long silence (hands-free, the user away) is cut into chunks the model hears nothing in; the
