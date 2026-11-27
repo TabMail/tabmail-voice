@@ -18,7 +18,7 @@ export class NativeMicrophone {
     return (command) => {
       switch (command.type) {
         case "prepare":
-          this.helper.request("microphonePrepare").catch((error: unknown) => this.failed("prepared", error));
+          this.helper.request("microphonePrepare", {}, config.microphonePrepareTimeout).catch((error: unknown) => this.failed("prepared", error));
           return;
         case "start": {
           const { session } = command;

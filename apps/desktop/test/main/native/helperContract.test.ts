@@ -576,6 +576,27 @@ describe("helper wire contract", () => {
     }
   });
 
+  /** `voice-microphone` is started afresh after every dictation and prepares at once. In the debug
+   * log a fresh process's prepare answered up to 4.94 s after the request, on USB, built-in and
+   * Bluetooth inputs alike, and the dictations after it worked: a wait shorter than that logs a
+   * normal start as a failed prepare. */
+  test("a prepare waits out a freshly started helper's measured prepare time", () => {
+    const freshPrepareMeasured = 4_940;
+    const waits: unknown[] = [];
+    const helper = {
+      request: async (method: string, _params?: unknown, timeout?: unknown) => {
+        if (method === "microphonePrepare") waits.push(timeout);
+        return {};
+      },
+      on() {},
+    } as unknown as HelperClient;
+    new NativeMicrophone(helper, "voice-microphone").microphone(() => {})({ type: "prepare" });
+
+    expect(waits).toHaveLength(1);
+    // A request given no wait gets the helper client's own default.
+    expect((waits[0] as number | undefined) ?? config.helperRequestTimeout).toBeGreaterThan(freshPrepareMeasured);
+  });
+
   test("a chunk's samples decode from base64 little-endian floats, and a torn one does not", () => {
     const samples = new Float32Array([0, 0.125, -1]);
     expect(decodeSamples(Buffer.from(samples.buffer).toString("base64"))).toEqual(samples);
