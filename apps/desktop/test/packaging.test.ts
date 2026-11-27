@@ -238,7 +238,8 @@ describe("the Mac app's packaging", () => {
    * that signs and its offline backup, which installed apps must already trust for it to replace
    * the first (ADR-DESK-058), and nothing secret. */
   // GnuPG reads the keyring as apt's own verifier does; Windows has no GnuPG.
-  test.skipIf(process.platform === "win32")("the apt keyring holds the signing key and its backup, public only", () => {
+  // Up to 10.6 s measured on a heavily loaded Mac (release build log, 2026-11-27), over vitest's 5 s default.
+  test.skipIf(process.platform === "win32")("the apt keyring holds the signing key and its backup, public only", { timeout: 30_000 }, () => {
     const keyring = join(root, "resources/linux/tabmail-voice-archive-keyring.gpg");
     const records = gpg("--with-sig-check", "--show-keys", keyring).split("\n").map(line => line.split(":"));
     const keys = records.filter(([type]) => type === "pub");

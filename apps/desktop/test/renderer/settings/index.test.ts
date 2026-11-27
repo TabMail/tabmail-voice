@@ -183,7 +183,8 @@ afterEach(() => {
 
 describe("Settings page", () => {
   /** Settings › Dictionary (ADR-DESK-038). */
-  describe("the dictionary", () => {
+  // Up to 10.6 s measured on a heavily loaded Mac (release build log, 2026-11-27), over vitest's 5 s default.
+  describe("the dictionary", { timeout: 30_000 }, () => {
     const field = () => document.querySelector<HTMLInputElement>('input[aria-label="Word or name"]') as HTMLInputElement;
     const words = (): string[] => [...document.querySelectorAll('ul[aria-label="Dictionary"] li')].map((item) => item.textContent ?? "");
 

@@ -996,7 +996,8 @@ describe("dictionary", () => {
   /** Owner, 2026-10-02: a full dictionary keeps learning; each new word, learned or typed (below the
    * typed cap), takes the place of the learned word used least recently (not the one learned first),
    * and a typed word is never dropped. */
-  describe("when full", () => {
+  // Up to 10.6 s measured on a heavily loaded Mac (release build log, 2026-11-27), over vitest's 5 s default.
+  describe("when full", { timeout: 30_000 }, () => {
     /** A dictionary of typed words, then learned ones, each used once, in order: as stored by adding
      * and learning them one at a time, without the thousands of writes. */
     function full(typed: number): AppSettings {
