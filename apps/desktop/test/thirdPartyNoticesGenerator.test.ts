@@ -76,7 +76,8 @@ function recorded(): { tool: string; args: string[] }[] {
   return existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").map(line => JSON.parse(line) as { tool: string; args: string[] }) : [];
 }
 
-describe.skipIf(process.platform === "win32")("third-party notices generator", () => {
+// Up to 10.6 s measured on a heavily loaded Mac (release build log, 2026-11-27), over vitest's 5 s default.
+describe.skipIf(process.platform === "win32")("third-party notices generator", { timeout: 30_000 }, () => {
   beforeEach(() => {
     work = realpathSync(mkdtempSync(join(tmpdir(), "voice-notices-")));
     repo = join(work, "repo");
