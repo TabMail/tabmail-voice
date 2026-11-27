@@ -611,7 +611,9 @@ enum ScreenContextReader {
             switch AXUIElementCopyAttributeValue(element, name as CFString, &value) {
             case .success: return value
             case .attributeUnsupported, .noValue, .notImplemented: return nil
-            default: throw Redactor.Failure.refused
+            case let result:
+                CaretLocator.logIfUnanswered(result, name)
+                throw Redactor.Failure.refused
             }
         }
         do {

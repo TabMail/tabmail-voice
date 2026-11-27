@@ -13,8 +13,16 @@ enum CaretLocator {
     /// The anchor's screen rect in Cocoa coordinates (bottom-left origin), or nil when the app
     /// exposes neither a caret nor a field-sized focused element (then the caller uses the mouse
     /// pointer). Blocking cross-process Accessibility calls, each bounded by
-    /// `HelperConfig.caretLookupTimeout`: call off the main thread.
+    /// `HelperConfig.caretLookupTimeout`: call off the main thread. How long it took is logged, to
+    /// tune that cap from real lookups.
     static func anchorRect(inApp pid: pid_t) -> CGRect? {
+        let began = ContinuousClock.now
+        let anchor = lookUpAnchor(inApp: pid)
+        HelperLog.debug("CaretLocator: \(anchor == nil ? "no anchor" : "anchored") in \((ContinuousClock.now - began).formatted(.units(allowed: [.milliseconds])))")
+        return anchor
+    }
+
+    private static func lookUpAnchor(inApp pid: pid_t) -> CGRect? {
         // Ask the frontmost app itself: the system-wide focused element is unreliable in some
         // apps (it can fail or lag behind the app's own focus).
         let app = AXUIElementCreateApplication(pid)
@@ -132,8 +140,20 @@ enum CaretLocator {
 
     static func parameterized(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
         var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &value) == .success else { return nil }
+        let result = AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &value)
+        guard result == .success else { logIfUnanswered(result, name); return nil }
         return value
+    }
+
+    /// Logs a call the app did not answer in time: past its element's messaging timeout (each
+    /// lookup's cap), or into an app that is busy or gone. A cap that cuts off calls which would have
+    /// been answered shows here.
+    static func logIfUnanswered(_ result: AXError, _ name: String) {
+        if let line = unansweredLine(result, name) { HelperLog.debug(line) }
+    }
+
+    static func unansweredLine(_ result: AXError, _ name: String) -> String? {
+        result == .cannotComplete ? "Accessibility: no answer to \(name) in time (cannotComplete)" : nil
     }
 
     /// The caret via the text-marker API (WebKit, Chromium/Electron): bounds of the selected
@@ -282,17 +302,16 @@ enum CaretLocator {
 
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+        let result = AXUIElementCopyAttributeValue(element, name as CFString, &value)
+        guard result == .success else { logIfUnanswered(result, name); return nil }
         return value
     }
 
     static func bounds(of range: CFRange, in element: AXUIElement) -> CGRect? {
         var range = range
-        guard let rangeValue = AXValueCreate(.cfRange, &range) else { return nil }
-        var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
-            element, kAXBoundsForRangeParameterizedAttribute as CFString, rangeValue, &value
-        ) == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        guard let rangeValue = AXValueCreate(.cfRange, &range),
+              let value = parameterized(element, kAXBoundsForRangeParameterizedAttribute, rangeValue),
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
         guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
         return rect

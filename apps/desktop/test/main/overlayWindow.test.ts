@@ -9,6 +9,7 @@ import * as config from "../../src/core/config.js";
 import type { Phase } from "../../src/core/dictation/controller.js";
 import { bubbleRow, type Rect } from "../../src/core/ui/overlayGeometry.js";
 import { OverlayWindowController } from "../../src/main/overlayWindow.js";
+import { log } from "../../src/core/log.js";
 import { shellPlacementArea } from "../../src/main/native/windows/overlayArea.js";
 import { linuxFallbackAnchor } from "../../src/main/native/linux/overlayArea.js";
 
@@ -1359,6 +1360,51 @@ test("an old slow caret cannot overwrite a later hold's ready caret", async () =
   old.resolve({ x: 40, y: 40, width: 1, height: 20 });
   await new Promise<void>(queueMicrotask);
   expect(overlay.bounds()).toEqual(shown);
+});
+
+/** The debug log's lines, each as it would be written. */
+function debugLines(): () => string[] {
+  const debug = vi.spyOn(log, "debug").mockImplementation(() => {});
+  return () => debug.mock.calls.map(([message]) => (typeof message === "function" ? message() : message));
+}
+
+describe("the caret lookup's debug log, to tune its waits", () => {
+  test("a lookup answered before the reveal logs how long it took", async () => {
+    const lines = debugLines();
+    const controller = new OverlayWindowController(recordingWindow().window, async () => ({ x: 40, y: 40, width: 1, height: 20 }));
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+
+    expect(lines()).toContainEqual(expect.stringMatching(/^OverlayWindowController: caret lookup answered a caret after \d+ms$/));
+    expect(lines().some((line) => line.includes("still under way"))).toBe(false);
+  });
+
+  test("a lookup still under way at the reveal is logged there, and its late answer as dropped", async () => {
+    const lines = debugLines();
+    const caret = deferred<Rect | null>();
+    const controller = new OverlayWindowController(recordingWindow().window, () => caret.promise);
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    expect(lines()).toContainEqual(expect.stringMatching(/^OverlayWindowController: shown with the caret lookup still under way after \d+ms; the pill stays at the fallback position$/));
+
+    caret.resolve(null);
+    await new Promise<void>(queueMicrotask);
+    await new Promise<void>(queueMicrotask);
+    expect(lines()).toContainEqual(expect.stringMatching(/^OverlayWindowController: caret lookup answered no caret after \d+ms, too late: dropped$/));
+  });
+
+  test("a failed lookup logs its error's type and how long it took", async () => {
+    const lines = debugLines();
+    const controller = new OverlayWindowController(recordingWindow().window, () => Promise.reject(new TypeError("never logged")));
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    await new Promise<void>(queueMicrotask);
+
+    expect(lines()).toContainEqual(expect.stringMatching(/^OverlayWindowController: caret lookup answered an error \(TypeError\) after \d+ms$/));
+    expect(lines().some((line) => line.includes("never logged"))).toBe(false);
+  });
 });
 
 test("late caret cannot change saved placement or the chat opened from it", async () => {

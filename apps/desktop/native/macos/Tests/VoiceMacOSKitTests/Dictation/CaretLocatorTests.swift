@@ -94,4 +94,14 @@ struct CaretLocatorTests {
         #expect(!CaretLocator.isPlausible(CGRect(x: 500, y: 400, width: 1, height: 0), screens: screens))
         #expect(!CaretLocator.isPlausible(CGRect(x: -5000, y: 400, width: 1, height: 20), screens: screens))
     }
+
+    /// A call cut off by its messaging timeout fails with `cannotComplete`, and only that is logged
+    /// as not answered in time: an app that has no such attribute or value answered.
+    @Test func onlyACallNotAnsweredInTimeIsLoggedAsSuch() {
+        #expect(CaretLocator.unansweredLine(.cannotComplete, kAXSelectedTextRangeAttribute)
+            == "Accessibility: no answer to AXSelectedTextRange in time (cannotComplete)")
+        for answered: AXError in [.success, .noValue, .attributeUnsupported, .parameterizedAttributeUnsupported, .notImplemented, .apiDisabled] {
+            #expect(CaretLocator.unansweredLine(answered, kAXSelectedTextRangeAttribute) == nil)
+        }
+    }
 }

@@ -31,7 +31,7 @@ import { DeviceSync } from "../core/sync/deviceSync.js";
 import { GlobeKeyAction, savedChoiceKey } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { aiGatedTransport, type HTTPTransport, liveTransport } from "../core/backend/http.js";
-import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
+import { configureLog, elapsed, errorName, log, setDebugMode } from "../core/log.js";
 import { acknowledgements, sourceLine } from "../core/ui/acknowledgements.js";
 import { fileProblemNotice, resetButton, resetConfirmation, resetCopyPath, resetFailed, type StoredFile, storedFiles, unsavedBecauseOf } from "../core/ui/fileProblems.js";
 import type { MenuState } from "../core/ui/menuModel.js";
@@ -425,7 +425,10 @@ function launch(): void {
       });
       return caret;
     }
+    // Two requests in a row: the frontmost app's time is logged, the overlay logs the whole lookup's.
+    const asking = performance.now();
     const pid = await system.frontmostApp();
+    log.debug(() => `main: frontmost app for the caret lookup answered after ${elapsed(asking)}`);
     return pid === null ? null : system.caretAnchor(pid);
   }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined, process.platform === "linux" ? "frame" : "pointer");
 
