@@ -130,6 +130,13 @@ export const chunkOverlapMinimumRun = 3;
 export const chunkPolishTimeout = 5_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
+/** Longest a microphone prepare may take before it is logged as failed (ms). The helper is started
+ * afresh after every dictation and prepares at once: its process start, first Core Audio calls and
+ * engine on the default input took up to 4.9 s after the request in the debug log (on USB, built-in
+ * and Bluetooth inputs alike), past `helperRequestTimeout`. No dictation waits on a prepare's answer (a
+ * start builds its engine when none is ready), so this only decides when one that never answers is
+ * an error. */
+export const microphonePrepareTimeout = 8_000;
 /** Nothing but digital silence (`silenceDecibels`) this long after the microphone's first audio: it
  * is muted or its volume is at zero, and the dictation ends saying so rather than waiting for a voice
  * that can't come (owner, 2026-10-04). Longer than a device's own silence as it starts. */
