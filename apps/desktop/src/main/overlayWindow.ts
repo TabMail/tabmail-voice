@@ -5,7 +5,7 @@
 import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
 import type { Phase } from "../core/dictation/controller.js";
-import { errorName, log } from "../core/log.js";
+import { elapsed, errorName, log } from "../core/log.js";
 import { bubblesFitUnder, chatSide, chatWindowFrame, draggedChat, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/ui/overlayGeometry.js";
 import type { ChatPlacement, OverlayState } from "../shared/ipc.js";
 
@@ -40,6 +40,8 @@ export class OverlayWindowController {
   private requestedPill = false;
   private lookupGeneration = 0;
   private lookupPending = false;
+  /** When the latest caret lookup started (`performance.now()`), for the debug log. */
+  private lookupStarted = 0;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   /** The overlay last opened above the caret's line (`opensUpward`), which the view places its tip
    * by (`tipGoesAbove`). */
@@ -195,6 +197,7 @@ export class OverlayWindowController {
         if (this.lookupPending) {
           // The reveal must not wait for accessibility. Keep this hold at its fallback
           // position rather than jumping when a late caret lookup eventually finishes.
+          log.debug(() => `OverlayWindowController: shown with the caret lookup still under way after ${elapsed(this.lookupStarted)}; the pill stays at the fallback position`);
           this.lookupGeneration += 1;
           this.lookupPending = false;
         }
@@ -392,13 +395,19 @@ export class OverlayWindowController {
     const current = this.lookupGeneration;
     this.anchor = null;
     this.lookupPending = true;
+    // How long each lookup takes, and whether its answer came too late to be used, are logged to
+    // tune its waits from real lookups.
+    const started = performance.now();
+    this.lookupStarted = started;
     void this.locateCaret()
-      .catch((error: unknown) => {
-        log.debug(`OverlayWindowController: caret lookup failed: ${errorName(error)}`);
-        return null;
-      })
-      .then((caret) => {
-        if (this.lookupGeneration !== current) return;
+      .then(
+        (caret) => ({ caret, answer: caret === null ? "no caret" : "a caret" }),
+        (error: unknown) => ({ caret: null, answer: `an error (${errorName(error)})` }),
+      )
+      .then(({ caret, answer }) => {
+        const dropped = this.lookupGeneration !== current;
+        log.debug(() => `OverlayWindowController: caret lookup answered ${answer} after ${elapsed(started)}${dropped ? ", too late: dropped" : ""}`);
+        if (dropped) return;
         this.anchor = caret;
         this.lookupPending = false;
       });
