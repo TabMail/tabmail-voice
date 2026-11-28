@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { type HTTPRequest, liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import { sleep } from "../../../src/core/util/timeout.js";
+import { type RedirectServers, redirectServers } from "../../support/redirectServers.js";
 
 /** `liveTransport` against a server on the loopback interface: never the network. */
 describe("liveTransport", () => {
@@ -147,5 +148,42 @@ describe("liveTransport", () => {
     server = undefined;
 
     expect(await failure(liveTransport(post(url)))).toBe("network");
+  });
+
+  /** Every request goes to TabMail's own servers, which never redirect, and most carry the access
+   * token or the refresh token: a redirect is not followed, so the request fails as a network error
+   * and the address the redirect names sees nothing. Plain fetch follows the same redirect (the
+   * control: the servers really redirect). */
+  describe("a redirect", () => {
+    let servers: RedirectServers | undefined;
+    afterEach(async () => {
+      await servers?.close();
+      servers = undefined;
+    });
+
+    const requests = {
+      get: { method: "GET", headers: { Authorization: "Bearer synthetic-access" }, body: "" },
+      postWithBody: { method: "POST", headers: { Authorization: "Bearer synthetic-access", "Content-Type": "application/json" }, body: '{"refresh_token":"synthetic-refresh"}' },
+    } as const;
+
+    describe.each([301, 302, 303, 307, 308])("%i", (status) => {
+      test.each(Object.entries(requests))("%s: fails as a network error, and the other address sees nothing", async (_, init) => {
+        servers = await redirectServers(status);
+
+        expect(await failure(liveTransport({ ...init, url: servers.firstURL, timeout: 5_000 }))).toBe("network");
+
+        expect(servers.asked.map((r) => [r.method, r.authorization, r.body])).toEqual([[init.method, init.headers.Authorization, init.body]]);
+        expect(servers.reached).toEqual([]);
+      });
+
+      test.each(Object.entries(requests))("%s: control, plain fetch follows it", async (_, init) => {
+        servers = await redirectServers(status);
+
+        const response = await fetch(servers.firstURL, { method: init.method, headers: init.headers, body: init.method === "GET" ? undefined : init.body });
+
+        expect(await response.text()).toBe("landed");
+        expect(servers.reached).toHaveLength(1);
+      });
+    });
   });
 });

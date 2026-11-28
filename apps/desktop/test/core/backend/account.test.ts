@@ -4,8 +4,10 @@
 
 import { describe, expect, test } from "vitest";
 import { AccountModel, AuthClient, AuthError, type TabMailSession } from "../../../src/core/backend/account.js";
+import { liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import * as config from "../../../src/core/config.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
+import { redirectServers } from "../../support/redirectServers.js";
 import { deferred, Fixtures, InMemorySessionStore, StubTransport } from "../../support/stubs.js";
 
 function client(stub: StubTransport, key = "pk"): AuthClient {
@@ -354,5 +356,32 @@ describe("AccountModel", () => {
     account.signOut();
 
     expect(changes).toBe(2);
+  });
+});
+
+/** The token refresh, whose body carries the refresh token, against a sign-in server answering with a
+ * redirect that keeps the method and body (307, 308), over the real transport on the loopback
+ * interface: the refresh token reaches no other address, the refresh fails as a network error, and
+ * the sign-in is kept (a redirect never signs out). */
+describe("a token refresh answered with a redirect", () => {
+  test.each([307, 308])("%i: the refresh token goes nowhere else, and the sign-in is kept", async (status) => {
+    const servers = await redirectServers(status);
+    try {
+      const session = Fixtures.session({ expiresIn: 0 });
+      const store = new InMemorySessionStore(session);
+      const account = new AccountModel(new AuthClient(liveTransport, servers.firstOrigin, "publishable-key"), store);
+
+      const failure = await account.validToken().then(() => null, (error: unknown) => (error instanceof TransportError ? error.reason : error));
+
+      expect(failure).toBe("network");
+      expect(servers.asked.map((r) => [r.method, r.url, JSON.parse(r.body)])).toEqual([
+        ["POST", "/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refreshToken }],
+      ]);
+      expect(servers.reached).toEqual([]);
+      expect(account.session).toBe(session);
+      expect(store.load()).toBe(session);
+    } finally {
+      await servers.close();
+    }
   });
 });
