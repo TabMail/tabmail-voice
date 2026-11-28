@@ -201,5 +201,21 @@ describe("liveTransport", () => {
         });
       });
     });
+
+    /** The same requests through the transport, to a server that answers them (the second, which
+     * answers 200 "landed"): each comes back as it does today, sent once, and a stream consumer hears
+     * the body. */
+    test.each(shapes)("%s: control, a server that answers it gets one request and its answer comes back", async (_, shape) => {
+      servers = await redirectServers(307);
+      const heard: string[] = [];
+      const request = shape(heard);
+
+      const response = await liveTransport({ ...request, url: `${servers.secondOrigin}/start` });
+
+      expect([response.status, response.body]).toEqual([200, "landed"]);
+      expect(servers.reached.map((r) => [r.method, r.url, r.authorization, r.body])).toEqual([[request.method, "/start", authorization, request.body]]);
+      expect(servers.asked).toEqual([]);
+      expect(heard.join("")).toBe(request.onChunk ? "landed" : "");
+    });
   });
 });

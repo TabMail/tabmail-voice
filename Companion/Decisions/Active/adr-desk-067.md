@@ -35,7 +35,8 @@ Thunderbird add-on make the same change.
 - Tests: `test/core/backend/http.test.ts` (301, 302, 303, 307 and 308, to another server and on the
   same one, for a GET, a POST with a body, the same with the caller's signal, and with the signal and a
   stream consumer: the request fails as a network error, the redirect's target sees nothing and the
-  consumer hears nothing of the redirect's body, while plain `fetch` follows the same redirect);
+  consumer hears nothing of the redirect's body, while plain `fetch` follows the same redirect, and
+  each shape gets a server's ordinary answer through the transport);
   `completions.test.ts` (an agent round, with the hold's signal and a listener for the backend's
   tools, against the same redirects carrying a stream that names a tool: the listener hears nothing;
   the same stream from a server that answers it reaches the listener); `account.test.ts` (the real
