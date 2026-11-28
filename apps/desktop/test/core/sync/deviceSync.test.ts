@@ -756,9 +756,10 @@ describe("the connect pass", () => {
     voice.sync.update();
     await relay.settle();
 
-    expect(relay.passRequests.map((request) => [request.method, request.url, request.headers.Authorization])).toEqual([
-      ["POST", "https://sync.tabmail.ai/ws/pass", "Bearer access-1"],
-      ["POST", "https://sync-dev.tabmail.ai/ws/pass", "Bearer access-1"],
+    // Each pass request has the pass's own time limit, so a silent relay ends in a retry.
+    expect(relay.passRequests.map((request) => [request.method, request.url, request.headers.Authorization, request.timeout])).toEqual([
+      ["POST", "https://sync.tabmail.ai/ws/pass", "Bearer access-1", config.deviceSyncPassTimeout],
+      ["POST", "https://sync-dev.tabmail.ai/ws/pass", "Bearer access-1", config.deviceSyncPassTimeout],
     ]);
     expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`, `${config.deviceSyncDevelopmentURL}?pass=pass-2`]);
     expect(relay.urls.join("\n")).not.toContain("access-1");
