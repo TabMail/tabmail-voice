@@ -88,7 +88,9 @@ async function listen(server: Server): Promise<string> {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
+/** Stops accepting first, then ends the connections still open. */
 async function stop(server: Server): Promise<void> {
+  const closed = new Promise((resolve) => server.close(resolve));
   server.closeAllConnections();
-  await new Promise((resolve) => server.close(resolve));
+  await closed;
 }

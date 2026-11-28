@@ -22,7 +22,7 @@ Thunderbird add-on make the same change.
   use of the app's own member named `fetch` is refused too: it is renamed, or listed with its reason.
   Exempt: the transport itself; `web_read`'s `liveWebFetch`, which reads any web page, follows its
   redirects and carries no token (ADR-DESK-030); the PDF reader's stand-in that refuses the network.
-  The exempt files keep the import rule.
+  The exempt files keep the import rule and `net.request`'s.
 - Device Sync's connection is Node's own WebSocket, which never follows a redirect; a test pins it.
 - Unchanged: the update feeds on `cdn.tabmail.ai` (`electron-updater`; signed, no token) and the memory
   helper's model download.

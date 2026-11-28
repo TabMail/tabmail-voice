@@ -15,13 +15,7 @@ const electronImports = [
   { selector: `${electronModule} > ImportSpecifier[imported.name='net'][local.name!='net']`, message: netRule },
   { selector: `${electronModule} > :matches(ImportNamespaceSpecifier, ImportDefaultSpecifier)`, message: netRule },
 ];
-// Any member named fetch, whatever holds it (a global object, Electron's net, a session), read or
-// taken out by destructuring.
-const fetchMembers = [
-  { selector: "MemberExpression[computed=false][property.name='fetch']", message: requestRule },
-  { selector: "MemberExpression[computed=true][property.value='fetch']", message: requestRule },
-  { selector: "ObjectPattern > Property:matches([key.name='fetch'], [key.value='fetch'])", message: requestRule },
-];
+const netRequest = { object: "net", property: "request", message: requestRule };
 
 export default tseslint.config(
   // The browser test pages' CodeMirror bundle is generated (scripts/browser-pages.mts).
@@ -42,14 +36,16 @@ export default tseslint.config(
     files: ["src/**"],
     rules: {
       "no-restricted-globals": ["error", { name: "fetch", message: requestRule }],
-      "no-restricted-properties": ["error", { object: "net", property: "request", message: requestRule }],
-      "no-restricted-syntax": ["error", ...electronImports, ...fetchMembers],
+      // Any member named fetch, whatever holds it (a global object, Electron's net, a session), read or
+      // taken out by destructuring.
+      "no-restricted-properties": ["error", { property: "fetch", message: requestRule }, netRequest],
+      "no-restricted-syntax": ["error", ...electronImports],
     },
   },
   {
     // The only direct fetches: the transport itself; `web_read`, which reads any web page and follows
     // its redirects, with no token (ADR-DESK-030); the PDF reader's stand-in that refuses the network.
     files: ["src/core/backend/http.ts", "src/core/agent/connectors/web.ts", "src/main/documents/pdfWorker.ts"],
-    rules: { "no-restricted-globals": "off", "no-restricted-syntax": ["error", ...electronImports] },
+    rules: { "no-restricted-globals": "off", "no-restricted-properties": ["error", netRequest] },
   },
 );

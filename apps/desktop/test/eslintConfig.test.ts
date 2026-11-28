@@ -32,8 +32,12 @@ describe("the request rule", () => {
     ["a call", bare, 1],
     ["fetch kept under another name or handed on", "export const send = fetch;\nexport const c = (run: (f: unknown) => void) => run(fetch);", 2],
     ["a global object's fetch", "export const d = (u: string) => [globalThis.fetch(u), global.fetch(u), window.fetch(u), self.fetch(u), globalThis?.fetch(u)];", 5],
-    ["a computed global fetch", "export const e = (u: string) => globalThis[\"fetch\"](u);", 1],
-    ["fetch taken out of a global object", "const { fetch: send } = globalThis;\nconst { \"fetch\": other } = globalThis;\nexport const f = (u: string) => [send(u), other(u)];", 2],
+    ["a computed global fetch", "export const e = (u: string) => [globalThis[\"fetch\"](u), globalThis[`fetch`](u)];", 2],
+    [
+      "fetch taken out of a global object",
+      "const { fetch: send } = globalThis;\nconst { \"fetch\": other } = globalThis;\nconst { [`fetch`]: third } = globalThis;\nexport const f = (u: string) => [send(u), other(u), third(u)];",
+      3,
+    ],
     ["Electron's net", "import { net } from \"electron\";\nexport const g = (u: string) => [net.fetch(u), net.request(u)];", 2],
     ["Electron's net under another name", "import { net as web } from \"electron\";\nexport const h = (u: string) => web.request(u);", 1],
     ["Electron imported whole", "import * as electron from \"electron\";\nimport app from \"electron\";\nexport const i = (u: string) => [electron.net.request(u), app.net.request(u)];", 2],
@@ -51,6 +55,7 @@ describe("the request rule", () => {
 
   test.each([
     ["a method and a key named fetch", "export class C { fetch(): void {} }\nexport const o = { fetch: 1 };"],
+    ["a local named fetch used as a key", "export const s = (o: Record<string, number>) => { const fetch = \"other\"; const { [fetch]: value } = o; return value; };"],
     ["a local named fetch", "export const j = (make: () => (u: string) => void, u: string) => { const fetch = make(); fetch(u); };"],
     ["Electron's net by its name, and its other members", "import { net, shell } from \"electron\";\nexport const k = () => [net.isOnline(), shell];"],
     [
@@ -67,8 +72,8 @@ describe("the request rule", () => {
     expect(await flags(bare, "src/renderer/settings/example.tsx")).toBe(1);
   });
 
-  /** Every source file has the whole rule but the three that may fetch directly, which keep only the
-   * import rule. */
+  /** Every source file has the whole rule but the three that may fetch directly, which keep the import
+   * rule and `net.request`'s. */
   test("covers every source file but the three exempt ones", async () => {
     const rules = async (filePath: string) => {
       const all = ((await eslint.calculateConfigForFile(filePath)) as Linter.Config).rules ?? {};
@@ -94,7 +99,8 @@ describe("the request rule", () => {
     expect(exempt).not.toEqual(whole);
   });
 
-  /** Exactly these files may fetch directly, in either form; a file beside one of them may not. */
+  /** Exactly these files may fetch directly, in either form; a file beside one of them may not. They
+   * keep the rest: Electron imported by name, `net` as `net`, and no `net.request`. */
   test.each([
     ["src/core/backend/http.ts", "src/core/backend/example.ts"],
     ["src/core/agent/connectors/web.ts", "src/core/agent/connectors/example.ts"],
@@ -102,6 +108,10 @@ describe("the request rule", () => {
   ])("leaves %s, which may fetch directly, and flags %s beside it", async (exempt, beside) => {
     expect([await flags(bare, exempt), await flags(property, exempt)]).toEqual([0, 0]);
     expect([await flags(bare, beside), await flags(property, beside)]).toEqual([1, 1]);
+    const renamed = "import { net as web } from \"electron\";\nexport const t = web;";
+    const whole = "import * as electron from \"electron\";\nimport app from \"electron\";\nexport const v = [electron, app];";
+    const request = "import { net } from \"electron\";\nexport const w = (u: string) => net.request(u);";
+    expect([await flags(renamed, exempt), await flags(whole, exempt), await flags(request, exempt)]).toEqual([1, 2, 1]);
   });
 
   test("leaves the tests", async () => {
