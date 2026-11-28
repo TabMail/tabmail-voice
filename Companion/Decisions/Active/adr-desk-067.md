@@ -4,7 +4,9 @@
 `dev.tabmail.ai`, sign-in at `auth.tabmail.ai`, Device Sync's relay at `sync.tabmail.ai`) carry the
 access token, or the refresh token in the token refresh's body. None of these servers answers with a
 redirect, but `fetch` follows one by default, and a 307 or 308 keeps the method and the body: a request
-that followed one would take what it carries to the address the redirect names. The iOS app and the
+that followed one would send its body (the refresh token, a transcription's audio) and headers such as
+sign-in's `apikey` to the address the redirect names. Node's `fetch` drops `Authorization` only when
+the redirect leaves the origin; on the same origin it keeps it. The iOS app and the
 Thunderbird add-on make the same change.
 
 **Decision:**
@@ -14,7 +16,8 @@ Thunderbird add-on make the same change.
   lost connection ("Couldn't reach TabMail."). The token refresh treats it as any network failure: the
   sign-in is kept (sign-out follows only a refusal from sign-in: a 400, 401 or 403, or a session for
   another user).
-- The app's own code reaches the network only through it. An ESLint rule (`eslint.config.mjs`) refuses
+- The app's own requests to these servers go only through it (the other network uses are listed
+  below). An ESLint rule (`eslint.config.mjs`) refuses
   in `src/` the global `fetch` (the name kept or handed on), any member named `fetch` whatever holds it
   (`globalThis`, `global`, `window`, `self`, Electron's `net`, a session), read or taken out, and
   Electron's `net.request`; Electron's modules, under every name Electron gives them (`electron`,
