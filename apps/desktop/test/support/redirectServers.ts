@@ -4,20 +4,22 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Duplex } from "node:stream";
 
-/** A request one of the servers was sent. A WebSocket's opening request is `upgrade`, with no body. */
+/** A request one of the servers was sent. `upgrade` is its `Upgrade` header: `websocket` for a
+ * WebSocket's opening request. */
 export interface SeenRequest {
   method: string;
   url: string;
   body: string;
   authorization: string | undefined;
-  upgrade: boolean;
+  upgrade: string | undefined;
 }
 
-/** Two servers on the loopback interface (never the network). The first answers every request, a
- * WebSocket's opening request included, with `status` and a `Location` on the second; the second
- * answers 200 "landed". Each records what reached it. */
+/** Two servers on the loopback interface (never the network). The first answers every request with
+ * `status` and a `Location` on the second, or, with `sameOrigin`, a relative `Location` on itself
+ * (`/elsewhere`). The redirect's target answers 200 "landed". `asked` is what reached the first server,
+ * `reached` what reached the redirect's target. Neither server listens for upgrades, so a WebSocket's
+ * opening request gets the same answer that plain fetch follows. */
 export interface RedirectServers {
   firstOrigin: string;
   firstURL: string;
@@ -26,55 +28,63 @@ export interface RedirectServers {
   close(): Promise<void>;
 }
 
-export async function redirectServers(status: number): Promise<RedirectServers> {
+const target = "/elsewhere";
+
+export async function redirectServers(status: number, options: { sameOrigin?: boolean } = {}): Promise<RedirectServers> {
   const asked: SeenRequest[] = [];
   const reached: SeenRequest[] = [];
-  const second = recording(reached, (_, response) => response.end("landed"), (socket) => socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"));
+  const landed = (seen: SeenRequest, response: ServerResponse) => {
+    reached.push(seen);
+    response.end("landed");
+  };
+  const second = recording(landed);
   const secondOrigin = await listen(second);
-  const location = `${secondOrigin}/elsewhere`;
-  const first = recording(
-    asked,
-    (_, response) => {
-      response.writeHead(status, { Location: location });
-      response.end();
-    },
-    (socket) => socket.end(`HTTP/1.1 ${status} Redirect\r\nLocation: ${location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`),
-  );
-  const firstOrigin = await listen(first);
+  const location = options.sameOrigin ? target : `${secondOrigin}${target}`;
+  const first = recording((seen, response) => {
+    if (options.sameOrigin && seen.url === target) {
+      landed(seen, response);
+      return;
+    }
+    asked.push(seen);
+    response.writeHead(status, { Location: location });
+    response.end();
+  });
+  let firstOrigin: string;
+  try {
+    firstOrigin = await listen(first);
+  } catch (error) {
+    await stop(second);
+    throw error;
+  }
   const close = async () => {
-    await Promise.all([first, second].map((server) => {
-      server.closeAllConnections();
-      return new Promise((resolve) => server.close(resolve));
-    }));
+    await Promise.all([first, second].map(stop));
   };
   return { firstOrigin, firstURL: `${firstOrigin}/start`, asked, reached, close };
 }
 
-function recording(
-  list: SeenRequest[],
-  answer: (request: IncomingMessage, response: ServerResponse) => void,
-  answerUpgrade: (socket: Duplex) => void,
-): Server {
-  const server = createServer((request, response) => {
+function recording(answer: (seen: SeenRequest, response: ServerResponse) => void): Server {
+  return createServer((request: IncomingMessage, response) => {
     let body = "";
     request.on("data", (chunk: Buffer) => (body += chunk.toString()));
     request.on("end", () => {
-      list.push(seen(request, body, false));
-      answer(request, response);
+      const seen = { method: request.method ?? "", url: request.url ?? "", body, authorization: request.headers.authorization, upgrade: request.headers.upgrade };
+      answer(seen, response);
     });
   });
-  server.on("upgrade", (request: IncomingMessage, socket: Duplex) => {
-    list.push(seen(request, "", true));
-    answerUpgrade(socket);
-  });
-  return server;
-}
-
-function seen(request: IncomingMessage, body: string, upgrade: boolean): SeenRequest {
-  return { method: request.method ?? "", url: request.url ?? "", body, authorization: request.headers.authorization, upgrade };
 }
 
 async function listen(server: Server): Promise<string> {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+async function stop(server: Server): Promise<void> {
+  server.closeAllConnections();
+  await new Promise((resolve) => server.close(resolve));
 }

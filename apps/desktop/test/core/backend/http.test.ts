@@ -151,9 +151,9 @@ describe("liveTransport", () => {
   });
 
   /** Every request goes to TabMail's own servers, which never redirect, and most carry the access
-   * token or the refresh token: a redirect is not followed, so the request fails as a network error
-   * and the address the redirect names sees nothing. Plain fetch follows the same redirect (the
-   * control: the servers really redirect). */
+   * token or the refresh token: a redirect, to another server or on the same one, is not followed, so
+   * the request fails as a network error, the redirect's target sees nothing and a stream consumer hears
+   * nothing. Plain fetch follows the same redirect (the control: the servers really redirect). */
   describe("a redirect", () => {
     let servers: RedirectServers | undefined;
     afterEach(async () => {
@@ -161,28 +161,43 @@ describe("liveTransport", () => {
       servers = undefined;
     });
 
-    const requests = {
-      get: { method: "GET", headers: { Authorization: "Bearer synthetic-access" }, body: "" },
-      postWithBody: { method: "POST", headers: { Authorization: "Bearer synthetic-access", "Content-Type": "application/json" }, body: '{"refresh_token":"synthetic-refresh"}' },
-    } as const;
+    const authorization = "Bearer synthetic-access";
+    const refresh = '{"refresh_token":"synthetic-refresh"}';
+    /** The requests as production sends them: a GET; a POST with a body (the token refresh); the same
+     * with the caller's signal (a hold's transcription) and with a stream consumer (an agent round). */
+    const shapes: [string, (heard: string[]) => Omit<HTTPRequest, "url">][] = [
+      ["get", () => ({ method: "GET", headers: { Authorization: authorization }, body: "", timeout: 5_000 })],
+      ["postWithBody", () => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000 })],
+      ["postWithSignal", () => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, signal: new AbortController().signal })],
+      ["streamed", (heard) => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, onChunk: (text) => heard.push(text) })],
+    ];
 
     describe.each([301, 302, 303, 307, 308])("%i", (status) => {
-      test.each(Object.entries(requests))("%s: fails as a network error, and the other address sees nothing", async (_, init) => {
-        servers = await redirectServers(status);
+      describe.each([
+        ["to another server", false],
+        ["on the same server", true],
+      ])("%s", (_, sameOrigin) => {
+        test.each(shapes)("%s: fails as a network error, and the redirect's target sees nothing", async (_, shape) => {
+          servers = await redirectServers(status, { sameOrigin });
+          const heard: string[] = [];
+          const request = shape(heard);
 
-        expect(await failure(liveTransport({ ...init, url: servers.firstURL, timeout: 5_000 }))).toBe("network");
+          expect(await failure(liveTransport({ ...request, url: servers.firstURL }))).toBe("network");
 
-        expect(servers.asked.map((r) => [r.method, r.authorization, r.body])).toEqual([[init.method, init.headers.Authorization, init.body]]);
-        expect(servers.reached).toEqual([]);
-      });
+          expect(servers.asked.map((r) => [r.method, r.authorization, r.body])).toEqual([[request.method, authorization, request.body]]);
+          expect(servers.reached).toEqual([]);
+          expect(heard).toEqual([]);
+        });
 
-      test.each(Object.entries(requests))("%s: control, plain fetch follows it", async (_, init) => {
-        servers = await redirectServers(status);
+        test.each(shapes)("%s: control, plain fetch follows it", async (_, shape) => {
+          servers = await redirectServers(status, { sameOrigin });
+          const request = shape([]);
 
-        const response = await fetch(servers.firstURL, { method: init.method, headers: init.headers, body: init.method === "GET" ? undefined : init.body });
+          const response = await fetch(servers.firstURL, { method: request.method, headers: request.headers, body: request.method === "GET" ? undefined : request.body });
 
-        expect(await response.text()).toBe("landed");
-        expect(servers.reached).toHaveLength(1);
+          expect(await response.text()).toBe("landed");
+          expect(servers.reached).toHaveLength(1);
+        });
       });
     });
   });

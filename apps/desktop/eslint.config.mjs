@@ -6,6 +6,7 @@ import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+const netRule = "Import Electron's modules by name, and net as net, so the request rule in eslint.config.mjs sees its requests.";
 const requestRule = "A request to TabMail's servers goes through liveTransport (src/core/backend/http.ts), which never follows a redirect. A fetch of anything else is listed in eslint.config.mjs with its reason.";
 
 export default tseslint.config(
@@ -29,8 +30,14 @@ export default tseslint.config(
       "no-restricted-globals": ["error", { name: "fetch", message: requestRule }],
       "no-restricted-properties": [
         "error",
-        ...["globalThis", "window", "self"].map((object) => ({ object, property: "fetch", message: requestRule })),
+        ...["globalThis", "global", "window", "self"].map((object) => ({ object, property: "fetch", message: requestRule })),
         ...["fetch", "request"].map((property) => ({ object: "net", property, message: requestRule })),
+      ],
+      // Electron's net only under its own name, so the rule above sees its requests.
+      "no-restricted-syntax": [
+        "error",
+        { selector: "ImportDeclaration[source.value='electron'] > ImportSpecifier[imported.name='net'][local.name!='net']", message: netRule },
+        { selector: "ImportDeclaration[source.value='electron'] > :matches(ImportNamespaceSpecifier, ImportDefaultSpecifier)", message: netRule },
       ],
     },
   },

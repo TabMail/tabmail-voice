@@ -83,9 +83,9 @@ test("closed by the app, it tells nothing more", () => {
   expect([closes, messages]).toEqual([[], []]);
 });
 
-/** Node's own WebSocket (the default) against a relay answering the connection with a redirect: the
- * address carries the sign-in, and a WebSocket never follows a redirect, so the connection fails as
- * 1006 and the address the redirect names sees nothing. */
+/** Node's own WebSocket (the default) against a relay answering the connection with a redirect (the
+ * same answer plain fetch follows in `http.test.ts`): the address carries the sign-in, and a WebSocket
+ * never follows a redirect, so the connection fails as 1006 and the redirect's target sees nothing. */
 test.each([301, 302, 303, 307, 308])("a redirect answering the connection is not followed (%i)", async (status) => {
   const servers = await redirectServers(status);
   try {
@@ -101,7 +101,7 @@ test.each([301, 302, 303, 307, 308])("a redirect answering the connection is not
     });
 
     expect(closes).toEqual([1006]);
-    expect(servers.asked.map((r) => [r.upgrade, r.url])).toEqual([[true, "/ws?token=synthetic-access"]]);
+    expect(servers.asked.map((r) => [r.upgrade, r.url])).toEqual([["websocket", "/ws?token=synthetic-access"]]);
     expect(servers.reached).toEqual([]);
   } finally {
     await servers.close();
