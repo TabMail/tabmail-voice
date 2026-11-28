@@ -2,7 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { BackendLog, TransportError } from "../../../src/core/backend/http.js";
 import * as config from "../../../src/core/config.js";
 import { UserPrompts } from "../../../src/core/personalization/prompts.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
@@ -10,7 +13,7 @@ import { defaultCatalog, epochZero } from "../../../src/core/sync/bullets.js";
 import { MemoryStore, type StoreProblem } from "../../../src/core/util/keyValueStore.js";
 import { BulletDevice, BulletRelay, DeviceStore } from "../../support/bulletDevices.js";
 import { FakeRelay, VoiceDevice } from "../../support/fakeDeviceSync.js";
-import { Fixtures } from "../../support/stubs.js";
+import { Fixtures, loggedContent } from "../../support/stubs.js";
 
 const peerName = "ffffffff00000001";
 const kbDefaults = defaultCatalog.defaults.filter((entry) => entry.field === "kb").map((entry) => entry.text);
@@ -213,12 +216,13 @@ describe("when sync runs", () => {
     expect(relay.isConnected("voice")).toBe(true);
   });
 
-  test("the token goes in the address, and a sign-out disconnects", async () => {
+  test("it connects with a pass for the account's token, and a sign-out disconnects", async () => {
     const relay = new FakeRelay();
     const voice = new VoiceDevice(relay);
     voice.sync.update();
     await relay.settle();
-    expect(relay.urls).toEqual([`${config.deviceSyncURL}?token=access-1`]);
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`]);
+    expect(relay.tokens).toEqual(["access-1"]);
 
     voice.account.signOut();
     expect(relay.isConnected("voice")).toBe(false);
@@ -257,7 +261,7 @@ describe("an account change", () => {
     await relay.settle();
     expect(relay.isConnected("voice")).toBe(true);
     // Connected afresh, for the account now signed in: the group it syncs with.
-    expect(relay.urls.at(-1)).toBe(`${config.deviceSyncURL}?token=access-user-2`);
+    expect(relay.tokens.at(-1)).toBe("access-user-2");
     expect(voice.texts("kb")).toEqual([...kbDefaults, fact, "Typed while signed out"]);
     const sent = relay.sent.map((entry) => entry.text).join("\n");
     expect(sent).toContain(fact);
@@ -274,7 +278,7 @@ describe("an account change", () => {
     voice.add("kb", "", fact);
     await signIn(voice, "user-2");
     await relay.settle();
-    expect(relay.urls).toEqual([`${config.deviceSyncURL}?token=access-1`, `${config.deviceSyncURL}?token=access-user-2`]);
+    expect(relay.tokens).toEqual(["access-1", "access-user-2"]);
     expect(relay.isConnected("voice")).toBe(true);
     expect(voice.texts("kb")).toContain(fact);
   });
@@ -725,7 +729,7 @@ describe("the connection", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(tokens).toHaveBeenLastCalledWith(true);
-    expect(relay.urls.at(-1)).toBe(`${config.deviceSyncURL}?token=access-2`);
+    expect(relay.tokens.at(-1)).toBe("access-2");
     expect(relay.isConnected("voice")).toBe(true);
   });
 
@@ -736,5 +740,138 @@ describe("the connection", () => {
 
     expect(relay.urls).toHaveLength(2);
     expect(relay.messages("voice", "bullet_state").map((message) => message.field)).toEqual(["kb", "composition"]);
+  });
+});
+
+/** Each connection opens with a one-time pass the relay gives for the access token (root ADR-021): the
+ * token never goes in the address. No pass is tried again as a failed connection is, on the same
+ * backoff and attempts. */
+describe("the connect pass", () => {
+  test("the pass is asked of the relay's host over HTTPS with the token, and only the pass goes in the address", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    voice.sync.update();
+    await relay.settle();
+    voice.url = config.deviceSyncDevelopmentURL;
+    voice.sync.update();
+    await relay.settle();
+
+    expect(relay.passRequests.map((request) => [request.method, request.url, request.headers.Authorization])).toEqual([
+      ["POST", "https://sync.tabmail.ai/ws/pass", "Bearer access-1"],
+      ["POST", "https://sync-dev.tabmail.ai/ws/pass", "Bearer access-1"],
+    ]);
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`, `${config.deviceSyncDevelopmentURL}?pass=pass-2`]);
+    expect(relay.urls.join("\n")).not.toContain("access-1");
+    expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  test.each<{ name: string; answer: { status: number; body: string } | Error }>([
+    { name: "the relay refuses the token", answer: { status: 401, body: '{"error":"unauthorized"}' } },
+    { name: "the relay can't check the account", answer: { status: 503, body: '{"error":"consent_check_unavailable"}' } },
+    { name: "the answer has no pass", answer: { status: 200, body: "{}" } },
+    { name: "the pass is empty", answer: { status: 200, body: '{"pass":""}' } },
+    { name: "the answer isn't JSON", answer: { status: 200, body: "<html>" } },
+    { name: "the relay can't be reached", answer: new TransportError("network") },
+  ])("when $name, nothing connects and the pass is asked again after the first delay", async ({ answer }) => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    relay.passAnswers.push(answer);
+    voice.sync.update();
+    await relay.settle();
+    expect(relay.passRequests).toHaveLength(1);
+    expect(relay.urls).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(config.deviceSyncReconnectBaseDelay - 1);
+    expect(relay.passRequests).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await relay.settle();
+    expect(relay.passRequests).toHaveLength(2);
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`]);
+    expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  test("a relay that never gives a pass is asked 10 more times, then not until a wake", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    relay.passAnswers.push(...Array.from({ length: config.deviceSyncReconnectAttempts + 1 }, () => ({ status: 503, body: "" })));
+    voice.sync.update();
+    await relay.settle();
+    await vi.advanceTimersByTimeAsync(config.deviceSyncReconnectAttempts * config.deviceSyncReconnectMaxDelay);
+    expect(relay.passRequests).toHaveLength(config.deviceSyncReconnectAttempts + 1);
+    expect(relay.urls).toEqual([]);
+
+    voice.sync.wake();
+    await relay.settle();
+    expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  test("a pass that comes after sync was turned off opens nothing, and nothing is tried again", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    let release = () => {};
+    relay.passGate = () =>
+      new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+    voice.sync.update();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(relay.passRequests).toHaveLength(1);
+
+    voice.allowed = false;
+    voice.sync.update();
+    release();
+    await relay.settle();
+    await vi.advanceTimersByTimeAsync(config.deviceSyncReconnectMaxDelay);
+    expect(relay.urls).toEqual([]);
+    expect(relay.passRequests).toHaveLength(1);
+  });
+
+  test("a pass that comes after another account signed in opens nothing; the new account's connection is its own", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    let release = () => {};
+    relay.passGate = () =>
+      new Promise<void>((resolve) => {
+        release = () => resolve();
+      });
+    voice.sync.update();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(relay.passRequests).toHaveLength(1);
+
+    relay.passGate = null;
+    voice.auth.enqueue(200, Fixtures.sessionJSON({ access: "access-user-2", refresh: "refresh-user-2", userID: "user-2" }));
+    await voice.account.verify(Fixtures.email, "123456");
+    await relay.settle();
+    release();
+    await relay.settle();
+
+    expect(relay.passRequests.map((request) => request.headers.Authorization)).toEqual(["Bearer access-1", "Bearer access-user-2"]);
+    expect(relay.tokens).toEqual(["access-user-2"]);
+    expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  test("the debug log has the pass request and its reply, with neither the token nor the pass", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    const entries = await loggedContent(async () => {
+      voice.sync.update();
+      await relay.settle();
+    });
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`]);
+    const logged = entries.filter((entry) => entry.label.startsWith("Device Sync pass"));
+    expect(logged.map((entry) => entry.label)).toEqual(["Device Sync pass request", "Device Sync pass response"]);
+    expect(logged[0]?.text).toContain("POST https://sync.tabmail.ai/ws/pass");
+    expect(logged[0]?.text).toContain(BackendLog.maskedAuthorization);
+    expect(logged[1]?.text).toContain("HTTP 200");
+    const all = entries.map((entry) => entry.text).join("\n");
+    expect(all).not.toContain("access-1");
+    expect(all).not.toContain("pass-1");
+  });
+
+  test("no address in the app's source carries a token", () => {
+    const src = join(__dirname, "../../../src");
+    const files = readdirSync(src, { recursive: true, encoding: "utf8" }).filter((file) => file.endsWith(".ts"));
+    expect(files.length).toBeGreaterThan(50);
+    expect(files.filter((file) => /[?&]token=/.test(readFileSync(join(src, file), "utf8")))).toEqual([]);
   });
 });

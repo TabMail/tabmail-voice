@@ -308,6 +308,7 @@ function launch(): void {
     account,
     allowed: () => settings.deviceSyncAllowed,
     url: () => (settings.isDebugMode(account.email) ? config.deviceSyncDevelopmentURL : config.deviceSyncURL),
+    transport: liveTransport,
     open: deviceSyncSocket(),
   });
   const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });

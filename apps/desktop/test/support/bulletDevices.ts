@@ -163,6 +163,7 @@ export class BulletDevice {
       account: { session: Fixtures.session(), validToken: () => Promise.resolve("token") },
       allowed: () => true,
       url: () => "wss://sync.example.com",
+      transport: async () => ({ status: 200, headers: {}, body: JSON.stringify({ pass: "pass" }) }),
       open: (_url, events) => {
         this.relay.join(this.id, events);
         return { send: (text) => this.relay.send(this.id, text), close: () => this.relay.leave(this.id) };

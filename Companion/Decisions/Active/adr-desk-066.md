@@ -123,6 +123,14 @@ and devices can be offline for weeks, copied, restored from a backup or reset.
   while `AppSettings.deviceSyncAllowed`; another account signing in keeps the texts and syncs them
   with its group (root ADR-035, the Accounts paragraph above; the reset to defaults by
   `UserPrompts.claim` it once did is deleted).
+- **Connecting (amended 2026-11-28).** Each connection opens with a one-time pass: with the token from
+  `validToken()`, Voice asks the relay's host for one (`POST https://<host>/ws/pass`, the token in
+  `Authorization`) and opens `wss://<host>/ws?pass=<pass>`, nothing else in the address. The relay
+  takes a pass once, for about ten seconds. No pass (an error reply, an answer without one, the relay
+  unreachable) is tried again as a lost connection is, on the same backoff and attempts; a pass that
+  comes after sync stopped or another account signed in opens nothing. The request and its reply go
+  to the debug log (ADR-DESK-015) with the token and the pass masked. This replaces the token in the
+  address of the first design (History).
 
 **Consequences:**
 - A bullet deleted on one device is deleted on the others once they exchange states, however late or

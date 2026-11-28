@@ -159,6 +159,9 @@ const app = vi.hoisted(() => ({
   pickedPath: null as string | null,
   /** The relay connections Device Sync opened, in order; whether the app closed each. */
   syncSockets: [] as { url: string; closed: boolean }[],
+  /** Device Sync's connect pass requests (`/ws/pass`), each answered with a pass: kept apart from
+   * `requests`, as the relay's sockets are. */
+  passRequests: [] as { url: string; authorization: string | undefined }[],
   /** Electron's `powerMonitor` events, by name, and what `net.isOnline` says. */
   powerEvents: new Map<string, () => void>(),
   online: true,
@@ -330,7 +333,11 @@ vi.mock("@napi-rs/keyring", () => ({
 }));
 vi.mock("../../src/core/backend/http.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/backend/http.js")>()),
-  liveTransport: async (request: { url: string }) => {
+  liveTransport: async (request: { url: string; headers: Record<string, string> }) => {
+    if (request.url.endsWith("/ws/pass")) {
+      app.passRequests.push({ url: request.url, authorization: request.headers.Authorization });
+      return { status: 200, headers: {}, body: JSON.stringify({ pass: `pass-${app.passRequests.length}` }) };
+    }
     app.requests.push(request.url);
     await app.requestGate?.();
     const as = app.verifiesAs;
@@ -749,6 +756,7 @@ afterEach(() => {
   app.openDialogs = [];
   app.pickedPath = null;
   app.syncSockets = [];
+  app.passRequests = [];
   app.powerEvents.clear();
   app.online = true;
 });
@@ -1550,7 +1558,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
       expect(await send({ type: "setConsent", value: true })).toEqual({ error: null });
       await vi.waitFor(() => expect(relays()).toEqual([config.deviceSyncURL]));
-      expect(app.syncSockets[0]?.url).toBe(`${config.deviceSyncURL}?token=access`);
+      expect(app.syncSockets[0]?.url).toBe(`${config.deviceSyncURL}?pass=pass-1`);
+      expect(app.passRequests[0]).toEqual({ url: "https://sync.tabmail.ai/ws/pass", authorization: "Bearer access" });
       expect(state()).toMatchObject({ syncsDevices: true, deviceSyncTooLarge: false });
 
       expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
@@ -1586,7 +1595,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     app.stored.set("hasConsentedToDictationData", true);
     app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@example.com" } });
     await launch("darwin");
-    await vi.waitFor(() => expect(app.syncSockets.map((socket) => socket.url)).toEqual([`${config.deviceSyncURL}?token=access`]));
+    await vi.waitFor(() => expect(app.syncSockets.map((socket) => socket.url)).toEqual([`${config.deviceSyncURL}?pass=pass-1`]));
+    expect(app.passRequests).toEqual([{ url: "https://sync.tabmail.ai/ws/pass", authorization: "Bearer access" }]);
   });
 
   /** A packaged build writes the debug log while debug mode is on for an account allowed it: on at
