@@ -18,7 +18,7 @@ export interface WebSocketLike {
 
 /** `DeviceSync`'s transport: the relay's WebSocket, Node's own. Each text message is handed on, and
  * the close told once, with its code, or 1006 when the connection failed. The address holds the
- * access token: nothing here logs it, or the socket's errors, which may name it. */
+ * connect pass: nothing here logs it, or the socket's errors, which may name it. */
 export function deviceSyncSocket(create: (url: string) => WebSocketLike = (url) => new WebSocket(url)): OpenSyncSocket {
   return (url, events) => {
     const socket = create(url);

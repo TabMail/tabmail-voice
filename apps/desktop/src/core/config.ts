@@ -482,9 +482,12 @@ export const promptHistoryIDMaxLength = 100;
 
 // MARK: Device Sync (root ADR-021, ADR-DESK-066; the connection's numbers are iOS's `DeviceSyncService`'s)
 
-/** The relay, and the development one debug mode uses (ADR-DESK-018). */
+/** The relay's socket, and the development one debug mode uses (ADR-DESK-018); each gives its connect
+ * pass at `/ws/pass` on the same host, over HTTPS. */
 export const deviceSyncURL = "wss://sync.tabmail.ai/ws";
 export const deviceSyncDevelopmentURL = "wss://sync-dev.tabmail.ai/ws";
+/** The longest the relay may stay silent on a request for a connect pass (ms). */
+export const deviceSyncPassTimeout = 15_000;
 /** How often the connection is kept alive (ms). */
 export const deviceSyncPingInterval = 30_000;
 /** A lost connection is tried again after the first delay (ms), doubled each time up to the second

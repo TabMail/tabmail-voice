@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { AccountModel } from "../backend/account.js";
+import { BackendLog, type HTTPRequest, type HTTPResponse, type HTTPTransport } from "../backend/http.js";
 import * as config from "../config.js";
 import { errorName, log } from "../log.js";
 import { type PromptField, promptFields, type UserPrompts } from "../personalization/prompts.js";
@@ -28,24 +29,38 @@ export interface DeviceSyncOptions {
   account: Pick<AccountModel, "session" | "validToken">;
   /** Whether the user's settings let Device Sync run: read, consent given, and its switch on. */
   allowed: () => boolean;
-  /** The relay's address, without the token. */
+  /** The relay's socket address (`wss://<host>/ws`), without the pass. */
   url: () => string;
+  /** Where the connect pass is asked for (`<host>/ws/pass`, over HTTPS). */
+  transport: HTTPTransport;
   open: OpenSyncSocket;
 }
 
 /** The relay closes a connection whose access token expired with this code. */
 const tokenExpiredCode = 4001;
 const ping = JSON.stringify({ type: "ping" });
+/** Stands in for the connect pass in the logged reply that carries it. */
+const maskedPassReply = "<connect pass, not logged>";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Where the relay whose socket is at `address` (`wss://<host>/ws`) gives a connect pass:
+ * `https://<host>/ws/pass`. */
+function passURL(address: string): string {
+  const url = new URL(address);
+  url.protocol = "https:";
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/pass`;
+  return url.toString();
+}
+
 /**
  * Device Sync of the knowledge base and the writing style (root ADR-021, ADR-DESK-066): this computer
  * joins the user's Thunderbird and iOS apps through the relay, which forwards each message to the
- * user's other connected devices and keeps nothing. The transport of the labelled-bullet sync
- * (`BulletSync`, through `UserPrompts.sync`): each field's full state is sent on connect, after a
+ * user's other connected devices and keeps nothing. Each connection opens with a one-time pass the
+ * relay gives for the access token; the token never goes in the address. The transport of the
+ * labelled-bullet sync (`BulletSync`, through `UserPrompts.sync`): each field's full state is sent on connect, after a
  * local change, and after a merge whose incoming labels differed from this computer's (DS-SEND); no
  * request is ever sent (DS-NO-REQUEST, DS-VOICE). A released device's `prompt_state` is imported,
  * additions only (DS-LEGACY-IN); nothing is sent in that format. No timer decides what is kept: the
@@ -150,8 +165,15 @@ export class DeviceSync extends Observable {
     // Signed out, or another account signed in, while the token came: `update` sees to it.
     if (token === null || this.options.account.session?.userID !== userID) return;
     log.debug(`DeviceSync: connecting (attempt ${this.attempts + 1})`);
+    const pass = await this.requestPass(token);
+    if (generation !== this.generation || this.options.account.session?.userID !== userID) return;
+    // No pass: tried again as a connection that failed is.
+    if (pass === null) {
+      this.retry();
+      return;
+    }
     try {
-      this.socket = this.options.open(`${this.address}?token=${encodeURIComponent(token)}`, {
+      this.socket = this.options.open(`${this.address}?pass=${encodeURIComponent(pass)}`, {
         message: (text) => {
           if (generation === this.generation) this.received(text);
         },
@@ -163,6 +185,43 @@ export class DeviceSync extends Observable {
       log.debug(`DeviceSync: couldn't connect (${errorName(error)})`);
       this.retry();
     }
+  }
+
+  /** A one-time pass for the next connection, asked of the relay with `token`; null when it gave none. */
+  private async requestPass(token: string): Promise<string | null> {
+    const request: HTTPRequest = {
+      method: "POST",
+      url: passURL(this.address),
+      headers: { Authorization: `Bearer ${token}` },
+      body: "",
+      timeout: config.deviceSyncPassTimeout,
+    };
+    log.content("Device Sync pass request", () => BackendLog.request(request));
+    let response: HTTPResponse;
+    try {
+      response = await this.options.transport(request);
+    } catch (error) {
+      log.debug(`DeviceSync: no connect pass (${errorName(error)})`);
+      return null;
+    }
+    const answered = response.status >= 200 && response.status < 300;
+    // The pass opens a connection: like the token, it stays out of the log.
+    log.content("Device Sync pass response", () => BackendLog.response(answered ? { ...response, body: maskedPassReply } : response));
+    if (!answered) {
+      log.debug(`DeviceSync: no connect pass (HTTP ${response.status})`);
+      return null;
+    }
+    let reply: unknown;
+    try {
+      reply = JSON.parse(response.body);
+    } catch {
+      reply = null;
+    }
+    if (!isRecord(reply) || typeof reply.pass !== "string" || reply.pass === "") {
+      log.debug("DeviceSync: no connect pass in the answer");
+      return null;
+    }
+    return reply.pass;
   }
 
   private closed(code: number): void {

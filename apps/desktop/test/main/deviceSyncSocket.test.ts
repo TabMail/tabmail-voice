@@ -36,7 +36,7 @@ function opened(): { socket: FakeWebSocket; url: string; messages: string[]; clo
   });
   const messages: string[] = [];
   const closes: number[] = [];
-  const sync = open("wss://relay.example.com/ws?token=example", { message: (text) => messages.push(text), closed: (code) => closes.push(code) });
+  const sync = open("wss://relay.example.com/ws?pass=example", { message: (text) => messages.push(text), closed: (code) => closes.push(code) });
   if (made === null) throw new Error("no socket");
   const { socket, url } = made;
   return { socket, url, messages, closes, sync };
@@ -48,7 +48,7 @@ test("opens the address given, sends, and hands on each text message, nothing el
   socket.fire("message", { data: '{"type":"pong"}' });
   socket.fire("message", { data: new ArrayBuffer(4) });
 
-  expect(url).toBe("wss://relay.example.com/ws?token=example");
+  expect(url).toBe("wss://relay.example.com/ws?pass=example");
   expect(socket.sent).toEqual(['{"type":"ping"}']);
   expect(messages).toEqual(['{"type":"pong"}']);
 });

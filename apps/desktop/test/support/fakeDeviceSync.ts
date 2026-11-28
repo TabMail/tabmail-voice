@@ -4,6 +4,7 @@
 
 import { vi } from "vitest";
 import type { AccountModel } from "../../src/core/backend/account.js";
+import type { HTTPRequest, HTTPTransport } from "../../src/core/backend/http.js";
 import * as config from "../../src/core/config.js";
 import { type PromptField, UserPrompts, type UserPromptsOptions } from "../../src/core/personalization/prompts.js";
 import { DeviceSync, type OpenSyncSocket, type SyncSocket, type SyncSocketEvents } from "../../src/core/sync/deviceSync.js";
@@ -31,11 +32,52 @@ export class FakeRelay {
   /** The addresses Voice connected to. */
   readonly urls: string[] = [];
   private events = new Map<Endpoint, SyncSocketEvents>();
+  /** Every connect pass request, as sent. */
+  readonly passRequests: HTTPRequest[] = [];
+  /** How the next pass requests are answered, in order (a reply, or a failure to reach the relay);
+   * with none queued, with a fresh pass for the token the request carries. */
+  readonly passAnswers: ({ status: number; body: string } | Error)[] = [];
+  /** Holds each pass request until it resolves (a request on its way). */
+  passGate: (() => Promise<void>) | null = null;
+  /** The token each pass was given for. */
+  private readonly passes = new Map<string, string>();
+  /** The passes presented at an upgrade: each opens one connection at most, as the relay's. */
+  private readonly redeemed = new Set<string>();
+  /** How many of the next upgrades the relay refuses though their pass is good: each pass is spent,
+   * and the connection fails (1006) before `connected`. */
+  refuseUpgrades = 0;
 
-  /** `DeviceSync`'s transport: connects at once, and says `connected` as the relay does. */
+  /** The relay's `/ws/pass`, as `DeviceSync`'s transport. */
+  readonly transport: HTTPTransport = async (request) => {
+    this.passRequests.push(request);
+    await this.passGate?.();
+    const answer = this.passAnswers.shift();
+    if (answer instanceof Error) throw answer;
+    if (answer !== undefined) return { status: answer.status, headers: {}, body: answer.body };
+    const pass = `pass-${this.passes.size + 1}`;
+    this.passes.set(pass, (request.headers.Authorization ?? "").replace(/^Bearer /, ""));
+    return { status: 200, headers: {}, body: JSON.stringify({ pass }) };
+  };
+
+  /** The token behind each connection Voice opened, through its pass; undefined for an address with
+   * no pass the relay gave. */
+  get tokens(): (string | undefined)[] {
+    return this.urls.map((url) => this.passes.get(new URL(url).searchParams.get("pass") ?? ""));
+  }
+
+  /** `DeviceSync`'s transport: connects at once, and says `connected` as the relay does, for a pass
+   * the relay gave and no connection used before; any other address fails (1006) before `connected`. */
   open(name: string): OpenSyncSocket {
     return (url, events) => {
       this.urls.push(url);
+      const pass = new URL(url).searchParams.get("pass") ?? "";
+      const good = this.passes.has(pass) && !this.redeemed.has(pass);
+      this.redeemed.add(pass);
+      if (!good || this.refuseUpgrades > 0) {
+        if (good) this.refuseUpgrades -= 1;
+        queueMicrotask(() => events.closed(1006));
+        return { send: () => {}, close: () => {} } satisfies SyncSocket;
+      }
       const endpoint: Endpoint = { name, inbox: [], deliver: (text) => events.message(text) };
       this.events.set(endpoint, events);
       this.join(endpoint);
@@ -142,7 +184,7 @@ export class VoiceDevice {
   ) {
     this.prompts = new UserPrompts(store, options);
     this.account = signedIn(this.auth, Fixtures.session({ userID }));
-    this.sync = new DeviceSync({ prompts: this.prompts, account: this.account, allowed: () => this.allowed, url: () => this.url, open: relay.open(name) });
+    this.sync = new DeviceSync({ prompts: this.prompts, account: this.account, allowed: () => this.allowed, url: () => this.url, transport: relay.transport, open: relay.open(name) });
     this.prompts.observe(() => this.sync.update());
     this.account.observe(() => this.sync.update());
   }
