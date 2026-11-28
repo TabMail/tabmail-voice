@@ -41,6 +41,11 @@ export class FakeRelay {
   passGate: (() => Promise<void>) | null = null;
   /** The token each pass was given for. */
   private readonly passes = new Map<string, string>();
+  /** The passes presented at an upgrade: each opens one connection at most, as the relay's. */
+  private readonly redeemed = new Set<string>();
+  /** How many of the next upgrades the relay refuses though their pass is good: each pass is spent,
+   * and the connection fails (1006) before `connected`. */
+  refuseUpgrades = 0;
 
   /** The relay's `/ws/pass`, as `DeviceSync`'s transport. */
   readonly transport: HTTPTransport = async (request) => {
@@ -60,10 +65,19 @@ export class FakeRelay {
     return this.urls.map((url) => this.passes.get(new URL(url).searchParams.get("pass") ?? ""));
   }
 
-  /** `DeviceSync`'s transport: connects at once, and says `connected` as the relay does. */
+  /** `DeviceSync`'s transport: connects at once, and says `connected` as the relay does, for a pass
+   * the relay gave and no connection used before; any other address fails (1006) before `connected`. */
   open(name: string): OpenSyncSocket {
     return (url, events) => {
       this.urls.push(url);
+      const pass = new URL(url).searchParams.get("pass") ?? "";
+      const good = this.passes.has(pass) && !this.redeemed.has(pass);
+      this.redeemed.add(pass);
+      if (!good || this.refuseUpgrades > 0) {
+        if (good) this.refuseUpgrades -= 1;
+        queueMicrotask(() => events.closed(1006));
+        return { send: () => {}, close: () => {} } satisfies SyncSocket;
+      }
       const endpoint: Endpoint = { name, inbox: [], deliver: (text) => events.message(text) };
       this.events.set(endpoint, events);
       this.join(endpoint);

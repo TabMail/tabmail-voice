@@ -1554,7 +1554,8 @@ test("the real capture pipeline reads the delayed captured identity in both scop
       app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@tabmail.ai" } });
       await launch("darwin");
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(relays()).toEqual([]);
+      // Before consent, not even a pass is asked for.
+      expect([relays(), app.passRequests]).toEqual([[], []]);
 
       expect(await send({ type: "setConsent", value: true })).toEqual({ error: null });
       await vi.waitFor(() => expect(relays()).toEqual([config.deviceSyncURL]));
@@ -1580,6 +1581,10 @@ test("the real capture pipeline reads the delayed captured identity in both scop
 
       expect(await send({ type: "setSyncsDevices", value: false })).toEqual({ error: null });
       expect([relays().at(-1), state().syncsDevices, app.stored.get("deviceSync")]).toEqual([`${config.deviceSyncURL} closed`, false, false]);
+      // Switched off, no pass is asked for either.
+      const asked = app.passRequests.length;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect([relays().length, app.passRequests.length]).toEqual([5, asked]);
       expect(await send({ type: "setSyncsDevices", value: true })).toEqual({ error: null });
       await vi.waitFor(() => expect(relays()).toHaveLength(6));
 
@@ -1597,6 +1602,18 @@ test("the real capture pipeline reads the delayed captured identity in both scop
     await launch("darwin");
     await vi.waitFor(() => expect(app.syncSockets.map((socket) => socket.url)).toEqual([`${config.deviceSyncURL}?pass=pass-1`]));
     expect(app.passRequests).toEqual([{ url: "https://sync.tabmail.ai/ws/pass", authorization: "Bearer access" }]);
+  });
+
+  /** Device Sync carries no AI request: a user who opted out of AI still syncs, pass and all. */
+  test("Device Sync connects for an account that opted out of AI", async () => {
+    app.stored.set("hasConsentedToDictationData", true);
+    app.stored.set("optsOutOfAI", true);
+    app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email: "tester@example.com" } });
+    await launch("darwin");
+    await vi.waitFor(() => expect(app.syncSockets.map((socket) => socket.url)).toEqual([`${config.deviceSyncURL}?pass=pass-1`]));
+    expect(app.passRequests).toEqual([{ url: "https://sync.tabmail.ai/ws/pass", authorization: "Bearer access" }]);
+    const settingsState = app.handlers.get(channels.getState)?.({}, "settings") as { optsOutOfAI: boolean };
+    expect(settingsState.optsOutOfAI).toBe(true);
   });
 
   /** A packaged build writes the debug log while debug mode is on for an account allowed it: on at

@@ -768,8 +768,11 @@ describe("the connect pass", () => {
   test.each<{ name: string; answer: { status: number; body: string } | Error }>([
     { name: "the relay refuses the token", answer: { status: 401, body: '{"error":"unauthorized"}' } },
     { name: "the relay can't check the account", answer: { status: 503, body: '{"error":"consent_check_unavailable"}' } },
+    // A refusal opens nothing, whatever its body holds.
+    { name: "the relay refuses with a pass in its answer", answer: { status: 401, body: '{"pass":"pass-in-a-refusal"}' } },
     { name: "the answer has no pass", answer: { status: 200, body: "{}" } },
     { name: "the pass is empty", answer: { status: 200, body: '{"pass":""}' } },
+    { name: "the pass isn't text", answer: { status: 200, body: '{"pass":7}' } },
     { name: "the answer isn't JSON", answer: { status: 200, body: "<html>" } },
     { name: "the relay can't be reached", answer: new TransportError("network") },
   ])("when $name, nothing connects and the pass is asked again after the first delay", async ({ answer }) => {
@@ -848,6 +851,156 @@ describe("the connect pass", () => {
     expect(relay.passRequests.map((request) => request.headers.Authorization)).toEqual(["Bearer access-1", "Bearer access-user-2"]);
     expect(relay.tokens).toEqual(["access-user-2"]);
     expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  /** A pass request that fails after what it was for ended (sync off, the app quitting, a wake, the
+   * relay switched, another account) is the ended connection's: no retry of its own, and the
+   * connection made after it is the only one. */
+  describe.each<{ name: string; act: (voice: VoiceDevice) => Promise<void> | void; replaced: boolean }>([
+    {
+      name: "sync was turned off",
+      act: (voice) => {
+        voice.allowed = false;
+        voice.sync.update();
+      },
+      replaced: false,
+    },
+    { name: "the app quit", act: (voice) => voice.sync.stop(), replaced: false },
+    { name: "the computer woke", act: (voice) => voice.sync.wake(), replaced: true },
+    {
+      name: "debug mode switched the relay",
+      act: (voice) => {
+        voice.url = config.deviceSyncDevelopmentURL;
+        voice.sync.update();
+      },
+      replaced: true,
+    },
+    {
+      name: "another account signed in",
+      act: async (voice) => {
+        voice.auth.enqueue(200, Fixtures.sessionJSON({ access: "access-user-2", refresh: "refresh-user-2", userID: "user-2" }));
+        await voice.account.verify(Fixtures.email, "123456");
+      },
+      replaced: true,
+    },
+  ])("after $name", ({ act, replaced }) => {
+    test.each<{ kind: string; answer: { status: number; body: string } | Error }>([
+      { kind: "a refusal", answer: { status: 503, body: '{"error":"consent_check_unavailable"}' } },
+      { kind: "no answer", answer: new TransportError("network") },
+    ])("$kind for the earlier pass request tries nothing again", async ({ answer }) => {
+      const relay = new FakeRelay();
+      const voice = new VoiceDevice(relay);
+      // The first pass request is held; any later one goes through.
+      let release = () => {};
+      let asked = 0;
+      relay.passGate = () => {
+        asked += 1;
+        if (asked > 1) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          release = () => resolve();
+        });
+      };
+      voice.sync.update();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(relay.passRequests).toHaveLength(1);
+
+      await act(voice);
+      await relay.settle();
+      const requests = replaced ? 2 : 1;
+      expect(relay.passRequests).toHaveLength(requests);
+      expect(relay.urls).toHaveLength(replaced ? 1 : 0);
+
+      relay.passAnswers.push(answer);
+      release();
+      await relay.settle();
+      // Sync back on: a retry the ended connection had armed would now connect a second time.
+      if (!replaced) {
+        voice.allowed = true;
+        voice.sync.update();
+      }
+      await relay.settle();
+      await vi.advanceTimersByTimeAsync(2 * config.deviceSyncReconnectMaxDelay);
+      await relay.settle();
+
+      expect(relay.passRequests).toHaveLength(2);
+      // The one connection, to the relay in use now.
+      expect(relay.urls).toEqual([`${voice.url}?pass=pass-1`]);
+      expect(relay.isConnected("voice")).toBe(true);
+    });
+  });
+
+  test("every connection, the first and each one again, opens with the pass asked for just before it", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    vi.spyOn(voice.account, "validToken").mockImplementation(async (force) => (force ? "access-2" : "access-1"));
+    voice.sync.update();
+    await relay.settle();
+    // Dropped: tried again after the first delay.
+    relay.close("voice", 1006);
+    await vi.advanceTimersByTimeAsync(config.deviceSyncReconnectBaseDelay);
+    await relay.settle();
+    // Woke: connects afresh.
+    voice.sync.wake();
+    await relay.settle();
+    // The token expired: at once, with a refreshed one.
+    relay.close("voice", 4001);
+    await relay.settle();
+
+    expect(relay.passRequests).toHaveLength(4);
+    expect(relay.urls).toEqual([1, 2, 3, 4].map((n) => `${config.deviceSyncURL}?pass=pass-${n}`));
+    expect(relay.tokens).toEqual(["access-1", "access-1", "access-1", "access-2"]);
+    expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  test("a pass the relay didn't take is not used again: the next try asks for a new one", async () => {
+    const relay = new FakeRelay();
+    const voice = new VoiceDevice(relay);
+    relay.refuseUpgrades = 1;
+    voice.sync.update();
+    await relay.settle();
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`]);
+    expect(relay.isConnected("voice")).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(config.deviceSyncReconnectBaseDelay - 1);
+    expect(relay.passRequests).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await relay.settle();
+
+    expect(relay.passRequests).toHaveLength(2);
+    expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`, `${config.deviceSyncURL}?pass=pass-2`]);
+    expect(relay.isConnected("voice")).toBe(true);
+  });
+
+  test("no log, the file or the error output, has the token or a pass: a pass given, one refused at the upgrade, one not given", async () => {
+    const lines: [LogLevel, string][] = [];
+    const errors: string[] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: (level, text) => lines.push([level, text]), error: (text) => errors.push(text) } });
+    try {
+      const relay = new FakeRelay();
+      const voice = new VoiceDevice(relay);
+      relay.refuseUpgrades = 1;
+      relay.passAnswers.push(new TransportError("network"));
+      // No pass, then a pass refused at the upgrade, then a pass that opens.
+      voice.sync.update();
+      await relay.settle();
+      await vi.advanceTimersByTimeAsync(config.deviceSyncReconnectBaseDelay);
+      await relay.settle();
+      await vi.advanceTimersByTimeAsync(2 * config.deviceSyncReconnectBaseDelay);
+      await relay.settle();
+      expect(relay.urls).toEqual([`${config.deviceSyncURL}?pass=pass-1`, `${config.deviceSyncURL}?pass=pass-2`]);
+      expect(relay.isConnected("voice")).toBe(true);
+
+      const file = lines.map(([, text]) => text);
+      expect(file.filter((text) => text.startsWith("Device Sync pass request ("))).toHaveLength(3);
+      expect(file.filter((text) => text.startsWith("Device Sync pass response ("))).toHaveLength(2);
+      for (const text of [...file, ...errors]) {
+        expect(text).not.toContain("access-1");
+        expect(text).not.toMatch(/pass-\d/);
+        expect(text).not.toContain("?pass=");
+      }
+    } finally {
+      configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+    }
   });
 
   test("the debug log has the pass request and its reply, with neither the token nor the pass", async () => {
