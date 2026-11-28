@@ -2,10 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { AccountModel, AuthClient, AuthError, type TabMailSession } from "../../../src/core/backend/account.js";
+import { liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import * as config from "../../../src/core/config.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
+import { redirectServers } from "../../support/redirectServers.js";
 import { deferred, Fixtures, InMemorySessionStore, StubTransport } from "../../support/stubs.js";
 
 function client(stub: StubTransport, key = "pk"): AuthClient {
@@ -354,5 +356,43 @@ describe("AccountModel", () => {
     account.signOut();
 
     expect(changes).toBe(2);
+  });
+});
+
+/** The token refresh, whose body carries the refresh token, against a sign-in server answering with a
+ * redirect that keeps the method and body (307, 308), over the real transport on the loopback
+ * interface: the refresh token reaches no other address, the refresh fails as a network error, and
+ * the sign-in is kept (a redirect never signs out). The next refresh, once the server answers it,
+ * goes to the same server and keeps its new token. */
+describe("a token refresh answered with a redirect", () => {
+  test.each([307, 308])("%i: the refresh token goes nowhere else, the sign-in is kept, and the next refresh works", async (status) => {
+    // The redirect carries a valid session too: a refresh that read it would take a token from it.
+    const refreshed = JSON.stringify(Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+    const servers = await redirectServers(status, { body: refreshed, redirects: 1 });
+    try {
+      const session = Fixtures.session({ expiresIn: 0 });
+      const before = structuredClone(session);
+      const store = new InMemorySessionStore(session);
+      const clear = vi.spyOn(store, "clear");
+      const account = new AccountModel(new AuthClient(liveTransport, servers.firstOrigin, "publishable-key"), store);
+      const refreshRequest = ["POST", "/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refreshToken }];
+
+      const failure = await account.validToken().then(() => null, (error: unknown) => (error instanceof TransportError ? error.reason : error));
+
+      expect(failure).toBe("network");
+      expect(servers.asked.map((r) => [r.method, r.url, JSON.parse(r.body)])).toEqual([refreshRequest]);
+      expect(servers.reached).toEqual([]);
+      expect(account.session).toBe(session);
+      expect(store.load()).toEqual(before);
+
+      expect(await account.validToken()).toBe("access-2");
+
+      expect(servers.asked.map((r) => [r.method, r.url, JSON.parse(r.body)])).toEqual([refreshRequest, refreshRequest]);
+      expect(servers.reached).toEqual([]);
+      expect([account.session?.accessToken, store.load()?.accessToken, store.load()?.refreshToken]).toEqual(["access-2", "access-2", "refresh-2"]);
+      expect(clear).not.toHaveBeenCalled();
+    } finally {
+      await servers.close();
+    }
   });
 });

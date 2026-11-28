@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { type HTTPRequest, liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import { sleep } from "../../../src/core/util/timeout.js";
+import { type RedirectServers, redirectServers } from "../../support/redirectServers.js";
 
 /** `liveTransport` against a server on the loopback interface: never the network. */
 describe("liveTransport", () => {
@@ -147,5 +148,74 @@ describe("liveTransport", () => {
     server = undefined;
 
     expect(await failure(liveTransport(post(url)))).toBe("network");
+  });
+
+  /** Every request goes to TabMail's own servers, which never redirect, and most carry the access
+   * token or the refresh token: a redirect, to another server or on the same one, is not followed, so
+   * the request fails as a network error, the redirect's target sees nothing and a stream consumer hears
+   * nothing. Plain fetch follows the same redirect (the control: the servers really redirect). */
+  describe("a redirect", () => {
+    let servers: RedirectServers | undefined;
+    afterEach(async () => {
+      await servers?.close();
+      servers = undefined;
+    });
+
+    const authorization = "Bearer synthetic-access";
+    const refresh = '{"refresh_token":"synthetic-refresh"}';
+    /** The requests as production sends them: a GET; a POST with a body (the token refresh); the same
+     * with the caller's signal (a hold's transcription), and with the signal and a stream consumer (an
+     * agent round). The redirect answer has a body, which the consumer must not hear. */
+    const shapes: [string, (heard: string[]) => Omit<HTTPRequest, "url">][] = [
+      ["get", () => ({ method: "GET", headers: { Authorization: authorization }, body: "", timeout: 5_000 })],
+      ["postWithBody", () => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000 })],
+      ["postWithSignal", () => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, signal: new AbortController().signal })],
+      ["streamedWithSignal", (heard) => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, signal: new AbortController().signal, onChunk: (text) => heard.push(text) })],
+    ];
+
+    describe.each([301, 302, 303, 307, 308])("%i", (status) => {
+      describe.each([
+        ["to another server", false],
+        ["on the same server", true],
+      ])("%s", (_, sameOrigin) => {
+        test.each(shapes)("%s: fails as a network error, and the redirect's target sees nothing", async (_, shape) => {
+          servers = await redirectServers(status, { sameOrigin });
+          const heard: string[] = [];
+          const request = shape(heard);
+
+          expect(await failure(liveTransport({ ...request, url: servers.firstURL }))).toBe("network");
+
+          expect(servers.asked.map((r) => [r.method, r.authorization, r.body])).toEqual([[request.method, authorization, request.body]]);
+          expect(servers.reached).toEqual([]);
+          expect(heard).toEqual([]);
+        });
+
+        test.each(shapes)("%s: control, plain fetch follows it", async (_, shape) => {
+          servers = await redirectServers(status, { sameOrigin });
+          const request = shape([]);
+
+          const response = await fetch(servers.firstURL, { method: request.method, headers: request.headers, body: request.method === "GET" ? undefined : request.body });
+
+          expect([response.status, await response.text()]).toEqual([200, "landed"]);
+          expect(servers.reached).toHaveLength(1);
+        });
+      });
+    });
+
+    /** The same requests through the transport, to a server that answers them (the second, which
+     * answers 200 "landed"): each comes back as it does today, sent once, and a stream consumer hears
+     * the body. */
+    test.each(shapes)("%s: control, a server that answers it gets one request and its answer comes back", async (_, shape) => {
+      servers = await redirectServers(307);
+      const heard: string[] = [];
+      const request = shape(heard);
+
+      const response = await liveTransport({ ...request, url: `${servers.secondOrigin}/start` });
+
+      expect([response.status, response.body]).toEqual([200, "landed"]);
+      expect(servers.reached.map((r) => [r.method, r.url, r.authorization, r.body])).toEqual([[request.method, "/start", authorization, request.body]]);
+      expect(servers.asked).toEqual([]);
+      expect(heard.join("")).toBe(request.onChunk ? "landed" : "");
+    });
   });
 });

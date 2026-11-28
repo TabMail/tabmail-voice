@@ -6,6 +6,17 @@ import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+const netRule = "Import Electron's modules by name, and net as net, so the request rule in eslint.config.mjs sees its requests.";
+const requestRule = "A request to TabMail's servers goes through liveTransport (src/core/backend/http.ts), which never follows a redirect. A fetch of anything else is listed in eslint.config.mjs with its reason.";
+// Electron's modules under every name it gives them ("electron", "electron/main", …), but not another
+// package such as "electron-updater": by name, and net as net, so the rule sees net's requests.
+const electronModule = "ImportDeclaration[source.value=/^electron($|\\x2F)/]";
+const electronImports = [
+  { selector: `${electronModule} > ImportSpecifier[imported.name='net'][local.name!='net']`, message: netRule },
+  { selector: `${electronModule} > :matches(ImportNamespaceSpecifier, ImportDefaultSpecifier)`, message: netRule },
+];
+const netRequest = { object: "net", property: "request", message: requestRule };
+
 export default tseslint.config(
   // The browser test pages' CodeMirror bundle is generated (scripts/browser-pages.mts).
   { ignores: ["dist/**", "release/**", "native/**/build/**", "node_modules/**", "native/shared/browser-pages/codemirror.js"] },
@@ -18,5 +29,23 @@ export default tseslint.config(
       // Raw console bypasses the debug gate (root CLAUDE.md rule 12): log through core/log.
       "no-console": "error",
     },
+  },
+  {
+    // A request to TabMail's servers goes through `liveTransport` (src/core/backend/http.ts), which
+    // never follows a redirect: the requests carry the access token or the refresh token.
+    files: ["src/**"],
+    rules: {
+      "no-restricted-globals": ["error", { name: "fetch", message: requestRule }],
+      // Any member named fetch, whatever holds it (a global object, Electron's net, a session), read or
+      // taken out by destructuring.
+      "no-restricted-properties": ["error", { property: "fetch", message: requestRule }, netRequest],
+      "no-restricted-syntax": ["error", ...electronImports],
+    },
+  },
+  {
+    // The only direct fetches: the transport itself; `web_read`, which reads any web page and follows
+    // its redirects, with no token (ADR-DESK-030); the PDF reader's stand-in that refuses the network.
+    files: ["src/core/backend/http.ts", "src/core/agent/connectors/web.ts", "src/main/documents/pdfWorker.ts"],
+    rules: { "no-restricted-globals": "off", "no-restricted-properties": ["error", netRequest] },
   },
 );

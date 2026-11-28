@@ -93,5 +93,5 @@ apps/desktop/
 │       ├── settings/, welcome/, history/ (the paste history), contextDebug/
 │       ├── audio/                   The microphone off macOS: getUserMedia → captureWorklet
 │       └── shared/                  The bridge to `window.voice`, the brand, the palette's theme as CSS variables (`theme.ts`), the glass every floating surface is made of (`glass.ts`), icons, the name field, form.css
-└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper, a fake memory and memory helper, a fake Device Sync relay and the vector runner's test devices); packaging.test.ts
+└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper, a fake memory and memory helper, a fake Device Sync relay and the vector runner's test devices, two loopback servers the first of which redirects to the second); packaging.test.ts, eslintConfig.test.ts
 ```
