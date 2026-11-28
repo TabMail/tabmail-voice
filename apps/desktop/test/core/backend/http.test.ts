@@ -164,12 +164,13 @@ describe("liveTransport", () => {
     const authorization = "Bearer synthetic-access";
     const refresh = '{"refresh_token":"synthetic-refresh"}';
     /** The requests as production sends them: a GET; a POST with a body (the token refresh); the same
-     * with the caller's signal (a hold's transcription) and with a stream consumer (an agent round). */
+     * with the caller's signal (a hold's transcription), and with the signal and a stream consumer (an
+     * agent round). The redirect answer has a body, which the consumer must not hear. */
     const shapes: [string, (heard: string[]) => Omit<HTTPRequest, "url">][] = [
       ["get", () => ({ method: "GET", headers: { Authorization: authorization }, body: "", timeout: 5_000 })],
       ["postWithBody", () => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000 })],
       ["postWithSignal", () => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, signal: new AbortController().signal })],
-      ["streamed", (heard) => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, onChunk: (text) => heard.push(text) })],
+      ["streamedWithSignal", (heard) => ({ method: "POST", headers: { Authorization: authorization }, body: refresh, timeout: 5_000, signal: new AbortController().signal, onChunk: (text) => heard.push(text) })],
     ];
 
     describe.each([301, 302, 303, 307, 308])("%i", (status) => {
@@ -195,7 +196,7 @@ describe("liveTransport", () => {
 
           const response = await fetch(servers.firstURL, { method: request.method, headers: request.headers, body: request.method === "GET" ? undefined : request.body });
 
-          expect(await response.text()).toBe("landed");
+          expect([response.status, await response.text()]).toEqual([200, "landed"]);
           expect(servers.reached).toHaveLength(1);
         });
       });

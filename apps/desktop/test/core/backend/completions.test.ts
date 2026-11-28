@@ -2,10 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { BackendError } from "../../../src/core/backend/errors.js";
-import { CompletionsClient, type CompletionsMessage, SSEParser } from "../../../src/core/backend/completions.js";
+import { CompletionsClient, type CompletionsMessage, type ServerToolEvent, SSEParser } from "../../../src/core/backend/completions.js";
+import { liveTransport, TransportError } from "../../../src/core/backend/http.js";
 import * as config from "../../../src/core/config.js";
+import { redirectServers } from "../../support/redirectServers.js";
 import { Fixtures, StubTransport } from "../../support/stubs.js";
 
 const baseURL = "https://api.example.com";
@@ -284,5 +286,51 @@ describe("server-sent events", () => {
   test.each(["\n", "\r\n", "\r"])("events join data lines at every line end (%j)", (lineEnd) => {
     const body = ["event: final", "data: first", "data: second third", "", ""].join(lineEnd);
     expect(CompletionsClient.events(body)).toEqual([{ name: "final", data: "first\nsecond third" }]);
+  });
+});
+
+/** An agent round, as the agent sends it (the hold's signal, and a listener for the backend's own
+ * tools), over the real transport on the loopback interface, against a backend answering with a
+ * redirect whose body is a stream naming a tool: the round fails as a network error, the redirect's
+ * target sees nothing and the listener hears nothing. The control: the same stream from a server
+ * that answers it reaches the listener. */
+describe("an agent round answered with a redirect", () => {
+  const stream = `event: tool_started\ndata: {"tool_name":"search_web","display_label":"Searching the web"}\n\n${Fixtures.reply("Done.")}`;
+  const tools = ["search_web"];
+
+  async function round(origin: string, heard: ServerToolEvent[]) {
+    const client = new CompletionsClient(origin, "test-version", liveTransport, () => "Europe/Example");
+    return client.round(message, tools, undefined, "synthetic-access", new AbortController().signal, (event) => heard.push(event));
+  }
+
+  describe.each([301, 302, 303, 307, 308])("%i", (status) => {
+    test.each([
+      ["to another server", false],
+      ["on the same server", true],
+    ])("%s: fails as a network error, and nothing hears the redirect's stream", async (_, sameOrigin) => {
+      const servers = await redirectServers(status, { sameOrigin, body: stream });
+      onTestFinished(() => servers.close());
+      const heard: ServerToolEvent[] = [];
+
+      const failure = await round(servers.firstOrigin, heard).then(() => null, (error: unknown) => (error instanceof TransportError ? error.reason : error));
+
+      expect(failure).toBe("network");
+      expect(servers.asked.map((r) => [r.method, r.url, r.authorization, JSON.parse(r.body).available_tools])).toEqual([
+        ["POST", `/${config.completionsPath}`, "Bearer synthetic-access", tools],
+      ]);
+      expect(servers.reached).toEqual([]);
+      expect(heard).toEqual([]);
+    });
+  });
+
+  test("control: the same stream from a server that answers it reaches the listener", async () => {
+    const servers = await redirectServers(307, { body: stream });
+    onTestFinished(() => servers.close());
+    const heard: ServerToolEvent[] = [];
+
+    expect(await round(servers.secondOrigin, heard)).toEqual({ kind: "reply", text: "Done." });
+
+    expect(heard).toEqual([{ tool: "search_web", running: true, label: "Searching the web" }]);
+    expect(servers.reached).toHaveLength(1);
   });
 });

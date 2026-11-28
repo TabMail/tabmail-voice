@@ -67,9 +67,9 @@ export function aiGatedTransport(transport: HTTPTransport, settings: { readonly 
 
 /** The real network, through fetch. The body is read as it arrives, and the request is abandoned
  * when nothing has arrived for `timeout`. Every request goes to TabMail's own servers (the backend,
- * sign-in, Device Sync's pass), which never answer with a redirect, and most carry the access token
- * or the refresh token: a redirect is not followed, and fails as a network error, so nothing a
- * request carries goes to another address. */
+ * sign-in), which never answer with a redirect, and most carry the access token or the refresh token:
+ * a redirect is not followed, and fails as a network error, so nothing a request carries goes to
+ * another address. */
 export const liveTransport: HTTPTransport = async (request) => {
   // Canceled before it went out (during a token refresh): an abort listener added now would never
   // fire, so nothing would stop the upload.

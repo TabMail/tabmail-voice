@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { deviceSyncSocket, type WebSocketLike } from "../../src/main/deviceSyncSocket.js";
 import { redirectServers } from "../support/redirectServers.js";
 
@@ -84,26 +84,32 @@ test("closed by the app, it tells nothing more", () => {
 });
 
 /** Node's own WebSocket (the default) against a relay answering the connection with a redirect (the
- * same answer plain fetch follows in `http.test.ts`): the address carries the sign-in, and a WebSocket
- * never follows a redirect, so the connection fails as 1006 and the redirect's target sees nothing. */
-test.each([301, 302, 303, 307, 308])("a redirect answering the connection is not followed (%i)", async (status) => {
-  const servers = await redirectServers(status);
-  try {
+ * same answer plain fetch follows in `http.test.ts`), to another server or on the same one: the
+ * address carries the sign-in, and a WebSocket never follows a redirect, so the connection fails as
+ * 1006 and the redirect's target sees nothing. The runner closes the socket and the servers, even if
+ * the close never comes. */
+describe.each([
+  ["to another server", false],
+  ["on the same server", true],
+])("a redirect answering the connection, %s", (_, sameOrigin) => {
+  test.each([301, 302, 303, 307, 308])("is not followed (%i)", async (status) => {
+    const servers = await redirectServers(status, { sameOrigin });
+    onTestFinished(() => servers.close());
     const closes: number[] = [];
-    await new Promise<void>((resolve) => {
-      deviceSyncSocket()(`${servers.firstOrigin.replace("http:", "ws:")}/ws?token=synthetic-access`, {
+    const closed = new Promise<void>((resolve) => {
+      const sync = deviceSyncSocket()(`${servers.firstOrigin.replace("http:", "ws:")}/ws?token=synthetic-access`, {
         message: () => {},
         closed: (code) => {
           closes.push(code);
           resolve();
         },
       });
+      onTestFinished(() => sync.close());
     });
+    await closed;
 
     expect(closes).toEqual([1006]);
     expect(servers.asked.map((r) => [r.upgrade, r.url])).toEqual([["websocket", "/ws?token=synthetic-access"]]);
     expect(servers.reached).toEqual([]);
-  } finally {
-    await servers.close();
-  }
+  });
 });

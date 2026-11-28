@@ -17,12 +17,15 @@ export interface SeenRequest {
 
 /** Two servers on the loopback interface (never the network). The first answers every request with
  * `status` and a `Location` on the second, or, with `sameOrigin`, a relative `Location` on itself
- * (`/elsewhere`). The redirect's target answers 200 "landed". `asked` is what reached the first server,
- * `reached` what reached the redirect's target. Neither server listens for upgrades, so a WebSocket's
- * opening request gets the same answer that plain fetch follows. */
+ * (`/elsewhere`); after `redirects` requests (if given) it answers 200 itself. The redirect's target
+ * answers 200, as the second server does any request. Every answer, the redirect included, carries
+ * `body` ("landed" unless given). `asked` is what reached the first server, `reached` what reached
+ * the redirect's target. Neither server listens for upgrades, so a WebSocket's opening request gets
+ * the same answer that plain fetch follows. */
 export interface RedirectServers {
   firstOrigin: string;
   firstURL: string;
+  secondOrigin: string;
   asked: SeenRequest[];
   reached: SeenRequest[];
   close(): Promise<void>;
@@ -30,12 +33,13 @@ export interface RedirectServers {
 
 const target = "/elsewhere";
 
-export async function redirectServers(status: number, options: { sameOrigin?: boolean } = {}): Promise<RedirectServers> {
+export async function redirectServers(status: number, options: { sameOrigin?: boolean; body?: string; redirects?: number } = {}): Promise<RedirectServers> {
+  const body = options.body ?? "landed";
   const asked: SeenRequest[] = [];
   const reached: SeenRequest[] = [];
   const landed = (seen: SeenRequest, response: ServerResponse) => {
     reached.push(seen);
-    response.end("landed");
+    response.end(body);
   };
   const second = recording(landed);
   const secondOrigin = await listen(second);
@@ -46,8 +50,8 @@ export async function redirectServers(status: number, options: { sameOrigin?: bo
       return;
     }
     asked.push(seen);
-    response.writeHead(status, { Location: location });
-    response.end();
+    if (options.redirects === undefined || asked.length <= options.redirects) response.writeHead(status, { Location: location });
+    response.end(body);
   });
   let firstOrigin: string;
   try {
@@ -59,7 +63,7 @@ export async function redirectServers(status: number, options: { sameOrigin?: bo
   const close = async () => {
     await Promise.all([first, second].map(stop));
   };
-  return { firstOrigin, firstURL: `${firstOrigin}/start`, asked, reached, close };
+  return { firstOrigin, firstURL: `${firstOrigin}/start`, secondOrigin, asked, reached, close };
 }
 
 function recording(answer: (seen: SeenRequest, response: ServerResponse) => void): Server {
